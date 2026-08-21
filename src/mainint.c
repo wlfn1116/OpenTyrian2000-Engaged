@@ -37,6 +37,7 @@
 #include "mouse.h"
 #include "mtrand.h"
 #include "musmast.h"
+#include "net_style.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
@@ -8414,26 +8415,52 @@ void JE_pauseGame(void)
 	render_list_recording = rl_was_recording;
 }
 
-// Sprite blits for a ship and everything wearing its colours: hull, banking trim and sidekicks
-// all take the kill-fire drive's tint while that ship's window is open, otherwise a plain blit.
-// The tint follows endlessFxPlayer, so in co-op each ship carries its own. Keep the render-list
-// tag (set by the caller) so a tinted sprite still interpolates smoothly between ticks.
-static void blit_ship2x2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
+// Player seat currently being drawn by JE_playerMovement.
+static uint ship_draw_seat = 0;
+
+// Combine the online style with kill-fire tint; kill-fire tint wins.
+static NetShipStyle ship_draw_style(void)
 {
+	NetShipStyle style = netStyleForSeat(ship_draw_seat);
 	const int tint = endlessShipTintFilter();
 	if (tint)
-		blit_sprite2x2_filter(surface, x, y, sheet, index, (Uint8)tint);
-	else
-		blit_sprite2x2(surface, x, y, sheet, index);
+		style.bank = (Sint8)(tint >> 4);
+	return style;
+}
+
+// Shared hull, trim, and sidekick blits preserve the caller's render-list tag.
+static void blit_ship2x2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
+{
+	const NetShipStyle style = ship_draw_style();
+	blit_sprite2x2_alpha(surface, x, y, sheet, index, style.bank, style.opacity);
 }
 
 static void blit_ship2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
 {
-	const int tint = endlessShipTintFilter();
-	if (tint)
-		blit_sprite2_filter(surface, x, y, sheet, index, (Uint8)tint);
+	const NetShipStyle style = ship_draw_style();
+	blit_sprite2_alpha(surface, x, y, sheet, index, style.bank, style.opacity);
+}
+
+// Faded ships omit shadows because shadows cannot share sprite opacity.
+static bool ship_draw_casts_shadow(void)
+{
+	return netStyleForSeat(ship_draw_seat).opacity >= NET_STYLE_SOLID;
+}
+
+// Hull indicators fade with the ship but keep their original bank.
+static void blit_ship_indicator2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
+{
+	blit_sprite2_alpha(surface, x, y, sheet, index, -1, netStyleForSeat(ship_draw_seat).opacity);
+}
+
+// Damage and noclip blends ignore drive tint and halve the online opacity.
+static void blit_ship2x2_blend(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
+{
+	const NetShipStyle style = netStyleForSeat(ship_draw_seat);
+	if (netStyleIsPlain(style))
+		blit_sprite2x2_blend(surface, x, y, sheet, index);
 	else
-		blit_sprite2(surface, x, y, sheet, index);
+		blit_sprite2x2_alpha(surface, x, y, sheet, index, style.bank, (Uint8)(style.opacity / 2));
 }
 
 // Resting/home position for a front-mounted (style 2) option. When BOTH slots hold a
@@ -8732,6 +8759,7 @@ void JE_playerMovement(Player *this_player,
 
 	// Everything from here to the ship blit is this ship's: its own drives, tint and cadence.
 	endlessSetFxPlayer((uint)(this_player - &player[0]));
+	ship_draw_seat = (uint)(this_player - &player[0]);
 
 	if (playerNum_ == 2 || !twoPlayerMode || dual_ship_mode())
 	{
@@ -9631,17 +9659,17 @@ redo:
 				{
 					if (shipGr_ == 0)
 					{
-						blit_sprite2x2(VGAScreen, this_player->x - 17, trail_y - 7, *shipGrPtr_, 13);
-						blit_sprite2x2(VGAScreen, this_player->x + 7 , trail_y - 7, *shipGrPtr_, 51);
+						blit_ship2x2(VGAScreen, this_player->x - 17, trail_y - 7, *shipGrPtr_, 13);
+						blit_ship2x2(VGAScreen, this_player->x + 7 , trail_y - 7, *shipGrPtr_, 51);
 					}
 					else if (shipGr_ == 1)
 					{
-						blit_sprite2x2(VGAScreen, this_player->x - 17, trail_y - 7, *shipGrPtr_, 220);
-						blit_sprite2x2(VGAScreen, this_player->x + 7 , trail_y - 7, *shipGrPtr_, 222);
+						blit_ship2x2(VGAScreen, this_player->x - 17, trail_y - 7, *shipGrPtr_, 220);
+						blit_ship2x2(VGAScreen, this_player->x + 7 , trail_y - 7, *shipGrPtr_, 222);
 					}
 					else
 					{
-						blit_sprite2x2(VGAScreen, this_player->x - 5, trail_y - 7, *shipGrPtr_, shipGr_);
+						blit_ship2x2(VGAScreen, this_player->x - 5, trail_y - 7, *shipGrPtr_, shipGr_);
 					}
 				}
 			}
@@ -9843,7 +9871,7 @@ redo:
 
 		if (shipGr_ == 0)
 		{
-			if (background2)
+			if (background2 && ship_draw_casts_shadow())
 			{
 				blit_sprite2x2_darken(VGAScreen, this_player->x - 17 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *shipGrPtr_, ship_sprite + 13);
 				blit_sprite2x2_darken(VGAScreen, this_player->x + 7 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *shipGrPtr_, ship_sprite + 51);
@@ -9856,7 +9884,7 @@ redo:
 		}
 		else if (shipGr_ == 1)
 		{
-			if (background2)
+			if (background2 && ship_draw_casts_shadow())
 			{
 				blit_sprite2x2_darken(VGAScreen, this_player->x - 17 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *shipGrPtr_, 220);
 				blit_sprite2x2_darken(VGAScreen, this_player->x + 7 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *shipGrPtr_, 222);
@@ -9864,7 +9892,7 @@ redo:
 		}
 		else
 		{
-			if (background2)
+			if (background2 && ship_draw_casts_shadow())
 			{
 				blit_sprite2x2_darken(VGAScreen, this_player->x - 5 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *shipGrPtr_, ship_sprite);
 				if (superWild)
@@ -9883,16 +9911,16 @@ redo:
 
 			if (shipGr_ == 0)
 			{
-				blit_sprite2x2_blend(VGAScreen, this_player->x - 17, this_player->y - 7, *shipGrPtr_, ship_sprite + 13);
-				blit_sprite2x2_blend(VGAScreen, this_player->x + 7 , this_player->y - 7, *shipGrPtr_, ship_sprite + 51);
+				blit_ship2x2_blend(VGAScreen, this_player->x - 17, this_player->y - 7, *shipGrPtr_, ship_sprite + 13);
+				blit_ship2x2_blend(VGAScreen, this_player->x + 7 , this_player->y - 7, *shipGrPtr_, ship_sprite + 51);
 			}
 			else if (shipGr_ == 1)
 			{
-				blit_sprite2x2_blend(VGAScreen, this_player->x - 17, this_player->y - 7, *shipGrPtr_, 220);
-				blit_sprite2x2_blend(VGAScreen, this_player->x + 7 , this_player->y - 7, *shipGrPtr_, 222);
+				blit_ship2x2_blend(VGAScreen, this_player->x - 17, this_player->y - 7, *shipGrPtr_, 220);
+				blit_ship2x2_blend(VGAScreen, this_player->x + 7 , this_player->y - 7, *shipGrPtr_, 222);
 			}
 			else
-				blit_sprite2x2_blend(VGAScreen, this_player->x - 5, this_player->y - 7, *shipGrPtr_, ship_sprite);
+				blit_ship2x2_blend(VGAScreen, this_player->x - 5, this_player->y - 7, *shipGrPtr_, ship_sprite);
 		}
 		else
 		{
@@ -10129,7 +10157,7 @@ redo:
 					if (!twoPlayerLinked)
 					{
 						rl_current_id = RL_ID_SHIP_BASE + playerNum_;  // charge meter rides with the ship
-						blit_sprite2(VGAScreen, this_player->x + (shipGr_ == 0) + 1, this_player->y - 13, spriteSheet10, 77 + chargeLevel + chargeGr * 19);
+						blit_ship_indicator2(VGAScreen, this_player->x + (shipGr_ == 0) + 1, this_player->y - 13, spriteSheet10, 77 + chargeLevel + chargeGr * 19);
 						rl_current_id = 0;
 					}
 

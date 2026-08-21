@@ -36,6 +36,7 @@
 #include "mainint.h"
 #include "mouse.h"
 #include "musmast.h"
+#include "net_style.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
@@ -76,23 +77,59 @@ enum
 	// Retired debug-level grid. Keep the hole because menu tables are indexed by these IDs.
 	MENU_ESHOP = 16,
 	MENU_PERKS = 17,
+	// Online settings and their picker pages.
+	MENU_ONLINE = 18,
+	MENU_ONLINE_COLOR = 19,
+	MENU_ONLINE_OPACITY = 20,
+	MENU_ONLINE_HPBARS = 21,
 };
 
 // Center of the asymmetric monitor readout used by shop cash and Endless rank.
 #define MENU_MONITOR_CENTER_X 77
 
-/* Rows of the options page, numbered as MENU_OPTIONS draws them. MENU_LIMITED_OPTIONS is the
- * same page with Load Game dropped, so on it every row below sits one higher: go through
- * options_row() / options_full_row() rather than writing either numbering down twice. */
+/* Online Options replaces Load Game with Online and moves Save up one row. Use the mapping helpers
+ * instead of duplicating row numbers. */
 enum
 {
 	OPT_LOAD = 2, OPT_SAVE, OPT_MUSIC, OPT_SOUND, OPT_SENS, OPT_JOYSTICK, OPT_KEYBOARD,
 	OPT_MOUSE, OPT_EXIT,
 	OPTIONS_ROWS = OPT_EXIT - OPT_LOAD + 1,
+	// Online-only row with no offline equivalent.
+	OPT_ONLINE = OPT_EXIT + 1,
 };
 
 // Baseline of an options row, matching JE_drawMenuChoices' 16px pitch.
 #define OPTIONS_ROW_Y(row) (38 + ((row) - 2) * 16)
+
+// Online color grid, rebuilt per visit because Endless reserves some palette banks.
+#define ONLINE_COLOR_COLS     5
+#define ONLINE_COLOR_CELLS    (NET_SHIP_COLORS + 2)   // Off, every bank, and Done
+#define ONLINE_COLOR_X0     168
+#define ONLINE_COLOR_Y0      46
+#define ONLINE_COLOR_CELL_W  26
+#define ONLINE_COLOR_CELL_H  24
+#define ONLINE_COLOR_PITCH_X (ONLINE_COLOR_CELL_W + 2)
+#define ONLINE_COLOR_PITCH_Y (ONLINE_COLOR_CELL_H + 3)
+#define ONLINE_COLOR_LEGEND_Y 156
+#define ONLINE_COLOR_LEGEND_GAP 70   // "You" to "Partner" along the legend row
+// Six glyph rows and a one-pixel shadow.
+#define ONLINE_COLOR_LABEL_H   7
+// Non-black panel shades prevent the starfield from drawing over labels.
+#define ONLINE_CELL_HI    0xfb
+#define ONLINE_CELL_LO    0xf4
+#define ONLINE_CELL_PANEL 0xf2
+
+// Partner opacity rows: ship toggle, percentages, then Done.
+#define ONLINE_OPACITY_STEPS ((NET_OPACITY_FULL - NET_OPACITY_MIN) / NET_OPACITY_STEP + 1)
+#define ONLINE_OPACITY_TOGGLE_ROW 2   // the percentages below it are what it applies
+#define ONLINE_OPACITY_FIRST_ROW  3
+#define ONLINE_OPACITY_ROW_H  12
+#define ONLINE_OPACITY_Y0     38
+#define ONLINE_OPACITY_SWATCH_X   250
+#define ONLINE_OPACITY_SWATCH_W    46
+// Preview swatch shades in the shop palette's grayscale bank.
+#define ONLINE_OPACITY_HULL_SHADE  14
+#define ONLINE_OPACITY_BACK_SHADE   2
 
 /*** Structs ***/
 struct cube_struct
@@ -128,13 +165,23 @@ static uint shopPlayerIndex;
 // Where a full-page options row lands on the page now open.
 static int options_row(int fullRow)
 {
-	return (curMenu == MENU_LIMITED_OPTIONS) ? fullRow - 1 : fullRow;
+	if (curMenu != MENU_LIMITED_OPTIONS)
+		return fullRow;
+	if (fullRow == OPT_ONLINE)
+		return OPT_SAVE;      // Online stands where Save does offline
+	return (fullRow <= OPT_SAVE) ? fullRow - 1 : fullRow;
 }
 
 // ...and back: which full-page row a selection on the page now open stands for.
 static int options_full_row(int row)
 {
-	return (curMenu == MENU_LIMITED_OPTIONS) ? row + 1 : row;
+	if (curMenu != MENU_LIMITED_OPTIONS)
+		return row;
+	if (row == OPT_LOAD)
+		return OPT_SAVE;
+	if (row == OPT_SAVE)
+		return OPT_ONLINE;
+	return row;
 }
 
 uint JE_shopPlayerIndex(void)
@@ -142,9 +189,19 @@ uint JE_shopPlayerIndex(void)
 	return shopPlayerIndex;
 }
 
+// Online pickers preview the affected seat; other pages preview the shopper.
+static uint shop_draw_seat(void)
+{
+	if (curMenu == MENU_ONLINE_COLOR)
+		return netStyleLocalSeat();
+	if (curMenu == MENU_ONLINE_OPACITY || curMenu == MENU_ONLINE_HPBARS)
+		return 1u - netStyleLocalSeat();
+	return shopPlayerIndex;
+}
+
 static Player *shopPlayer(void)
 {
-	return &player[shopPlayerIndex];
+	return &player[shop_draw_seat()];
 }
 
 // MENU_PERKS serves both the forced choice and the read-only owned-perk list.
@@ -202,11 +259,12 @@ static PlayerItems old_items[2];  // shared shop-entry snapshots
 static struct cube_struct cube[4];
 
 // Endless menu sizes are adjusted at runtime.
-static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5 };
+static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5, 0, 0, 0, 0 };
 
-// One-based target menu for Esc. Endless screens return to buy/sell; perk
-// choice handles Esc as Take the Cash.
-static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 3, 1, 1, 1 };
+// One-based target menu for Esc. Online pickers return to the Online page.
+static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 3, 1, 1, 1,
+                                           MENU_LIMITED_OPTIONS + 1, MENU_ONLINE + 1, MENU_ONLINE + 1,
+                                           MENU_ONLINE + 1 };
 static const JE_byte itemAvailMap[7] = { 1, 2, 3, 9, 4, 6, 7 };
 static const JE_word planetX[21] = { 200, 150, 240, 300, 270, 280, 320, 260, 220, 150, 160, 210, 80, 240, 220, 180, 310, 330, 150, 240, 200 };
 static const JE_word planetY[21] = {  40,  90,  90,  80, 170,  30,  50, 130, 120, 150, 220, 200, 80,  50, 160,  10,  55,  55,  90,  90,  40 };
@@ -1014,19 +1072,240 @@ static void configure_options_sens_menu(void)
 		SDL_strlcpy(menuInt[3][6], menuInt[3][5], entrySize);  // Joystick Setup
 		SDL_strlcpy(menuInt[3][5], "Sens", entrySize);  // new item 6
 
-		// MENU_LIMITED_OPTIONS (menuInt[12]) is the same page with Load Game dropped, rather than
-		// the data file's much shorter DOS network menu: an online session offers everything the
-		// offline one does except loading, which mid-session would strand the other machine.
-		// Everything below the missing row therefore sits one row higher here than there.
+		// Online Options omits Load Game. Save moves up and Online takes Save's row.
 		SDL_strlcpy(menuInt[12][0], menuInt[3][0], entrySize);  // title
-		for (int i = 1; i <= OPTIONS_ROWS - 1; ++i)
-			SDL_strlcpy(menuInt[12][i], menuInt[3][i + 1], entrySize);
+		SDL_strlcpy(menuInt[12][1], menuInt[3][2], entrySize);  // Save
+		SDL_strlcpy(menuInt[12][2], "Online", entrySize);
+		for (int i = 3; i <= OPTIONS_ROWS; ++i)
+			SDL_strlcpy(menuInt[12][i], menuInt[3][i], entrySize);
 
 		shifted = true;
 	}
 
 	menuChoices[MENU_OPTIONS] = OPTIONS_ROWS + 1;              // rows 2..10
-	menuChoices[MENU_LIMITED_OPTIONS] = OPTIONS_ROWS;          // rows 2..9 (no Load Game)
+	menuChoices[MENU_LIMITED_OPTIONS] = OPTIONS_ROWS + 1;      // rows 2..10, Online for Load Game
+}
+
+// First and last cells both use NONE for Off and Done; position distinguishes them.
+static int online_color_cell[ONLINE_COLOR_CELLS];
+static int online_color_cells = 2;
+
+static void configure_online_color_grid(void)
+{
+	online_color_cells = 0;
+	online_color_cell[online_color_cells++] = NET_SHIP_COLOR_NONE;   // Off
+
+	for (int color = 1; color <= NET_SHIP_COLORS; ++color)
+		if (!netStyleColorReserved(color))
+			online_color_cell[online_color_cells++] = color;
+
+	online_color_cell[online_color_cells++] = NET_SHIP_COLOR_NONE;   // Done
+	menuChoices[MENU_ONLINE_COLOR] = (JE_byte)(online_color_cells + 1);
+}
+
+// Which cell a dye sits in, or the Off cell when this visit does not offer it.
+static int online_color_find_cell(int color)
+{
+	for (int cell = 1; cell < online_color_cells - 1; ++cell)
+		if (online_color_cell[cell] == color)
+			return cell;
+	return 0;
+}
+
+static void online_color_cell_rect(int cell, int *x0, int *y0, int *x1, int *y1)
+{
+	*x0 = ONLINE_COLOR_X0 + (cell % ONLINE_COLOR_COLS) * ONLINE_COLOR_PITCH_X;
+	*y0 = ONLINE_COLOR_Y0 + (cell / ONLINE_COLOR_COLS) * ONLINE_COLOR_PITCH_Y;
+	*x1 = *x0 + ONLINE_COLOR_CELL_W - 1;
+	*y1 = *y0 + ONLINE_COLOR_CELL_H - 1;
+}
+
+// Wrap through cell order because reserved colors may leave the last row short.
+static JE_byte online_color_step(JE_byte sel, int step)
+{
+	int cell = (int)sel - 2 + step;
+	while (cell < 0)
+		cell += online_color_cells;
+	return (JE_byte)(2 + cell % online_color_cells);
+}
+
+// Linked Arcade omits HP Bars because its shared HUD already shows both ships.
+enum { ONLINE_ROW_COLOR = 2, ONLINE_ROW_OPACITY, ONLINE_ROW_HPBARS, ONLINE_ROW_EXIT };
+
+static bool online_hp_bars_offered(void)
+{
+	return !split_arcade_mode();
+}
+
+static int online_full_row(int row)
+{
+	return (!online_hp_bars_offered() && row >= ONLINE_ROW_HPBARS) ? row + 1 : row;
+}
+
+static void draw_online_hpbars_page(void)
+{
+	const int cursor = curSel[MENU_ONLINE_HPBARS];
+	if (cursor >= 2 && cursor < menuChoices[MENU_ONLINE_HPBARS])
+		netPartnerHpBars = cursor - 2;
+
+	JE_drawMenuChoices();
+
+	// Preview the partner at full opacity; the simulator draws the bars.
+	netStylePreviewSet(netStylePeerColor(), NET_OPACITY_FULL);
+}
+
+// Generate Online menus because tyrian.hdt has no entries for them.
+static void configure_online_menus(void)
+{
+	const size_t entrySize = sizeof(menuInt[0][0]);
+	char (*online)[24] = menuInt[MENU_ONLINE + 1];
+
+	SDL_strlcpy(online[0], "Online", entrySize);
+
+	int row = 1;
+	SDL_strlcpy(online[row++], "Color", entrySize);
+	SDL_strlcpy(online[row++], "Opacity", entrySize);
+	if (online_hp_bars_offered())
+		SDL_strlcpy(online[row++], "HP Bars", entrySize);
+	SDL_strlcpy(online[row], menuInt[3][OPTIONS_ROWS], entrySize);  // the options page's own Exit
+	menuChoices[MENU_ONLINE] = (JE_byte)(row + 1);
+
+	SDL_strlcpy(menuInt[MENU_ONLINE_COLOR + 1][0], "Ship Color", entrySize);
+	SDL_strlcpy(menuInt[MENU_ONLINE_OPACITY + 1][0], "Opacity", entrySize);
+
+	char (*bars)[24] = menuInt[MENU_ONLINE_HPBARS + 1];
+	SDL_strlcpy(bars[0], "HP Bars", entrySize);
+	SDL_strlcpy(bars[1], "Off", entrySize);
+	SDL_strlcpy(bars[2], "On Hit", entrySize);
+	SDL_strlcpy(bars[3], "Always", entrySize);
+	SDL_strlcpy(bars[4], online[row], entrySize);
+	menuChoices[MENU_ONLINE_HPBARS] = 5;
+
+	configure_online_color_grid();
+	menuChoices[MENU_ONLINE_OPACITY] = ONLINE_OPACITY_STEPS + 3;
+}
+
+// Online pickers reserve the left panel for the weapon simulator.
+static bool menu_is_online_picker(void)
+{
+	return curMenu == MENU_ONLINE_COLOR || curMenu == MENU_ONLINE_OPACITY
+	    || curMenu == MENU_ONLINE_HPBARS;
+}
+
+// Show both dyes so the player can avoid matching the partner.
+static void online_color_legend(int x, int y, const char *who, int color)
+{
+	const int swatchW = 10, swatchH = 7;
+
+	// An empty outline for no dye, and otherwise one shade well inside the bank's ramp.
+	if (color == NET_SHIP_COLOR_NONE)
+		JE_rectangle(VGAScreen, x, y, x + swatchW, y + swatchH, ONLINE_CELL_LO);
+	else
+		fill_rectangle_xy(VGAScreen, x, y, x + swatchW, y + swatchH,
+		                  (Uint8)(((color - 1) << 4) | 0x0b));
+
+	draw_font_hv_shadow(VGAScreen, x + swatchW + 5, y, who, small_font, left_aligned, 15, 3, false, 1);
+}
+
+// The highlighted cell applies immediately; the last cell only returns.
+static void draw_online_color_page(void)
+{
+	const uint seat = netStyleLocalSeat();
+	const int cell = curSel[MENU_ONLINE_COLOR] - 2;
+	if (cell >= 0 && cell < online_color_cells - 1 && netStyleSeatColor(seat) != online_color_cell[cell])
+	{
+		netStyleSetSeatColor(seat, online_color_cell[cell]);
+		network_player_color_publish();  // publish immediately instead of waiting for keep-alive
+	}
+
+	for (int i = 0; i < online_color_cells; ++i)
+	{
+		int x0, y0, x1, y1;
+		online_color_cell_rect(i, &x0, &y0, &x1, &y1);
+
+		const bool selected = (i == cell);
+		const int color = online_color_cell[i];
+
+		if (color != NET_SHIP_COLOR_NONE)
+		{
+			// Show the full shade ramp used by the dye.
+			const Uint8 bank = (Uint8)((color - 1) << 4);
+			for (int y = y0; y <= y1; ++y)
+			{
+				const int shade = 2 + (y - y0) * 13 / (ONLINE_COLOR_CELL_H - 1);
+				fill_rectangle_xy(VGAScreen, x0, y, x1, y, (Uint8)(bank | shade));
+			}
+		}
+		else
+		{
+			fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, ONLINE_CELL_PANEL);
+			draw_font_hv_shadow(VGAScreen, (x0 + x1 + 1) / 2,
+			                    y0 + (ONLINE_COLOR_CELL_H - ONLINE_COLOR_LABEL_H) / 2,
+			                    (i == 0) ? "Off" : "Done", small_font, centered,
+			                    15, selected ? 6 : 3, false, 1);
+		}
+
+		JE_rectangle(VGAScreen, x0 - 1, y0 - 1, x1 + 1, y1 + 1,
+		             selected ? ONLINE_CELL_HI : ONLINE_CELL_LO);
+	}
+
+	online_color_legend(ONLINE_COLOR_X0, ONLINE_COLOR_LEGEND_Y, "You", netStyleSeatColor(seat));
+	online_color_legend(ONLINE_COLOR_X0 + ONLINE_COLOR_LEGEND_GAP, ONLINE_COLOR_LEGEND_Y,
+	                    "Partner", netStylePeerColor());
+
+	// Preview this ship's selected color at full opacity.
+	netStylePreviewSet(netStyleSeatColor(seat), NET_OPACITY_FULL);
+}
+
+// The opacity a row stands for, counting down from full.
+static int online_opacity_of_row(int row)
+{
+	return NET_OPACITY_FULL - (row - ONLINE_OPACITY_FIRST_ROW) * NET_OPACITY_STEP;
+}
+
+// Draw exact opacity samples beside each percentage.
+static void draw_online_opacity_page(void)
+{
+	const int cursor = curSel[MENU_ONLINE_OPACITY];
+	if (cursor >= ONLINE_OPACITY_FIRST_ROW && cursor < menuChoices[MENU_ONLINE_OPACITY])
+		netPartnerOpacity = online_opacity_of_row(cursor);
+
+	for (int row = 2; row <= menuChoices[MENU_ONLINE_OPACITY]; ++row)
+	{
+		const int y = ONLINE_OPACITY_Y0 + (row - 2) * ONLINE_OPACITY_ROW_H;
+		const bool leave = (row == menuChoices[MENU_ONLINE_OPACITY]);
+		const bool toggle = (row == ONLINE_OPACITY_TOGGLE_ROW);
+		const int textCol = (row == cursor) ? 15 : 28;  // the keyboard page's own two shades
+		char label[16];
+
+		if (toggle)
+			SDL_strlcpy(label, "Apply to Ship", sizeof(label));
+		else if (leave)
+			SDL_strlcpy(label, menuInt[MENU_ONLINE + 1][3], sizeof(label));
+		else
+			snprintf(label, sizeof(label), "%d%%", online_opacity_of_row(row));
+
+		JE_textShade(VGAScreen, 166, y, label, textCol / 16, textCol % 16 - 8, DARKEN);
+
+		if (toggle)
+		{
+			JE_textShade(VGAScreen, ONLINE_OPACITY_SWATCH_X, y,
+			             netPartnerShipOpacity ? "On" : "Off",
+			             textCol / 16, textCol % 16 - 8, DARKEN);
+		}
+		else if (!leave)
+		{
+			const int sixteenths = (online_opacity_of_row(row) * NET_STYLE_SOLID + 50) / NET_OPACITY_FULL;
+			const int mixed = (ONLINE_OPACITY_HULL_SHADE * sixteenths
+			                   + ONLINE_OPACITY_BACK_SHADE * (NET_STYLE_SOLID - sixteenths) + 8)
+			                / NET_STYLE_SOLID;
+			fill_rectangle_xy(VGAScreen, ONLINE_OPACITY_SWATCH_X, y,
+			                  ONLINE_OPACITY_SWATCH_X + ONLINE_OPACITY_SWATCH_W - 1, y + 6, (Uint8)mixed);
+		}
+	}
+
+	// Preview the partner; net_style.c applies the ship toggle.
+	netStylePreviewSet(netStylePeerColor(), netPartnerOpacity);
 }
 
 /* Map the resolved shop submenu to a static crash-log phase string.
@@ -1052,6 +1331,10 @@ static void set_shop_phase(void)
 		"shop: (retired slot 15)",    // 15  the removed debug play-level grid; unreachable
 		"shop: endless E-Shop",       // 16  MENU_ESHOP
 		"shop: endless perks",        // 17  MENU_PERKS
+		"shop: online look",          // 18  MENU_ONLINE
+		"shop: online ship color",    // 19  MENU_ONLINE_COLOR
+		"shop: online opacity",       // 20  MENU_ONLINE_OPACITY
+		"shop: online HP bars",       // 21  MENU_ONLINE_HPBARS
 	};
 	if ((unsigned)curMenu < MENU_MAX && names[curMenu] != NULL)
 		crashlog_set_phase(names[curMenu]);
@@ -1820,6 +2103,7 @@ void JE_itemScreen(void)
 	configure_arcade_debug_menus();
 	configure_custom_weapon_menu();
 	configure_options_sens_menu();
+	configure_online_menus();
 	configure_endless_shop_menu();
 	if (isNetworkGame && coop_mode_active())
 	{
@@ -1907,6 +2191,9 @@ void JE_itemScreen(void)
 		set_menu_centered(true);
 		quit = false;
 
+		// Picker pages reapply their preview each frame.
+		netStylePreviewClear();
+
 		JE_getShipInfo();
 
 		if (curMenu == MENU_FULL_GAME)
@@ -1989,6 +2276,18 @@ void JE_itemScreen(void)
 			// Endless read-only Perks list: its own scrolling renderer (the list can exceed the
 			// menuInt row count, so it can't go through the menuInt-backed JE_drawMenuChoices).
 			draw_endless_perk_list();
+		}
+		else if (curMenu == MENU_ONLINE_COLOR)
+		{
+			draw_online_color_page();
+		}
+		else if (curMenu == MENU_ONLINE_OPACITY)
+		{
+			draw_online_opacity_page();
+		}
+		else if (curMenu == MENU_ONLINE_HPBARS)
+		{
+			draw_online_hpbars_page();
 		}
 		else if ((curMenu >= MENU_FULL_GAME && curMenu <= MENU_PLAY_NEXT_LEVEL) ||
 		    (curMenu >= MENU_2_PLAYER_ARCADE && curMenu <= MENU_LIMITED_OPTIONS) ||
@@ -2385,7 +2684,7 @@ void JE_itemScreen(void)
 		      curMenu == MENU_KEYBOARD_CONFIG ||
 		      curMenu == MENU_LOAD_SAVE ||
 		      curMenu >= MENU_1_PLAYER_ARCADE) &&
-		     !split_arcade_mode()) ||
+		     !split_arcade_mode() && !menu_is_online_picker()) ||
 		    (curMenu == MENU_UPGRADE_SUB &&
 		     (curSel[MENU_UPGRADES] >= 1 && curSel[MENU_UPGRADES] <= 6)))
 		{
@@ -2427,12 +2726,13 @@ void JE_itemScreen(void)
 		}
 
 		/* Draw crap on the left side of the screen, i.e. two player scores, ship graphic, etc. */
-		if ((curMenu >= MENU_FULL_GAME && curMenu <= MENU_OPTIONS) ||
+		if (!menu_is_online_picker() &&
+			((curMenu >= MENU_FULL_GAME && curMenu <= MENU_OPTIONS) ||
 			curMenu == MENU_KEYBOARD_CONFIG ||
 			curMenu == MENU_LOAD_SAVE ||
 			(curMenu >= MENU_2_PLAYER_ARCADE) ||
 			(curMenu == MENU_UPGRADE_SUB &&
-				(curSel[MENU_UPGRADES] == 2 || curSel[MENU_UPGRADES] == 5)))
+				(curSel[MENU_UPGRADES] == 2 || curSel[MENU_UPGRADES] == 5))))
 		{
 			if (split_arcade_mode())
 			{
@@ -2748,11 +3048,12 @@ void JE_itemScreen(void)
 						blit_sprite_hv_blend(VGAScreenSeg, 166, 38 + (curSel[MENU_DATA_CUBES] - 2) * 28, OPTION_SHAPES, 25, 13, col);
 					}
 
-					if (curMenu == MENU_UPGRADE_SUB &&
+					if (menu_is_online_picker() ||
+					    (curMenu == MENU_UPGRADE_SUB &&
 					    (curSel[MENU_UPGRADES] == 3 ||
 					     curSel[MENU_UPGRADES] == 4 ||
 					     (curSel[MENU_UPGRADES] >= 6 &&
-					      curSel[MENU_UPGRADES] <= 8)))
+					      curSel[MENU_UPGRADES] <= 8))))
 					{
 						setDelay(3);
 
@@ -3096,10 +3397,24 @@ void JE_itemScreen(void)
 			{
 				int selection = menuChoices[curMenu] + 1; /* invalid by default */
 
-				if (mouseX > 170 && mouseX < 308)
+				// The dye grid maps its own clicks; a press in a gap between cells is a miss.
+				if (curMenu == MENU_ONLINE_COLOR)
+				{
+					for (int i = 0; i < online_color_cells; ++i)
+					{
+						int cx0, cy0, cx1, cy1;
+						online_color_cell_rect(i, &cx0, &cy0, &cx1, &cy1);
+						if (mouseX >= cx0 && mouseX <= cx1 && mouseY >= cy0 && mouseY <= cy1)
+						{
+							selection = i + 2;
+							break;
+						}
+					}
+				}
+				else if (mouseX > 170 && mouseX < 308)
 				{
 					// E-Shop and perk choices use the same row pitch as buy/sell.
-					const JE_byte mouseSelectionY[MENU_MAX] = { 16, 16, 16, 16, 26, 12, 11, 28, 0, 16, 16, 16, 8, 16, 24, 16, 16, 16 };
+					const JE_byte mouseSelectionY[MENU_MAX] = { 16, 16, 16, 16, 26, 12, 11, 28, 0, 16, 16, 16, 8, 16, 24, 16, 16, 16, 16, 16, ONLINE_OPACITY_ROW_H, 16 };
 
 					// The read-only perk LIST draws at tight 10px rows in a small font (JE_drawMenuChoices);
 					// the forced perk PICK keeps the standard 16px pitch.
@@ -3381,6 +3696,13 @@ void JE_itemScreen(void)
 				if (curMenu != MENU_DATA_CUBE_SUB)
 					JE_playSampleNum(S_CURSOR);
 
+				// The dye picker is a grid, so up and down cross a whole row of it.
+				if (curMenu == MENU_ONLINE_COLOR)
+				{
+					curSel[curMenu] = online_color_step(curSel[curMenu], -ONLINE_COLOR_COLS);
+					break;
+				}
+
 				curSel[curMenu]--;
 				if (curSel[curMenu] < 2)
 					curSel[curMenu] = menuChoices[curMenu];
@@ -3411,6 +3733,12 @@ void JE_itemScreen(void)
 
 				if (curMenu != MENU_DATA_CUBE_SUB)
 					JE_playSampleNum(S_CURSOR);
+
+				if (curMenu == MENU_ONLINE_COLOR)
+				{
+					curSel[curMenu] = online_color_step(curSel[curMenu], ONLINE_COLOR_COLS);
+					break;
+				}
 
 				curSel[curMenu]++;
 				if (curSel[curMenu] > menuChoices[curMenu])
@@ -3447,6 +3775,14 @@ void JE_itemScreen(void)
 				break;
 
 			case SDL_SCANCODE_LEFT:
+				// Left and right step one cell of the dye grid; up and down cross a whole row.
+				if (curMenu == MENU_ONLINE_COLOR)
+				{
+					JE_playSampleNum(S_CURSOR);
+					curSel[curMenu] = online_color_step(curSel[curMenu], -1);
+					break;
+				}
+
 				if (curMenu == MENU_JOYSTICK_CONFIG)
 				{
 					if (joysticks > 0)
@@ -3550,6 +3886,13 @@ void JE_itemScreen(void)
 				break;
 
 			case SDL_SCANCODE_RIGHT:
+				if (curMenu == MENU_ONLINE_COLOR)
+				{
+					JE_playSampleNum(S_CURSOR);
+					curSel[curMenu] = online_color_step(curSel[curMenu], 1);
+					break;
+				}
+
 				if (curMenu == MENU_JOYSTICK_CONFIG)
 				{
 					if (joysticks > 0)
@@ -3659,6 +4002,8 @@ void JE_itemScreen(void)
 #endif
 
 	} while (!(quit || gameLoaded || jumpSection));
+
+	netStylePreviewClear();
 
 	if (gameLoaded)
 		fade_black(10);
@@ -3926,6 +4271,50 @@ bool load_cube(int cube_slot, int cube_index)
 	return true;
 }
 
+// Apply the previewed seat's style only to ship art.
+static void blit_preview_ship2x2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
+{
+	const NetShipStyle style = netStyleForSeat(shop_draw_seat());
+	blit_sprite2x2_alpha(surface, x, y, sheet, index, style.bank, style.opacity);
+}
+
+static void blit_preview_ship2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
+{
+	const NetShipStyle style = netStyleForSeat(shop_draw_seat());
+	blit_sprite2_alpha(surface, x, y, sheet, index, style.bank, style.opacity);
+}
+
+// Sentinel graphics, not items.ship, identify Linked Arcade's second hull.
+static JE_word shop_seat_hull(uint seat, Sprite2_array **sheet)
+{
+	*sheet = (seat == 1) ? shipGr2ptr : shipGrPtr;
+	return (seat == 1) ? shipGr2 : shipGr;
+}
+
+// Graphics 0 and 1 are the wide Dragonwing and Nort Ship sentinels.
+static void draw_preview_hull(uint seat, int x, int y)
+{
+	Sprite2_array *sheet = NULL;
+	const JE_word gr = shop_seat_hull(seat, &sheet);
+	if (sheet == NULL)
+		return;
+
+	if (gr == 0)
+	{
+		blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *sheet, 13);
+		blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *sheet, 51);
+	}
+	else if (gr == 1)
+	{
+		blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *sheet, 220);
+		blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *sheet, 222);
+	}
+	else
+	{
+		blit_preview_ship2x2(VGAScreen, x, y, *sheet, gr);
+	}
+}
+
 void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 {
 	JE_word tempW = 0;
@@ -3956,14 +4345,14 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 			{
 				shipGrPtr = &spriteSheet9;
 				shipGr = JE_SGr(itemNum - 90, &shipGrPtr);
-				blit_sprite2x2(VGAScreen, x, y, *shipGrPtr, shipGr);
+				blit_preview_ship2x2(VGAScreen, x, y, *shipGrPtr, shipGr);
 			}
 			else if (ships[itemNum].shipgraphic == 0)
 			{
 				// The Dragonwing's shipgraphic (0) is a sentinel too (see the Nort Ship below):
 				// draw the two flat-banking halves the gameplay draw uses.
-				blit_sprite2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 13);
-				blit_sprite2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 51);
+				blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 13);
+				blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 51);
 			}
 			else if (ships[itemNum].shipgraphic == 1)
 			{
@@ -3971,16 +4360,16 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 				// gameplay draw (JE_playerMovement) special-cases it into a two-piece hull. Blitting
 				// sprite 1 here (as for a normal ship) shows garbage, so draw the same two halves,
 				// centred on x to match a normal ship's footprint (and gameplay's x-17/x+7 spacing).
-				blit_sprite2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 220);
-				blit_sprite2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 222);
+				blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 220);
+				blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 222);
 			}
 			else if (ships[itemNum].shipgraphic > 500)
 			{
-				blit_sprite2x2(VGAScreen, x, y, spriteSheetT2000, ships[itemNum].shipgraphic - 500);
+				blit_preview_ship2x2(VGAScreen, x, y, spriteSheetT2000, ships[itemNum].shipgraphic - 500);
 			}
 			else
 			{
-				blit_sprite2x2(VGAScreen, x, y, spriteSheet9, ships[itemNum].shipgraphic);
+				blit_preview_ship2x2(VGAScreen, x, y, spriteSheet9, ships[itemNum].shipgraphic);
 			}
 		}
 		else if (tempW > 0)
@@ -5059,13 +5448,74 @@ void JE_drawMainMenuHelpText(void)
 		}
 		else if (curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS)
 		{
-			// Both pages are covered row-for-row by menuHelp, which reserves a 0 for the
-			// sensitivity bar; the data file has no line for a row this port added.
+			// Zero entries use local help for rows absent from the data file.
 			const int help = menuHelp[curMenu][temp];
-			if (help == 0)
+			if (options_full_row(curSel[curMenu]) == OPT_ONLINE)
+				SDL_strlcpy(tempStr, "Tell the two ships apart on screen.", sizeof(tempStr));
+			else if (help == 0)
 				SDL_strlcpy(tempStr, SHIP_SENS_HELP, sizeof(tempStr));
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[help - 1], sizeof(tempStr));
+		}
+		else if (curMenu == MENU_ONLINE)
+		{
+			switch (online_full_row(curSel[MENU_ONLINE]))
+			{
+			case ONLINE_ROW_COLOR:
+				SDL_strlcpy(tempStr, "Dye your ship; the other player sees it too.", sizeof(tempStr));
+				break;
+			case ONLINE_ROW_OPACITY:
+				SDL_strlcpy(tempStr, "How solid the other player looks. Local only.", sizeof(tempStr));
+				break;
+			case ONLINE_ROW_HPBARS:
+				SDL_strlcpy(tempStr, "Small shield and armor bars on their ship.", sizeof(tempStr));
+				break;
+			default:
+				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Exit
+				break;
+			}
+		}
+		else if (curMenu == MENU_ONLINE_COLOR)
+		{
+			const int cell = curSel[MENU_ONLINE_COLOR] - 2;
+			if (cell >= online_color_cells - 1)
+				SDL_strlcpy(tempStr, "Keep this color and go back.", sizeof(tempStr));
+			else if (cell <= 0)
+				SDL_strlcpy(tempStr, "Fly the hull's own colors.", sizeof(tempStr));
+			else
+				snprintf(tempStr, sizeof(tempStr), "Color %d.  Arrows try one, Enter keeps it.",
+				         online_color_cell[cell]);
+		}
+		else if (curMenu == MENU_ONLINE_HPBARS)
+		{
+			switch (curSel[MENU_ONLINE_HPBARS])
+			{
+			case 2 + NET_HP_BARS_OFF:
+				SDL_strlcpy(tempStr, "No bars on the other player's ship.", sizeof(tempStr));
+				break;
+			case 2 + NET_HP_BARS_ON_HIT:
+				SDL_strlcpy(tempStr, "Show their bars for 2 seconds after a hit.", sizeof(tempStr));
+				break;
+			case 2 + NET_HP_BARS_ALWAYS:
+				SDL_strlcpy(tempStr, "Keep their bars up the whole level.", sizeof(tempStr));
+				break;
+			default:
+				SDL_strlcpy(tempStr, "Keep this setting and go back.", sizeof(tempStr));
+				break;
+			}
+		}
+		else if (curMenu == MENU_ONLINE_OPACITY)
+		{
+			if (curSel[MENU_ONLINE_OPACITY] == ONLINE_OPACITY_TOGGLE_ROW)
+				SDL_strlcpy(tempStr, "Off keeps their ship solid, shots faded.", sizeof(tempStr));
+			else if (curSel[MENU_ONLINE_OPACITY] == menuChoices[MENU_ONLINE_OPACITY])
+				SDL_strlcpy(tempStr, "Keep this setting and go back.", sizeof(tempStr));
+			else if (curSel[MENU_ONLINE_OPACITY] == ONLINE_OPACITY_FIRST_ROW)
+				SDL_strlcpy(tempStr, "Draw the other player at full strength.", sizeof(tempStr));
+			else
+				snprintf(tempStr, sizeof(tempStr),
+				         "Draw the other player and their shots at %d%%.",
+				         online_opacity_of_row(curSel[MENU_ONLINE_OPACITY]));
 		}
 		else
 		{
@@ -9741,6 +10191,9 @@ void JE_menuFunction(JE_byte select)
 			performSave = (option == OPT_SAVE);
 			quikSave = false;
 			break;
+		case OPT_ONLINE:
+			curMenu = MENU_ONLINE;
+			break;
 		case OPT_JOYSTICK:
 			curMenu = MENU_JOYSTICK_CONFIG;
 			break;
@@ -9757,6 +10210,52 @@ void JE_menuFunction(JE_byte select)
 		}
 		break;
 	}
+
+	// Open each picker on its current value.
+	case MENU_ONLINE:
+		switch (online_full_row(select))
+		{
+		case ONLINE_ROW_COLOR:
+			// Endless-reserved banks can change while the shop remains open.
+			configure_online_color_grid();
+			curSel[MENU_ONLINE_COLOR] =
+				(JE_byte)(2 + online_color_find_cell(netStyleSeatColor(netStyleLocalSeat())));
+			curMenu = MENU_ONLINE_COLOR;
+			JE_initWeaponView();
+			break;
+		case ONLINE_ROW_OPACITY:
+			curSel[MENU_ONLINE_OPACITY] = (JE_byte)(ONLINE_OPACITY_FIRST_ROW
+				+ (NET_OPACITY_FULL - netPartnerOpacity) / NET_OPACITY_STEP);
+			curMenu = MENU_ONLINE_OPACITY;
+			JE_initWeaponView();
+			break;
+		case ONLINE_ROW_HPBARS:
+			curSel[MENU_ONLINE_HPBARS] = (JE_byte)(2 + netPartnerHpBars);
+			curMenu = MENU_ONLINE_HPBARS;
+			JE_initWeaponView();
+			break;
+		default:
+			curMenu = MENU_LIMITED_OPTIONS;
+			break;
+		}
+		break;
+
+	// Values apply on highlight; pressing a value or Done returns.
+	case MENU_ONLINE_COLOR:
+	case MENU_ONLINE_HPBARS:
+		curMenu = MENU_ONLINE;
+		break;
+
+	case MENU_ONLINE_OPACITY:
+		// The ship toggle changes in place; other rows return.
+		if (select == ONLINE_OPACITY_TOGGLE_ROW)
+		{
+			netPartnerShipOpacity = !netPartnerShipOpacity;
+			JE_playSampleNum(S_CLICK);
+			break;
+		}
+		curMenu = MENU_ONLINE;
+		break;
 
 	case MENU_PLAY_NEXT_LEVEL:
 		if (select == endlessCourseRerollRow())
@@ -10331,9 +10830,9 @@ static void JE_drawSimSidekicks(void)
 			rl_current_sub_y = dir * (oy - roundf(oy));
 		}
 		if (o->tr == 1 || o->tr == 2)
-			blit_sprite2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
+			blit_preview_ship2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
 		else
-			blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
+			blit_preview_ship2(VGAScreen, x, y, spriteSheet9, sprite);
 		rl_current_id = 0;
 		rl_current_sub_x = rl_current_sub_y = 0.0f;
 	}
@@ -10348,9 +10847,18 @@ void JE_weaponSimUpdate(void)
 	++weaponSimTime;
 	weaponSimTime %= 150;
 
-	JE_drawItem(1, shopPlayer()->items.ship, shopPlayer()->x - 5, shopPlayer()->y - 7);
+	draw_preview_hull(shop_draw_seat(), shopPlayer()->x - 5, shopPlayer()->y - 7);
 
 	JE_drawSimSidekicks();  // pods on top of the ship, matching gameplay layering
+
+	// Reuse the gameplay worker with half-full samples; outpost values are empty.
+	if (curMenu == MENU_ONLINE_HPBARS && netPartnerHpBars != NET_HP_BARS_OFF)
+	{
+		int l, r, t, b;
+		hud_ship_hp_bar_box(shop_draw_seat(), &l, &r, &t, &b);
+		hud_draw_ship_hp_bars_at(0, l, r, t, b, HUD_HP_BAR_SAMPLE_SHIELD,
+		                         HUD_HP_BAR_SAMPLE_SHIELD_MAX, HUD_HP_BAR_SAMPLE_ARMOR);
+	}
 
 	// Power-level interface last: its readout row (y=137) is inside the preview box, and a
 	// trailing sidekick body (fixed y=120, 24px tall) or a dipping satellite sits right on it.
@@ -10415,7 +10923,10 @@ void JE_weaponViewFrame(void)
 	/* JE: (* Port Configuration Display *)
 	(*    drawportconfigbuttons;*/
 
+	// Keep stars inside the preview box; black menu pixels otherwise look like empty space.
+	starfield_set_clip(8, 8, 143, 182);
 	update_and_draw_starfield(VGAScreen, 1);
+	starfield_clear_clip();
 
 	mouseX = shopPlayer()->x;
 	mouseY = shopPlayer()->y;
@@ -10524,8 +11035,8 @@ void JE_weaponViewFrame(void)
 				// Same drop as gameplay for a trailing large body (see player.h).
 				const int shot_y = shopPlayer()->sidekick[i].y + (o->tr == 1 ? SIDEKICK_TRAIL_SHOT_Y : 0);
 				// Twin Pods as in play: the own volley inboard, the twin outboard, centred on the pod.
-				// The preview fires as player one whoever is shopping, so name the shopper's own perks.
-				const int twin_dx = endlessPerkTwinPodOffset(shopPlayerIndex, i);
+				// Use the previewed seat's Twin Pods offset.
+				const int twin_dx = endlessPerkTwinPodOffset(shop_draw_seat(), i);
 				const int shot_x = shopPlayer()->sidekick[i].x - twin_dx;
 
 				b = player_shot_create(o->wport, shot_i, shot_x, shot_y, mouseX, mouseY, o->wpnum, 1);

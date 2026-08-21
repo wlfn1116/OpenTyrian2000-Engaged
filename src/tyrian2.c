@@ -6381,7 +6381,10 @@ draw_player_shot_loop_end:
 
 	// Record enemy bars before smoothie residual capture; normal levels draw them after filtering.
 	if (anySmoothies)
+	{
 		draw_enemy_health_bars();
+		hud_draw_ship_hp_bars();
+	}
 
 	// Capture smoothie residuals between recorded blits and non-blit overlays.
 	if (anySmoothies && !rollback_resim_silent)
@@ -7091,7 +7094,10 @@ draw_player_shot_loop_end:
 	// Smoothie levels already drew+recorded the enemy bars before the residual
 	// snapshot (above) so they interpolate; here we draw them for normal levels only.
 	if (!anySmoothies)
+	{
 		draw_enemy_health_bars();
+		hud_draw_ship_hp_bars();
+	}
 	draw_boss_bar();
 	JE_updateGaugeFlash();
 
@@ -11876,15 +11882,6 @@ static void draw_boss_bars_classic(unsigned int bars)
 	}
 }
 
-// Tunables for the tiny per-enemy health bars.
-enum
-{
-	ENEMY_BAR_MIN_HP  = 1,   // show a bar on every enemy that survives a hit (incl. low-HP trash)
-	ENEMY_BAR_MAX_LEN = 48,  // cap so a spread-out linkgroup can't paint a screen-long bar
-	ENEMY_BAR_MIN_LEN = 3,   // shorter than this and the gauge can't be read; skip it
-	ENEMY_BAR_THICK   = 2,   // bar thickness across the fill (groove row/col + shadow)
-};
-
 // Draw one enemy-group bar around its on-screen bounds. Settings choose placement
 // and opacity; the bank-7 color ramp tracks remaining health.
 static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, float frac,
@@ -11897,63 +11894,11 @@ static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, fl
 	if (opacity == 0)
 		return;  // fully transparent: nothing to draw or record
 
-	const bool vertical  = (enemyBarLayout == ENEMY_BAR_VERTICAL);
-	const int  boxBottom = boxB - 1;                 // inclusive bottom sprite row
-	const int  cx = (boxL + boxR) / 2;               // enemy centre
-	const int  cy = (boxT + boxBottom) / 2;
-	const int  T  = ENEMY_BAR_THICK;
+	const bool vertical = (enemyBarLayout == ENEMY_BAR_VERTICAL);
 
-	int along, x, y;
-
-	if (!vertical)
-	{
-		// Horizontal bar: length spans the enemy width, inset 1px each end so
-		// enemies packed into a row keep a visible gap between their bars.
-		int xl = boxL + 1, xr = boxR - 1;
-		along = xr - xl + 1;
-		if (along < ENEMY_BAR_MIN_LEN)
-			return;
-		if (along > ENEMY_BAR_MAX_LEN)
-		{
-			xl = cx - ENEMY_BAR_MAX_LEN / 2;
-			along = ENEMY_BAR_MAX_LEN;
-		}
-		x = xl;
-
-		switch (enemyBarPosition)
-		{
-		case ENEMY_BAR_POS_TOP:    y = boxT - T - 1;                     break;  // above the enemy
-		case ENEMY_BAR_POS_CENTER: y = cy - T / 2;                       break;  // over the enemy's centre
-		case ENEMY_BAR_POS_LEFT:   x = boxL - along - 1; y = cy - T / 2; break;  // left of the enemy
-		case ENEMY_BAR_POS_RIGHT:  x = boxR + 2;         y = cy - T / 2; break;  // right of the enemy
-		case ENEMY_BAR_POS_BOTTOM:
-		default:                   y = boxB + 1;                         break;  // below (original)
-		}
-	}
-	else
-	{
-		// Vertical bar: length spans the enemy height, inset 1px each end.
-		int yt = boxT + 1, yb = boxBottom - 1;
-		along = yb - yt + 1;
-		if (along < ENEMY_BAR_MIN_LEN)
-			return;
-		if (along > ENEMY_BAR_MAX_LEN)
-		{
-			yt = cy - ENEMY_BAR_MAX_LEN / 2;
-			along = ENEMY_BAR_MAX_LEN;
-		}
-		y = yt;
-
-		switch (enemyBarPosition)
-		{
-		case ENEMY_BAR_POS_LEFT:   x = boxL - T - 1;                     break;  // left of the enemy
-		case ENEMY_BAR_POS_CENTER: x = cx - T / 2;                       break;  // over the enemy's centre
-		case ENEMY_BAR_POS_TOP:    y = boxT - along - 1; x = cx - T / 2; break;  // above the enemy
-		case ENEMY_BAR_POS_BOTTOM: y = boxB + 1;         x = cx - T / 2; break;  // below the enemy
-		case ENEMY_BAR_POS_RIGHT:
-		default:                   x = boxR + 2;                         break;  // right of the enemy
-		}
-	}
+	int x, y, along;
+	if (!enemy_bar_place(boxL, boxR, boxT, boxB, ENEMY_BAR_THICK, vertical, &x, &y, &along))
+		return;
 
 	const int fill = (int)(along * frac + 0.5f);
 	// Fill colour tracks remaining health within the bar's palette bank: full -> +15
@@ -11962,7 +11907,7 @@ static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, fl
 	const int col = (fill > 0) ? barBase + 5 + (int)(frac * 10.0f + 0.5f) : barBase;
 
 	// Draw into the authoritative tick frame.
-	rl_draw_hp_bar(VGAScreen, x, y, along, fill, (Uint8)col, vertical, opacity);
+	rl_draw_hp_bar(VGAScreen, x, y, along, fill, (Uint8)col, vertical, opacity, 0);
 
 	// Record the bar so the replay reproduces AND interpolates it with its enemy
 	// (id = RL_ID_ENEMYBAR_BASE + slot). It stays out of the residual via recording
@@ -11976,7 +11921,7 @@ static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, fl
 		rl_current_par_ybase = par_ybase;
 		rl_current_par_yfrac = par_yfrac;  // float the bar's vertical scroll to match its enemy
 		rl_current_par_ylayer = par_ylayer;
-		rl_rec_hp_bar(x, y, along, fill, (Uint8)col, vertical, opacity);
+		rl_rec_hp_bar(x, y, along, fill, (Uint8)col, vertical, opacity, 0);
 		rl_current_id = 0;
 		rl_current_par_frac = 0.0f;
 		rl_current_par_layer = 0;

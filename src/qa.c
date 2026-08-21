@@ -14,6 +14,7 @@
 #include "mainint.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "net_style.h"
 #include "network.h"
 #include "nortvars.h"
 #include "params.h"
@@ -1636,7 +1637,7 @@ static void qa_test_fixed_pool_layout(void)
 	         && RL_ID_SIDEKICK_BASE + 4 <= RL_ID_LINKGUN_BASE
 	         && RL_ID_LINKGUN_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
-	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 89
+	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 91
 #ifdef WITH_NETWORK
 	         && NETWORK_SETTINGS_SIZE == 48
 #endif
@@ -1670,11 +1671,12 @@ static void qa_test_save_record_wire(void)
 	src.autoFireSpecial = true; src.chargeSidekickAutofire = 2;
 	src.difficultyAdjust = true; src.cheatInfiniteSidekickAmmo = true;
 	src.cheatInfiniteShields = false; src.cheatInfiniteArmor = true; src.expertMode = true;
+	src.shipColor[0] = 6; src.shipColor[1] = NET_SHIP_COLORS;
 
 	memset(guarded, 0xa5, sizeof(guarded));
 	save_record_pack(packed, &src);
 	qa_check(guarded[0] == 0xa5 && guarded[sizeof(guarded) - 1] == 0xa5,
-	         "save-record packing writes exactly its fixed 89-byte frame");
+	         "save-record packing writes exactly its fixed 91-byte frame");
 	save_record_unpack(&dst, packed);
 	save_record_pack(repacked, &dst);
 	qa_check(memcmp(packed, repacked, sizeof(repacked)) == 0,
@@ -1683,6 +1685,8 @@ static void qa_test_save_record_wire(void)
 	         "network save record carries 64-bit wallets and the dual-ship tag");
 	qa_check(save_record_is_coop(&dst),
 	         "network save record preserves the Online Campaign type marker");
+	qa_check(dst.shipColor[0] == src.shipColor[0] && dst.shipColor[1] == src.shipColor[1],
+	         "network save record carries both ships' online dyes");
 	qa_check(dst.gameHasRepeated && dst.autoFireSpecial && dst.difficultyAdjust
 	         && dst.cheatInfiniteSidekickAmmo && !dst.cheatInfiniteShields
 	         && dst.cheatInfiniteArmor && dst.expertMode,
@@ -5440,6 +5444,331 @@ static void qa_test_menu_claim(void)
 #endif
 }
 
+// Partner HP-bar bounds, placement, painting, and mode eligibility.
+static void qa_test_partner_hp_bars(void)
+{
+	const Player saved0 = player[0], saved1 = player[1];
+	const JE_word savedGr = shipGr, savedGr2 = shipGr2;
+	const int savedLayout = enemyBarLayout, savedPos = enemyBarPosition, savedOp = enemyBarOpacity;
+
+	player[0].x = 100; player[0].y = 100;
+	player[1].x = 100; player[1].y = 100;
+
+	int l, r, t, b;
+
+	shipGr = 5;  // ordinary single hull
+	hud_ship_hp_bar_box(0, &l, &r, &t, &b);
+	qa_check(l == 95 && r == 118 && t == 93 && b == 121,
+	         "an ordinary hull measures the 24x28 sprite it draws");
+
+	shipGr2 = 0;  // Dragonwing sentinel
+	hud_ship_hp_bar_box(1, &l, &r, &t, &b);
+	qa_check(l == 83 && r == 130 && t == 93 && b == 121,
+	         "a Dragonwing measures both halves it straddles its anchor with");
+
+	int nl, nr, nt, nb;
+	shipGr2 = 1;  // Nort Ship sentinel
+	hud_ship_hp_bar_box(1, &nl, &nr, &nt, &nb);
+	qa_check(nl == l && nr == r && nt == t && nb == b,
+	         "...and so does the Nort Ship, the other two-piece hull");
+
+	// A two-bar block must clear the hull while spanning it.
+	enemyBarLayout = ENEMY_BAR_HORIZONTAL;
+	enemyBarPosition = ENEMY_BAR_POS_BOTTOM;
+
+	int x, y, along, y1;
+	qa_check(enemy_bar_place(l, r, t, b, 2 * ENEMY_BAR_THICK, false, &x, &y, &along)
+	         && x == 84 && along == 46 && y == 122,
+	         "a two-bar block under a wide hull spans it and clears the sprite");
+	qa_check(along <= ENEMY_BAR_MAX_LEN, "...within the length every small bar is capped at");
+
+	enemyBarPosition = ENEMY_BAR_POS_TOP;
+	qa_check(enemy_bar_place(l, r, t, b, 2 * ENEMY_BAR_THICK, false, &x, &y, &along)
+	         && enemy_bar_place(l, r, t, b, ENEMY_BAR_THICK, false, &x, &y1, &along)
+	         && y + 2 * ENEMY_BAR_THICK == t - 1 && y1 + ENEMY_BAR_THICK == t - 1,
+	         "a block above the box hangs from its top edge whatever its thickness");
+
+	// Paint at full opacity in a box away from the ship.
+	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8 && VGAScreen->h > 40)
+	{
+		enemyBarPosition = ENEMY_BAR_POS_BOTTOM;
+		enemyBarOpacity = 100;
+
+		const int bx = 4, by = 4, bw = 24, bh = 20;
+
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh,
+		                         20, 20, ARMOR_GAUGE_LAYER_UNITS / 2);  // shield full, armour half
+
+		const Uint8 *const pixels = (const Uint8 *)VGAScreen->pixels;
+		const int pitch = VGAScreen->pitch;
+		const int barY = by + bh + 1, barX = bx + 1;
+		const int barLen = bw - 2;
+
+		qa_check((pixels[barY * pitch + barX] & 0xf0) == (SHIELD_GAUGE_BASE & 0xf0),
+		         "the partner's shield bar is drawn in the shield gauge's own bank");
+		qa_check((pixels[(barY + ENEMY_BAR_THICK) * pitch + barX] & 0xf0)
+		         == (armorGaugeLayerCol[0] & 0xf0),
+		         "the armor bar sits right under it, in the armor gauge's bank");
+
+		// Half a layer of armour leaves the far end of that bar empty.
+		qa_check((pixels[(barY + ENEMY_BAR_THICK) * pitch + barX + barLen - 1] & 0xf0)
+		         == (armorGaugeLayerCol[0] & 0xf0)
+		         && pixels[(barY + ENEMY_BAR_THICK) * pitch + barX + barLen - 1]
+		            < pixels[(barY + ENEMY_BAR_THICK) * pitch + barX],
+		         "...half full, so its far end is track rather than fill");
+
+		// Rollover uses the current layer for fill and the previous layer for track.
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 20, 20,
+		                         ARMOR_GAUGE_LAYER_UNITS + ARMOR_GAUGE_LAYER_UNITS / 2);
+
+		qa_check((pixels[(barY + ENEMY_BAR_THICK) * pitch + barX] & 0xf0)
+		         == (armorGaugeLayerCol[1] & 0xf0),
+		         "a rolled-over armor bar fills in the layer it has reached");
+		qa_check((pixels[(barY + ENEMY_BAR_THICK) * pitch + barX + barLen - 1] & 0xf0)
+		         == (armorGaugeLayerCol[0] & 0xf0),
+		         "...over a track showing the full layer underneath");
+	}
+
+	// Linked Arcade skips bars because its shared HUD already shows both ships.
+	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8 && VGAScreen->h > 70)
+	{
+		const bool savedNet = isNetworkGame;
+		const JE_boolean savedTwo = twoPlayerMode, savedSep = arcadeSeparateMode;
+		const JE_boolean savedCoop = coopCampaignMode, savedCoopE = coopEndlessMode;
+		const uint savedPlayerNum = thisPlayerNum;
+		const int savedMode = netPartnerHpBars;
+
+		isNetworkGame = true;
+		twoPlayerMode = true;
+		coopCampaignMode = false;
+		coopEndlessMode = false;
+		thisPlayerNum = 1;                 // this machine flies seat 0
+		netPartnerHpBars = NET_HP_BARS_ALWAYS;
+		enemyBarPosition = ENEMY_BAR_POS_BOTTOM;
+		enemyBarOpacity = 100;
+		shipGr2 = 5;
+		player[1].is_alive = true;
+		player[1].x = 40;
+		player[1].y = 40;
+		player[1].shield_max = 20;
+		player[1].shield = 20;
+		player[1].armor = ARMOR_GAUGE_LAYER_UNITS;
+
+		// The rows the bars would land on, under a 24x28 hull whose box ends at y = 61.
+		const int probeY = 62, probeRows = 2 * ENEMY_BAR_THICK;
+		Uint8 *const pixels = (Uint8 *)VGAScreen->pixels;
+		const int pitch = VGAScreen->pitch;
+
+		arcadeSeparateMode = true;   // independent HUDs
+		for (int row = 0; row < probeRows; ++row)
+			memset(pixels + (probeY + row) * pitch + 30, 0, 40);
+		hud_draw_ship_hp_bars();
+		int painted = 0;
+		for (int row = 0; row < probeRows; ++row)
+			for (int col = 30; col < 70; ++col)
+				painted += (pixels[(probeY + row) * pitch + col] != 0);
+		qa_check(painted > 0, "a session with two HUDs paints the partner's bars");
+
+		arcadeSeparateMode = false;  // shared HUD
+		for (int row = 0; row < probeRows; ++row)
+			memset(pixels + (probeY + row) * pitch + 30, 0, 40);
+		hud_draw_ship_hp_bars();
+		painted = 0;
+		for (int row = 0; row < probeRows; ++row)
+			for (int col = 30; col < 70; ++col)
+				painted += (pixels[(probeY + row) * pitch + col] != 0);
+		qa_check(painted == 0, "Linked Arcade paints none, whatever the setting says");
+
+		netPartnerHpBars = savedMode;
+		thisPlayerNum = savedPlayerNum;
+		coopEndlessMode = savedCoopE;
+		coopCampaignMode = savedCoop;
+		arcadeSeparateMode = savedSep;
+		twoPlayerMode = savedTwo;
+		isNetworkGame = savedNet;
+	}
+
+	enemyBarOpacity = savedOp;
+	enemyBarPosition = savedPos;
+	enemyBarLayout = savedLayout;
+	shipGr = savedGr;
+	shipGr2 = savedGr2;
+	player[0] = saved0;
+	player[1] = saved1;
+}
+
+// Per-seat dyes, local opacity, previews, and sprite blending.
+static void qa_test_online_ship_style(void)
+{
+	const bool savedNet = isNetworkGame;
+	const JE_boolean savedTwo = twoPlayerMode;
+	const JE_boolean savedMode = endlessMode, savedCampaign = endlessCampaignMods;
+	const uint savedPlayerNum = thisPlayerNum;
+	const int savedColor[2] = { netStyleSeatColor(0), netStyleSeatColor(1) };
+	const int savedOpacity = netPartnerOpacity;
+	const bool savedShipOpacity = netPartnerShipOpacity;
+
+	netStylePreviewClear();
+
+	// Start outside Endless so all banks are available.
+	endlessMode = false;
+	endlessCampaignMods = false;
+
+	// Offline rendering ignores online styles.
+	isNetworkGame = false;
+	twoPlayerMode = false;
+	thisPlayerNum = 2;
+	netStyleSetSeatColor(1, 5);
+	netPartnerOpacity = 50;
+	qa_check(netStyleIsPlain(netStyleForSeat(0)) && netStyleIsPlain(netStyleForSeat(1)),
+	         "offline play ignores the online ship colours");
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	netStyleSetSeatColor(0, 3);
+
+	qa_check(netStyleLocalSeat() == 1, "seat two is this machine's ship");
+	qa_check(netStylePeerColor() == 3, "the partner's dye is the one the other seat holds");
+	qa_check(netStyleForSeat(1).bank == 4 && netStyleForSeat(1).opacity == NET_STYLE_SOLID,
+	         "this ship wears the dye its own seat holds, at full strength");
+	qa_check(netStyleForSeat(0).bank == 2 && netStyleForSeat(0).opacity == 8,
+	         "the partner wears the dye they announced, at the opacity this machine set");
+
+	thisPlayerNum = 1;
+	qa_check(netStyleForSeat(0).opacity == NET_STYLE_SOLID && netStyleForSeat(1).opacity == 8,
+	         "the opacity lands on the partner whichever seat this machine flies");
+
+	// Picker steps map to a nonzero, strictly decreasing mix.
+	bool laddered = true;
+	int previous = NET_STYLE_SOLID + 1;
+	for (int pct = NET_OPACITY_FULL; pct >= NET_OPACITY_MIN; pct -= NET_OPACITY_STEP)
+	{
+		netPartnerOpacity = pct;
+		const int opacity = netStyleForSeat(1).opacity;
+		laddered = laddered && opacity < previous && opacity >= 1 && opacity <= NET_STYLE_SOLID;
+		previous = opacity;
+	}
+	qa_check(laddered, "each opacity step is fainter than the last and none of them reaches nothing");
+
+	netStyleSetSeatColor(0, NET_SHIP_COLORS + 7);
+	qa_check(netStyleSeatColor(0) == NET_SHIP_COLOR_NONE,
+	         "a dye off the end of the palette is read as no dye");
+	netStyleSetSeatColor(0, 3);
+
+	// Endless reserves the four kill-fire palette banks.
+	{
+		static const int driveFilter[] = {
+			ENDLESS_TURBODRIVE_SHIP_FILTER, ENDLESS_OVERDRIVE_SHIP_FILTER,
+			ENDLESS_OVERBLAST_SHIP_FILTER, ENDLESS_EVIL_SHIP_FILTER,
+		};
+
+		endlessMode = false;
+		endlessCampaignMods = false;
+		bool freeOutside = true;
+		for (unsigned int i = 0; i < COUNTOF(driveFilter); ++i)
+			freeOutside = freeOutside && !netStyleColorReserved((driveFilter[i] >> 4) + 1);
+		qa_check(freeOutside, "outside Endless every bank is offered");
+
+		endlessMode = true;
+		bool heldBack = true;
+		int reserved = 0;
+		for (int color = 1; color <= NET_SHIP_COLORS; ++color)
+			if (netStyleColorReserved(color))
+				++reserved;
+		for (unsigned int i = 0; i < COUNTOF(driveFilter); ++i)
+			heldBack = heldBack && netStyleColorReserved((driveFilter[i] >> 4) + 1);
+		qa_check(heldBack && reserved == (int)COUNTOF(driveFilter),
+		         "Endless withholds the three drive banks and the evil one, and no others");
+
+		netStyleSetSeatColor(0, (ENDLESS_TURBODRIVE_SHIP_FILTER >> 4) + 1);
+		thisPlayerNum = 1;
+		qa_check(netStyleForSeat(0).bank < 0, "a withheld dye is not worn in Endless either");
+		netStyleSetSeatColor(0, 3);
+
+		endlessMode = false;
+	}
+
+	// Apply to Ship affects bodies only; shots always use partner opacity.
+	thisPlayerNum = 1;
+	netPartnerOpacity = 50;
+	netPartnerShipOpacity = true;
+	qa_check(netStyleForSeat(1).opacity == 8 && netStyleForShot(1).opacity == 8,
+	         "the partner's ship and its shots share one opacity by default");
+	netPartnerShipOpacity = false;
+	qa_check(netStyleForSeat(1).opacity == NET_STYLE_SOLID && netStyleForSeat(1).bank == 4,
+	         "sparing the ship draws their hull solid and keeps its dye");
+	qa_check(netStyleForShot(1).opacity == 8 && netStyleForShot(1).bank < 0,
+	         "...and leaves their shots faded, and undyed either way");
+	qa_check(netStyleForSeat(0).opacity == NET_STYLE_SOLID
+	         && netStyleForShot(0).opacity == NET_STYLE_SOLID,
+	         "neither reaches the ship this machine flies");
+	netPartnerShipOpacity = true;
+
+	// Fresh sessions start plain; saved sessions restore their styles later.
+	netStyleSetSeatColor(0, 9);
+	netStyleSetSeatColor(1, 4);
+	netPartnerOpacity = NET_OPACITY_MIN;
+	netPartnerShipOpacity = false;
+	netStyleSessionReset();
+	qa_check(netStyleSeatColor(0) == NET_SHIP_COLOR_NONE
+	         && netStyleSeatColor(1) == NET_SHIP_COLOR_NONE
+	         && netPartnerOpacity == NET_OPACITY_FULL && netPartnerShipOpacity,
+	         "a session starting forgets the look the last one was flying");
+	netStyleSessionReset();
+	qa_check(netStylePeerColor() == NET_SHIP_COLOR_NONE, "a session ending forgets the peer's dye");
+
+	// Menu previews override session styles.
+	netStylePreviewSet(10, 50);
+	qa_check(netStyleForSeat(0).bank == 9 && netStyleForSeat(1).opacity == 8,
+	         "a menu preview dresses every ship it draws");
+	netStylePreviewClear();
+
+	// One-pixel Sprite2 frames for direct blend checks.
+	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8)
+	{
+		union {
+			Uint16 align;  // the offset table is read as Uint16, which needs the storage aligned
+			Uint8 bytes[10];
+		} frames = { .bytes = { 4, 0, 7, 0,        // two frames, one pixel each, bank 7 shade 12
+		                        0x10, 0x7c, 0x0f,
+		                        0x10, 0x7c, 0x0f } };
+		const Sprite2_array sheet = { sizeof(frames.bytes), frames.bytes };
+
+		Uint8 *const row = (Uint8 *)VGAScreen->pixels;
+		const Uint8 savedPixels[2] = { row[0], row[1] };
+		const int mixed = (12 * 4 + 4 * (NET_STYLE_SOLID - 4) + 8) / NET_STYLE_SOLID;
+
+		row[0] = 0x24;  // bank 2, shade 4
+		blit_sprite2_alpha_clip(VGAScreen, 0, 0, sheet, 1, -1, 4);
+		row[1] = 0x24;
+		blit_sprite2_alpha_clip(VGAScreen, 1, 0, sheet, 2, 9, 4);
+		qa_check(row[0] == (Uint8)(0x70 | mixed),
+		         "a faded sprite keeps its own bank and mixes only brightness");
+		qa_check(row[1] == (Uint8)(0x90 | mixed),
+		         "...and a dyed one fades inside the bank it was dyed with");
+
+		row[0] = 0x24;
+		blit_sprite2_alpha_clip(VGAScreen, 0, 0, sheet, 1, -1, NET_STYLE_SOLID);
+		row[1] = 0x24;
+		blit_sprite2_alpha_clip(VGAScreen, 1, 0, sheet, 2, 9, NET_STYLE_SOLID);
+		qa_check(row[0] == 0x7c && row[1] == 0x9c,
+		         "nothing left to mix hands the sprite back to the plain and filtered blits");
+
+		row[0] = savedPixels[0];
+		row[1] = savedPixels[1];
+	}
+
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	endlessMode = savedMode;
+	endlessCampaignMods = savedCampaign;
+	thisPlayerNum = savedPlayerNum;
+	netStyleSetSeatColor(0, savedColor[0]);
+	netStyleSetSeatColor(1, savedColor[1]);
+	netPartnerOpacity = savedOpacity;
+	netPartnerShipOpacity = savedShipOpacity;
+}
+
 static void qa_test_network_settings(void)
 {
 #ifdef WITH_NETWORK
@@ -6321,7 +6650,7 @@ static void qa_test_dragonwing_row(void)
 
 	// Earlier tests may leave a price or hull scaling mode on; these want the raw table values.
 	const JE_boolean savedEndless = endlessMode, savedExpert = expertMode;
-	const JE_boolean savedTwo = twoPlayerMode;
+	const JE_boolean savedTwo = twoPlayerMode, savedSeparate = arcadeSeparateMode;
 	const bool savedCoop = coopCampaignMode, savedCoopEndless = coopEndlessMode;
 	endlessMode = false;
 	expertMode = false;
@@ -6350,6 +6679,14 @@ static void qa_test_dragonwing_row(void)
 	qa_check(shipGr2 == 0 && player[1].hull_armor == hull,
 	         "a co-op seat two flying the Dragonwing keeps its own hull, not the linked bay's");
 
+	// Linked Arcade identifies seat two by sentinel; items.ship is empty.
+	coopCampaignMode = false;
+	arcadeSeparateMode = false;
+	player[1].items.ship = 0;
+	JE_getShipInfo();
+	qa_check(split_arcade_mode() && shipGr2 == 0 && shipGr2ptr == &spriteSheet9,
+	         "the linked pair names seat two's Dragonwing by sentinel, with no ship item to read");
+
 	shipGrPtr = savedGrPtr;
 	shipGr2ptr = savedGr2Ptr;
 	shipGr = savedGr;
@@ -6359,6 +6696,7 @@ static void qa_test_dragonwing_row(void)
 	player[1] = saved1;
 	coopEndlessMode = savedCoopEndless;
 	coopCampaignMode = savedCoop;
+	arcadeSeparateMode = savedSeparate;
 	twoPlayerMode = savedTwo;
 	expertMode = savedExpert;
 	endlessMode = savedEndless;
@@ -7858,6 +8196,8 @@ int qa_run_unit_suite(void)
 	qa_test_superspark_shapes();
 	qa_test_vaporised_shot_sparks();
 	qa_test_knife_fight_blood();
+	qa_test_online_ship_style();
+	qa_test_partner_hp_bars();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
 	qa_test_seeker_tiers();

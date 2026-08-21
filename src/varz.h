@@ -516,6 +516,40 @@ void JE_setupExplosionLarge(JE_boolean enemyground, JE_byte explonum, JE_integer
 void JE_drawShield(void);
 void JE_drawArmor(void);
 
+// Shared geometry for enemy and partner health bars.
+enum
+{
+	ENEMY_BAR_MIN_HP  = 1,   // any enemy that survives a hit
+	ENEMY_BAR_MAX_LEN = 48,  // cap wide link groups
+	ENEMY_BAR_MIN_LEN = 3,   // skip unreadable bars
+	ENEMY_BAR_THICK   = 2,
+};
+
+/* Place a bar block around a box using enemy-bar settings. Returns false if the box is too small. */
+bool enemy_bar_place(int boxL, int boxR, int boxT, int boxB, int thick, bool vertical,
+                     int *out_x, int *out_y, int *out_along);
+
+// The palette bank the shield gauge is drawn in; the armour gauge's is armorGaugeLayerCol[0].
+#define SHIELD_GAUGE_BASE 144
+
+// Armor rollover units and palette bank for each full layer.
+#define ARMOR_GAUGE_LAYER_UNITS 28
+#define ARMOR_GAUGE_LAYERS 8
+extern const int armorGaugeLayerCol[ARMOR_GAUGE_LAYERS];
+
+/* Draw the partner's shield and armor using enemy-bar placement. `_at` accepts preview samples;
+ * shieldMax 0 omits shield, and armor uses gauge units with rollover. */
+void hud_draw_ship_hp_bars(void);
+void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
+                              uint shield, uint shieldMax, uint armor);
+void hud_ship_hp_bar_box(uint seat, int *l, int *r, int *t, int *b);
+
+// Half-full samples for the outpost preview.
+#define HUD_HP_BAR_SAMPLE_SHIELD     1
+#define HUD_HP_BAR_SAMPLE_SHIELD_MAX 2
+#define HUD_HP_BAR_SAMPLE_ARMOR      (ARMOR_GAUGE_LAYER_UNITS / 2)
+void hud_ship_hp_bar_reset(void);   // clear On Hit timers
+
 extern int shieldGaugeFlash[2];
 extern int armorGaugeFlash[2];
 void JE_updateGaugeFlash(void);

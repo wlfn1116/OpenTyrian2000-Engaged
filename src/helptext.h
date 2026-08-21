@@ -25,7 +25,7 @@
 
 #include <stdio.h>
 
-#define MENU_MAX 18  // was 16; +1 for the endless E-Shop (MENU_ESHOP), +1 for the perk pick (MENU_PERKS)
+#define MENU_MAX 22  // base 16, E-Shop, Perks, and four Online pages
 
 #define DESTRUCT_MODES 5
 

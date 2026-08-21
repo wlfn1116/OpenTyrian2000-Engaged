@@ -243,6 +243,20 @@ void rl_rec_sprite2_blend_filter(int x, int y, Sprite2_array sheet, unsigned int
 	c->filter = filter;
 }
 
+void rl_rec_sprite2_alpha(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 filter, bool dye, bool clip)
+{
+	RenderCmd *c = rl_push();
+	if (c == NULL)
+		return;
+	c->kind = dye ? (clip ? RC_SPRITE2_ALPHA_DYE_CLIP : RC_SPRITE2_ALPHA_DYE)
+	              : (clip ? RC_SPRITE2_ALPHA_CLIP : RC_SPRITE2_ALPHA);
+	c->x = x;
+	c->y = y;
+	c->sheet = sheet;
+	c->index = index;
+	c->filter = filter;
+}
+
 void rl_rec_sprite2_solid(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 color)
 {
 	RenderCmd *c = rl_push();
@@ -311,7 +325,7 @@ void rl_rec_superpixel(int x, int y, int dx, int dy, Uint8 z, Uint8 color, Uint8
 	c->sp_bright = bright;
 }
 
-void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity)
+void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity, Uint8 groove)
 {
 	RenderCmd *c = rl_push();
 	if (c == NULL)
@@ -324,6 +338,7 @@ void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, 
 	c->bar_col = col;
 	c->bar_vertical = vertical ? 1 : 0;
 	c->bar_opacity = opacity;
+	c->bar_groove = groove;
 }
 
 void rl_rec_filter_screen(int col, int brightness)
@@ -707,7 +722,7 @@ static inline void rl_hp_plot(SDL_Surface *dst, int x, int y, Uint8 col, Uint8 o
 
 // Draw the same clipped health bar for the simulation frame and interpolated replay.
 // Horizontal bars fill rightward; vertical bars fill upward.
-void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity)
+void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity, Uint8 grooveCol)
 {
 	if (along < 1 || opacity == 0)
 		return;
@@ -717,9 +732,10 @@ void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 c
 	// Track (groove) and shadow live in the fill's own palette bank (col & 0xf0), not a
 	// hardcoded bank 7, so an elite/champion bar is tinted blue/purple top-to-bottom
 	// instead of only on the fill row/column. edge clamps within the bank's brightest.
+	// A custom groove draws a rollover layer beneath the fill.
 	const int   bank   = col & 0xf0;
-	const Uint8 groove = (Uint8)(bank + 2);
-	const Uint8 shadow = (Uint8)(bank + 0);
+	const Uint8 groove = (grooveCol != 0) ? grooveCol : (Uint8)(bank + 2);
+	const Uint8 shadow = (Uint8)((grooveCol != 0 ? (grooveCol & 0xf0) : bank) + 0);
 	const Uint8 edge   = ((col & 0x0f) < 15) ? (Uint8)(col + 1) : col;
 
 	if (!vertical)
@@ -765,17 +781,18 @@ static void rl_hp_plot_block(SDL_Surface *dst, int x, int y, Uint8 col, Uint8 op
 // Supersampled enemy health bar: same geometry as rl_draw_hp_bar with every 1x
 // pixel a scale x scale block; x,y are HI coordinates (already interpolated on the
 // sub-pixel grid), so the bar glides with its enemy.
-static void rl_draw_hp_bar_scaled(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity, int scale)
+static void rl_draw_hp_bar_scaled(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col,
+                                  bool vertical, Uint8 opacity, Uint8 grooveCol, int scale)
 {
 	if (along < 1 || opacity == 0)
 		return;
 	if (fill > along) fill = along;
 	if (fill < 0)     fill = 0;
 
-	// Same bank-derived track/shadow/edge as rl_draw_hp_bar (elite/champion tinting).
+	// Match rl_draw_hp_bar's bank-derived track, shadow, and edge.
 	const int   bank   = col & 0xf0;
-	const Uint8 groove = (Uint8)(bank + 2);
-	const Uint8 shadow = (Uint8)(bank + 0);
+	const Uint8 groove = (grooveCol != 0) ? grooveCol : (Uint8)(bank + 2);
+	const Uint8 shadow = (Uint8)((grooveCol != 0 ? (grooveCol & 0xf0) : bank) + 0);
 	const Uint8 edge   = ((col & 0x0f) < 15) ? (Uint8)(col + 1) : col;
 
 	if (!vertical)
@@ -806,7 +823,7 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 {
 	switch (c->kind)
 	{
-	case RC_HP_BAR:              rl_draw_hp_bar(dst, x, y, c->bar_w, c->bar_fill, c->bar_col, c->bar_vertical, c->bar_opacity); break;
+	case RC_HP_BAR:              rl_draw_hp_bar(dst, x, y, c->bar_w, c->bar_fill, c->bar_col, c->bar_vertical, c->bar_opacity, c->bar_groove); break;
 	// Extrapolation can move an otherwise unclipped sprite past an x edge. Clip these commands to
 	// prevent row wrapping; in-bounds and exact replays are unchanged.
 	case RC_SPRITE2:             blit_sprite2_clip(dst, x, y, c->sheet, c->index); break;
@@ -820,12 +837,23 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 	case RC_SPRITE2_FILTER_BRIGHT_CLIP:
 		blit_sprite2_filter_bright_clip(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE2_BLEND_FILTER: blit_sprite2_blend_filter_clip(dst, x, y, c->sheet, c->index, c->filter); break;
+	// Alpha commands replay through the clipping form for the same reason the plain sprite ones do.
+	case RC_SPRITE2_ALPHA:
+	case RC_SPRITE2_ALPHA_CLIP:
+		blit_sprite2_alpha_clip(dst, x, y, c->sheet, c->index, -1, (Uint8)(c->filter & 0x0f)); break;
+	case RC_SPRITE2_ALPHA_DYE:
+	case RC_SPRITE2_ALPHA_DYE_CLIP:
+		blit_sprite2_alpha_clip(dst, x, y, c->sheet, c->index, (c->filter >> 4) & 0x0f,
+		                        (Uint8)(c->filter & 0x0f)); break;
 	case RC_SPRITE:              blit_sprite(dst, x, y, c->table, c->index); break;
 	case RC_SPRITE_BLEND:        blit_sprite_blend(dst, x, y, c->table, c->index); break;
 	case RC_SPRITE_HV:           blit_sprite_hv(dst, x, y, c->table, c->index, c->hue, c->value); break;
 	case RC_SPRITE_HV_BLEND:     blit_sprite_hv_blend(dst, x, y, c->table, c->index, c->hue, c->value); break;
 	case RC_SPRITE_HV_UNSAFE:    blit_sprite_hv_unsafe(dst, x, y, c->table, c->index, c->hue, c->value); break;
 	case RC_SPRITE_DARK:         blit_sprite_dark(dst, x, y, c->table, c->index, c->black); break;
+	case RC_SPRITE_ALPHA:
+		blit_sprite_alpha(dst, x, y, c->table, c->index,
+		                  c->hue == BLIT_ALPHA_KEEP_BANK ? -1 : (int)c->hue, (Uint8)c->value); break;
 	case RC_BG_ROW:              blit_background_row(dst, x, y, c->map, c->bg_mirror_w, c->bg_col0); break;
 	case RC_BG_ROW_BLEND:        blit_background_row_blend(dst, x, y, c->map, c->bg_mirror_w, c->bg_col0); break;
 	case RC_STAR:                draw_starfield_star(dst, c->star_x, (int)(c->star_y + 0.5f), c->star_color); break;
@@ -841,7 +869,7 @@ static void rl_draw_cmd_scaled(SDL_Surface *dst, const RenderCmd *c, int x, int 
 {
 	switch (c->kind)
 	{
-	case RC_HP_BAR:              rl_draw_hp_bar_scaled(dst, x, y, c->bar_w, c->bar_fill, c->bar_col, c->bar_vertical, c->bar_opacity, scale); break;
+	case RC_HP_BAR:              rl_draw_hp_bar_scaled(dst, x, y, c->bar_w, c->bar_fill, c->bar_col, c->bar_vertical, c->bar_opacity, c->bar_groove, scale); break;
 	case RC_SPRITE2:             blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_COPY, 0); break;
 	case RC_SPRITE2_CLIP:        blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_COPY, 0); break;
 	case RC_SPRITE2_BLEND:       blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_BLEND, 0); break;
@@ -853,12 +881,19 @@ static void rl_draw_cmd_scaled(SDL_Surface *dst, const RenderCmd *c, int x, int 
 	case RC_SPRITE2_FILTER_BRIGHT_CLIP:
 		blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_FILTER_BRIGHT, c->filter); break;
 	case RC_SPRITE2_BLEND_FILTER: blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_BLEND_FILTER, c->filter); break;
+	case RC_SPRITE2_ALPHA:
+	case RC_SPRITE2_ALPHA_CLIP:
+		blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_ALPHA, c->filter); break;
+	case RC_SPRITE2_ALPHA_DYE:
+	case RC_SPRITE2_ALPHA_DYE_CLIP:
+		blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_ALPHA_DYE, c->filter); break;
 	case RC_SPRITE:              blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_COPY, 0, 0, false); break;
 	case RC_SPRITE_BLEND:        blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_BLEND, 0, 0, false); break;
 	case RC_SPRITE_HV:           blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_HV, c->hue, c->value, false); break;
 	case RC_SPRITE_HV_BLEND:     blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_HV_BLEND, c->hue, c->value, false); break;
 	case RC_SPRITE_HV_UNSAFE:    blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_HV_UNSAFE, c->hue, c->value, false); break;
 	case RC_SPRITE_DARK:         blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_DARK, 0, 0, c->black); break;
+	case RC_SPRITE_ALPHA:        blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_ALPHA, c->hue, c->value, false); break;
 	case RC_BG_ROW:              blit_background_row_scaled(dst, x, y, c->map, scale, false, c->bg_mirror_w, c->bg_col0); break;
 	case RC_BG_ROW_BLEND:        blit_background_row_scaled(dst, x, y, c->map, scale, true, c->bg_mirror_w, c->bg_col0); break;
 	default:                     break;

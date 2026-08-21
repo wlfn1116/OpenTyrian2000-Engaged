@@ -53,6 +53,7 @@
 #include "mouse.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "net_style.h"
 #include "nortsong.h"
 #include "nortvars.h"
 #include "opentyr.h"
@@ -72,7 +73,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       77           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       79           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -680,6 +681,15 @@ static int network_recv_one(void)
 						last_in_tick = SDL_GetTicks();
 						break;
 
+					case PACKET_PLAYER_COLOR:
+						// Repeated keep-alive announcements repair packet loss.
+						if (packet_temp->len >= 6 && packet_temp->data[4] >= 1 && packet_temp->data[4] <= 2
+						    && packet_temp->data[4] != (Uint8)thisPlayerNum)
+							netStyleSetSeatColor(packet_temp->data[4] - 1u, packet_temp->data[5]);
+
+						last_in_tick = SDL_GetTicks();
+						break;
+
 					case PACKET_PING_REPLY:
 						if (packet_temp->len >= 8)
 						{
@@ -844,6 +854,8 @@ int network_check(void)
 			network_prepare(PACKET_KEEP_ALIVE);
 			SDLNet_Write32(SDL_GetTicks(), &packet_out_temp->data[4]);
 			network_send_no_ack(8);
+
+			network_player_color_publish();  // repeat cosmetic state on the keep-alive beat
 
 			keep_alive_tick = SDL_GetTicks();
 		}
@@ -1214,6 +1226,7 @@ static void send_connect_packet(Uint16 episodes_local)
 int network_connect(void)
 {
 	network_settings_apply_session_speed();
+	netStyleSessionReset();
 
 	const bool listening = network_from_lobby && network_is_host;
 
@@ -2803,6 +2816,17 @@ void network_sa_ship_reset(void)
 	net_sa_ship_peer_saw_us = false;
 }
 
+void network_player_color_publish(void)
+{
+	if (!isNetworkGame || !connected)
+		return;
+
+	network_prepare(PACKET_PLAYER_COLOR);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = (Uint8)netStyleSeatColor(netStyleLocalSeat());
+	network_send_no_ack(6);
+}
+
 void network_sa_ship_publish(int ship, bool seen_peer)
 {
 	if (!isNetworkGame || ship < 0 || ship > SA)
@@ -4019,6 +4043,7 @@ void network_shutdown(void)
 	debug_sync_gen = 0;
 	memset(debug_sync_last, 0, sizeof(debug_sync_last));
 	network_custom_weapon_reset();
+	netStyleSessionReset();
 	network_shop_sequence = network_shop_peer_sequence = 0;
 	last_out_sync = queue_in_sync = queue_out_sync = last_ack_sync = 0;
 	last_in_tick = last_out_tick = 0;

@@ -51,6 +51,22 @@ Sprite2_array spriteSheet11;
 Sprite2_array spriteSheet12;
 Sprite2_array spriteSheetT2000;
 
+// Mix brightness only, optionally replacing the source palette bank.
+static inline Uint8 alpha_pixel(Uint8 dst, Uint8 src, Uint8 filter, bool dye)
+{
+	const unsigned int opacity = filter & 0x0f;
+	unsigned int shade = ((src & 0x0f) * opacity + (dst & 0x0f) * (16 - opacity) + 8) / 16;
+	if (shade > 0x0f)
+		shade = 0x0f;
+	return (Uint8)((dye ? (filter & 0xf0) : (src & 0xf0)) | shade);
+}
+
+// Pack a dye bank and partial opacity (1..15) into filter nibbles.
+static inline Uint8 alpha_filter_byte(int bank, Uint8 opacity)
+{
+	return (Uint8)((bank >= 0 ? ((Uint8)bank << 4) : 0x00) | opacity);
+}
+
 void load_sprites_file(unsigned int table, const char *filename)
 {
 	free_sprites(table);
@@ -545,6 +561,80 @@ void blit_sprite_dark(SDL_Surface *surface, int x, int y, unsigned int table, un
 			if (pixels >= pixels_ll)
 				*pixels = black ? 0x00 : ((*pixels & 0xf0) | ((*pixels & 0x0f) / 2));
 			
+			pixels++;
+			x_offset++;
+			break;
+		}
+		if (x_offset >= width)
+		{
+			pixels += surface->pitch - x_offset;
+			x_offset = 0;
+		}
+	}
+}
+
+void blit_sprite_alpha(SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, int bank, Uint8 opacity)
+{
+	if (opacity >= 16)
+	{
+		if (bank < 0)
+			blit_sprite(surface, x, y, table, index);
+		else
+			blit_sprite_hv(surface, x, y, table, index, (Uint8)bank, 0);
+		return;
+	}
+
+	SKIP_IF_SILENT_RESIM();	const bool dye = bank >= 0;
+	const Uint8 filter = alpha_filter_byte(bank, opacity);
+	if (render_list_recording)
+		rl_rec_sprite(x, y, table, index, RC_SPRITE_ALPHA,
+		              dye ? (Uint8)bank : (Uint8)BLIT_ALPHA_KEEP_BANK, (Sint8)opacity, false);
+
+	if (index >= sprite_table[table].count || !sprite_exists(table, index))
+	{
+		assert(false);
+		return;
+	}
+
+	const Sprite * const cur_sprite = sprite(table, index);
+
+	const Uint8 *data = cur_sprite->data;
+	const Uint8 * const data_ul = data + cur_sprite->size;
+
+	const unsigned int width = cur_sprite->width;
+	unsigned int x_offset = 0;
+
+	assert(surface->format->BitsPerPixel == 8);
+	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
+	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
+	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
+
+	for (; data < data_ul; ++data)
+	{
+		switch (*data)
+		{
+		case 255:  // transparent pixels
+			data++;  // next byte tells how many
+			pixels += *data;
+			x_offset += *data;
+			break;
+
+		case 254:  // next pixel row
+			pixels += width - x_offset;
+			x_offset = width;
+			break;
+
+		case 253:  // 1 transparent pixel
+			pixels++;
+			x_offset++;
+			break;
+
+		default:  // set a pixel
+			if (pixels >= pixels_ul)
+				return;
+			if (pixels >= pixels_ll)
+				*pixels = alpha_pixel(*pixels, *data, filter, dye);
+
 			pixels++;
 			x_offset++;
 			break;
@@ -1474,6 +1564,115 @@ void blit_sprite2_blend_filter_clip(SDL_Surface *surface, int x, int y, Sprite2_
 }
 
 // does not clip on left or right edges of surface
+void blit_sprite2_alpha(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int bank, Uint8 opacity)
+{
+	if (opacity >= 16)
+	{
+		if (bank < 0)
+			blit_sprite2(surface, x, y, sprite2s, index);
+		else
+			blit_sprite2_filter(surface, x, y, sprite2s, index, (Uint8)(bank << 4));
+		return;
+	}
+
+	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
+	const bool dye = bank >= 0;
+	const Uint8 filter = alpha_filter_byte(bank, opacity);
+	if (render_list_recording)
+		rl_rec_sprite2_alpha(x, y, sprite2s, index, filter, dye, false);
+	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
+	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
+	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		pixels += *data & 0x0f;                   // second nibble: transparent pixel count
+		unsigned int count = (*data & 0xf0) >> 4; // first nibble: opaque pixel count
+
+		if (count == 0) // move to next pixel row
+		{
+			pixels += VGAScreen->pitch - 12;
+		}
+		else
+		{
+			while (count--)
+			{
+				++data;
+
+				if (pixels >= pixels_ul)
+					return;
+				if (pixels >= pixels_ll)
+					*pixels = alpha_pixel(*pixels, *data, filter, dye);
+
+				++pixels;
+			}
+		}
+	}
+}
+
+void blit_sprite2_alpha_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int bank, Uint8 opacity)
+{
+	if (opacity >= 16)
+	{
+		if (bank < 0)
+			blit_sprite2_clip(surface, x, y, sprite2s, index);
+		else
+			blit_sprite2_filter_clip(surface, x, y, sprite2s, index, (Uint8)(bank << 4));
+		return;
+	}
+
+	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
+	const bool dye = bank >= 0;
+	const Uint8 filter = alpha_filter_byte(bank, opacity);
+	if (render_list_recording)
+		rl_rec_sprite2_alpha(x, y, sprite2s, index, filter, dye, true);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		if (y >= surface->h)
+			return;
+
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0) // move to next pixel row
+		{
+			y += 1;
+			x -= 12;
+		}
+		else if (y >= 0)
+		{
+			Uint8 *const pixel_row = (Uint8 *)surface->pixels + (y * surface->pitch);
+			do
+			{
+				++data;
+
+				if (x >= 0 && x < surface->pitch)
+					pixel_row[x] = alpha_pixel(pixel_row[x], *data, filter, dye);
+				x += 1;
+			} while (--fill_count);
+		}
+		else
+		{
+			data += fill_count;
+			x += fill_count;
+		}
+	}
+}
+
+// does not clip on left or right edges of surface
 void blit_sprite2x2(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
 	blit_sprite2(surface, x,      y,      sprite2s, index);
@@ -1525,6 +1724,15 @@ void blit_sprite2x2_filter_clip(SDL_Surface *surface, int x, int y, Sprite2_arra
 	blit_sprite2_filter_clip(surface, x + 12, y + 14, sprite2s, index + 20, filter);
 }
 
+// does not clip on left or right edges of surface
+void blit_sprite2x2_alpha(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int bank, Uint8 opacity)
+{
+	blit_sprite2_alpha(surface, x,      y,      sprite2s, index, bank, opacity);
+	blit_sprite2_alpha(surface, x + 12, y,      sprite2s, index + 1, bank, opacity);
+	blit_sprite2_alpha(surface, x,      y + 14, sprite2s, index + 19, bank, opacity);
+	blit_sprite2_alpha(surface, x + 12, y + 14, sprite2s, index + 20, bank, opacity);
+}
+
 // Supersampled blits used by render-list replay.
 
 // Draw one source pixel as a scale x scale block, clipped on all edges.
@@ -1552,6 +1760,8 @@ static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Ui
 			case BLIT2_SOLID:  *p = filter; break;
 			case BLIT2_BLEND_FILTER: *p = blend_filter_pixel(*p, d, filter); break;
 			case BLIT2_FILTER_BRIGHT: *p = filter_bright_pixel(d, filter); break;
+			case BLIT2_ALPHA:        *p = alpha_pixel(*p, d, filter, false); break;
+			case BLIT2_ALPHA_DYE:    *p = alpha_pixel(*p, d, filter, true); break;
 			}
 		}
 	}
@@ -1704,6 +1914,13 @@ void blit_sprite_table_scaled(SDL_Surface *surface, int x, int y, unsigned int t
 						}
 						case BLITT_DARK:  // black == false
 							*p = (*p & 0xf0) | ((*p & 0x0f) / 2);
+							break;
+						case BLITT_ALPHA:
+							// hue is the dye bank or BLIT_ALPHA_KEEP_BANK; value the opacity.
+							*p = alpha_pixel(*p, *data,
+							                 alpha_filter_byte(hue == BLIT_ALPHA_KEEP_BANK ? -1 : (int)hue,
+							                                   (Uint8)value),
+							                 hue != BLIT_ALPHA_KEEP_BANK);
 							break;
 						default:
 							break;

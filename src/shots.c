@@ -22,6 +22,7 @@
 #include "custom_weapon.h"
 #include "endless.h"
 #include "mainint.h"
+#include "net_style.h"
 #include "player.h"
 #include "render_list.h"
 #include "sim_math.h"
@@ -125,6 +126,40 @@ void player_shot_aim_step(PlayerShotDataType *shot)
 	}
 }
 
+// Shots inherit their owner's opacity but never its dye.
+static NetShipStyle shot_draw_style(JE_byte playerNum)
+{
+	return netStyleForShot(playerNum >= 1 ? (uint)playerNum - 1u : 0u);
+}
+
+// Preserve special-shot blending at half of the selected opacity.
+static void draw_player_shot_special(int x, int y, unsigned int frame, NetShipStyle style)
+{
+	if (style.opacity >= NET_STYLE_SOLID)
+		blit_sprite_blend(VGAScreen, x, y, OPTION_SHAPES, frame);
+	else
+		blit_sprite_alpha(VGAScreen, x, y, OPTION_SHAPES, frame, -1, (Uint8)(style.opacity / 2));
+}
+
+// Draw one shot with its returned-shot tint and owner opacity. Faded shots omit shadows.
+static void draw_player_shot_sprite(int x, int y, JE_word sprite_frame, Uint8 tint,
+                                    NetShipStyle style, bool shadow)
+{
+	Sprite2_array *const sheet = (sprite_frame > 500) ? &spriteSheet12 : &spriteSheet8;
+	const unsigned int frame = (sprite_frame > 500) ? sprite_frame - 500 : sprite_frame;
+
+	if (shadow && style.opacity >= NET_STYLE_SOLID)
+		blit_sprite2_darken(VGAScreen, x, y + shadowYDist, *sheet, frame);
+
+	if (style.opacity < NET_STYLE_SOLID)
+		blit_sprite2_alpha(VGAScreen, x, y, *sheet, frame,
+		                   tint != 0 ? (int)(tint >> 4) : -1, style.opacity);
+	else if (tint != 0)
+		blit_sprite2_filter_bright(VGAScreen, x, y, *sheet, frame, tint | ENDLESS_SHOT_BRIGHT);
+	else
+		blit_sprite2(VGAScreen, x, y, *sheet, frame);
+}
+
 void simulate_player_shots(void)
 {
 	/* Player Shot Images */
@@ -202,10 +237,8 @@ void simulate_player_shots(void)
 						        superSparkCapForSprite(shot->shotGr % 1000));
 						anim_frame = anim_frame % 1000;
 					}
-					if (anim_frame > 500)
-						blit_sprite2(VGAScreen, tempShotX+1, tempShotY, spriteSheet12, anim_frame - 500);
-					else
-						blit_sprite2(VGAScreen, tempShotX+1, tempShotY, spriteSheet8, anim_frame);
+					draw_player_shot_sprite(tempShotX + 1, tempShotY, anim_frame, shot->tint,
+					                        shot_draw_style(shot->playerNumber), false);
 					rl_current_id = 0;
 					rl_current_vel_x = 0;
 					rl_current_vel_y = 0;
@@ -222,7 +255,8 @@ void simulate_player_shots(void)
 					rl_current_vel_y = tempShotY - rl_shot_old_y;
 					rl_current_acc_x = shot->shotXC;
 					rl_current_acc_y = shot->shotYC;
-					blit_sprite_blend(VGAScreen, tempShotX+1, tempShotY, OPTION_SHAPES, anim_frame - 60001);
+					draw_player_shot_special(tempShotX + 1, tempShotY, anim_frame - 60001,
+					                         shot_draw_style(shot->playerNumber));
 					rl_current_id = 0;
 					rl_current_vel_x = 0;
 					rl_current_vel_y = 0;
@@ -499,7 +533,8 @@ bool player_shot_move_and_draw(
 			rl_shot_attach = 3;
 		if (*out_is_special)
 		{
-			blit_sprite_blend(VGAScreen, *out_shotx+1, *out_shoty, OPTION_SHAPES, sprite_frame - 60001);
+			draw_player_shot_special(*out_shotx + 1, *out_shoty, sprite_frame - 60001,
+			                         shot_draw_style(shot->playerNumber));
 
 			*out_special_radiusw = sprite(OPTION_SHAPES, sprite_frame - 60001)->width / 2;
 			*out_special_radiush = sprite(OPTION_SHAPES, sprite_frame - 60001)->height / 2;
@@ -537,15 +572,9 @@ bool player_shot_move_and_draw(
 				shot->salvoBoost = 2;
 			}
 			// A tinted shot (a returned elite or champion bullet) is drawn as the enemy loop drew it.
-			Sprite2_array *const sheet = (sprite_frame > 500) ? &spriteSheet12 : &spriteSheet8;
-			const unsigned int frame = (sprite_frame > 500) ? sprite_frame - 500 : sprite_frame;
-			if (background2 && *out_shoty + shadowYDist < 190 && tmp_shotXM < 100)
-				blit_sprite2_darken(VGAScreen, *out_shotx+1, *out_shoty + shadowYDist, *sheet, frame);
-			if (shot->tint != 0)
-				blit_sprite2_filter_bright(VGAScreen, *out_shotx+1, *out_shoty, *sheet, frame,
-				                           shot->tint | ENDLESS_SHOT_BRIGHT);
-			else
-				blit_sprite2(VGAScreen, *out_shotx+1, *out_shoty, *sheet, frame);
+			const bool shadow = background2 && *out_shoty + shadowYDist < 190 && tmp_shotXM < 100;
+			draw_player_shot_sprite(*out_shotx + 1, *out_shoty, sprite_frame, shot->tint,
+			                        shot_draw_style(shot->playerNumber), shadow);
 		}
 		rl_current_id = 0;
 		rl_current_vel_x = 0;

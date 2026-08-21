@@ -119,6 +119,7 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
 #define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
 #define PACKET_ENDLESS_JUMP  0x38    // sender, armed, level pick, len, <Endless debug block>
+#define PACKET_PLAYER_COLOR  0x39    // sender, dye; repeated and unacknowledged
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -362,6 +363,9 @@ void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *p
 /* Publish this player's retractable Super Arcade pick. The acknowledgement bit closes retraction
  * only after both peers hold the same final pair. */
 void network_sa_ship_publish(int ship, bool seen_peer);
+
+// Send the local dye now; the keep-alive beat repeats it without acknowledgement.
+void network_player_color_publish(void);
 int  network_sa_ship_peer(void);         // the peer's pick, 0 if they have none right now
 bool network_sa_ship_peer_saw_us(void);  // the peer's latest word says they hold our pick
 void network_sa_ship_reset(void);
@@ -558,6 +562,7 @@ static inline void network_depart_gate_publish(bool at_gate) { (void)at_gate; }
 static inline int network_depart_gate_peer(void) { return -1; }
 static inline void network_end_screen_rendezvous(bool local_dismissed) { (void)local_dismissed; }
 static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
+static inline void network_player_color_publish(void) { }
 static inline int network_sa_ship_peer(void) { return 0; }
 static inline bool network_sa_ship_peer_saw_us(void) { return false; }
 static inline void network_sa_ship_reset(void) { }

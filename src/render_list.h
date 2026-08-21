@@ -21,12 +21,18 @@ typedef enum
 	RC_SPRITE2_FILTER_BRIGHT,  // recoloured with its shade lifted; bank and lift in `filter`
 	RC_SPRITE2_FILTER_BRIGHT_CLIP,
 	RC_SPRITE2_BLEND_FILTER,  // recoloured and blended in one pass; bank and lift in `filter`
+	// Partial opacity in filter's low nibble; DYE forms use its high nibble as the bank.
+	RC_SPRITE2_ALPHA,
+	RC_SPRITE2_ALPHA_CLIP,
+	RC_SPRITE2_ALPHA_DYE,
+	RC_SPRITE2_ALPHA_DYE_CLIP,
 	RC_SPRITE,
 	RC_SPRITE_BLEND,
 	RC_SPRITE_HV,
 	RC_SPRITE_HV_BLEND,
 	RC_SPRITE_HV_UNSAFE,
 	RC_SPRITE_DARK,
+	RC_SPRITE_ALPHA,    // table sprite at partial opacity; bank in `hue`, opacity in `value`
 	RC_BG_ROW,
 	RC_BG_ROW_BLEND,
 	RC_STAR,
@@ -89,11 +95,12 @@ typedef struct
 	// enemy health bar (RC_HP_BAR): length along the fill axis, filled-pixel count,
 	// fill colour. Top-left in x,y, interpolating by (dx,dy) like the enemy.
 	// bar_vertical: 0 fills left->right, 1 fills bottom->up; bar_opacity = blend
-	// alpha (0..255, 255 = solid).
+	// alpha (0..255, 255 = solid). A nonzero bar_groove overrides the empty track.
 	int bar_w, bar_fill;
 	Uint8 bar_col;
 	Uint8 bar_vertical;
 	Uint8 bar_opacity;
+	Uint8 bar_groove;
 
 	// full-screen filter: colour bank + brightness, plus this tick's brightness
 	// motion (cur - prev) so the flash/fade ramp interpolates across frames.
@@ -193,6 +200,8 @@ enum
 	RL_ID_SHIP_BASE = 14000, // + player
 	// Banking trim needs a separate ID, but stays in the ship override range.
 	RL_ID_SHIP_TRIM_BASE = 14002, // + player
+	// Variable command count; kept in the ship override range for interpolation.
+	RL_ID_SHIP_BAR_BASE = 14006,  // + player
 	RL_ID_SIDEKICK_BASE = 15000, // + player*2 + slot
 	RL_ID_LINKGUN_BASE = 15010,  // + 0..2: linked-Dragonwing turret aim markers.  The three
 	                             // marker shots are recreated every tick, so their pool slots
@@ -271,15 +280,16 @@ void rl_rec_sprite2(int x, int y, Sprite2_array sheet, unsigned int index, Rende
 void rl_rec_sprite2_filter(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 filter, bool clip);
 void rl_rec_sprite2_filter_bright(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 filter, bool clip);
 void rl_rec_sprite2_blend_filter(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 filter);
+void rl_rec_sprite2_alpha(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 filter, bool dye, bool clip);
 void rl_rec_sprite2_solid(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 color);
 void rl_rec_sprite(int x, int y, unsigned int table, unsigned int index, RenderCmdKind kind, Uint8 hue, Sint8 value, bool black);
 void rl_rec_bg_row(int x, int y, Uint8 **map, bool blend, int mirror_w, int col0);
 void rl_rec_star(int x, float y, float dy, Uint8 color);
 void rl_rec_superpixel(int x, int y, int dx, int dy, Uint8 z, Uint8 color, Uint8 bright);
-void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity);
+void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity, Uint8 groove);
 // Draw an enemy health bar (shared by the authoritative tick draw and the
 // interpolated replay so they produce identical pixels).
-void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity);
+void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity, Uint8 groove);
 void rl_rec_filter_screen(int col, int brightness);
 void rl_rec_smoothie_filter(RenderCmdKind kind);  // RC_ICED_BLUR / RC_LAVA_FILTER / RC_WATER_FILTER / RC_BLUR
 

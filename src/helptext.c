@@ -33,8 +33,7 @@ const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
 {
 	{  1, 34,  2,  3,  4,  5,                  0, 0, 0, 0, 0 },
 	{  6,  7,  8,  9, 10, 11, 11, 12,                0, 0, 0 },
-	// [2] Options and [11] its online form (no Load Game). 0 marks the Sensitivity row, which has
-	// no line in the data file; JE_drawMainMenuHelpText supplies one.
+	// Online Options replaces Load Game with Online. Zero rows use local help text.
 	{ 13, 14, 15, 15,  0, 16, 17, 35, 12,          0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -44,11 +43,15 @@ const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{  4, 30, 30,  3,  5,                   0, 0, 0, 0, 0, 0 },
 	{  4, 37, 12,                     0, 0, 0, 0, 0, 0, 0, 0 },
-	{ 14, 15, 15,  0, 16, 17, 35, 12,                0, 0, 0 },
+	{ 14,  0, 15, 15,  0, 16, 17, 35, 12,          0, 0 },
 	{ 31, 31, 31, 31, 32, 12,                  0, 0, 0, 0, 0 },
 	{  4, 34,  3,  5,                    0, 0, 0, 0, 0, 0, 0 },
 	{ 35, 35, 35, 36, 12,                   0, 0, 0, 0, 0, 0 },
 	// Debug Play Level, E-Shop and Perks draw custom help.
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 };
@@ -200,8 +203,8 @@ void JE_HBox(SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsign
 
 void JE_loadHelpText(void)
 {
-	// E-Shop and Perks are populated at runtime, not loaded from tyrian.hdt.
-	const unsigned int menuInt_entries[MENU_MAX + 1] = { -1, 7, 9, 9, -1, -1, 11, -1, -1, -1, 6, 4, 7, 7, 5, 6, 0, 0, 0 };
+	// E-Shop, Perks, and Online pages are populated at runtime.
+	const unsigned int menuInt_entries[MENU_MAX + 1] = { -1, 7, 9, 9, -1, -1, 11, -1, -1, -1, 6, 4, 7, 7, 5, 6, 0, 0, 0, 0, 0, 0, 0 };
 	const unsigned int setup_entries[10] = {10, 5, 4, 4, 5, 7, 7, 21, 3, 3};
 	
 	FILE *f = dir_fopen_die(data_dir(), "tyrian.hdt", "rb");

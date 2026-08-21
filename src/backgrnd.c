@@ -1108,6 +1108,31 @@ void draw_starfield_star_scaled(SDL_Surface* surface, int x, int y, Uint8 color,
 	}
 }
 
+// Optional inclusive bounds for star centers, in surface pixels.
+static bool starfield_clipped = false;
+static int starfield_clip[4];
+
+void starfield_set_clip(int x1, int y1, int x2, int y2)
+{
+	starfield_clip[0] = x1;
+	starfield_clip[1] = y1;
+	starfield_clip[2] = x2;
+	starfield_clip[3] = y2;
+	starfield_clipped = true;
+}
+
+void starfield_clear_clip(void)
+{
+	starfield_clipped = false;
+}
+
+static bool starfield_star_visible(int x, int y)
+{
+	return !starfield_clipped
+	    || (x >= starfield_clip[0] && x <= starfield_clip[2]
+	     && y >= starfield_clip[1] && y <= starfield_clip[3]);
+}
+
 void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 {
 	for (int i = MAX_STARS-1; i >= 0; --i)
@@ -1130,7 +1155,8 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 			rec_dy = 0.0f;                // snap on the wrap; the star is off-screen so nothing streaks
 		}
 
-		draw_starfield_star(surface, star->x, (int)(star->y + 0.5f), star->color);
+		if (starfield_star_visible(star->x, (int)(star->y + 0.5f)))
+			draw_starfield_star(surface, star->x, (int)(star->y + 0.5f), star->color);
 
 		if (render_list_recording)
 			rl_rec_star(star->x, star->y, rec_dy, star->color);

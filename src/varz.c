@@ -35,6 +35,7 @@
 #include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
+#include "net_style.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
@@ -1564,6 +1565,15 @@ void JE_setupExplosionLarge(JE_boolean enemyGround, JE_byte exploNum, JE_integer
 #define GAUGE_FLASH_START 6
 int shieldGaugeFlash[2] = { 0, 0 };
 int armorGaugeFlash[2]  = { 0, 0 };
+
+// Local presentation timer; omitted from rollback.
+#define SHIP_HP_BAR_HIT_TICKS 70   // ~2 seconds at the 35 Hz simulation rate
+static int ship_hp_bar_hit[2] = { 0, 0 };
+
+void hud_ship_hp_bar_reset(void)
+{
+	ship_hp_bar_hit[0] = ship_hp_bar_hit[1] = 0;
+}
 static float gaugeFlashAlpha = 1.0f;
 
 /* Where the shield/armor gauges paint. The tick draws take the classic 1x HUD surface; the
@@ -1617,6 +1627,7 @@ void JE_resetGaugeRender(void)
 		gauge_shield_prev[i] = gauge_shield_cur[i] = (float)player[i].shield;
 		gauge_armor_prev[i]  = gauge_armor_cur[i]  = (float)player[i].armor;
 	}
+	hud_ship_hp_bar_reset();
 }
 
 static int gauge_flash_render(int cur)
@@ -1653,14 +1664,20 @@ void JE_repaintShieldArmorBars(void)
 
 void JE_updateGaugeFlash(void)
 {
-	// Latch endpoints once per live tick. `cur` still follows re-simulation so corrected gauges
-	// repaint immediately.
+	// Live ticks detect hits and advance the timer. Gauge samples still follow resimulation.
 	if (!rollback_resim)
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
 			gauge_shield_prev[i] = gauge_shield_cur[i];
 			gauge_armor_prev[i]  = gauge_armor_cur[i];
+
+			const float now = (float)player[i].shield + (float)player[i].armor;
+			if (player[i].is_alive && now < gauge_shield_cur[i] + gauge_armor_cur[i])
+				ship_hp_bar_hit[i] = SHIP_HP_BAR_HIT_TICKS;
+			else if (ship_hp_bar_hit[i] > 0)
+				--ship_hp_bar_hit[i];
 		}
+
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		gauge_shield_cur[i] = (float)player[i].shield;
@@ -2110,7 +2127,9 @@ void JE_drawShield(void)
 				continue;
 
 			const float units = hud_2p_gauge_units(gauge_shield_level(i));
-			JE_dBar3_scaled(gauge_surface(), HUD_X(270), 60 + 134 * i, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD, gauge_scale);
+			JE_dBar3_scaled(gauge_surface(), HUD_X(270), 60 + 134 * i, units, SHIELD_GAUGE_BASE,
+			                gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]),
+			                HUD_2P_GAUGE_TOP_PAD, gauge_scale);
 			// Before the dim, so a remote player's mark fades with the rest of their gauge.
 			draw_shield_ceiling_mark(HUD_X(270), 60 + 134 * i, units, hud_2p_gauge_units((float)player[i].shield_max), HUD_2P_GAUGE_TOP_PAD);
 			if (gauge_is_remote(i))
@@ -2124,7 +2143,8 @@ void JE_drawShield(void)
 			return;
 
 		const float units = gauge_shield_level(i);
-		JE_dBar3_scaled(gauge_surface(), HUD_X(270), 194, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), 0, gauge_scale);
+		JE_dBar3_scaled(gauge_surface(), HUD_X(270), 194, units, SHIELD_GAUGE_BASE, gaugeGradShield,
+		                gauge_flash_render(shieldGaugeFlash[i]), 0, gauge_scale);
 		draw_shield_ceiling_mark(HUD_X(270), 194, units, (float)player[i].shield_max, 0);
 	}
 }
@@ -2133,23 +2153,186 @@ void JE_drawShield(void)
 // "rollover" layers: each full 28 units rolls the bar over and the next chunk fills from the
 // bottom in a different colour gradient, so a heavily-reinforced hull reads as a stacked, multi-
 // hued bar. Layer palette bases are palette-relative (endless levels vary); tuned by eye.
+const int armorGaugeLayerCol[ARMOR_GAUGE_LAYERS] = { 224, 112, 80, 176, 16, 48, 96, 32 };
+
 static void endlessDrawArmorBar(float armor, int flash)
 {
-	static const int layerCol[] = { 224, 112, 80, 176, 16, 48, 96, 32 };
-	const int maxLayers = (int)COUNTOF(layerCol);
+	const int maxLayers = ARMOR_GAUGE_LAYERS;
+	const float layerUnits = (float)ARMOR_GAUGE_LAYER_UNITS;
 
 	int total = 0;
-	for (float t = armor; t > 0.0f && total < maxLayers; t -= 28.0f)
+	for (float t = armor; t > 0.0f && total < maxLayers; t -= layerUnits)
 		++total;
 	const int flashLayer = (total <= 1) ? 0 : total - 1;
 
 	float a = armor;
 	for (int layer = 0; a > 0.0f && layer < maxLayers; ++layer)
 	{
-		const float seg = (a > 28.0f) ? 28.0f : a;
-		JE_dBar3_scaled(gauge_surface(), HUD_X(307), 194, seg, layerCol[layer], gaugeGradArmor, (layer == flashLayer) ? flash : 0, 0, gauge_scale);
-		a -= 28.0f;
+		const float seg = (a > layerUnits) ? layerUnits : a;
+		JE_dBar3_scaled(gauge_surface(), HUD_X(307), 194, seg, armorGaugeLayerCol[layer],
+		                gaugeGradArmor, (layer == flashLayer) ? flash : 0, 0, gauge_scale);
+		a -= layerUnits;
 	}
+}
+
+// Small playfield health bars.
+
+bool enemy_bar_place(int boxL, int boxR, int boxT, int boxB, int thick, bool vertical,
+                     int *out_x, int *out_y, int *out_along)
+{
+	const int boxBottom = boxB - 1;                 // inclusive bottom sprite row
+	const int cx = (boxL + boxR) / 2;               // box centre
+	const int cy = (boxT + boxBottom) / 2;
+
+	int along, x, y;
+
+	if (!vertical)
+	{
+		// Horizontal bar: length spans the box width, inset 1px each end so boxes packed into a
+		// row keep a visible gap between their bars.
+		int xl = boxL + 1, xr = boxR - 1;
+		along = xr - xl + 1;
+		if (along < ENEMY_BAR_MIN_LEN)
+			return false;
+		if (along > ENEMY_BAR_MAX_LEN)
+		{
+			xl = cx - ENEMY_BAR_MAX_LEN / 2;
+			along = ENEMY_BAR_MAX_LEN;
+		}
+		x = xl;
+
+		switch (enemyBarPosition)
+		{
+		case ENEMY_BAR_POS_TOP:    y = boxT - thick - 1;                     break;  // above
+		case ENEMY_BAR_POS_CENTER: y = cy - thick / 2;                       break;  // over the centre
+		case ENEMY_BAR_POS_LEFT:   x = boxL - along - 1; y = cy - thick / 2; break;  // to the left
+		case ENEMY_BAR_POS_RIGHT:  x = boxR + 2;         y = cy - thick / 2; break;  // to the right
+		case ENEMY_BAR_POS_BOTTOM:
+		default:                   y = boxB + 1;                             break;  // below (original)
+		}
+	}
+	else
+	{
+		// Vertical bar: length spans the box height, inset 1px each end.
+		int yt = boxT + 1, yb = boxBottom - 1;
+		along = yb - yt + 1;
+		if (along < ENEMY_BAR_MIN_LEN)
+			return false;
+		if (along > ENEMY_BAR_MAX_LEN)
+		{
+			yt = cy - ENEMY_BAR_MAX_LEN / 2;
+			along = ENEMY_BAR_MAX_LEN;
+		}
+		y = yt;
+
+		switch (enemyBarPosition)
+		{
+		case ENEMY_BAR_POS_LEFT:   x = boxL - thick - 1;                     break;  // to the left
+		case ENEMY_BAR_POS_CENTER: x = cx - thick / 2;                       break;  // over the centre
+		case ENEMY_BAR_POS_TOP:    y = boxT - along - 1; x = cx - thick / 2; break;  // above
+		case ENEMY_BAR_POS_BOTTOM: y = boxB + 1;         x = cx - thick / 2; break;  // below
+		case ENEMY_BAR_POS_RIGHT:
+		default:                   x = boxR + 2;                             break;  // to the right
+		}
+	}
+
+	*out_x = x;
+	*out_y = y;
+	*out_along = along;
+	return true;
+}
+
+// Draw one gauge bar; `under` optionally colors its empty track.
+static void ship_hp_bar_draw_one(int id, int x, int y, int along, bool vertical, float frac,
+                                 int base, int under, Uint8 opacity)
+{
+	if (frac < 0.0f) frac = 0.0f; else if (frac > 1.0f) frac = 1.0f;
+
+	const int fill = (int)(along * frac + 0.5f);
+	// Use the enemy-bar shade rule inside the gauge's palette bank.
+	const int col = (fill > 0) ? base + 5 + (int)(frac * 10.0f + 0.5f) : base;
+	const Uint8 groove = (under != 0) ? (Uint8)(under + 10) : 0;
+
+	rl_draw_hp_bar(VGAScreen, x, y, along, fill, (Uint8)col, vertical, opacity, groove);
+
+	if (render_list_recording)
+	{
+		rl_current_id = id;
+		rl_rec_hp_bar(x, y, along, fill, (Uint8)col, vertical, opacity, groove);
+		rl_current_id = 0;
+	}
+}
+
+void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
+                              uint shield, uint shieldMax, uint armor)
+{
+	const Uint8 opacity = (Uint8)(enemyBarOpacity * 255 / 100);
+	if (opacity == 0)
+		return;
+
+	const bool vertical = (enemyBarLayout == ENEMY_BAR_VERTICAL);
+	// A ship with no shield fitted gets the armour bar alone; an always-empty gauge is noise.
+	const int bars = (shieldMax > 0) ? 2 : 1;
+
+	int x, y, along;
+	if (!enemy_bar_place(boxL, boxR, boxT, boxB, bars * ENEMY_BAR_THICK, vertical, &x, &y, &along))
+		return;
+
+	// Match HUD order: shield above or left of armor.
+	if (bars == 2)
+	{
+		ship_hp_bar_draw_one(id, x, y, along, vertical, (float)shield / (float)shieldMax,
+		                     SHIELD_GAUGE_BASE, 0, opacity);
+		if (vertical)
+			x += ENEMY_BAR_THICK;
+		else
+			y += ENEMY_BAR_THICK;
+	}
+
+	// Show the current armor layer in the fill and the previous layer in the track.
+	int layers = 1;
+	for (uint a = armor;
+	     a > ARMOR_GAUGE_LAYER_UNITS && layers < ARMOR_GAUGE_LAYERS;
+	     a -= ARMOR_GAUGE_LAYER_UNITS)
+		++layers;
+	const int topArmor = (int)armor - (layers - 1) * ARMOR_GAUGE_LAYER_UNITS;
+
+	ship_hp_bar_draw_one(id, x, y, along, vertical,
+	                     (float)topArmor / (float)ARMOR_GAUGE_LAYER_UNITS,
+	                     armorGaugeLayerCol[layers - 1],
+	                     (layers > 1) ? armorGaugeLayerCol[layers - 2] : 0, opacity);
+}
+
+// Hull bounds; graphics 0 and 1 are two-piece sentinels.
+void hud_ship_hp_bar_box(uint seat, int *l, int *r, int *t, int *b)
+{
+	const JE_word gr = (seat == 1) ? shipGr2 : shipGr;
+	const bool wide = (gr == 0 || gr == 1);
+
+	*l = (int)player[seat].x + (wide ? -17 : -5);
+	*r = *l + (wide ? 48 : 24) - 1;
+	*t = (int)player[seat].y - 7;
+	*b = *t + 28;
+}
+
+void hud_draw_ship_hp_bars(void)
+{
+	// Linked Arcade already shows both ships on its shared HUD.
+	if (netPartnerHpBars == NET_HP_BARS_OFF || !isNetworkGame || !twoPlayerMode
+	    || split_arcade_mode())
+		return;
+
+	const uint seat = 1u - netStyleLocalSeat();
+	if (seat >= COUNTOF(player) || !player[seat].is_alive)
+		return;
+	if (netPartnerHpBars == NET_HP_BARS_ON_HIT && ship_hp_bar_hit[seat] <= 0)
+		return;
+
+	int l, r, t, b;
+	hud_ship_hp_bar_box(seat, &l, &r, &t, &b);
+	// The cached shield ceiling the HUD's own tick mark reads, so both agree on what "full" means.
+	hud_draw_ship_hp_bars_at(RL_ID_SHIP_BAR_BASE + 1 + (int)seat, l, r, t, b,
+	                         player[seat].shield, player[seat].shield_max, player[seat].armor);
 }
 
 void JE_drawArmor(void)
@@ -2175,7 +2358,10 @@ void JE_drawArmor(void)
 			if (player_is_out(i))
 				continue;
 
-			JE_dBar3_scaled(gauge_surface(), HUD_X(307), 60 + 134 * i, hud_2p_gauge_units(gauge_armor_level(i)), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD, gauge_scale);
+			JE_dBar3_scaled(gauge_surface(), HUD_X(307), 60 + 134 * i,
+			                hud_2p_gauge_units(gauge_armor_level(i)), armorGaugeLayerCol[0],
+			                gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]),
+			                HUD_2P_GAUGE_TOP_PAD, gauge_scale);
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(307), 60 + 134 * i - 44, HUD_X(315), 60 + 134 * i);
 		}
@@ -2194,7 +2380,9 @@ void JE_drawArmor(void)
 		if (player_is_out(i))
 			return;
 
-		JE_dBar3_scaled(gauge_surface(), HUD_X(307), 194, gauge_armor_level(i), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), 0, gauge_scale);
+		JE_dBar3_scaled(gauge_surface(), HUD_X(307), 194, gauge_armor_level(i),
+		                armorGaugeLayerCol[0], gaugeGradArmor,
+		                gauge_flash_render(armorGaugeFlash[i]), 0, gauge_scale);
 	}
 }
 

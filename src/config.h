@@ -103,6 +103,8 @@ typedef struct
 	JE_boolean    cheatInfiniteShields;
 	JE_boolean    cheatInfiniteArmor;
 	JE_boolean    expertMode;
+	// Per-seat dyes included in the online resume record.
+	JE_byte       shipColor[2];
 } JE_SaveFileType;
 
 typedef JE_SaveFileType JE_SaveFilesType[SAVE_FILES_NUM]; /* [1..savefilesnum] */
@@ -472,7 +474,7 @@ void JE_loadGame(JE_byte slot);
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 
 // Fixed little-endian packed form of a save record, used by the network resume handshake.
-#define SAVE_RECORD_PACKED_SIZE 89
+#define SAVE_RECORD_PACKED_SIZE 91
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
 bool save_record_is_coop(const JE_SaveFileType *rec);
@@ -486,6 +488,10 @@ uint save_record_sa_ship(const JE_SaveFileType *rec, uint p);
  * anything but 2 forgets the slot. */
 uint save_slot_online_player(JE_byte slot);
 void save_slot_set_online_player(JE_byte slot, uint playerNum);
+
+// Local partner-view settings stored beside, not inside, the networked save record.
+void save_slot_online_view(JE_byte slot, int *opacity, bool *shipOpacity, int *hpBars);
+void save_slot_set_online_view(JE_byte slot, int opacity, bool shipOpacity, int hpBars);
 
 /* Save-codec regression hooks (qa.c): the slot codec's round trip and defaults, and a legacy
  * tyrian.sav imported from an explicit path over the live tables. */

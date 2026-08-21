@@ -30,6 +30,7 @@
 #include "loudness.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "net_style.h"
 #include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
@@ -331,6 +332,44 @@ void save_slot_set_online_player(JE_byte slot, uint playerNum)
 		saveSlotPlayerTwo |= (Uint16)bit;
 	else
 		saveSlotPlayerTwo &= (Uint16)~bit;
+}
+
+// Per-slot view settings kept outside the networked save record.
+static struct
+{
+	JE_byte opacity;
+	bool    shipOpacity;
+	JE_byte hpBars;
+}
+saveSlotView[SAVE_FILES_NUM];
+
+void save_slot_online_view(JE_byte slot, int *opacity, bool *shipOpacity, int *hpBars)
+{
+	const bool known = (slot >= 1 && slot <= SAVE_FILES_NUM);
+
+	if (opacity != NULL)
+		*opacity = known ? saveSlotView[slot - 1].opacity : NET_OPACITY_FULL;
+	if (shipOpacity != NULL)
+		*shipOpacity = known ? saveSlotView[slot - 1].shipOpacity : true;
+	if (hpBars != NULL)
+		*hpBars = known ? saveSlotView[slot - 1].hpBars : NET_HP_BARS_OFF;
+}
+
+void save_slot_set_online_view(JE_byte slot, int opacity, bool shipOpacity, int hpBars)
+{
+	if (slot < 1 || slot > SAVE_FILES_NUM)
+		return;
+
+	// Snap hand-edited opacity to a picker step.
+	opacity -= opacity % NET_OPACITY_STEP;
+	if (opacity < NET_OPACITY_MIN)  opacity = NET_OPACITY_MIN;
+	if (opacity > NET_OPACITY_FULL) opacity = NET_OPACITY_FULL;
+	if (hpBars < 0 || hpBars >= NET_HP_BARS_COUNT)
+		hpBars = NET_HP_BARS_OFF;
+
+	saveSlotView[slot - 1].opacity = (JE_byte)opacity;
+	saveSlotView[slot - 1].shipOpacity = shipOpacity;
+	saveSlotView[slot - 1].hpBars = (JE_byte)hpBars;
 }
 
 /* Enhancement settings (persisted in the [enhancements] config section). */
@@ -1332,6 +1371,9 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
 	config_remove_option(section, "net_save_player_two");   // now each slot's own online_seat key
+	// Retired machine-wide keys; online styles now live with each save slot.
+	config_remove_option(section, "online_ship_color");
+	config_remove_option(section, "online_partner_dim");
 	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);
 	config_set_int_option(section, "net_host_destruct_mode", network_host_destruct_mode);
 	config_set_int_option(section, "net_delay", network_delay);
@@ -1545,6 +1587,10 @@ void JE_saveGame(JE_byte slot, const char *name)
 	saveFiles[slot - 1].cheatInfiniteShields = cheatInfiniteShields;
 	saveFiles[slot - 1].cheatInfiniteArmor = cheatInfiniteArmor;
 	saveFiles[slot - 1].expertMode = expertMode;
+	// Dyes travel in the record; partner view settings remain local to this slot.
+	for (uint p = 0; p < COUNTOF(saveFiles[slot - 1].shipColor); ++p)
+		saveFiles[slot - 1].shipColor[p] = (JE_byte)netStyleSeatColor(p);
+	save_slot_set_online_view(slot, netPartnerOpacity, netPartnerShipOpacity, netPartnerHpBars);
 
 	strcpy(saveFiles[slot-1].name, name);
 
@@ -1578,6 +1624,8 @@ void JE_saveGame(JE_byte slot, const char *name)
 void JE_loadGame(JE_byte slot)
 {
 	JE_loadGameRecord(&saveFiles[slot-1], (slot-1) > 10);
+	// Peer-supplied records do not replace this machine's view settings.
+	save_slot_online_view(slot, &netPartnerOpacity, &netPartnerShipOpacity, &netPartnerHpBars);
 }
 
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
@@ -1645,6 +1693,9 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	secretHint = rec->secretHint;
 	inputDevice[0] = rec->input1;
 	inputDevice[1] = rec->input2;
+
+	for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
+		netStyleSetSeatColor(p, rec->shipColor[p]);
 
 	autoFireSpecial = rec->autoFireSpecial;
 	chargeSidekickAutofire = rec->chargeSidekickAutofire;
@@ -1955,6 +2006,14 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 			config_set_int_option(section, "p2_weapon_mode", (rec->dualShipTag >> 12) & 0x0f);
 		}
 		config_set_int_option(section, "online_seat", (int)save_slot_online_player(slot));
+		config_set_int_option(section, "p1_ship_color", rec->shipColor[0]);
+		config_set_int_option(section, "p2_ship_color", rec->shipColor[1]);
+		int slotOpacity, slotHpBars;
+		bool slotShipOpacity;
+		save_slot_online_view(slot, &slotOpacity, &slotShipOpacity, &slotHpBars);
+		config_set_int_option(section, "online_opacity", slotOpacity);
+		config_set_int_option(section, "online_ship_opacity", slotShipOpacity ? 1 : 0);
+		config_set_int_option(section, "online_hp_bars", slotHpBars);
 	}
 	else
 	{
@@ -2026,6 +2085,18 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 			}
 		}
 		save_slot_set_online_player(slot, (uint)save_get_int(section, "online_seat", 1));
+		for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
+		{
+			char key[16];
+			snprintf(key, sizeof(key), "p%u_ship_color", p + 1);
+			const int color = save_get_int(section, key, NET_SHIP_COLOR_NONE);
+			rec->shipColor[p] = (JE_byte)((color < NET_SHIP_COLOR_NONE || color > NET_SHIP_COLORS)
+			                              ? NET_SHIP_COLOR_NONE : color);
+		}
+		save_slot_set_online_view(slot,
+		                          save_get_int(section, "online_opacity", NET_OPACITY_FULL),
+		                          save_get_int(section, "online_ship_opacity", 1) != 0,
+		                          save_get_int(section, "online_hp_bars", NET_HP_BARS_OFF));
 	}
 	else
 	{
@@ -2182,6 +2253,8 @@ static bool save_file_load(void)
 
 	save_reset();
 	saveSlotPlayerTwo = 0;   // the slots' own online_seat keys are the record from here on
+	for (int z = 0; z < SAVE_FILES_NUM; ++z)
+		save_slot_set_online_view((JE_byte)(z + 1), NET_OPACITY_FULL, true, NET_HP_BARS_OFF);
 	for (int z = 0; z < SAVE_FILES_NUM; z++)
 	{
 		char name[8];
@@ -2638,6 +2711,8 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	*p++ = rec->cheatInfiniteShields != false;
 	*p++ = rec->cheatInfiniteArmor != false;
 	*p++ = rec->expertMode != false;
+	*p++ = rec->shipColor[0];
+	*p++ = rec->shipColor[1];
 
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }
@@ -2686,6 +2761,8 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 	rec->cheatInfiniteShields = *p++ != 0;
 	rec->cheatInfiniteArmor = *p++ != 0;
 	rec->expertMode = *p++ != 0;
+	rec->shipColor[0] = *p++;
+	rec->shipColor[1] = *p++;
 
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }

@@ -88,6 +88,8 @@ void blit_sprite_hv_unsafe(SDL_Surface *, int x, int y, unsigned int table, unsi
 void blit_sprite_hv(SDL_Surface *, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value); // JE_newDrawCShapeAdjust
 void blit_sprite_hv_blend(SDL_Surface *, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value); // JE_newDrawCShapeModify
 void blit_sprite_dark(SDL_Surface *, int x, int y, unsigned int table, unsigned int index, bool black); // JE_newDrawCShapeDarken, JE_newDrawCShapeShadow
+// Table-sprite counterpart of blit_sprite2_alpha; same bank and opacity rules.
+void blit_sprite_alpha(SDL_Surface *, int x, int y, unsigned int table, unsigned int index, int bank, Uint8 opacity);
 
 typedef struct
 {
@@ -151,6 +153,10 @@ void blit_sprite2_filter_bright_clip(SDL_Surface *, int x, int y, Sprite2_array,
 // bank in its high nibble and a post-blend shade lift in its low nibble.
 void blit_sprite2_blend_filter(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_blend_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
+/* Blend sprite brightness in sixteenths. A negative bank keeps source colors; opacity 16 uses the
+ * existing opaque blit. */
+void blit_sprite2_alpha(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int bank, Uint8 opacity);
+void blit_sprite2_alpha_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int bank, Uint8 opacity);
 // A sub-row window of the sprite only, brightened `bright` steps toward its own palette bank top,
 // drawn at `scale` (x,y stay 1x). The window is in sub-rows so its edge can sit between two sprite
 // rows. Records nothing -- HUD overlays only, carried by the residual (see sprite.c).
@@ -169,6 +175,9 @@ typedef enum
 	BLIT2_SOLID,      // blit_sprite2_solid (the filter arg is the flat colour)
 	BLIT2_BLEND_FILTER,  // blit_sprite2_blend_filter (filter arg = bank | shade lift)
 	BLIT2_FILTER_BRIGHT, // blit_sprite2_filter_bright (filter arg = bank | shade lift)
+	// blit_sprite2_alpha: opacity in the low nibble, optional dye bank in the high nibble.
+	BLIT2_ALPHA,
+	BLIT2_ALPHA_DYE,
 } Blit2Op;
 
 typedef enum
@@ -179,7 +188,12 @@ typedef enum
 	BLITT_HV,         // blit_sprite_hv
 	BLITT_HV_BLEND,   // blit_sprite_hv_blend
 	BLITT_DARK,       // blit_sprite_dark
+	// blit_sprite_alpha: `hue` is the dye bank or BLIT_ALPHA_KEEP_BANK, `value` the opacity.
+	BLITT_ALPHA,
 } BlitTableOp;
+
+// `hue` value that leaves a table sprite in its own palette bank while it fades.
+#define BLIT_ALPHA_KEEP_BANK 0xff
 
 void blit_sprite2_scaled(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int scale, Blit2Op op, Uint8 filter);
 void blit_sprite_table_scaled(SDL_Surface *, int x, int y, unsigned int table, unsigned int index, int scale, BlitTableOp op, Uint8 hue, Sint8 value, bool black);
@@ -190,6 +204,7 @@ void blit_sprite2x2_blend(SDL_Surface *, int x, int y, Sprite2_array, unsigned i
 void blit_sprite2x2_darken(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2x2_filter(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2x2_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
+void blit_sprite2x2_alpha(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int bank, Uint8 opacity);
 
 void JE_loadMainShapeTables(const char *shpfile);
 void free_main_shape_tables(void);

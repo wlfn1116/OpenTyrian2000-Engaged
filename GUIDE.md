@@ -9,6 +9,7 @@ and controls work as before.
 | --- | --- |
 | Start Endless | Main menu > 1 Player Endless |
 | Play online | Main menu > Online Multiplayer |
+| Change online ship colors, opacity, or HP bars | Online outpost > Options > Online |
 | Enable smooth rendering | Setup > Graphics |
 | Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
@@ -622,6 +623,22 @@ and compete for cash until the selected battle level ends.
 Both players confirm a title card before the clock starts. The result screen
 shows both totals, and either player can dismiss it. Timed Battle cannot load a
 save and does not write to the single-player Timed Battle boards.
+
+### Telling the two ships apart
+
+During an online game, open **Options > Online** at the outpost.
+
+- **Color** dyes your hull and sidekicks. Your partner sees it too, while shots
+  keep their weapon colors. Shades follow the current level palette; Endless
+  hides the four colors used by kill-fire drives.
+- **Opacity** fades the other player and their shots from 100% to 20%. Turn off
+  **Apply to Ship** to fade only their shots. This setting affects only your
+  screen.
+- **HP Bars** shows the other player's shield and armor, either always or for
+  two seconds after a hit. Placement and opacity use the enemy-bar settings under
+  **Setup > Enhancements > Heads-Up Display**.
+
+Linked Arcade omits HP Bars because its shared HUD already shows both players.
 
 ### Saving and resuming
 

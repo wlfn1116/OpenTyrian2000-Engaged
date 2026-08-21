@@ -120,6 +120,9 @@ void iced_blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 
 void initialize_starfield(void);
+/* Limit star centers to inclusive surface bounds. Halos may extend one pixel past them. */
+void starfield_set_clip(int x1, int y1, int x2, int y2);
+void starfield_clear_clip(void);
 void update_and_draw_starfield(SDL_Surface* surface, int move_speed);
 void draw_starfield_star(SDL_Surface* surface, int x, int y, Uint8 color);
 // Star at HI-buffer coordinates: centre + halo drawn as scale x scale blocks.

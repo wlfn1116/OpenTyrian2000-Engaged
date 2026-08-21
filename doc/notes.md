@@ -521,6 +521,9 @@ together.
 - `chargeSidekickAutofire` is per-save and stays outside presets.
 - Apply table-backed settings through `JE_applyItemDataSettings` immediately.
 
+Clip the weapon simulator's starfield to its preview box with
+`starfield_set_clip`; it treats any black surface pixel as drawable.
+
 Custom preset state is a positional list guarded by `enhancementTableShape`.
 Reordering or retuning the table invalidates the stored list. Capture Custom
 when the live values match neither built-in preset.
@@ -567,7 +570,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 77. Packet readers check length before
+`NET_VERSION` bump. The current version is 79. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -609,9 +612,42 @@ Recent compatibility points:
 | 75 | The End excludes Dead Generator and makes Static rare |
 | 76 | Homing modifiers exclude permanent scenery, pickups, and wreckage |
 | 77 | The End rolls one homing tier |
+| 78 | Ship dye announcements (`PACKET_PLAYER_COLOR`) |
+| 79 | Save records carry both ships' dyes |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.
+
+### Online ship styles
+
+`net_style.c` owns cosmetic online styles. Body styles cover hulls, trim, and
+sidekicks; shot styles never take the ship dye. Offline styles are always plain.
+
+- Dyes belong to player seats. Repeat the unacknowledged
+  `PACKET_PLAYER_COLOR` on the keep-alive beat so packet loss repairs itself.
+  Store both dyes in `JE_SaveFileType` so a resumed peer receives them.
+- Opacity belongs to the local machine and applies only to the other seat.
+  **Apply to Ship** may spare the body without sparing its shots. Store these
+  settings beside each save slot, outside the networked record.
+- Use `thisPlayerNum` in `netStyleLocalSeat()`. The Linked Arcade sidebar helper
+  names player one on both machines.
+- Kill-fire tint overrides dye. `netStyleColorReserved()` removes its four banks
+  from the Endless picker and ignores a previously selected matching dye.
+- Picker previews override session styles only while their page is open.
+  `shop_draw_seat()` selects the affected player, including Linked Arcade's
+  sentinel-based second hull.
+
+Alpha blits mix brightness in sixteenths and keep one palette bank. Full opacity
+uses the original blit path. Faded bodies and shots omit their shadows.
+
+Partner HP bars reuse `enemy_bar_place()` and its layout settings, but not the
+enemy-bar on/off switch. Armor rollover uses the current layer for the fill and
+the previous layer for the track. `JE_updateGaugeFlash()` advances the On Hit
+timer only on live ticks, so the timer stays outside rollback. Linked Arcade
+omits the bars because its shared HUD already shows both players.
+
+`netStyleSessionReset()` restores defaults for a new session. A resume restores
+dyes from the shared record and local view settings from that machine's slot.
 
 ### Modes and session settings
 
