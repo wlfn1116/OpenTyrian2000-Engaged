@@ -119,7 +119,9 @@ static const TouchButtonDef LAYOUT_JUKEBOX[] =
  * menu arrows occupy, and the two taps go up top where a mis-hit costs nothing. */
 static const TouchButtonDef LAYOUT_DESTRUCT[] =
 {
-	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE,  false, GATE_ALWAYS },
+	// Esc is query-only here: Destruct reads the tap itself (DE_TouchActions) rather than
+	// taking a pushed key, which its mid-tick event pump could swallow.
+	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -3, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,  -1, -2, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 	{ TOUCH_BTN_CHANGE, ICON_CHANGE, -1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
@@ -685,18 +687,29 @@ bool touch_ui_finger_down(SDL_FingerID finger, float nx, float ny)
 
 		btn_finger[def->id] = finger;
 		btn_held[def->id] = true;
-		btn_tapped[def->id] = true;
 		btn_pressed_ms[def->id] = now_ms;
 		btn_repeat_ms[def->id] = now_ms;
 
 		if (def->emit != SDL_SCANCODE_UNKNOWN)
+		{
 			queue_key(def->emit);
-		else if (def->id == TOUCH_BTN_PAUSE)
-			ingamemenu_pressed = true;   // the same latch a pad's pause button sets
-		else if (def->id == TOUCH_BTN_WEAPON)
-			changefire_pressed = true;
-		else if (is_sidekick(def->id))
-			refresh_sidekick_fire();
+		}
+		else
+		{
+			/* No key to push, so the press is left for the screen to read. The tap flag is
+			 * recorded only here: a button that pushed a key has already delivered its
+			 * press, and a flag left behind would let a later screen sharing the same id
+			 * act on it again -- Esc pushes a key in Destruct's dialogs and is polled
+			 * during its gameplay, so the dialog's tap would quit the match on the spot. */
+			btn_tapped[def->id] = true;
+
+			if (def->id == TOUCH_BTN_PAUSE)
+				ingamemenu_pressed = true;   // the same latch a pad's pause button sets
+			else if (def->id == TOUCH_BTN_WEAPON)
+				changefire_pressed = true;
+			else if (is_sidekick(def->id))
+				refresh_sidekick_fire();
+		}
 
 		return true;
 	}

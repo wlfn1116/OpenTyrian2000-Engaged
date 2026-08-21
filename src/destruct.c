@@ -2138,6 +2138,14 @@ static Uint8 DE_TouchActions(void)
 	if (touch_ui_take_tap(TOUCH_BTN_CHANGE)) bits |= 1 << KEY_CHANGE;
 	if (touch_ui_take_tap(TOUCH_BTN_CYCLE))  bits |= 1 << KEY_CYUP;
 
+	/* Quit is a control rather than an action, and it is set here the way the pad's pause
+	 * button is, rather than by pushing an Escape key. A pushed key arrives as a down/up
+	 * pair, and DE_SmoothPresent pumps events in the middle of the tick: whenever that pump
+	 * fell between the two, it consumed the release and cleared the flag before the tick
+	 * read it. Writing keysactive directly leaves nothing that a later pump can undo. */
+	if (touch_ui_take_tap(TOUCH_BTN_ESC))
+		keysactive[SDL_SCANCODE_ESCAPE] = true;
+
 	return bits;
 }
 
