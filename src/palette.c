@@ -88,6 +88,28 @@ bool palette_fading(void)
 	return fade_step_ms != 0 && SDL_GetTicks() - fade_step_ms < quiet_ms;
 }
 
+/* Brightest component anywhere in the live palette: 255 on any real screen, because every
+ * palette the game ships holds something near white, and 0 once a fade has reached black.
+ * Overlays outside the palettized frame follow it so they darken exactly as the frame does,
+ * and so they stay hidden through the pause between a transition's fade-out and fade-in,
+ * which no timer can predict the length of. */
+Uint8 palette_peak(void)
+{
+	Uint8 peak = 0;
+
+	for (uint i = 0; i < 256; ++i)
+	{
+		if (palette[i].r > peak)
+			peak = palette[i].r;
+		if (palette[i].g > peak)
+			peak = palette[i].g;
+		if (palette[i].b > peak)
+			peak = palette[i].b;
+	}
+
+	return peak;
+}
+
 void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color)
 {
 	for (uint i = first_color; i <= last_color; ++i)

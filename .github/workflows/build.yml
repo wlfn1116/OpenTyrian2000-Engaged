@@ -1,5 +1,5 @@
 # Builds all release targets on pushes, pull requests, and manual runs. Master
-# refreshes the `latest` pre-release; version tags attach the same six artifacts
+# refreshes the `latest` pre-release; version tags attach the same seven artifacts
 # to a tagged release. The data job supplies one stripped freeware-data artifact
 # to every platform job.
 
@@ -249,7 +249,7 @@ jobs:
           find android/app/src/main/jni -name 'gradle-wrapper.jar' -print -delete
           find android/app/src/main/jni -name 'gradle-wrapper.properties' -delete
 
-      # tools/make_mobile_icons.ps1 writes these and they are committed, so a missing one
+      # tools/make_app_icons.ps1 writes these and they are committed, so a missing one
       # means the generator was not re-run. Checked here because the APK is no place to
       # look: a release build renames resources.
       - name: Check the committed launcher icons
@@ -257,7 +257,7 @@ jobs:
           for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             for f in ic_launcher ic_launcher_foreground; do
               p="android/app/src/main/res/mipmap-$d/$f.png"
-              test -s "$p" || { echo "missing $p; re-run tools/make_mobile_icons.ps1"; exit 1; }
+              test -s "$p" || { echo "missing $p; re-run tools/make_app_icons.ps1"; exit 1; }
             done
           done
 
@@ -397,6 +397,81 @@ jobs:
           path: OpenTyrian2000-Engaged-iOS.ipa
           compression-level: 0
 
+  macos:
+    name: macOS universal
+    needs: data
+    timeout-minutes: 60
+    runs-on: macos-latest
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+    steps:
+      - uses: actions/checkout@v5
+
+      # macos/CMakeLists.txt globs data/ at configure time, so the files have to land first.
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: data
+
+      - name: Restore cached SDL sources
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            macos/external/SDL2
+            macos/external/SDL2_net
+          key: macos-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Download SDL sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p macos/external/SDL2 macos/external/SDL2_net
+          curl -fL --retry 3 -o sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL2_VERSION/SDL2-$SDL2_VERSION.tar.gz"
+          curl -fL --retry 3 -o sdl2net.tar.gz \
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$SDL2_NET_VERSION/SDL2_net-$SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C macos/external/SDL2
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C macos/external/SDL2_net
+
+      # Ninja rather than -G Xcode, for the reason given in the iOS job above. Architectures
+      # and deployment target come from macos/CMakeLists.txt so one file states them.
+      - name: Configure
+        run: |
+          command -v ninja > /dev/null || brew install ninja
+          cmake -S macos -B macos/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
+
+      - name: Build
+        run: cmake --build macos/build --parallel
+
+      # Apple Silicon refuses to run an unsigned binary at all, and the post-build copies
+      # into the bundle invalidate the ad-hoc signature the linker applied, so re-sign the
+      # finished bundle. This is not notarization; macos/README.md covers what a user still
+      # has to do on first launch. ditto rather than zip, which mangles bundle metadata.
+      - name: Sign and package
+        run: |
+          app=macos/build/OpenTyrian2000.app
+          bin="$app/Contents/MacOS/OpenTyrian2000"
+          test -x "$bin" || { echo "no app binary at $app"; exit 1; }
+          test -f "$app/Contents/Resources/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
+          test -f "$app/Contents/Resources/tyrian2000.icns" || { echo "icon missing from the bundle"; exit 1; }
+          archs=$(lipo -archs "$bin")
+          for want in arm64 x86_64; do
+            printf '%s\n' "$archs" | grep -qw "$want" || { echo "no $want slice (got: $archs)"; exit 1; }
+          done
+          codesign --force --sign - "$app"
+          codesign --verify --strict "$app"
+          ditto -c -k --keepParent "$app" OpenTyrian2000-Engaged-macOS-universal.zip
+
+      # Already a compressed archive; skip GitHub's wrapper compression.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-macOS
+          path: OpenTyrian2000-Engaged-macOS-universal.zip
+          compression-level: 0
+
   switch:
     name: Nintendo Switch
     needs: data
@@ -476,7 +551,7 @@ jobs:
   prerelease:
     name: Update latest pre-release
     if: github.ref == 'refs/heads/master'
-    needs: [windows, linux, android, ios, switch, vita, tests, sanitizers]
+    needs: [windows, linux, macos, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -493,6 +568,7 @@ jobs:
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-macOS-universal.zip
                   OpenTyrian2000-Engaged-Android.apk
                   OpenTyrian2000-Engaged-iOS.ipa
                   OpenTyrian2000-Engaged-Switch.nro
@@ -507,7 +583,7 @@ jobs:
   release:
     name: Attach to release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, linux, android, ios, switch, vita, tests, sanitizers]
+    needs: [windows, linux, macos, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -525,6 +601,7 @@ jobs:
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-macOS-universal.zip
                   OpenTyrian2000-Engaged-Android.apk
                   OpenTyrian2000-Engaged-iOS.ipa
                   OpenTyrian2000-Engaged-Switch.nro

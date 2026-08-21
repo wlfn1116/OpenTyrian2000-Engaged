@@ -32,6 +32,10 @@
 // decay on their own rather than needing every screen to clean up after itself.
 #define TOUCH_ASSERT_TTL_MS  250
 
+/* Below this palette brightness the buttons are too dark to make out, so they are not
+ * drawn at all and cannot be pressed. Roughly the last sixth of a fade to black. */
+#define TOUCH_VISIBLE_PEAK_MIN  40
+
 // Key repeat for the menu arrows, matching the feel of a held keyboard key. Without it a
 // 34-row debug menu takes 34 separate taps.
 #define TOUCH_REPEAT_DELAY_MS   350
@@ -118,7 +122,7 @@ static const TouchButtonDef LAYOUT_DESTRUCT[] =
  * already occupies, so a control that cycles something keeps one place. */
 static const TouchButtonDef LAYOUT_EXTRA[] =
 {
-	{ TOUCH_BTN_REAR_MODE, ICON_CYCLE, 1, 0, SDL_SCANCODE_RIGHTBRACKET, false, GATE_ALWAYS },
+	{ TOUCH_BTN_REAR_MODE, ICON_CYCLE, 1, 0, SDL_SCANCODE_SLASH, false, GATE_ALWAYS },
 };
 
 #define LAYOUT_MAX_BUTTONS  9
@@ -346,12 +350,19 @@ static bool overlaps_frame(const SDL_Rect *button, const SDL_Rect *frame)
 	       button->y < frame->y + frame->h && button->y + button->h > frame->y;
 }
 
-static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, bool held)
+// Scale a colour by the live palette's brightness; see the note in touch_ui_render.
+static Uint8 dim(int component, Uint8 peak)
 {
-	SDL_SetRenderDrawColor(renderer, held ? 60 : 14, held ? 66 : 16, held ? 88 : 26, alpha);
+	return (Uint8)(component * (int)peak / 255);
+}
+
+static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, bool held, Uint8 peak)
+{
+	SDL_SetRenderDrawColor(renderer, dim(held ? 60 : 14, peak), dim(held ? 66 : 16, peak),
+	                       dim(held ? 88 : 26, peak), alpha);
 	SDL_RenderFillRect(renderer, r);
 
-	SDL_SetRenderDrawColor(renderer, 165, 176, 205, 235);
+	SDL_SetRenderDrawColor(renderer, dim(165, peak), dim(176, peak), dim(205, peak), 235);
 	SDL_RenderDrawRect(renderer, r);
 
 	const SDL_Rect inner = { r->x + 1, r->y + 1, r->w - 2, r->h - 2 };
@@ -611,11 +622,17 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	layout_out_h = out_h;
 
 	/* A screen transition is a palette fade, which the buttons never pass through: they are
-	 * drawn by the renderer, after the palettized frame has been converted. Rather than
-	 * trying to follow the fade -- which reads as a flash against content that fades on its
-	 * own schedule -- they leave the screen for the length of it. Nothing is interactive
-	 * mid-transition anyway, so the press test goes with them. */
-	layout_valid = !palette_fading();
+	 * drawn by the renderer, after the palettized frame has been converted. So they follow
+	 * the palette's own brightness instead, which darkens them on exactly the curve the
+	 * frame darkens on, and keeps them hidden through the pause between a transition's
+	 * fade-out and its fade-in, where the screen is black but nothing is stepping.
+	 *
+	 * Scaled towards black rather than towards transparent, because an icon is built from
+	 * overlapping shapes and any alpha below full blends twice where they meet. Below the
+	 * floor they are dark enough to be invisible, so nothing is drawn and nothing can be
+	 * pressed -- a button nobody can see must not be a button anybody can hit. */
+	const Uint8 peak = palette_peak();
+	layout_valid = peak >= TOUCH_VISIBLE_PEAK_MIN;
 
 	// This frame is what the buttons now look like, so an idle wait loop has nothing left
 	// to repaint until something changes again.
@@ -634,12 +651,12 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 		const bool held = btn_held[shown[i]->id];
 		const Uint8 alpha = overlaps_frame(r, frame) ? TOUCH_BTN_ALPHA_OVERLAP : TOUCH_BTN_ALPHA_CLEAR;
 
-		draw_plate(renderer, r, alpha, held);
+		draw_plate(renderer, r, alpha, held, peak);
 
 		// Opaque, even over a translucent plate: an icon built from overlapping shapes
 		// blends twice where they meet, and any alpha below full shows that as a seam.
 		// The plate already brightens on press, so the icon needs no second cue.
-		SDL_SetRenderDrawColor(renderer, 226, 232, 248, 255);
+		SDL_SetRenderDrawColor(renderer, dim(226, peak), dim(232, peak), dim(248, peak), 255);
 		draw_icon(renderer, (TouchIcon)shown[i]->icon, r);
 	}
 

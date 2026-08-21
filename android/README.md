@@ -45,7 +45,7 @@ an updated data set arrives with the next build.
 ## Icon and name
 
 The app is named "Tyrian 2000 Engaged". Its launcher icons are generated from
-`visualc/tyrian2000.ico` by `tools/make_mobile_icons.ps1`, which writes the
+`visualc/tyrian2000.ico` by `tools/make_app_icons.ps1`, which writes the
 adaptive-icon foregrounds and legacy bitmaps under `app/src/main/res`. The
 output is committed, so a build never runs it; re-run it after changing the
 source icon.

@@ -37,9 +37,13 @@ void JE_loadPals(void);
 void set_palette(Palette colors, unsigned int first_color, unsigned int last_color);
 void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color);
 
-// True while a screen transition is stepping the palette. Overlays drawn outside the
-// palettized frame stay off the screen while one runs, because they cannot fade with it.
+// True while a screen transition is stepping the palette.
 bool palette_fading(void);
+
+// Brightest component in the live palette: 255 on any real screen, 0 once a fade has
+// reached black. Overlays outside the palettized frame scale themselves by it so they
+// darken exactly as the frame does, including through the pause between two fades.
+Uint8 palette_peak(void);
 
 void init_step_fade_palette(int diff[256][3], Palette colors, unsigned int first_color, unsigned int last_color);
 void init_step_fade_solid(int diff[256][3], SDL_Color color, unsigned int first_color, unsigned int last_color);

@@ -98,6 +98,13 @@ tyrian.sav
 # iOS (CMake + Xcode) output and its unpacked SDL sources
 /ios/build/
 /ios/external/
+
+# macOS (CMake) output and its unpacked SDL sources
+/macos/build/
+/macos/external/
+
+# Packaged artifacts
 /Payload/
 /OpenTyrian2000-Engaged-*.ipa
 /OpenTyrian2000-Engaged-*.apk
+/OpenTyrian2000-Engaged-*.zip

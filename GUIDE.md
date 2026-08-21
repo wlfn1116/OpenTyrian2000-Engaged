@@ -885,9 +885,10 @@ Switch and Vita have physical buttons and draw none of this.
 ## Files and logs
 
 On Windows, files sit beside the executable. Linux uses
-`~/.config/opentyrian2000`. Console and mobile locations are listed in their
-build guides; on Android and iOS the files live in app-private storage that the
-system deletes on uninstall.
+`~/.config/opentyrian2000`, and the macOS app bundle uses
+`~/Library/Application Support/OpenTyrian/OpenTyrian2000`. Console and mobile
+locations are listed in their build guides; on Android and iOS the files live in
+app-private storage that the system deletes on uninstall.
 
 | File | Contents |
 | --- | --- |

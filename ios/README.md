@@ -34,7 +34,7 @@ Re-run CMake after changing the data set.
 ## Icon and name
 
 The app is named "Tyrian 2000 Engaged". Its icons are generated from
-`visualc/tyrian2000.ico` by `tools/make_mobile_icons.ps1`. The output is
+`visualc/tyrian2000.ico` by `tools/make_app_icons.ps1`. The output is
 committed, so a build never runs it; re-run it after changing the source icon.
 
 The build ships the icon twice. `ios/Assets.xcassets` is compiled by `actool`

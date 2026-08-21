@@ -11121,13 +11121,16 @@ void JE_weaponSimUpdate(void)
 
 		temp = shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power;
 
-		if ((curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
-			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2
-			&& (weaponSimTime >= 75))
-		{
-			// [/] Rear Weapon Mode. The touch ports get it as a button while this hint is
-			// up, so the mode can be cycled here and watched in the preview.
+		// A rear gun with a second firing mode, which the / key cycles here so the change can
+		// be watched in the preview. The touch ports get it as a button for as long as that
+		// holds -- outside the weaponSimTime test below, which only makes the caption blink.
+		const bool rearModeCyclable = (curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
+			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2;
+		if (rearModeCyclable)
 			touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
+
+		if (rearModeCyclable && (weaponSimTime >= 75))
+		{
 #if defined(__SWITCH__) || defined(__vita__)
 			// No [/] key on the consoles; the shoulder buttons cycle the mode
 			// (see the L/R handler in JE_itemScreen). x nudged left so the

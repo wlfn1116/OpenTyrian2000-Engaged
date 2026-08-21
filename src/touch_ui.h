@@ -32,7 +32,7 @@ typedef enum
 	TOUCH_BTN_SIDEKICK_L,     // in a level, optional: fire the left sidekick
 	TOUCH_BTN_SIDEKICK_R,
 	TOUCH_BTN_SIDEKICK_BOTH,
-	TOUCH_BTN_REAR_MODE,      // shop preview: cycle the rear weapon mode, the ] key
+	TOUCH_BTN_REAR_MODE,      // shop preview: cycle the rear weapon mode, the / key
 	TOUCH_BTN_COUNT
 } TouchButton;
 

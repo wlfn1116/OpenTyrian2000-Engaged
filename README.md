@@ -14,7 +14,7 @@ This fork adds:
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows;
-- Nintendo Switch, PlayStation Vita, Android, and iOS ports.
+- macOS, Nintendo Switch, PlayStation Vita, Android, and iOS ports.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
@@ -28,9 +28,9 @@ See the [player guide](GUIDE.md) for menu paths and feature details.
 Release packages include the freeware Tyrian 2000 data. Source builds need a
 copy from [camanis.net](https://www.camanis.net/tyrian/tyrian2000.zip).
 
-On Windows and Linux, the executable should be beside the `data` directory.
-Console packages bundle the data and can also use an external copy; see
-their build guides.
+On Windows and Linux, the executable should be beside the `data` directory. The
+macOS app bundle and the console packages carry the data inside them; the
+consoles can also use an external copy. See their build guides.
 
 ## Display and controls
 
@@ -63,10 +63,10 @@ See [Touch controls](GUIDE.md#touch-controls).
 Open **Online Multiplayer** from the main menu. A host can be found over LAN
 or joined by address. The default port is UDP 1333.
 
-Players can mix Windows, Linux, Android, iOS, Switch, and Vita builds when both
-copies use the same game version. Rollback is the default netcode; delay-based
-lockstep remains available from the lobby. Campaign and Endless sessions can be
-saved and resumed through their original game type.
+Players can mix Windows, macOS, Linux, Android, iOS, Switch, and Vita builds
+when both copies use the same game version. Rollback is the default netcode;
+delay-based lockstep remains available from the lobby. Campaign and Endless
+sessions can be saved and resumed through their original game type.
 
 For lobby settings, co-op rules, saving, and desync reports, see
 [Online play](GUIDE.md#online-play).
@@ -99,6 +99,18 @@ make
 Release builds need only the SDL2 runtime packages. Package names vary by
 distribution.
 
+### macOS
+
+The root Makefile also works here:
+
+```sh
+brew install sdl2 sdl2_net pkg-config
+make
+```
+
+For the universal `.app` bundle that release packages ship, which carries its
+own static SDL2 and game data, see [macos/README.md](macos/README.md).
+
 ### Consoles and mobile
 
 - [Nintendo Switch](switch/README.md)
@@ -119,8 +131,8 @@ The suite covers deterministic replays, rollback state, save migrations,
 malformed inputs, Endless generation, and two network peers behind a fault
 proxy. [testing/README.md](testing/README.md) lists the runners and scenarios.
 
-GitHub Actions builds Windows, Linux, Android, iOS, Switch, and Vita. Current
-artifacts are available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
+GitHub Actions builds Windows, macOS, Linux, Android, iOS, Switch, and Vita.
+Current artifacts are available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
 and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
 
 ## License
