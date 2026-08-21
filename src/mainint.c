@@ -8414,9 +8414,10 @@ void JE_pauseGame(void)
 	render_list_recording = rl_was_recording;
 }
 
-// Player-ship sprite blits that tint the hull a "running hot" colour while the current
-// endless zone is OVERCLOCK; otherwise a plain blit. Keep the render-list ship tag (set by
-// the caller) so the tinted hull still interpolates smoothly between ticks.
+// Sprite blits for a ship and everything wearing its colours: hull, banking trim and sidekicks
+// all take the kill-fire drive's tint while that ship's window is open, otherwise a plain blit.
+// The tint follows endlessFxPlayer, so in co-op each ship carries its own. Keep the render-list
+// tag (set by the caller) so a tinted sprite still interpolates smoothly between ticks.
 static void blit_ship2x2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
 {
 	const int tint = endlessShipTintFilter();
@@ -10377,6 +10378,10 @@ redo:
 	// draw sidekicks
 	if ((playerNum_ == 2 || !twoPlayerMode || dual_ship_mode()) && !endLevel)
 	{
+		// Sidekicks are dyed by the drive of the ship that flies them, so re-assert the owner:
+		// the volleys fired above leave the effect context on whoever they last fired for.
+		endlessSetFxPlayer((uint)(this_player - &player[0]));
+
 		for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 		{
 			JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
@@ -10414,9 +10419,9 @@ redo:
 					rl_current_sub_y = dir * (oy - roundf(oy));
 				}
 				if (this_player->sidekick[i].style == 1 || this_player->sidekick[i].style == 2)
-					blit_sprite2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
+					blit_ship2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
 				else
-					blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
+					blit_ship2(VGAScreen, x, y, spriteSheet9, sprite);
 				rl_current_id = 0;
 				rl_shot_attach = 0;
 				rl_current_sub_x = rl_current_sub_y = 0.0f;
