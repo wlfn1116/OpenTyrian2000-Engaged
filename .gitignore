@@ -103,6 +103,10 @@ tyrian.sav
 /macos/build/
 /macos/external/
 
+# Windows ARM64 SDL sources and the SDK staged from them
+/visualc/external/
+/visualc/sdk/
+
 # Packaged artifacts
 /Payload/
 /OpenTyrian2000-Engaged-*.ipa

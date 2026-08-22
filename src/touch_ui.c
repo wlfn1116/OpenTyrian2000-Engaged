@@ -220,7 +220,6 @@ static Uint32 desired_signature(Uint32 now_ms)
 	Uint32 sig = (Uint32)layout;
 	sig = sig * 31u + (touchSidekickButtons ? 1u : 0u);
 	sig = sig * 31u + (fresh(extra_at_ms, now_ms) ? (Uint32)requested_extra + 1u : 0u);
-	sig = sig * 31u + (palette_fading() ? 1u : 0u);
 
 	for (int i = 0; i < TOUCH_BTN_COUNT; ++i)
 		sig = sig * 31u + (btn_held[i] ? 1u : 0u);
@@ -235,12 +234,22 @@ void touch_ui_idle_repaint(void)
 	if (mouseGetRelative())
 		return;
 
+	/* Not during a transition. Between two screens the last presented frame belongs to
+	 * whichever one is on its way out, and re-showing it mid-fade is a flash of the wrong
+	 * brightness. Nothing is lost by waiting: the fade presents every step itself, and the
+	 * buttons are below the visibility floor for most of it. */
+	if (palette_fading() || palette_peak() < TOUCH_VISIBLE_PEAK_MIN)
+		return;
+
 	if (desired_signature(SDL_GetTicks()) == presented_signature)
 		return;
 
-	// JE_showVGA re-composes and presents, which runs touch_ui_render and settles the
-	// signature. Safe from a wait loop: the screen behind it is already finished.
-	video_repaint();
+	/* Re-show the last presented frame with the buttons redrawn over it, rather than
+	 * rebuilding one. A screen does not have to compose into VGAScreen: the jukebox builds
+	 * a supersampled starfield and presents it through present_hi, so going back through
+	 * JE_showVGA here put its bare 1x text layer on screen for a frame every time a button
+	 * was pressed. Repeating the last present cannot pick the wrong buffer. */
+	video_repeat_last_present();
 }
 
 void touch_ui_set_layout(TouchLayout layout)

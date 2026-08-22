@@ -11,6 +11,12 @@ collected under `build`. `-FailFast` stops after the first failed target.
 
 - PC executables run beside `data`. `build` is an output directory.
 - MIDI is available on Windows x86-64.
+- Windows and Linux release both x86-64 and ARM64. The MSVC project's MIDI
+  conditions are x64-only, so ARM64 excludes FluidSynth and midiproc.
+- SDL's VC packages hold x86 and x64 import libraries only. The ARM64 job builds
+  SDL2 and SDL2_net from source, restages them as `include` plus `lib\arm64`, and
+  caches the result. CMake 4 needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` for SDL2.
+- MSVC has no `-fsigned-char`, so `opentyr.c` asserts the default at compile time.
 - Switch builds use devkitPro bash and an MSYS-style `DEVKITPRO` path.
 - Vita builds use native CMake and Ninja. MSYS paths do not work there.
 - Console Release builds define `NDEBUG`.

@@ -65,6 +65,10 @@
 #include <string.h>
 #include <time.h>
 
+// Every other toolchain is built with -fsigned-char. MSVC has no equivalent switch, so the
+// assumption is checked here instead of being left to a target's default.
+typedef char assert_char_is_signed[(char)-1 < 0 ? 1 : -1];
+
 const char *opentyrian_str = "OpenTyrian 2000 Engaged";
 const char *opentyrian_version = OPENTYRIAN_VERSION;
 const char *opentyrian_commit = OPENTYRIAN_COMMIT;

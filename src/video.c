@@ -137,6 +137,13 @@ static SDL_Texture *main_window_texture = NULL;
 
 // Texture for the supersampled present path, recreated on size change.
 static SDL_Texture *hi_texture = NULL;  // streaming: the palette-converted hi frame
+
+/* Whichever texture the last present actually used. video_repeat_last_present re-shows it
+ * without rebuilding anything, which is the only safe way to redraw an overlay on a screen
+ * that composes its frame somewhere other than VGAScreen: the jukebox presents a
+ * supersampled starfield through present_hi, so re-running JE_showVGA there would put the
+ * bare 1x text layer on screen for a frame. Cleared wherever a texture is destroyed. */
+static SDL_Texture *last_present_texture = NULL;
 static int hi_texture_w = 0, hi_texture_h = 0;
 
 static ScalerFunction scaler_function;
@@ -320,6 +327,7 @@ static void deinit_texture(void)
 	{
 		SDL_DestroyTexture(main_window_texture);
 		main_window_texture = NULL;
+		last_present_texture = NULL;
 	}
 
 	// The hi (supersample) texture belongs to the same renderer; drop it too so a
@@ -329,6 +337,7 @@ static void deinit_texture(void)
 		SDL_DestroyTexture(hi_texture);
 		hi_texture = NULL;
 		hi_texture_w = hi_texture_h = 0;
+		last_present_texture = NULL;
 	}
 	if (main_window_tex_format != NULL)
 	{
@@ -708,6 +717,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 				if (main_window_texture != NULL)
 					SDL_DestroyTexture(main_window_texture);
 				main_window_texture = fresh;
+				last_present_texture = NULL;
 			}
 			// else: keep presenting through the old texture (stretched, not 1:1)
 		}
@@ -731,6 +741,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 
 	// Save output rect to be used by mouse functions
 	last_output_rect = dst_rect;
+	last_present_texture = main_window_texture;
 }
 
 // Re-present the existing output texture for modal system overlays such as the Vita IME.
@@ -741,8 +752,8 @@ void video_repeat_last_present(void)
 
 	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
 	SDL_RenderClear(main_window_renderer);
-	if (main_window_texture != NULL)
-		SDL_RenderCopy(main_window_renderer, main_window_texture, NULL, &last_output_rect);
+	if (last_present_texture != NULL)
+		SDL_RenderCopy(main_window_renderer, last_present_texture, NULL, &last_output_rect);
 	touch_ui_render(main_window_renderer, &last_output_rect);
 	SDL_RenderPresent(main_window_renderer);
 }
@@ -758,6 +769,7 @@ static bool ensure_hi_texture(int w, int h)
 	{
 		SDL_DestroyTexture(hi_texture);
 		hi_texture = NULL;
+		last_present_texture = NULL;
 	}
 
 	hi_texture = SDL_CreateTexture(main_window_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, w, h);
@@ -842,6 +854,7 @@ void present_hi(SDL_Surface *hi)
 
 	// Keep the mouse mapping in sync with what is actually on screen.
 	last_output_rect = dst_rect;
+	last_present_texture = hi_texture;
 }
 
 // Restore an invalidated drawable from the current logical frame while input-wait loops are idle.

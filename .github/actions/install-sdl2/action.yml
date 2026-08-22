@@ -43,17 +43,22 @@ runs:
 
           # Retry against the Ubuntu archive directly. Replacing the mirrorlist
           # URI rather than reordering it is what takes the failover out of the
-          # picture; archive.ubuntu.com serves the security suite too.
+          # picture; the archive serves the security suite too.
           if [ "$attempt" -eq 1 ]; then
-            archive=https://archive.ubuntu.com/ubuntu/
+            # Everything except amd64 and i386 is served from ports.ubuntu.com.
+            case "$(dpkg --print-architecture)" in
+              amd64 | i386) archive=https://archive.ubuntu.com/ubuntu/ ;;
+              *) archive=https://ports.ubuntu.com/ubuntu-ports/ ;;
+            esac
             for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources \
                      /etc/apt/sources.list.d/*.list; do
               test -f "$f" || continue
               sudo sed -i -e "s|mirror+file:/etc/apt/apt-mirrors\.txt|$archive|g" \
-                          -e "s|http://azure\.archive\.ubuntu\.com/ubuntu/|$archive|g" "$f"
+                          -e "s|http://azure\.archive\.ubuntu\.com/ubuntu/|$archive|g" \
+                          -e "s|http://azure\.ports\.ubuntu\.com/ubuntu-ports/|$archive|g" "$f"
             done
             apt_opts+=(-o Acquire::ForceIPv4=true)
-            echo 'retrying from archive.ubuntu.com over IPv4'
+            echo "retrying from $archive over IPv4"
           fi
 
           sleep 5

@@ -15,7 +15,8 @@ One or more of All, PC, Switch, or Vita. Defaults to All.
 The MSVC configuration for the PC target. Defaults to Release.
 
 .PARAMETER Platform
-The MSVC platform for the PC target. Defaults to x64.
+The MSVC platform for the PC target. Defaults to x64. ARM64 needs SDL2 and
+SDL2_net SDKs built for ARM64; see README.md.
 
 .PARAMETER Clean
 Clean before building. PC uses MSBuild's Rebuild target; console targets run
@@ -50,7 +51,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
 
-    [ValidateSet('x64', 'Win32')]
+    [ValidateSet('x64', 'Win32', 'ARM64')]
     [string] $Platform = 'x64',
 
     [switch] $Clean,
@@ -70,7 +71,7 @@ Usage:
 Options:
   -Target <All|PC|Switch|Vita>[,...]  Targets to build (default: All)
   -Configuration <Debug|Release>      PC configuration (default: Release)
-  -Platform <x64|Win32>               PC platform (default: x64)
+  -Platform <x64|Win32|ARM64>         PC platform (default: x64)
   -Clean                              Clean before building
   -NoCollect                          Do not copy outputs into .\build
   -FailFast                           Stop after the first failed target
@@ -87,7 +88,11 @@ $CollectionDirectory = Join-Path $RepoRoot 'build'
 $Project = Join-Path $RepoRoot 'visualc\opentyrian.vcxproj'
 $PcBaseName = "opentyrian-$Platform-$Configuration"
 $PackageBaseName = 'OpenTyrian2000-Engaged'
-$PcPackagePlatform = if ($Platform -eq 'x64') { 'Windows-x86_64' } else { 'Windows-x86' }
+$PcPackagePlatform = switch ($Platform) {
+    'x64'   { 'Windows-x86_64' }
+    'ARM64' { 'Windows-arm64' }
+    default { 'Windows-x86' }
+}
 
 function Get-EnvironmentOverride {
     param(
@@ -184,6 +189,12 @@ function Invoke-NativeCommand {
 function Build-PC {
     if (-not (Test-Path -LiteralPath $Project -PathType Leaf)) {
         throw "Visual C++ project not found: $Project"
+    }
+
+    if ($Platform -eq 'ARM64') {
+        # The build stages its SDL2 DLLs beside the executable, so the repository root ends up
+        # holding ARM64 copies until an x64 build puts its own back.
+        Write-Host '  ARM64 replaces the SDL2 DLLs in the repository root.' -ForegroundColor Yellow
     }
 
     $msbuild = Find-MSBuild

@@ -1,5 +1,5 @@
 # Builds all release targets on pushes, pull requests, and manual runs. Master
-# refreshes the `latest` pre-release; version tags attach the same seven artifacts
+# refreshes the `latest` pre-release; version tags attach the same nine artifacts
 # to a tagged release. The data job supplies one stripped freeware-data artifact
 # to every platform job.
 
@@ -49,11 +49,21 @@ jobs:
           path: data
           retention-days: 1
 
+  # Both architectures run the suite: the replay fixtures are canonical state hashes, so this
+  # is where an ARM build proves its simulation matches everyone else's.
   tests:
-    name: Correctness suite
+    name: Correctness suite (${{ matrix.arch }})
     needs: data
     timeout-minutes: 45
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
 
@@ -158,11 +168,150 @@ jobs:
           name: OpenTyrian2000-Engaged-Windows-x86_64-pdb
           path: opentyrian-x64-Release.pdb
 
+  windows-arm:
+    name: Windows ARM64
+    needs: data
+    timeout-minutes: 60
+    # The VS 2026 image is the ARM64 runner that carries the v145 toolset. MIDI is absent from
+    # this build: the FluidSynth conditions in the project files are x64-only.
+    runs-on: windows-11-vs2026-arm
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: arm64
+
+      # SDL's VC packages ship x86 and x64 import libraries only, so ARM64 builds its own and
+      # stages them in the include + lib\<platform> layout that sdl_paths.props describes.
+      - name: Restore the cached ARM64 SDL SDKs
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: visualc/sdk
+          key: windows-arm64-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Build SDL2 and SDL2_net for ARM64
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          New-Item -ItemType Directory -Force -Path visualc\external\SDL2, visualc\external\SDL2_net | Out-Null
+          curl.exe -fL --retry 3 -o sdl2.tar.gz `
+            "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL2_VERSION/SDL2-$env:SDL2_VERSION.tar.gz"
+          curl.exe -fL --retry 3 -o sdl2net.tar.gz `
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$env:SDL2_NET_VERSION/SDL2_net-$env:SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C visualc\external\SDL2
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C visualc\external\SDL2_net
+
+          # SDL2 asks for compatibility with CMake 3.0, which CMake 4 refuses without this.
+          cmake -S visualc\external\SDL2 -B visualc\external\SDL2\build -A ARM64 `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
+            -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF
+          cmake --build visualc\external\SDL2\build --config Release --parallel
+          cmake --install visualc\external\SDL2\build --config Release --prefix visualc\external\SDL2-install
+
+          cmake -S visualc\external\SDL2_net -B visualc\external\SDL2_net\build -A ARM64 `
+            -DCMAKE_PREFIX_PATH="$pwd\visualc\external\SDL2-install" -DSDL2NET_SAMPLES=OFF
+          cmake --build visualc\external\SDL2_net\build --config Release --parallel
+          cmake --install visualc\external\SDL2_net\build --config Release --prefix visualc\external\SDL2_net-install
+
+          # CMake installs headers under include\SDL2 and splits the DLL from its import
+          # library; the project files expect the VC package layout instead.
+          foreach ($name in 'SDL2', 'SDL2_net') {
+            New-Item -ItemType Directory -Force -Path "visualc\sdk\$name\include", "visualc\sdk\$name\lib\arm64" | Out-Null
+            Copy-Item "visualc\external\$name-install\include\SDL2\*" "visualc\sdk\$name\include\"
+            Copy-Item "visualc\external\$name-install\lib\*.lib" "visualc\sdk\$name\lib\arm64\"
+            Copy-Item "visualc\external\$name-install\bin\*.dll" "visualc\sdk\$name\lib\arm64\"
+          }
+
+      # Runs on a cache hit too, so a partial cache fails here rather than during the link.
+      - name: Check the staged SDKs
+        run: |
+          foreach ($f in 'visualc\sdk\SDL2\include\SDL.h', 'visualc\sdk\SDL2\lib\arm64\SDL2.lib',
+                         'visualc\sdk\SDL2\lib\arm64\SDL2main.lib', 'visualc\sdk\SDL2\lib\arm64\SDL2.dll',
+                         'visualc\sdk\SDL2_net\include\SDL_net.h', 'visualc\sdk\SDL2_net\lib\arm64\SDL2_net.lib',
+                         'visualc\sdk\SDL2_net\lib\arm64\SDL2_net.dll') {
+            if (-not (Test-Path $f)) { throw "missing $f" }
+          }
+
+      - name: Build (Release ARM64)
+        run: |
+          $commit = $env:GITHUB_SHA.Substring(0, 7)
+          msbuild visualc\opentyrian.sln /m /v:minimal /t:Build `
+            /p:Configuration=Release /p:Platform=ARM64 `
+            "/p:SDL2BaseDir=${{ github.workspace }}\visualc\sdk\SDL2" `
+            "/p:SDL2netBaseDir=${{ github.workspace }}\visualc\sdk\SDL2_net" `
+            "/p:OPENTYRIAN_COMMIT=$commit"
+
+      # An x64 build would run on this machine and pass everything below it, so read the PE
+      # machine field rather than trusting that /p:Platform reached the compiler.
+      - name: Check the executable is ARM64
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes('opentyrian-ARM64-Release.exe')
+          $machine = [System.BitConverter]::ToUInt16($bytes, [System.BitConverter]::ToInt32($bytes, 0x3C) + 4)
+          if ($machine -ne 0xAA64) { throw ('machine 0x{0:X4}, expected 0xAA64' -f $machine) }
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: pkg/data
+
+      - name: Correctness suite (Windows ARM64)
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          python testing\run_unit_suite.py `
+            --exe .\opentyrian-ARM64-Release.exe --data pkg\data
+          python testing\run_replay_fixtures.py `
+            --exe .\opentyrian-ARM64-Release.exe --data pkg\data
+          python testing\network_fault_test.py `
+            --exe .\opentyrian-ARM64-Release.exe --data pkg\data --base-port 46200
+
+      - name: Package 7z
+        run: |
+          Copy-Item opentyrian-ARM64-Release.exe pkg\OpenTyrian2000-Engaged-Windows-arm64.exe
+          Copy-Item visualc\sdk\SDL2\lib\arm64\SDL2.dll, visualc\sdk\SDL2_net\lib\arm64\SDL2_net.dll pkg\
+          7z a -mx=9 OpenTyrian2000-Engaged-Windows-arm64.7z .\pkg\*
+
+      # Run the packaged game headless for 15 seconds; an early exit fails the job.
+      - name: Smoke test (headless)
+        run: |
+          $env:SDL_VIDEODRIVER = 'dummy'
+          $env:SDL_AUDIODRIVER = 'dummy'
+          $p = Start-Process -FilePath .\pkg\OpenTyrian2000-Engaged-Windows-arm64.exe -WorkingDirectory .\pkg -PassThru
+          if ($p.WaitForExit(15000)) { throw "game exited early (code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host 'survived 15s headless'
+
+      # Avoid recompressing the 7z inside GitHub's artifact wrapper.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-Windows-arm64
+          path: OpenTyrian2000-Engaged-Windows-arm64.7z
+          compression-level: 0
+
+      # Keep symbols separately for crash-log decoding.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-Windows-arm64-pdb
+          path: opentyrian-ARM64-Release.pdb
+
   linux:
-    name: Linux x86-64
+    name: Linux ${{ matrix.arch }}
     needs: data
     timeout-minutes: 25
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
 
@@ -182,7 +331,7 @@ jobs:
       - name: Package tar.gz
         run: |
           cp opentyrian2000 stage/opentyrian2000/
-          tar -C stage -czf OpenTyrian2000-Engaged-Linux-x86_64.tar.gz opentyrian2000
+          tar -C stage -czf OpenTyrian2000-Engaged-Linux-${{ matrix.arch }}.tar.gz opentyrian2000
 
       # Exit 124 means the headless game survived the 15-second timeout.
       - name: Smoke test (headless)
@@ -196,8 +345,8 @@ jobs:
       # The tar layer preserves the executable bit; avoid recompressing it.
       - uses: actions/upload-artifact@v6
         with:
-          name: OpenTyrian2000-Engaged-Linux
-          path: OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+          name: OpenTyrian2000-Engaged-Linux-${{ matrix.arch }}
+          path: OpenTyrian2000-Engaged-Linux-${{ matrix.arch }}.tar.gz
           compression-level: 0
 
   android:
@@ -562,7 +711,7 @@ jobs:
   prerelease:
     name: Update latest pre-release
     if: github.ref == 'refs/heads/master'
-    needs: [windows, linux, macos, android, ios, switch, vita, tests, sanitizers]
+    needs: [windows, windows-arm, linux, macos, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -578,7 +727,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
+                  OpenTyrian2000-Engaged-Windows-arm64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-Linux-aarch64.tar.gz
                   OpenTyrian2000-Engaged-macOS-universal.zip
                   OpenTyrian2000-Engaged-Android.apk
                   OpenTyrian2000-Engaged-iOS.ipa
@@ -594,7 +745,7 @@ jobs:
   release:
     name: Attach to release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, linux, macos, android, ios, switch, vita, tests, sanitizers]
+    needs: [windows, windows-arm, linux, macos, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -611,7 +762,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
+                  OpenTyrian2000-Engaged-Windows-arm64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-Linux-aarch64.tar.gz
                   OpenTyrian2000-Engaged-macOS-universal.zip
                   OpenTyrian2000-Engaged-Android.apk
                   OpenTyrian2000-Engaged-iOS.ipa

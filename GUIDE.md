@@ -814,7 +814,7 @@ work only in a normal solo game.
 | Backend | Requirement |
 | --- | --- |
 | OPL3 | None; default |
-| FluidSynth | A `.sf2`, `.sf3`, or `.sf` SoundFont |
+| FluidSynth | Windows x86-64 with a `.sf2`, `.sf3`, or `.sf` SoundFont |
 | Native MIDI | Windows x86-64 |
 
 Choose a backend under **Setup > Sound > Music Synth**. Put a SoundFont beside

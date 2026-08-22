@@ -13,7 +13,7 @@ This fork adds:
 - two-player online play across every mode;
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
-- FluidSynth and native MIDI support on Windows;
+- FluidSynth and native MIDI support on Windows x86-64;
 - macOS, Nintendo Switch, PlayStation Vita, Android, and iOS ports.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
@@ -87,6 +87,13 @@ one or more targets and collect their outputs under `build`:
 
 Run `.\build-all.ps1 -Help` for the complete option list.
 
+`-Platform ARM64` builds for Windows on ARM. SDL ships x86 and x64 import
+libraries only, so `SDL2BaseDir` and `SDL2netBaseDir` in
+`visualc\sdl_paths.props` have to point at SDKs built from source, each holding
+an `include` directory and a `lib\arm64` directory. The `windows-arm` job in
+`.github/workflows/build.yml` is the recipe for building and staging them. MIDI
+is x86-64 only and is left out of ARM64 builds.
+
 ### Linux
 
 Install the SDL2 development packages, then use the root Makefile:
@@ -97,7 +104,7 @@ make
 ```
 
 Release builds need only the SDL2 runtime packages. Package names vary by
-distribution.
+distribution. The same Makefile builds the released aarch64 package.
 
 ### macOS
 
@@ -131,7 +138,9 @@ The suite covers deterministic replays, rollback state, save migrations,
 malformed inputs, Endless generation, and two network peers behind a fault
 proxy. [testing/README.md](testing/README.md) lists the runners and scenarios.
 
-GitHub Actions builds Windows, macOS, Linux, Android, iOS, Switch, and Vita.
+GitHub Actions builds Windows (x86-64 and ARM64), Linux (x86-64 and aarch64),
+macOS, Android, iOS, Switch, and Vita. The suite runs on both architectures of
+both desktop systems.
 Current artifacts are available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
 and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
 
