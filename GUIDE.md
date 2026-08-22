@@ -904,6 +904,12 @@ save you pick. It then asks for the slot to keep it in and the name to file it
 under, the same prompt every other save uses. The name starts as whatever the
 sending device called it, so you can rename it or keep it.
 
+The last row of that list is **Enter an address...**, for a network that blocks
+broadcasts or puts the two devices on different subnets. Type the address the
+upload screen shows and the receiving device asks that machine directly. The row
+is there even when the search found nothing. A hostname works in place of an
+address, and the address is remembered until you close the game.
+
 Everything inside the save crosses unchanged: progress, both loadouts, cash,
 difficulty, cheat settings, and an Endless run's whole state. The slot number and
 the name are the only things the receiving device decides. A one-player save

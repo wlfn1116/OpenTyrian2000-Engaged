@@ -223,9 +223,10 @@ static bool lobbyWaitForInput(void)
 
 // Blocking single-line prompt.  `filter` returns true for characters the field accepts, and
 // `numeric` asks for a keypad rather than a full keyboard where the platform has one.
-// Returns false if the player cancelled.
-static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
-                           bool (*filter)(char), bool numeric)
+// Returns false if the player cancelled.  Shared with the save transfer screens, which draw the
+// same backdrop and want the same handheld keyboard and paste behaviour.
+bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
+                      bool (*filter)(char), bool numeric)
 {
 #ifdef PLATFORM_HANDHELD
 	// No physical keyboard on these platforms, and no desktop-style typing, so the
@@ -577,8 +578,8 @@ static void lobbyEndlessMenu(void)
 		case ITEM_SEED:
 			JE_playSampleNum(S_SELECT);
 			// A cancelled field leaves the seed alone; clearing it is done by accepting a blank.
-			if (!lobbyTextEntry("Endless Setup", "Run seed:", network_host_endless_seed,
-			                    sizeof(network_host_endless_seed), filterSeed, false))
+			if (!networkTextEntry("Endless Setup", "Run seed:", network_host_endless_seed,
+			                      sizeof(network_host_endless_seed), filterSeed, false))
 			{
 				network_host_endless_seed[0] = '\0';
 			}
@@ -630,7 +631,7 @@ static bool lobbyValidPort(const char *text, Uint16 *out)
 	return true;
 }
 
-static bool filterAddress(char c)
+bool networkFilterAddress(char c)
 {
 	// IPv4, a hostname, or either with a ":port" suffix.
 	return isalnum((unsigned char)c) || c == '.' || c == '-' || c == ':';
@@ -1145,8 +1146,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			JE_playSampleNum(S_SELECT);
 
-			const bool entered = lobbyTextEntry("Host Game", "Listen on port:", port_buf,
-			                                    port_buf_size, filterDigits, true);
+			const bool entered = networkTextEntry("Host Game", "Listen on port:", port_buf,
+			                                      port_buf_size, filterDigits, true);
 
 			// The field drew its own screen over the backdrop, whatever the answer was.
 			lobbyPrepareBackdrop("Host Game");
@@ -1612,8 +1613,8 @@ bool networkLobby(void)
 		{
 			JE_playSampleNum(S_SELECT);
 
-			if (!lobbyTextEntry("Join by IP Address", "Host address (or address:port):", addr_buf,
-			                    sizeof(addr_buf), filterAddress, false))
+			if (!networkTextEntry("Join by IP Address", "Host address (or address:port):", addr_buf,
+			                      sizeof(addr_buf), networkFilterAddress, false))
 				break;
 
 			// Split an optional ":port" suffix; without one, the default port is assumed.
@@ -1653,7 +1654,7 @@ bool networkLobby(void)
 
 		case ITEM_NAME:
 			JE_playSampleNum(S_SELECT);
-			if (lobbyTextEntry("Online Multiplayer", "Your Nickname:", name_buf, sizeof(name_buf), filterName, false))
+			if (networkTextEntry("Online Multiplayer", "Your Nickname:", name_buf, sizeof(name_buf), filterName, false))
 				network_set_player_name(name_buf);
 			break;
 
@@ -1805,6 +1806,24 @@ void qa_test_net_lobby_strings(void)
 
 bool networkLobby(void)
 {
+	return false;
+}
+
+bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
+                      bool (*filter)(char), bool numeric)
+{
+	(void)title;
+	(void)prompt;
+	(void)buf;
+	(void)buf_size;
+	(void)filter;
+	(void)numeric;
+	return false;
+}
+
+bool networkFilterAddress(char c)
+{
+	(void)c;
 	return false;
 }
 

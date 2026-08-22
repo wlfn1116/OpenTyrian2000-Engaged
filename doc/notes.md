@@ -913,6 +913,15 @@ the page the slot came from and its `online_seat`. Chunking follows the custom
 weapon and Endless run shape; the whole stream repeats until the receiver
 acknowledges it.
 
+The download pick list always carries a trailing typed-address row, so a network
+that drops broadcasts still has a route. It sends the same `PACKET_SAVE_OFFER`
+directly to the address and waits for the ordinary reply, which means the row
+shows the save's name before anything is pulled and a wrong address fails at the
+probe rather than as a transfer timeout. The field is `networkTextEntry`,
+exported from `net_lobby.c` so both screens share its handheld keyboard and paste
+handling. A pasted `:port` suffix is stripped: both machines use the same fixed
+port.
+
 The receiver copies the record into the chosen slot with
 `saveXferPendingApply`. That path deliberately bypasses `JE_saveGame`: capturing
 live globals would rebuild the record from this machine's session instead of

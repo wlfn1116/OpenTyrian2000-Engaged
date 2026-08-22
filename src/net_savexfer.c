@@ -25,6 +25,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "net_lobby.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
@@ -123,6 +124,10 @@ static struct
 	size_t          endlessLen;
 }
 save_xfer_pending;
+
+/* Last address typed into the pick list, kept for the rest of the session so a second transfer
+ * between the same two machines is one Enter. */
+static char save_xfer_address[64];
 
 bool saveXferAvailable(void) { return true; }
 
@@ -551,6 +556,65 @@ void saveXferUpload(JE_byte slot)
 
 /* --- download -------------------------------------------------------------------------- */
 
+/* Read one offer reply into a list row. The strings are fixed-width fields from another machine,
+ * so each is copied by a bounded run and terminated here rather than trusted to end. */
+static void saveXferReadReply(const UDPpacket *in, SaveXferOffer *o)
+{
+	memset(o, 0, sizeof(*o));
+
+	const Uint32 host = SDL_SwapBE32(in->address.host);
+	snprintf(o->address, sizeof(o->address), "%u.%u.%u.%u", (host >> 24) & 0xff,
+	         (host >> 16) & 0xff, (host >> 8) & 0xff, host & 0xff);
+
+	o->port = SDLNet_Read16(&in->data[SXR_PORT]);
+	o->flags = in->data[SXR_FLAGS];
+	o->episode = in->data[SXR_EPISODE];
+	memcpy(o->levelName, &in->data[SXR_LEVEL], sizeof(o->levelName) - 1);
+	memcpy(o->saveName, &in->data[SXR_SAVE], sizeof(o->saveName) - 1);
+	memcpy(o->sender, &in->data[SXR_SENDER], sizeof(o->sender) - 1);
+}
+
+/* Ask one named machine directly, for a network whose broadcasts do not carry. The answer is the
+ * same reply the volley collects, so the row shows the save's name before anything is pulled. */
+static bool saveXferProbeAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+                                 const char *host, SaveXferOffer *result)
+{
+	IPaddress to;
+	if (SDLNet_ResolveHost(&to, host, SAVE_XFER_PORT) == -1)
+		return false;
+
+	SDLNet_Write16(PACKET_SAVE_OFFER, &out->data[0]);
+	SDLNet_Write16(SAVE_XFER_VERSION, &out->data[2]);
+
+	const Uint32 started = SDL_GetTicks();
+	Uint32 askedAt = 0;
+	bool asked = false;
+
+	while (SDL_GetTicks() - started < SX_SEARCH_MS)
+	{
+		if (!asked || SDL_GetTicks() - askedAt >= SX_VOLLEY_MS)
+		{
+			saveXferSendTo(sock, out, &to, 4);
+			askedAt = SDL_GetTicks();
+			asked = true;
+		}
+
+		while (SDLNet_UDP_Recv(sock, in) > 0)
+		{
+			if (!saveXferIsOurs(in, PACKET_SAVE_REPLY, SXR_LEN))
+				continue;
+
+			saveXferReadReply(in, result);
+			return true;
+		}
+
+		saveXferPoll();
+		SDL_Delay(4);
+	}
+
+	return false;
+}
+
 // Probe the network and collect what answers. Returns how many distinct machines replied.
 static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, SaveXferOffer *offers)
 {
@@ -577,16 +641,14 @@ static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, Sav
 			if (!saveXferIsOurs(in, PACKET_SAVE_REPLY, SXR_LEN))
 				continue;
 
-			const Uint32 host = SDL_SwapBE32(in->address.host);
-			char address[48];
-			snprintf(address, sizeof(address), "%u.%u.%u.%u", (host >> 24) & 0xff,
-			         (host >> 16) & 0xff, (host >> 8) & 0xff, host & 0xff);
+			SaveXferOffer answered;
+			saveXferReadReply(in, &answered);
 
 			// One machine answers once per probe we sent it, so drop the repeats.
 			bool duplicate = false;
 			for (int i = 0; i < found; ++i)
 			{
-				if (strcmp(offers[i].address, address) == 0)
+				if (strcmp(offers[i].address, answered.address) == 0)
 				{
 					duplicate = true;
 					break;
@@ -595,16 +657,7 @@ static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, Sav
 			if (duplicate)
 				continue;
 
-			SaveXferOffer *const o = &offers[found++];
-			memset(o, 0, sizeof(*o));
-			SDL_strlcpy(o->address, address, sizeof(o->address));
-			o->port = SDLNet_Read16(&in->data[SXR_PORT]);
-			o->flags = in->data[SXR_FLAGS];
-			o->episode = in->data[SXR_EPISODE];
-			// Fixed-width fields from another machine; copy a bounded run and terminate here.
-			memcpy(o->levelName, &in->data[SXR_LEVEL], sizeof(o->levelName) - 1);
-			memcpy(o->saveName, &in->data[SXR_SAVE], sizeof(o->saveName) - 1);
-			memcpy(o->sender, &in->data[SXR_SENDER], sizeof(o->sender) - 1);
+			offers[found++] = answered;
 		}
 
 		saveXferPoll();
@@ -631,13 +684,23 @@ static void saveXferOfferLine(char *line, size_t size, const SaveXferOffer *o)
 	         saveName, where);
 }
 
-// Let the player choose which machine to pull from. Returns NULL if they backed out.
-static const SaveXferOffer *saveXferPickOffer(const SaveXferOffer *offers, int count)
+/* Let the player choose which machine to pull from. `offers` holds `count` machines that answered
+ * the broadcast plus one spare row, which the last item fills by asking a typed address directly.
+ * Returns NULL if the player backed out. */
+static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+                                              SaveXferOffer *offers, int count)
 {
-	int selectedIndex = 0;
-	int wItem[SX_MAX_OFFERS] = { 0 };
+	// The typed-address row is always last, so it stays put as machines answer above it.
+	const int typedRow = count;
+	const int rows = count + 1;
 
-	const int yItems = 60;
+	int selectedIndex = 0;
+	int wItem[SX_MAX_OFFERS + 1] = { 0 };
+	char status[64];
+	status[0] = '\0';
+
+	// Nothing answered leaves one row, so lift the list clear of the line that says so.
+	const int yItems = (count > 0) ? 60 : 100;
 	const int dyItems = 18;
 	const int hItem = 13;
 
@@ -645,15 +708,25 @@ static const SaveXferOffer *saveXferPickOffer(const SaveXferOffer *offers, int c
 	{
 		saveXferRestore();
 
-		for (int i = 0; i < count; ++i)
+		if (count == 0)
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 70, "Nothing on this network answered.",
+			                    normal_font, centered, 15, -2, false, 2);
+
+		for (int i = 0; i < rows; ++i)
 		{
 			char line[96];
-			saveXferOfferLine(line, sizeof(line), &offers[i]);
+			if (i == typedRow)
+				SDL_strlcpy(line, "Enter an address...", sizeof(line));
+			else
+				saveXferOfferLine(line, sizeof(line), &offers[i]);
 
 			wItem[i] = JE_textWidth(line, normal_font);
 			draw_font_hv_shadow(VGAScreen, SX_XCENTER - wItem[i] / 2, yItems + dyItems * i, line,
 			                    normal_font, left_aligned, 15, -4 + (i == selectedIndex ? 2 : 0), false, 2);
 		}
+
+		if (status[0] != '\0')
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, status, normal_font, centered, 15, -3, false, 2);
 
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 180, "Enter to download, Esc to go back",
 		                    normal_font, centered, 15, -5, false, 2);
@@ -669,7 +742,7 @@ static const SaveXferOffer *saveXferPickOffer(const SaveXferOffer *offers, int c
 
 		if (mouseMoved || newmouse)
 		{
-			for (int i = 0; i < count; ++i)
+			for (int i = 0; i < rows; ++i)
 			{
 				const int x = SX_XCENTER - wItem[i] / 2;
 				const int y = yItems + dyItems * i;
@@ -697,11 +770,11 @@ static const SaveXferOffer *saveXferPickOffer(const SaveXferOffer *offers, int c
 			{
 			case SDL_SCANCODE_UP:
 				JE_playSampleNum(S_CURSOR);
-				selectedIndex = (selectedIndex == 0) ? count - 1 : selectedIndex - 1;
+				selectedIndex = (selectedIndex == 0) ? rows - 1 : selectedIndex - 1;
 				break;
 			case SDL_SCANCODE_DOWN:
 				JE_playSampleNum(S_CURSOR);
-				selectedIndex = (selectedIndex == count - 1) ? 0 : selectedIndex + 1;
+				selectedIndex = (selectedIndex == rows - 1) ? 0 : selectedIndex + 1;
 				break;
 			case SDL_SCANCODE_SPACE:
 			case SDL_SCANCODE_RETURN:
@@ -715,11 +788,50 @@ static const SaveXferOffer *saveXferPickOffer(const SaveXferOffer *offers, int c
 			}
 		}
 
-		if (action)
+		if (!action)
+			continue;
+
+		if (selectedIndex != typedRow)
 		{
 			JE_playSampleNum(S_SELECT);
 			return &offers[selectedIndex];
 		}
+
+		status[0] = '\0';
+
+		if (!networkTextEntry("Download Save", "Sender address:", save_xfer_address,
+		                      sizeof(save_xfer_address), networkFilterAddress, false))
+		{
+			// The field drew over the backdrop; the loop above redraws the list either way.
+			continue;
+		}
+
+		// Both machines use the same fixed port, so a pasted ":port" says nothing new.
+		char host[sizeof(save_xfer_address)];
+		SDL_strlcpy(host, save_xfer_address, sizeof(host));
+		char *const colon = strrchr(host, ':');
+		if (colon != NULL)
+			*colon = '\0';
+
+		if (host[0] == '\0')
+		{
+			SDL_strlcpy(status, "Enter an address.", sizeof(status));
+			continue;
+		}
+
+		saveXferRestore();
+		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 100, "Asking that address...",
+		                    normal_font, centered, 15, -2, false, 2);
+		saveXferPresent();
+
+		if (saveXferProbeAddress(sock, out, in, host, &offers[typedRow]))
+		{
+			JE_playSampleNum(S_SELECT);
+			return &offers[typedRow];
+		}
+
+		JE_playSampleNum(S_CLINK);
+		SDL_strlcpy(status, "That address is not sharing a save.", sizeof(status));
 	}
 }
 
@@ -857,38 +969,31 @@ bool saveXferDownload(void)
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
 
-	SaveXferOffer offers[SX_MAX_OFFERS];
+	// One spare row past the broadcast's own limit: the pick list fills it from a typed address.
+	SaveXferOffer offers[SX_MAX_OFFERS + 1];
 	const int count = saveXferFindOffers(sock, out, in, offers);
 
 	bool got = false;
 	bool cancelled = false;
 
-	if (count == 0)
+	// The list is shown even when nothing answered, because typing an address is on it.
+	const SaveXferOffer *const pick = saveXferPickOffer(sock, out, in, offers, count);
+	if (pick != NULL)
 	{
-		fade_black(10);
-		saveXferNotice("Download Save", "No device is sharing a save.",
-		               "Start Upload Save on the other device.");
+		saveXferRestore();
+		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 100, "Downloading...",
+		                    normal_font, centered, 15, -2, false, 2);
+		saveXferPresent();
+
+		got = saveXferReceivePayload(sock, out, in, pick, &cancelled);
 	}
-	else
-	{
-		const SaveXferOffer *const pick = saveXferPickOffer(offers, count);
-		if (pick != NULL)
-		{
-			saveXferRestore();
-			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 90, "Downloading...",
-			                    normal_font, centered, 15, -2, false, 2);
-			saveXferPresent();
 
-			got = saveXferReceivePayload(sock, out, in, pick, &cancelled);
-		}
+	fade_black(10);
 
-		fade_black(10);
-
-		// Backing out is a decision, not a fault; only a real failure is worth a notice.
-		if (pick != NULL && !got && !cancelled)
-			saveXferNotice("Download Save", "The transfer did not finish.",
-			               "Try again from both devices.");
-	}
+	// Backing out is a decision, not a fault; only a real failure is worth a notice.
+	if (pick != NULL && !got && !cancelled)
+		saveXferNotice("Download Save", "The transfer did not finish.",
+		               "Try again from both devices.");
 
 	SDLNet_FreePacket(in);
 	SDLNet_FreePacket(out);
