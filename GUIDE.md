@@ -37,6 +37,8 @@ The useful settings are under **Setup > Graphics**.
   effects. Turning it off renders the feedback and its source layers at native
   size, reducing the cost at 3x and above. Foreground objects stay sub-pixel.
   Console builds default this off.
+- Android and iOS draw at the device's full panel resolution, so **Native**
+  resolves above the fixed modes on a high-density screen.
 - The Vita always resolves Sub-pixel to 1x.
 - On Vita this setting is named **Smooth FX**. Turning it off updates the
   smoothie background once per 35 Hz simulation tick while foreground movement

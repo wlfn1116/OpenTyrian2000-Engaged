@@ -118,7 +118,7 @@ bool show_fps = false;
 int current_fps = 0;
 static SDL_Rect last_output_rect = { 0, 0, vga_width, vga_height };
 
-// Window size (the same quantity calc_dst_render_rect fits the frame into) at the last
+// Output size (the same quantity calc_dst_render_rect fits the frame into) at the last
 // present. The event pump compares against this to notice a resolution change it must
 // repaint for; see video_repaint_if_stale().
 static int last_present_w = 0, last_present_h = 0;
@@ -212,9 +212,17 @@ void init_video(void)
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
 
+	Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
+#ifdef TARGET_IOS
+	// Retina drawable. Without this the UIKit view keeps a content scale of 1, so the renderer
+	// output is the screen measured in points -- a third of the panel's pixels on a modern
+	// iPhone -- and iOS upscales everything the game draws. See video_output_size().
+	window_flags |= SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
+
 	main_window = SDL_CreateWindow(opentyrian_str,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-		win_w, win_h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
+		win_w, win_h, window_flags);
 
 	if (main_window == NULL)
 	{
@@ -233,9 +241,9 @@ void init_video(void)
 	SDL_RenderClear(main_window_renderer);
 	SDL_RenderPresent(main_window_renderer);
 
-	// Seed the repaint watchdog with the starting window size so the first event-pump
+	// Seed the repaint watchdog with the starting output size so the first event-pump
 	// poll doesn't see a spurious change (see video_repaint_if_stale()).
-	SDL_GetWindowSize(main_window, &last_present_w, &last_present_h);
+	video_output_size(&last_present_w, &last_present_h);
 }
 
 void deinit_video(void)
@@ -566,6 +574,52 @@ static void fit_rect_to_aspect(SDL_Rect *const r, int win_w, int win_h, float as
 	}
 }
 
+/* Renderer output size, in pixels. SDL measures the window in points, which a high-DPI
+ * drawable (iOS) makes smaller than the pixels behind it, so every render-side rectangle is
+ * sized from here rather than from the window. Falls back to the window size while there is
+ * no renderer to ask. */
+void video_output_size(int *out_w, int *out_h)
+{
+	int w = 0, h = 0;
+
+	if (main_window_renderer == NULL
+	    || SDL_GetRendererOutputSize(main_window_renderer, &w, &h) != 0 || w <= 0 || h <= 0)
+	{
+		if (main_window != NULL)
+			SDL_GetWindowSize(main_window, &w, &h);
+	}
+
+	if (out_w != NULL)
+		*out_w = w;
+	if (out_h != NULL)
+		*out_h = h;
+}
+
+// Output pixels per window point, per axis. Input arrives in points while the output
+// rectangles are in pixels, so the input mappings and any limit written in points convert by
+// it. Either pointer may be NULL.
+void video_output_pixel_scale(float *out_sx, float *out_sy)
+{
+	float sx = 1.f, sy = 1.f;
+
+	int win_w = 0, win_h = 0, out_w = 0, out_h = 0;
+	if (main_window != NULL)
+	{
+		SDL_GetWindowSize(main_window, &win_w, &win_h);
+		video_output_size(&out_w, &out_h);
+
+		if (win_w > 0 && out_w > 0)
+			sx = (float)out_w / (float)win_w;
+		if (win_h > 0 && out_h > 0)
+			sy = (float)out_h / (float)win_h;
+	}
+
+	if (out_sx != NULL)
+		*out_sx = sx;
+	if (out_sy != NULL)
+		*out_sy = sy;
+}
+
 // Fitted output size used by the Native scaler and Native sub-pixel factor. Before window creation,
 // return the logical size.
 static void native_output_size(int *out_w, int *out_h)
@@ -574,27 +628,27 @@ static void native_output_size(int *out_w, int *out_h)
 
 	if (main_window != NULL)
 	{
-		int win_w, win_h;
-		SDL_GetWindowSize(main_window, &win_w, &win_h);
+		int px_w, px_h;
+		video_output_size(&px_w, &px_h);
 
 		const float pixel_aspect = (float)vga_width / (float)vga_height;
 
 		switch (scaling_mode)
 		{
 		case SCALE_INTEGER:
-			while (r.w + vga_width <= win_w && r.h + vga_height <= win_h)
+			while (r.w + vga_width <= px_w && r.h + vga_height <= px_h)
 			{
 				r.w += vga_width;
 				r.h += vga_height;
 			}
 			break;
 		case SCALE_CLASSIC_PAR:
-			fit_rect_to_aspect(&r, win_w, win_h, pixel_aspect * (5.f / 6.f));
+			fit_rect_to_aspect(&r, px_w, px_h, pixel_aspect * (5.f / 6.f));
 			break;
 		case SCALE_CENTER:  // no fixed size to center on; fill like Widescreen
 		case SCALE_WIDESCREEN:
 		default:
-			fit_rect_to_aspect(&r, win_w, win_h, pixel_aspect);
+			fit_rect_to_aspect(&r, px_w, px_h, pixel_aspect);
 			break;
 		}
 	}
@@ -645,8 +699,8 @@ static void calc_dst_render_rect(SDL_Surface *const src_surface, SDL_Rect *const
 	// Decides how the logical output texture (after software scaling applied) will fit
 	// in the window.
 
-	int win_w, win_h;
-	SDL_GetWindowSize(main_window, &win_w, &win_h);
+	int out_w, out_h;
+	video_output_size(&out_w, &out_h);
 
 	// Square-pixel ratio of the framebuffer itself (356:200 = 16:9).
 	const float pixel_aspect = (float)src_surface->w / (float)src_surface->h;
@@ -659,7 +713,7 @@ static void calc_dst_render_rect(SDL_Surface *const src_surface, SDL_Rect *const
 	case SCALE_INTEGER:
 		dst_rect->w = src_surface->w;
 		dst_rect->h = src_surface->h;
-		while (dst_rect->w + src_surface->w <= win_w && dst_rect->h + src_surface->h <= win_h)
+		while (dst_rect->w + src_surface->w <= out_w && dst_rect->h + src_surface->h <= out_h)
 		{
 			dst_rect->w += src_surface->w;
 			dst_rect->h += src_surface->h;
@@ -667,19 +721,19 @@ static void calc_dst_render_rect(SDL_Surface *const src_surface, SDL_Rect *const
 		break;
 	case SCALE_WIDESCREEN:
 		// True widescreen: square pixels, i.e. the buffer's own ratio (16:9).
-		fit_rect_to_aspect(dst_rect, win_w, win_h, pixel_aspect);
+		fit_rect_to_aspect(dst_rect, out_w, out_h, pixel_aspect);
 		break;
 	case SCALE_CLASSIC_PAR:
 		// Original DOS pixel aspect (PAR 5/6): taller pixels, ~3:2 overall.
-		fit_rect_to_aspect(dst_rect, win_w, win_h, pixel_aspect * (5.f / 6.f));
+		fit_rect_to_aspect(dst_rect, out_w, out_h, pixel_aspect * (5.f / 6.f));
 		break;
 	case ScalingMode_MAX:
 		assert(false);
 		break;
 	}
 
-	dst_rect->x = (win_w - dst_rect->w) / 2;
-	dst_rect->y = (win_h - dst_rect->h) / 2;
+	dst_rect->x = (out_w - dst_rect->w) / 2;
+	dst_rect->y = (out_h - dst_rect->h) / 2;
 }
 
 // Sample the presented-frame rate once a second for the optional FPS counter.
@@ -881,7 +935,7 @@ void video_repaint_if_stale(bool force)
 		return;
 
 	int w = 0, h = 0;
-	SDL_GetWindowSize(main_window, &w, &h);
+	video_output_size(&w, &h);
 
 	if (force || w != last_present_w || h != last_present_h)
 	{
@@ -990,23 +1044,37 @@ int video_get_menu_x_offset(void)
 /** Maps a specified point in window coordinates to game screen coordinates. */
 void mapWindowPointToScreen(Sint32 *const inout_x, Sint32 *const inout_y)
 {
-	*inout_x = (2 * (*inout_x - last_output_rect.x) + 1) * VGAScreen->w / (2 * last_output_rect.w) - current_x_offset;
-	*inout_y = (2 * (*inout_y - last_output_rect.y) + 1) * VGAScreen->h / (2 * last_output_rect.h);
+	// SDL reports events in window points; last_output_rect is in output pixels.
+	float scale_x, scale_y;
+	video_output_pixel_scale(&scale_x, &scale_y);
+	const Sint32 x = (Sint32)((float)*inout_x * scale_x);
+	const Sint32 y = (Sint32)((float)*inout_y * scale_y);
+
+	*inout_x = (2 * (x - last_output_rect.x) + 1) * VGAScreen->w / (2 * last_output_rect.w) - current_x_offset;
+	*inout_y = (2 * (y - last_output_rect.y) + 1) * VGAScreen->h / (2 * last_output_rect.h);
 }
 
 /** Scales a distance in window coordinates to game screen coordinates. */
 void scaleWindowDistanceToScreen(Sint32 *const inout_x, Sint32 *const inout_y)
 {
-	*inout_x = (2 * *inout_x + 1) * VGAScreen->w / (2 * last_output_rect.w);
-	*inout_y = (2 * *inout_y + 1) * VGAScreen->h / (2 * last_output_rect.h);
+	float scale_x, scale_y;
+	video_output_pixel_scale(&scale_x, &scale_y);
+	const Sint32 x = (Sint32)((float)*inout_x * scale_x);
+	const Sint32 y = (Sint32)((float)*inout_y * scale_y);
+
+	*inout_x = (2 * x + 1) * VGAScreen->w / (2 * last_output_rect.w);
+	*inout_y = (2 * y + 1) * VGAScreen->h / (2 * last_output_rect.h);
 }
 
 /** Float variant: no integer rounding, so callers that sample small deltas every
  *  render frame (rather than once per tick) don't lose fine/diagonal motion. */
 void scaleWindowDistanceToScreenF(float *const inout_x, float *const inout_y)
 {
+	float scale_x, scale_y;
+	video_output_pixel_scale(&scale_x, &scale_y);
+
 	if (last_output_rect.w > 0)
-		*inout_x = *inout_x * (float)VGAScreen->w / (float)last_output_rect.w;
+		*inout_x = *inout_x * scale_x * (float)VGAScreen->w / (float)last_output_rect.w;
 	if (last_output_rect.h > 0)
-		*inout_y = *inout_y * (float)VGAScreen->h / (float)last_output_rect.h;
+		*inout_y = *inout_y * scale_y * (float)VGAScreen->h / (float)last_output_rect.h;
 }

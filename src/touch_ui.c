@@ -16,12 +16,12 @@
 
 #include <math.h>
 
-/* Sizes are output pixels, so they are two or three times smaller in the points a touch
- * guideline talks about. The size normally comes from the screen height; the floor only
- * decides whether a pillarbox bar is worth using at all, and the ceiling stops a tablet
- * getting a button the size of a fist. */
-#define TOUCH_BTN_MIN_PX  44
-#define TOUCH_BTN_MAX_PX  140
+/* Sizes are window points, which measure() scales to the output pixels a layout is built
+ * in; a high-DPI drawable makes the two differ. The size normally comes from the screen
+ * height; the floor only decides whether a pillarbox bar is worth using at all, and the
+ * ceiling stops a tablet getting a button the size of a fist. */
+#define TOUCH_BTN_MIN_PT  44
+#define TOUCH_BTN_MAX_PT  140
 
 // Opacity of the button plate: solid where it sits in the pillarbox, faint where the
 // device is 16:9 or narrower and it has to float over the playfield instead.
@@ -309,18 +309,25 @@ static TouchGeometry measure(const SDL_Rect *frame, int out_w, int out_h)
 {
 	TouchGeometry g;
 
-	const int pad_x = clampi(out_h / 48, 4, 20);
+	// Proportions of the screen need no conversion, but every limit written in points does:
+	// on a high-DPI drawable the same button is that many more pixels across.
+	float px_per_pt = 1.f;
+	video_output_pixel_scale(NULL, &px_per_pt);
+	const int btn_min_px = (int)(TOUCH_BTN_MIN_PT * px_per_pt);
+	const int btn_max_px = (int)(TOUCH_BTN_MAX_PT * px_per_pt);
+
+	const int pad_x = clampi(out_h / 48, (int)(4.f * px_per_pt), (int)(20.f * px_per_pt));
 	const int bar_left = frame->x - 2 * pad_x;
 	const int bar_right = out_w - (frame->x + frame->w) - 2 * pad_x;
 	const int bar = bar_left < bar_right ? bar_left : bar_right;
 
-	g.pad_y = clampi(out_h / 14, 10, 80);
-	g.size = clampi(out_h / 7, TOUCH_BTN_MIN_PX, TOUCH_BTN_MAX_PX);
-	if (bar >= TOUCH_BTN_MIN_PX && bar < g.size)
+	g.pad_y = clampi(out_h / 14, (int)(10.f * px_per_pt), (int)(80.f * px_per_pt));
+	g.size = clampi(out_h / 7, btn_min_px, btn_max_px);
+	if (bar >= btn_min_px && bar < g.size)
 		g.size = bar;
 	g.gap = g.size / 6;
 
-	if (bar >= TOUCH_BTN_MIN_PX)
+	if (bar >= btn_min_px)
 	{
 		g.x_left = frame->x - pad_x - g.size;
 		g.x_right = frame->x + frame->w + pad_x;
@@ -332,7 +339,7 @@ static TouchGeometry measure(const SDL_Rect *frame, int out_w, int out_h)
 		g.x_right = out_w - pad_x - g.size;
 
 		const int band = frame->y - 2 * pad_x;
-		if (band >= TOUCH_BTN_MIN_PX && band < g.size)
+		if (band >= btn_min_px && band < g.size)
 			g.size = band;
 	}
 

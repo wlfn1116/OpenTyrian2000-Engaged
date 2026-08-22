@@ -116,13 +116,20 @@ void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose. video_repaint()
 // re-presents the current frame unconditionally; video_repaint_if_stale() does so only
-// when the window size changed since the last present (or `force` for expose / render
+// when the output size changed since the last present (or `force` for expose / render
 // reset). The event pump calls the latter so input-wait screens don't freeze on a resize.
 void video_repaint(void);
 void video_repaint_if_stale(bool force);
 
 void set_menu_centered(bool centered);
 int video_get_menu_x_offset(void);
+
+/* Two units live side by side: SDL reports the window and its events in points, while the
+ * renderer draws in output pixels. A high-DPI drawable (iOS) makes them differ, so every
+ * render-side rectangle is measured with video_output_size() and input converts by the
+ * per-axis scale below. Elsewhere the two are equal and the scale is 1. */
+void video_output_size(int *out_w, int *out_h);
+void video_output_pixel_scale(float *out_sx, float *out_sy);
 
 void mapWindowPointToScreen(Sint32 *inout_x, Sint32 *inout_y);
 void scaleWindowDistanceToScreen(Sint32 *inout_x, Sint32 *inout_y);
