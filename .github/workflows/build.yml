@@ -52,7 +52,7 @@ jobs:
   # Both architectures run the suite: the replay fixtures are canonical state hashes, so this
   # is where an ARM build proves its simulation matches everyone else's.
   tests:
-    name: Correctness suite (${{ matrix.arch }})
+    name: Correctness suite ${{ matrix.label }}
     needs: data
     timeout-minutes: 45
     strategy:
@@ -60,9 +60,9 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            arch: x86_64
+            label: x86-64
           - runner: ubuntu-24.04-arm
-            arch: aarch64
+            label: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
@@ -300,17 +300,21 @@ jobs:
           path: opentyrian-ARM64-Release.pdb
 
   linux:
-    name: Linux ${{ matrix.arch }}
+    name: Linux ${{ matrix.label }}
     needs: data
     timeout-minutes: 25
     strategy:
       fail-fast: false
+      # `arch` names the package, `label` names the job; they differ only in the separator
+      # that the released x86_64 file names have always used.
       matrix:
         include:
           - runner: ubuntu-latest
             arch: x86_64
+            label: x86-64
           - runner: ubuntu-24.04-arm
             arch: aarch64
+            label: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
