@@ -90,6 +90,28 @@ is a macOS-only knob, and the iOS path sets `SDL_RENDERER_PRESENTVSYNC` on the
 renderer whatever was asked for. The in-game VSync row therefore does not change
 how presents are paced here, only whether the FPS Cap is applied on top of them.
 
+## Networking
+
+iOS 14 gates every packet an app sends to the local network behind a permission
+prompt. `Info.plist.in` carries `NSLocalNetworkUsageDescription`, which is what
+allows that prompt to appear; the first time online play or a save transfer opens
+a socket, iOS asks, and the answer is remembered under Settings > Privacy and
+Security > Local Network. Without the key the system never asks and the traffic
+is dropped with no error, so the game finds no host and no sender.
+
+Broadcast is a second, separate gate. Sending or receiving IP broadcast needs
+Apple's `com.apple.developer.networking.multicast` entitlement, which is granted
+on request against a paid developer account, and this build does not carry it.
+So the screens that search the network find nothing here. Reach the other machine
+by address instead:
+
+- **Online Multiplayer > Join by IP Address** for a game.
+- **Load Game > Download > Enter an address...** for a save transfer.
+
+Both take the address the other machine shows on its own waiting screen. The
+machine being reached still needs its own firewall to allow the inbound port:
+1333 for a game, 1332 for a save transfer.
+
 ## Files
 
 Configuration, saves, and logs live in the app's Application Support directory

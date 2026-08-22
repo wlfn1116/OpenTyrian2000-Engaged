@@ -929,6 +929,14 @@ copying the one that arrived. `endlessSlotSerialize` and `endlessSlotAdopt` move
 the Endless half the same way, straight through the slot cache. Only the slot
 number and the name differ from the machine that sent it.
 
+iOS gates this twice. `NSLocalNetworkUsageDescription` in `ios/Info.plist.in` is
+what lets the system ask for local network permission; without the key iOS never
+asks and drops the traffic silently, which reads as a working socket that finds
+nobody. Broadcast needs Apple's `com.apple.developer.networking.multicast`
+entitlement on top, which this build does not carry, so discovery finds nothing
+on iOS and the typed-address row is the route. macOS 15 prompts the same way, so
+`macos/Info.plist.in` carries the key too.
+
 `JE_loadScreen` offers the two rows when `net2p` and `saving` are both false,
 which is the title screen's own page. An online session uses the same screen and
 its keep-alive cannot survive a blocking socket wait. Custom weapon designs live

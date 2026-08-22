@@ -25,6 +25,13 @@
 	<string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Required from iOS 14 on. Without this key the system never asks, and every packet the
+	     game sends to the local network is dropped without an error: online play finds no host
+	     and a save transfer finds no sender. Broadcast discovery needs Apple's separate
+	     com.apple.developer.networking.multicast entitlement on top of this, so a build without
+	     that entitlement reaches another machine by address rather than by searching. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Tyrian 2000 Engaged uses the local network to find other devices for online play and to copy saved games between them.</string>
 	<key>MinimumOSVersion</key>
 	<string>13.0</string>
 	<key>UIDeviceFamily</key>

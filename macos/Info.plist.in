@@ -29,6 +29,10 @@
 	<string>11.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.arcade-games</string>
+	<!-- macOS 15 prompts for local network access the way iOS 14 does. Declaring the reason here
+	     keeps online play and save transfers working once the user allows it. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Tyrian 2000 Engaged uses the local network to find other devices for online play and to copy saved games between them.</string>
 	<!-- Render into the display's high-resolution backing store. -->
 	<key>NSHighResolutionCapable</key>
 	<true/>

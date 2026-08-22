@@ -918,6 +918,11 @@ lands on the one-player page, and a two-player save on the two-player page.
 Custom weapons stay where they are. A save that used one plays with whatever
 design the receiving device holds.
 
+On iPhone and iPad, allow the local network prompt the first time you open either
+screen. Searching the network finds nothing there, because iOS reserves broadcast
+for apps carrying an Apple entitlement this build does not have, so use **Enter an
+address...** with the address the upload screen shows.
+
 ## Files and logs
 
 On Windows, files sit beside the executable. Linux uses
