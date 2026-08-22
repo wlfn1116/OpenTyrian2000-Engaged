@@ -14,35 +14,14 @@
 	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
 	<key>CFBundleDisplayName</key>
 	<string>Tyrian 2000 Engaged</string>
-	<!-- The compiled asset catalog, which iOS prefers and which is the only place it reads
-	     per-appearance artwork from. CFBundleIcons below lists the flat bundle-root PNGs as
-	     the fallback for anything that does not read the catalog. -->
+	<!-- The compiled asset catalog, and only that. It is the one place iOS reads
+	     per-appearance artwork from, so the transparent artwork the Liquid Glass treatment
+	     wants can live nowhere else. A CFBundleIconFiles list of flat bundle-root PNGs used
+	     to sit beside this as a fallback, but every OS from the deployment target up reads
+	     the catalog, and those PNGs are opaque: leaving them declared gave iOS a second,
+	     slab-backed answer to the same question. -->
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
-	<key>CFBundleIcons</key>
-	<dict>
-		<key>CFBundlePrimaryIcon</key>
-		<dict>
-			<key>CFBundleIconFiles</key>
-			<array>
-				<string>AppIcon60x60</string>
-				<string>AppIcon76x76</string>
-				<string>AppIcon83.5x83.5</string>
-			</array>
-		</dict>
-	</dict>
-	<key>CFBundleIcons~ipad</key>
-	<dict>
-		<key>CFBundlePrimaryIcon</key>
-		<dict>
-			<key>CFBundleIconFiles</key>
-			<array>
-				<string>AppIcon60x60</string>
-				<string>AppIcon76x76</string>
-				<string>AppIcon83.5x83.5</string>
-			</array>
-		</dict>
-	</dict>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

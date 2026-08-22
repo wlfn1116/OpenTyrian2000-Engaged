@@ -290,7 +290,8 @@ jobs:
           path: ~/.android/debug.keystore
           key: android-debug-keystore-v1
 
-      - uses: gradle/actions/setup-gradle@v4
+      # v6 runs on Node 24; v4 is pinned to the deprecated Node 20.
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.12'
 
@@ -383,7 +384,6 @@ jobs:
           app=ios/build/OpenTyrian2000.app
           test -x "$app/OpenTyrian2000" || { echo "no app binary at $app"; exit 1; }
           test -f "$app/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
-          test -f "$app/AppIcon60x60@3x.png" || { echo "flat app icon missing from the bundle"; exit 1; }
           test -f "$app/Assets.car" || { echo "icon asset catalog missing from the bundle"; exit 1; }
           rm -rf Payload
           mkdir Payload

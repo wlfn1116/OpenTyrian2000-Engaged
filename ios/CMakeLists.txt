@@ -56,13 +56,13 @@ add_custom_command(TARGET OpenTyrian2000 POST_BUILD
           "${OT_ROOT}/data" "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/data"
   COMMENT "Copying game data into the bundle")
 
-# Launcher icons, twice over.
+# Launcher icons: the compiled asset catalog, and nothing else.
 #
-# The asset catalog is the one iOS prefers, and the only place it will read a per-appearance
-# icon from. Its artwork has a transparent background so the system supplies the material
-# behind the ship instead of the icon carrying a slab of colour, which is what the Liquid
-# Glass treatment expects; the tinted variant is monochrome for the same reason. actool
-# ships with Xcode, so compiling it needs no Xcode generator.
+# The catalog is the only place iOS reads a per-appearance icon from, and its artwork has a
+# transparent background so the system supplies the material behind the ship rather than the
+# icon carrying a slab of colour, which is what the Liquid Glass treatment expects; the
+# tinted variant is monochrome for the same reason. actool ships with Xcode, so compiling
+# the catalog needs no Xcode generator.
 add_custom_command(TARGET OpenTyrian2000 POST_BUILD
   COMMAND xcrun actool "${CMAKE_CURRENT_SOURCE_DIR}/Assets.xcassets"
           --compile "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>"
@@ -72,15 +72,6 @@ add_custom_command(TARGET OpenTyrian2000 POST_BUILD
           --app-icon AppIcon
           --output-partial-info-plist "${CMAKE_CURRENT_BINARY_DIR}/actool-partial.plist"
   COMMENT "Compiling the icon asset catalog")
-
-# Flat PNGs at the bundle root, the CFBundleIconFiles fallback for anything that does not
-# read the catalog. These stay opaque, because that path composites alpha onto black.
-file(GLOB OT_ICONS "${CMAKE_CURRENT_SOURCE_DIR}/icons/*.png")
-foreach(icon IN LISTS OT_ICONS)
-  add_custom_command(TARGET OpenTyrian2000 POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "${icon}" "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/")
-endforeach()
 
 target_include_directories(OpenTyrian2000 PRIVATE "${OT_ROOT}/src" "${SDL_NET_DIR}")
 

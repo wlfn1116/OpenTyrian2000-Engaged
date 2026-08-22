@@ -8634,7 +8634,11 @@ static const char *cwRowHelp(int row)
 	case CWROW_TARGET_ARMOR: return "Target toughness (higher = armour drains slower)";
 	case CWROW_SHIP_X:      return "Move the ship / shot origin left-right";
 	case CWROW_SHIP_Y:      return "Move the ship / shot origin up-down";
+#ifdef PLATFORM_HANDHELD
+	case CWROW_NAME:        return "Confirm to rename";
+#else
 	case CWROW_NAME:        return "Type to rename";
+#endif
 	case CWROW_EQUIP_SLOT:  return "Where it mounts (gun or sidekick)";
 	case CWROW_COST:        return "Shop price";
 	case CWROW_POWER_USE:   return "Generator drain per shot";
@@ -9859,7 +9863,11 @@ bool JE_customWeaponCreator(bool canEquip)
 			if (cwNoticeTicks > 0)           hint = cwNotice;
 			else if (cwNumRow >= 0)          hint = "Type a value   -   Enter: set   -   Esc: cancel";
 			else if (selected == 0)          hint = "Click left/right: -/+   Tab: view   PgUp/Dn: level";
+#ifdef PLATFORM_HANDHELD
+			else if (selField == CWROW_NAME) hint = "Confirm to rename   -   Esc: back";
+#else
 			else if (selField == CWROW_NAME) hint = "Type to rename   -   Esc: back";
+#endif
 			else if (selField >= 0 && !cwRowActive(selField)) hint = cwRowInactiveReason(selField);
 			else if (selField >= 0 && cwNumericRange(selField, &lo, &hi))
 			{
@@ -9874,6 +9882,14 @@ bool JE_customWeaponCreator(bool canEquip)
 
 		rl_finalize();
 		rl_capture_residual(VGAScreenSeg, game_screen);
+
+		/* The editor hit-tests every row, but on a touchscreen a tap both selects and acts,
+		 * so there is no way to move the cursor without changing something, and the field
+		 * list scrolls past its frame. The cursor keys give that back: up and down move the
+		 * selection, left and right adjust it without having to land on the correct half of
+		 * a row, and confirm triggers the selected action. Back stands in for the
+		 * right-click that leaves. */
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
@@ -10113,6 +10129,28 @@ bool JE_customWeaponCreator(bool canEquip)
 					JE_playSampleNum(S_SPRING);  // greyed: doesn't apply to the current Equip slot
 				else if (cwInlineActionId(selField) >= 0)
 					cwPerformAction(cwInlineActionId(selField), &done, &equipped);
+#ifdef PLATFORM_HANDHELD
+				else if (selField == CWROW_NAME)
+				{
+					// The name is otherwise typed, and nothing here produces a keystroke.
+					// Confirming the row opens the system keyboard instead, as the save and
+					// high-score name fields do.
+					char kb[sizeof(customWeaponName)];
+					SDL_strlcpy(kb, customWeaponName, sizeof(kb));
+					if (console_swkbd(kb, sizeof(kb), sizeof(kb) - 1, kb, "Weapon name", false))
+					{
+						size_t out = 0;
+						for (const char *c = kb; *c != '\0' && out + 1 < sizeof(customWeaponName); ++c)
+						{
+							if ((unsigned char)*c >= 32 && (unsigned char)*c < 127)
+								customWeaponName[out++] = *c;
+						}
+						customWeaponName[out] = '\0';
+						customWeaponMaterialize();
+						cwHistoryRecord();
+					}
+				}
+#endif
 				else if (selField == CWROW_LIB_SELECT || selField == CWROW_POWER_LEVEL ||
 				         selField == CWROW_TWO_MODES ||
 				         selField == CWROW_FIRE_MODE || selField == CWROW_SHOW_TARGETS ||

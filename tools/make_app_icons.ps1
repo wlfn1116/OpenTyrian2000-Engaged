@@ -124,23 +124,11 @@ foreach ($d in $densities.GetEnumerator()) {
              (Join-Path $androidRes ("mipmap-{0}\ic_launcher_foreground.png" -f $d.Key))
 }
 
-# iOS, flat icons. Names carry the point size and scale iOS looks for through
-# CFBundleIconFiles, the fallback for anything that does not read the asset catalog.
-Write-Host 'ios (flat):'
-$iosIcons = Join-Path $Root 'ios\icons'
-$iosSizes = @{
-    'AppIcon60x60@2x.png'     = 120
-    'AppIcon60x60@3x.png'     = 180
-    'AppIcon76x76@2x.png'     = 152
-    'AppIcon83.5x83.5@2x.png' = 167
-}
-foreach ($f in $iosSizes.GetEnumerator()) {
-    Save-Png (New-IconBitmap $art $f.Value 0.86 $true) (Join-Path $iosIcons $f.Key)
-}
-
-# iOS asset catalog. One 1024 image per appearance, all with a transparent background so
-# the system draws its own material behind the ship rather than a flat slab of navy. The
-# tinted appearance is monochrome, which is what iOS expects to colourise.
+# iOS. One 1024 image per appearance, all with a transparent background so the system
+# draws its own material behind the ship rather than a flat slab of navy; the tinted
+# appearance is monochrome, which is what iOS expects to colourise. The asset catalog is
+# the only icon the bundle carries, because a flat opaque set alongside it would give iOS
+# a second answer to the same question, and the slab-backed one at that.
 Write-Host 'ios (asset catalog):'
 $appIconSet = Join-Path $Root 'ios\Assets.xcassets\AppIcon.appiconset'
 Save-Png (New-IconBitmap $art 1024 0.80 $false) (Join-Path $appIconSet 'AppIcon-1024.png')

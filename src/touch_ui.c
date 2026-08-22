@@ -649,10 +649,6 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 
 	const Uint32 now_ms = SDL_GetTicks();
 
-	build_layout(frame, out_w, out_h, now_ms);
-	layout_out_w = out_w;
-	layout_out_h = out_h;
-
 	/* A screen transition is a palette fade, which the buttons never pass through: they are
 	 * drawn by the renderer, after the palettized frame has been converted. So they follow
 	 * the palette's own brightness instead, which darkens them on exactly the curve the
@@ -664,7 +660,24 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	 * floor they are dark enough to be invisible, so nothing is drawn and nothing can be
 	 * pressed -- a button nobody can see must not be a button anybody can hit. */
 	const Uint8 peak = palette_peak();
-	layout_valid = peak >= TOUCH_VISIBLE_PEAK_MIN;
+	const bool visible = peak >= TOUCH_VISIBLE_PEAK_MIN;
+
+	/* Black also means the screen that asked for a layout is over, so its request is dropped
+	 * here rather than left to time out. A timeout outlives the transition: the jukebox's
+	 * track buttons were still on screen while the menu behind it faded back in, because the
+	 * fade-in crossed the visibility floor before the request went stale. A screen that is
+	 * still running re-asserts within a frame or a tick, and nothing is drawn at this
+	 * brightness anyway, so there is nothing to lose by clearing early. */
+	if (!visible)
+	{
+		requested_at_ms = 0;
+		extra_at_ms = 0;
+	}
+
+	build_layout(frame, out_w, out_h, now_ms);
+	layout_out_w = out_w;
+	layout_out_h = out_h;
+	layout_valid = visible;
 
 	// This frame is what the buttons now look like, so an idle wait loop has nothing left
 	// to repaint until something changes again.

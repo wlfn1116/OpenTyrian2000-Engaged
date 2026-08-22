@@ -848,6 +848,7 @@ that would do nothing if you pressed it.
 | Flying a level | Pause, left sidekick | Rear weapon mode, both sidekicks, right sidekick |
 | Any menu | Back | None |
 | A list too long to fit | Back, left, right | Up, down, confirm |
+| Weapon Creator | Back, left, right | Up, down, confirm |
 | Destruct mode select | Back | Up, down, confirm |
 | A screen waiting for any key | Back | Confirm |
 | Jukebox | Back, previous track | Next track |
@@ -861,7 +862,10 @@ In an ordinary menu that is the only button, because a tap is already a click:
 menu rows, sliders and pickers all follow your finger. Cursor keys only appear
 where tapping cannot do the job. That means a list longer than its frame, where a
 tap only reaches the rows currently drawn: the debug screens, and the shop's buy
-and sell list when the outpost is carrying more than six items. Destruct's mode
+and sell list when the outpost is carrying more than six items. The
+Weapon Creator has them for a related reason: it does hit-test every row, but a
+tap there both moves the cursor and acts on it, so the arrows are the only way to
+line a field up before changing it. Destruct's mode
 select gets up, down and confirm for a different reason. It reads the keyboard
 directly and hit-tests nothing, so a tap there does nothing at all, and its
 title, help and pause screens get confirm for the same reason. Holding an arrow

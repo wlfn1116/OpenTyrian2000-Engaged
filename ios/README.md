@@ -37,13 +37,17 @@ The app is named "Tyrian 2000 Engaged". Its icons are generated from
 `visualc/tyrian2000.ico` by `tools/make_app_icons.ps1`. The output is
 committed, so a build never runs it; re-run it after changing the source icon.
 
-The build ships the icon twice. `ios/Assets.xcassets` is compiled by `actool`
-during the build and is the one iOS prefers; its artwork has a transparent
-background, and it carries dark and tinted variants, so the system draws its own
-material behind the ship rather than the icon supplying a slab of colour. That
-is what the Liquid Glass treatment expects. `ios/icons` holds flat opaque PNGs
-copied to the bundle root as the `CFBundleIconFiles` fallback, which stay opaque
-because that path composites alpha onto black.
+`ios/Assets.xcassets` is compiled into the bundle by `actool` during the build,
+and is the only icon the app carries. Its artwork has a transparent background
+and it holds dark and tinted variants, so the system draws its own material
+behind the ship rather than the icon supplying a slab of colour, which is what
+the Liquid Glass treatment expects.
+
+Nothing declares `CFBundleIconFiles`. Flat bundle-root PNGs were there as a
+fallback while it was still unclear whether `actool` would run without the Xcode
+generator; it does. Those PNGs have to be opaque, because that path composites
+alpha onto black, so leaving them declared handed iOS a second and slab-backed
+answer to the same question.
 
 ## Build
 
