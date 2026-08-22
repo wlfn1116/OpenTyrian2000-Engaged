@@ -64,6 +64,7 @@
 #include "rollback.h"
 #include "shots.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "video.h"
@@ -3243,7 +3244,14 @@ void network_end_screen_rendezvous(bool local_dismissed)
 
 	while (network_peer_alive())
 	{
+		/* This screen draws once and then only pumps, so its buttons are put up and kept fresh
+		 * from here: the request would otherwise go stale mid-wait. push_joysticks_as_keyboard
+		 * is what turns a pad press into a key and what pushes the key the confirm button
+		 * queued, and it repaints the overlay for a loop that never presents again. */
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
 		watchdog_heartbeat();
+		push_joysticks_as_keyboard();
 		service_SDL_events(true);
 		poll_joysticks();
 

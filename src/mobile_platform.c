@@ -228,13 +228,23 @@ static int swkbd_center_x(void)
 	return vga_width / 2 - video_get_menu_x_offset();
 }
 
+/* Told apart by shade, not by a palette index. This panel opens over whatever screen was up, and
+ * a fixed index is a different colour in each one: the pair used to be 240 against 236, which
+ * reads as one step brighter but is really shade 0 of the next bank against shade 12 of this one,
+ * so the lit button came out near black beside a gold one. Shading moves within the bank already
+ * on screen, which behaves the same wherever this opens. */
 static void swkbd_draw_button(int x, const char *label, bool highlight)
 {
-	fill_rectangle_xy(VGAScreen, x, SWKBD_BUTTON_Y, x + SWKBD_BUTTON_W, SWKBD_BUTTON_Y + SWKBD_BUTTON_H,
-	                  highlight ? 240 : 236);
-	JE_rectangle(VGAScreen, x, SWKBD_BUTTON_Y, x + SWKBD_BUTTON_W, SWKBD_BUTTON_Y + SWKBD_BUTTON_H, 244);
+	const int x2 = x + SWKBD_BUTTON_W, y2 = SWKBD_BUTTON_Y + SWKBD_BUTTON_H;
+
+	// Both plates dark, so the label is legible on either; the lit one is told apart the way a
+	// selected menu row is, by a brighter border and brighter text.
+	JE_barShade(VGAScreen, x, SWKBD_BUTTON_Y, x2, y2);
+	JE_rectangle(VGAScreen, x, SWKBD_BUTTON_Y, x2, y2, highlight ? 250 : 244);
+
+	// Shadow distance 1, not 2: at 2 over a lit plate the offset copy reads as doubled text.
 	draw_font_hv_shadow(VGAScreen, x + SWKBD_BUTTON_W / 2, SWKBD_BUTTON_Y + 4, label,
-	                    small_font, centered, 15, -3, false, 2);
+	                    small_font, centered, 15, highlight ? 6 : -2, false, 1);
 }
 
 static bool swkbd_button_hit(int x)

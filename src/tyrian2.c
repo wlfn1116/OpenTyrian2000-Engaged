@@ -53,6 +53,7 @@
 #include "shots.h"
 #include "sim_math.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "vga256d.h"
 #include "video.h"
 
@@ -8577,6 +8578,11 @@ static void networkTimedBattleReady(void)
 
 	for (;;)
 	{
+		/* Any key readies up and Esc steps back, neither of which a finger can express. Asked
+		 * for ahead of the present below so the first frame carries it, which is the frame the
+		 * fade-in starts from: the buttons come up with the card rather than after it. */
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
 		// Where the pair stands, brightened as each side commits: the wait has no timeout, so the

@@ -6090,6 +6090,10 @@ void JE_timedBattleResult(void)
 	                    centered, 15, 2, false, 1);
 
 	JE_showVGA();
+	// "Press a key", which a finger cannot express: offer confirm. Asked for between the present
+	// and the fade so it brightens in with the card; the rendezvous below keeps it alive, and the
+	// fade_black at the end of this function takes it away again.
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 	fade_palette(colors, 15, 0, 255);
 
 	/* Release the input that reached this card. The rendezvous then accepts a fresh local press or
