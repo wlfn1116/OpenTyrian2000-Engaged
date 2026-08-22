@@ -43,11 +43,22 @@ and it holds dark and tinted variants, so the system draws its own material
 behind the ship rather than the icon supplying a slab of colour, which is what
 the Liquid Glass treatment expects.
 
+Two things are easy to get wrong here, and both were.
+
 Nothing declares `CFBundleIconFiles`. Flat bundle-root PNGs were there as a
 fallback while it was still unclear whether `actool` would run without the Xcode
 generator; it does. Those PNGs have to be opaque, because that path composites
 alpha onto black, so leaving them declared handed iOS a second and slab-backed
 answer to the same question.
+
+And a compiled catalog is not enough on its own. `actool` names the icons it
+rasterised in the file it writes to `--output-partial-info-plist`, and iOS reads
+those keys, not the catalog, to find them. Xcode merges that file into the app's
+Info.plist as a matter of course; this build has to do it explicitly, which is
+what the `PlistBuddy -c Merge` step after `actool` is for. Skip it and the icon
+compiles into `Assets.car` and is then unreachable, so the app shows no icon at
+all. CI checks the merged plist for `CFBundlePrimaryIcon` so that cannot pass
+unnoticed again.
 
 ## Build
 

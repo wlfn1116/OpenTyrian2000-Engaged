@@ -385,6 +385,17 @@ jobs:
           test -x "$app/OpenTyrian2000" || { echo "no app binary at $app"; exit 1; }
           test -f "$app/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
           test -f "$app/Assets.car" || { echo "icon asset catalog missing from the bundle"; exit 1; }
+          # A compiled catalog is not enough: iOS finds the icon through the keys actool
+          # writes into its partial plist, which the build merges into Info.plist. Without
+          # them the app shows no icon at all, and nothing else here would notice.
+          echo "--- actool partial plist ---"
+          cat ios/build/actool-partial.plist || true
+          echo "--- bundle Info.plist ---"
+          plutil -p "$app/Info.plist"
+          plutil -p "$app/Info.plist" | grep -q CFBundleIconName ||
+            { echo "Info.plist has no CFBundleIconName"; exit 1; }
+          plutil -p "$app/Info.plist" | grep -q CFBundlePrimaryIcon ||
+            { echo "actool's icon keys were not merged into Info.plist"; exit 1; }
           rm -rf Payload
           mkdir Payload
           cp -R "$app" Payload/

@@ -71,6 +71,13 @@ add_custom_command(TARGET OpenTyrian2000 POST_BUILD
           --target-device iphone --target-device ipad
           --app-icon AppIcon
           --output-partial-info-plist "${CMAKE_CURRENT_BINARY_DIR}/actool-partial.plist"
+  # actool names the icons it rasterised in that partial plist, and iOS reads those keys
+  # rather than the catalog to find them. Xcode merges the file into the app's Info.plist
+  # as a matter of course; nothing did that here, so the icon compiled into Assets.car and
+  # was then unreachable. Merge adds only the keys the template does not already carry.
+  COMMAND /usr/libexec/PlistBuddy
+          -c "Merge ${CMAKE_CURRENT_BINARY_DIR}/actool-partial.plist"
+          "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/Info.plist"
   COMMENT "Compiling the icon asset catalog")
 
 target_include_directories(OpenTyrian2000 PRIVATE "${OT_ROOT}/src" "${SDL_NET_DIR}")
