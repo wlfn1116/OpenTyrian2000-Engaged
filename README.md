@@ -105,8 +105,8 @@ sudo apt install gcc make pkg-config libsdl2-dev libsdl2-net-dev
 make
 ```
 
-Release builds need only the SDL2 runtime packages. Package names vary by
-distribution. The same Makefile builds the released aarch64 package.
+Release builds need only the SDL2 runtime packages. Package names vary
+by distribution. The same Makefile builds the released aarch64 package.
 
 ### macOS
 
