@@ -547,6 +547,16 @@ together.
   stay outside presets.
 - Apply table-backed settings through `JE_applyItemDataSettings` immediately.
 
+Nothing in this game fills an SDL surface palette; `scale_and_flip` maps the
+indices itself. `SDL_ConvertSurface` and `SDL_DuplicateSurface` therefore both
+fail on `VGAScreen` with "Empty destination palette", and `SDL_BlitSurface`
+between two 8-bit surfaces goes through palette matching. Copy screen-sized
+surfaces row by row instead, as the `memcpy` pairs around `VGAScreen2` already
+do. The on-screen keyboard learned this the hard way: its backdrop copy was
+always NULL, so the panel was never restored, and `JE_barShade` halves the shade
+of what is already there rather than filling, which turned deleted text into
+darkening ghosts.
+
 A touch overlay layout is a request with a lifetime, not state a screen owns:
 `touch_ui_set_layout` is called from inside a screen's loop and goes stale by
 itself, so no screen has to clean up after the one before it. Two rules keep the

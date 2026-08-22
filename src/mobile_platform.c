@@ -243,6 +243,31 @@ static bool swkbd_button_hit(int x)
 	       lastmouse_y >= SWKBD_BUTTON_Y && lastmouse_y <= SWKBD_BUTTON_Y + SWKBD_BUTTON_H;
 }
 
+// Row by row rather than SDL_BlitSurface, which between two 8-bit surfaces goes through
+// palette matching. Pitch carries padding these screens never use, so only w bytes move.
+static void swkbd_copy_screen(SDL_Surface *dst, const SDL_Surface *src)
+{
+	for (int y = 0; y < src->h; ++y)
+	{
+		SDL_memcpy((Uint8 *)dst->pixels + (size_t)y * dst->pitch,
+		           (const Uint8 *)src->pixels + (size_t)y * src->pitch, (size_t)src->w);
+	}
+}
+
+/* SDL_ConvertSurface cannot copy VGAScreen, and neither can SDL_DuplicateSurface, which is
+ * built on it: converting to an indexed format needs a populated destination palette, and
+ * this game never fills a surface palette at all -- scale_and_flip maps the indices itself.
+ * Both fail with "Empty destination palette". Build the copy the way video.c builds the
+ * screen and move the rows across. */
+static SDL_Surface *swkbd_clone_screen(const SDL_Surface *src)
+{
+	SDL_Surface *copy = SDL_CreateRGBSurface(0, src->w, src->h, 8, 0, 0, 0, 0);
+	if (copy != NULL)
+		swkbd_copy_screen(copy, src);
+
+	return copy;
+}
+
 bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
                   const char *initial, const char *guide, bool numeric)
 {
@@ -270,7 +295,7 @@ bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
 	SDL_StartTextInput();
 
 	// The panel covers a live frame, so keep an untouched copy to redraw from.
-	SDL_Surface *backdrop = SDL_ConvertSurface(VGAScreen, VGAScreen->format, 0);
+	SDL_Surface *backdrop = swkbd_clone_screen(VGAScreen);
 
 	const int center_x = swkbd_center_x();
 	const int panel_x1 = center_x - SWKBD_PANEL_W / 2;
@@ -283,8 +308,14 @@ bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
 
 	while (!done)
 	{
+		/* Restoring first is what makes the panel redrawable: JE_barShade halves the shade of
+		 * the pixels already there rather than filling, so it can never erase the last frame.
+		 * With no copy to restore from, fill instead -- a flatter panel, but text that is
+		 * deleted has to leave. */
 		if (backdrop != NULL)
-			SDL_BlitSurface(backdrop, NULL, VGAScreen, NULL);
+			swkbd_copy_screen(VGAScreen, backdrop);
+		else
+			fill_rectangle_xy(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2, 0);
 
 		JE_barShade(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2);
 		JE_rectangle(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2, 244);
@@ -372,7 +403,7 @@ bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
 
 	if (backdrop != NULL)
 	{
-		SDL_BlitSurface(backdrop, NULL, VGAScreen, NULL);
+		swkbd_copy_screen(VGAScreen, backdrop);
 		SDL_FreeSurface(backdrop);
 	}
 
