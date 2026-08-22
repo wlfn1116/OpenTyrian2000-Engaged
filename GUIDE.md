@@ -10,6 +10,7 @@ and controls work as before.
 | Start Endless | Main menu > 1 Player Endless |
 | Play online | Main menu > Online Multiplayer |
 | Change online ship colors, opacity, or HP bars | Online outpost > Customize |
+| Copy a save to another device | Main menu > Load Game > Upload or Download |
 | Enable smooth rendering | Setup > Graphics |
 | Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
@@ -880,6 +881,36 @@ The wreck and GAME OVER screens require a fresh tap, so lift the finger used for
 flying before dismissing them.
 
 Switch and Vita have physical buttons and draw none of this.
+
+## Transferring saves between devices
+
+Two devices on the same network can copy a save between them. Both need this
+build. The device sharing the save listens on UDP port 1332; allow that if a
+firewall asks.
+
+**Download** and **Upload** sit on the same line as **Exit to Main Menu** at the
+bottom of **Load Game**, and the up and down keys reach them. They appear on the
+title screen's Load Game menu only; the save screen an online session opens
+leaves them out.
+
+To send a save:
+
+1. Choose **Upload**, then pick the save from the list.
+2. The screen shows this machine's addresses and waits. Esc cancels.
+3. On the other device, choose **Download**.
+
+The receiving device searches the network, lists what it finds, and pulls the
+save you pick. It then asks for the slot to keep it in and the name to file it
+under, the same prompt every other save uses. The name starts as whatever the
+sending device called it, so you can rename it or keep it.
+
+Everything inside the save crosses unchanged: progress, both loadouts, cash,
+difficulty, cheat settings, and an Endless run's whole state. The slot number and
+the name are the only things the receiving device decides. A one-player save
+lands on the one-player page, and a two-player save on the two-player page.
+
+Custom weapons stay where they are. A save that used one plays with whatever
+design the receiving device holds.
 
 ## Files and logs
 

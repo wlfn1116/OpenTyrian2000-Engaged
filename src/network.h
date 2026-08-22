@@ -128,6 +128,14 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_DISCOVER      0x50    // <>            broadcast: "any games out there?"
 #define PACKET_DISCOVER_REPLY 0x51   // version, port, name
 
+/* LAN save transfer (net_savexfer.c). Its own socket on its own port, so an offered save is never
+ * mistaken for a joinable game and neither side needs a session. */
+#define PACKET_SAVE_OFFER    0x52    // version       broadcast: "anyone sharing a save?"
+#define PACKET_SAVE_REPLY    0x53    // version, port, slot summary
+#define PACKET_SAVE_PULL     0x54    // version       "send it"
+#define PACKET_SAVE_CHUNK    0x55    // version, generation, chunk idx/count, len, <payload chunk>
+#define PACKET_SAVE_ACK      0x56    // version, generation   whole payload consumed
+
 #define PACKET_INPUT         0x60    // rollback input stream (never acknowledged; see net_rollback.c)
 #define PACKET_RESYNC        0x61    // gen, chunk idx/count, len, <state chunk>  (acknowledged; see nrb_resync_*)
 #define PACKET_DESTRUCT_INPUT 0x62   // Destruct rollback input stream (never acknowledged; see destruct_rollback.c)

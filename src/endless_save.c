@@ -2112,6 +2112,45 @@ bool endlessRunAdopt(const Uint8 *bytes, size_t len)
 	return true;
 }
 
+/* A stored slot's Endless half as the same text opentyrian.sav holds. Unlike endlessRunSerialize
+ * above these three never touch the live run: they move one slot's record, which is what copying
+ * a save between machines needs (net_savexfer.c). */
+size_t endlessSlotSerialize(JE_byte slot, Uint8 *out, size_t max)
+{
+	if (slot < 1 || slot > SAVE_FILES_NUM || out == NULL || !endlessSlotCache[slot - 1].used)
+		return 0;
+
+	char *text = NULL;
+	size_t size = 0;
+	if (!endlessTextEncode(&endlessSlotCache[slot - 1], &text, &size) || size > max)
+	{
+		free(text);
+		return 0;
+	}
+	memcpy(out, text, size);
+	free(text);
+	return size;
+}
+
+bool endlessSlotAdopt(JE_byte slot, const Uint8 *bytes, size_t len)
+{
+	if (slot < 1 || slot > SAVE_FILES_NUM || bytes == NULL)
+		return false;
+
+	EndlessSlotRec rec;
+	if (!endlessTextDecode((const char *)bytes, len, &rec) || !rec.used)
+		return false;
+
+	endlessSlotCache[slot - 1] = rec;
+	return true;
+}
+
+void endlessSlotClear(JE_byte slot)
+{
+	if (slot >= 1 && slot <= SAVE_FILES_NUM)
+		endlessSlotCache[slot - 1].used = false;
+}
+
 // Does this save slot hold an Endless run? Used by the load screen to keep Endless and Campaign
 // sessions from offering each other's saves.
 bool endlessSlotHasRun(JE_byte slot)

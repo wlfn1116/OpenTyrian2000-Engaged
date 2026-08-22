@@ -8328,6 +8328,8 @@ int qa_run_unit_suite(void)
 	qa_test_custom_weapon_wire();
 	qa_test_fixed_pool_layout();
 	qa_test_save_record_wire();
+	qa_test_save_transfer();
+	qa_test_load_screen_help();
 	qa_test_save_slot_seats();
 	qa_test_cash_ledger();
 	qa_test_bounty_matrix();

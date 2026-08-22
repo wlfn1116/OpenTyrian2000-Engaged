@@ -37,6 +37,7 @@
 #include "mouse.h"
 #include "mtrand.h"
 #include "musmast.h"
+#include "net_savexfer.h"
 #include "net_style.h"
 #include "network.h"
 #include "nortsong.h"
@@ -797,6 +798,26 @@ bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p)
 	return !coop && !save_record_is_dual_arcade(rec);
 }
 
+/* The bottom line of the load screen. Exit sits at the left of it; on the title screen's own page
+ * the two LAN save transfer actions share the line and take their turn in the up/down cycle. */
+enum
+{
+	LOAD_SLOT_ROWS = 11,
+	LOAD_ROW_EXIT = LOAD_SLOT_ROWS,
+	LOAD_ROW_DOWNLOAD,
+	LOAD_ROW_UPLOAD,
+	LOAD_ROW_COUNT,
+};
+
+/* Where the help line starts and where the right-hand page arrow begins. A wrapped line whose
+ * first segment reaches the arrow draws over it; qa_test_load_screen_help holds the budget. */
+#define LOAD_HELP_X       103
+#define LOAD_HELP_BUDGET  (213 - LOAD_HELP_X)
+
+// Upload's line wraps here, which is what keeps its first segment clear of the arrow.
+static const char loadHelpUpload[] = "Choose a save to send to the other device.";
+static const char loadHelpUploadLine1[] = "Choose a save to send";
+
 // net2p pins the two-player page and returns the chosen slot. saving selects the standard save flow.
 int JE_loadScreen(bool net2p, bool saving)
 {
@@ -807,8 +828,17 @@ int JE_loadScreen(bool net2p, bool saving)
 
 	bool restart = true;
 
+	/* Save transfers are offered on the plain load menu only: this screen also serves live online
+	 * sessions, whose keep-alive cannot survive a blocking socket wait. */
+	const bool xferOffered = !net2p && !saving && saveXferAvailable();
+	// Upload borrowed this list to choose which save to send.
+	bool uploadPick = false;
+	// A downloaded record is waiting for the slot this screen is being used to pick.
+	const bool xferSaving = saving && saveXferPending() != NULL;
+	// The page is fixed for an online session, and for a downloaded record by the slot it left.
+	const bool pinPage = net2p || xferSaving;
+
 	size_t playersIndex = net2p ? 1 : 0;
-	const size_t menuItemsCount = 12;
 	size_t selectedIndex = 0;
 
 	const int xCenter = 160; // center of 320px menu field
@@ -847,15 +877,33 @@ int JE_loadScreen(bool net2p, bool saving)
 
 		// Draw menu items.
 
+		// Only the plain load menu shows the transfer actions, and never while Upload is using
+		// the list as its own picker.
+		const size_t menuItemsCount = (xferOffered && !uploadPick) ? LOAD_ROW_COUNT : LOAD_ROW_EXIT + 1;
+
+		// The bottom row's three labels have their own widths, so the hit test needs their spans.
+		int xBottom[LOAD_ROW_COUNT - LOAD_ROW_EXIT] = { 0 };
+		int wBottom[LOAD_ROW_COUNT - LOAD_ROW_EXIT] = { 0 };
+
 		for (size_t i = 0; i < menuItemsCount; ++i)
 		{
-			const int y = yMenuItems + dyMenuItems * i;
+			const int y = yMenuItems + dyMenuItems * (i < LOAD_ROW_EXIT ? i : LOAD_ROW_EXIT);
 
 			const bool selected = i == selectedIndex;
 
-			if (i == menuItemsCount - 1)
+			if (i >= LOAD_ROW_EXIT)
 			{
-				JE_textShade(VGAScreen, xMenuItemName, y, miscText[33], 13, selected ? 6 : 2, FULL_SHADE);
+				const char *const label = (i == LOAD_ROW_EXIT) ? (uploadPick ? "Cancel" : miscText[33])
+				                        : (i == LOAD_ROW_DOWNLOAD) ? "Download" : "Upload";
+				const int w = JE_textWidth(label, TINY_FONT);
+				const int x = (i == LOAD_ROW_EXIT) ? xMenuItemName
+				            : (i == LOAD_ROW_DOWNLOAD) ? xCenter - w / 2
+				            : xMenuItem + wMenuItem - w;
+
+				xBottom[i - LOAD_ROW_EXIT] = x;
+				wBottom[i - LOAD_ROW_EXIT] = w;
+
+				JE_textShade(VGAScreen, x, y, label, 13, selected ? 6 : 2, FULL_SHADE);
 				continue;
 			}
 
@@ -868,7 +916,8 @@ int JE_loadScreen(bool net2p, bool saving)
 			const int saveEpisode = save_effective_episode(saveFile);
 			const bool epLocked = net2p && !saving && !disabled &&
 			                      (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1]);
-			const bool typeLocked = !saving && !disabled &&
+			// Upload copies a slot rather than flying it, so no record is off limits there.
+			const bool typeLocked = !saving && !uploadPick && !disabled &&
 			                      !save_type_compatible(saveFile, slot, net2p);
 
 			char buffer[22];
@@ -900,8 +949,8 @@ int JE_loadScreen(bool net2p, bool saving)
 
 		// Draw paging controls (fixed to the 2-player page for the online host).
 
-		const bool leftControlVisible = !net2p && playersIndex > 0;
-		const bool rightControlVisible = !net2p && playersIndex < 1;
+		const bool leftControlVisible = !pinPage && playersIndex > 0;
+		const bool rightControlVisible = !pinPage && playersIndex < 1;
 
 		if (leftControlVisible)
 			blit_sprite2x2(VGAScreen, xLeftControl, yControls, shopSpriteSheet, 279);
@@ -909,8 +958,22 @@ int JE_loadScreen(bool net2p, bool saving)
 		if (rightControlVisible)
 			blit_sprite2x2(VGAScreen, xRightControl, yControls, shopSpriteSheet, 281);
 
+		const char *helpLine = miscText[55];
+		// JE_helpBox wraps on a character budget. Upload's line is the only one drawn while the
+		// page arrows are up, and 25 carries it far enough right to run under the right-hand one.
+		unsigned int helpWidth = 25;
+		if (uploadPick)
+		{
+			helpLine = loadHelpUpload;
+			helpWidth = sizeof(loadHelpUploadLine1) - 1;
+		}
+		else if (xferSaving)
+			helpLine = "Choose a slot to keep the downloaded save in.";
+		else if (saving)
+			helpLine = "Choose a slot to save your game into.";
+
 		helpBoxColor = 15;
-		JE_helpBox(VGAScreen, 103, vga_height - 18, saving ? "Choose a slot to save your game into." : miscText[55], 25);
+		JE_helpBox(VGAScreen, LOAD_HELP_X, vga_height - 18, helpLine, helpWidth);
 
 		if (restart)
 		{
@@ -949,6 +1012,7 @@ int JE_loadScreen(bool net2p, bool saving)
 		bool rightAction = false;
 		bool action = false;
 		bool done = false;
+		bool backOut = false;
 
 		if (mouseMoved || newmouse)
 		{
@@ -978,13 +1042,19 @@ int JE_loadScreen(bool net2p, bool saving)
 			}
 			else
 			{
-				// Find menu item that was hovered or clicked.
+				// Find menu item that was hovered or clicked. The bottom row's items share a
+				// line, so each takes its own span there rather than the full row width.
 				if (mouse_x >= xMenuItem && mouse_x < xMenuItem + wMenuItem)
 				{
 					for (size_t i = 0; i < menuItemsCount; ++i)
 					{
-						const int yMenuItem = yMenuItems + dyMenuItems * i;
-						if (mouse_y >= yMenuItem && mouse_y < yMenuItem + hMenuItem)
+						const bool bottom = i >= LOAD_ROW_EXIT;
+						const int yMenuItem = yMenuItems + dyMenuItems * (bottom ? LOAD_ROW_EXIT : i);
+						const int xItem = bottom ? xBottom[i - LOAD_ROW_EXIT] : xMenuItem;
+						const int wItem = bottom ? wBottom[i - LOAD_ROW_EXIT] : wMenuItem;
+
+						if (mouse_x >= xItem && mouse_x < xItem + wItem &&
+						    mouse_y >= yMenuItem && mouse_y < yMenuItem + hMenuItem)
 						{
 							if (selectedIndex != i)
 							{
@@ -994,7 +1064,7 @@ int JE_loadScreen(bool net2p, bool saving)
 							}
 
 							if (newmouse && lastmouse_but == SDL_BUTTON_LEFT &&
-							    lastmouse_x >= xMenuItem && lastmouse_x < xMenuItem + wMenuItem &&
+							    lastmouse_x >= xItem && lastmouse_x < xItem + wItem &&
 							    lastmouse_y >= yMenuItem && lastmouse_y < yMenuItem + hMenuItem)
 							{
 								action = true;
@@ -1013,7 +1083,7 @@ int JE_loadScreen(bool net2p, bool saving)
 			{
 				JE_playSampleNum(S_SPRING);
 
-				done = true;
+				backOut = true;
 			}
 		}
 		else if (newkey)
@@ -1062,7 +1132,7 @@ int JE_loadScreen(bool net2p, bool saving)
 			{
 				JE_playSampleNum(S_SPRING);
 
-				done = true;
+				backOut = true;
 				break;
 			}
 			default:
@@ -1071,21 +1141,64 @@ int JE_loadScreen(bool net2p, bool saving)
 		}
 
 		// Arrow keys also raise these actions; the online pin gates both input sources here.
-		if (leftAction && !net2p)
+		if (leftAction && !pinPage)
 		{
 			playersIndex = playersIndex == 0 ? 1 : 0;
 		}
-		else if (rightAction && !net2p)
+		else if (rightAction && !pinPage)
 		{
 			playersIndex = playersIndex == 1 ? 0 : 1;
 		}
 		else if (action)
 		{
-			if (selectedIndex == menuItemsCount - 1)  // "Exit to Main Menu"
+			if (selectedIndex == LOAD_ROW_EXIT)
 			{
 				JE_playSampleNum(S_SELECT);
 
-				done = true;
+				backOut = true;
+			}
+			else if (selectedIndex == LOAD_ROW_DOWNLOAD)
+			{
+				JE_playSampleNum(S_SELECT);
+
+				fade_black(15);
+
+				/* The transfer arms the record; this screen then re-enters itself as the slot
+				 * picker for it, pinned to the page the record was sent from. */
+				if (saveXferDownload())
+				{
+					JE_loadScreen(saveXferPendingTwoPlayer(), true);
+					saveXferPendingClear();
+				}
+
+				restart = true;
+			}
+			else if (selectedIndex == LOAD_ROW_UPLOAD)
+			{
+				JE_playSampleNum(S_SELECT);
+
+				uploadPick = true;
+				selectedIndex = 0;
+			}
+			else if (uploadPick)
+			{
+				const size_t saveFileIndex = playersIndex * 11 + selectedIndex;
+
+				if (saveFiles[saveFileIndex].level == 0)
+				{
+					JE_playSampleNum(S_CLINK);
+				}
+				else
+				{
+					JE_playSampleNum(S_SELECT);
+
+					fade_black(15);
+					saveXferUpload((JE_byte)(saveFileIndex + 1));
+
+					uploadPick = false;
+					selectedIndex = LOAD_ROW_UPLOAD;
+					restart = true;
+				}
 			}
 			else if (saving)
 			{
@@ -1133,6 +1246,18 @@ int JE_loadScreen(bool net2p, bool saving)
 			}
 		}
 
+		// Every way out lands here: Upload's picker hands the list back, anything else leaves.
+		if (backOut)
+		{
+			if (uploadPick)
+			{
+				uploadPick = false;
+				selectedIndex = LOAD_ROW_UPLOAD;
+			}
+			else
+				done = true;
+		}
+
 		if (done)
 		{
 			fade_black(15);
@@ -1140,6 +1265,19 @@ int JE_loadScreen(bool net2p, bool saving)
 			return 0;
 		}
 	}
+}
+
+/* Upload's help line shares the bottom of the screen with the page arrows, so where it wraps is
+ * load-bearing: its first segment has to stop short of the right-hand one. */
+void qa_test_load_screen_help(void)
+{
+	const size_t line1 = sizeof(loadHelpUploadLine1) - 1;
+
+	qa_check(strncmp(loadHelpUpload, loadHelpUploadLine1, line1) == 0
+	         && loadHelpUpload[line1] == ' ',
+	         "the load screen's upload help line wraps where its budget says it does");
+	qa_check(JE_textWidth(loadHelpUploadLine1, TINY_FONT) <= LOAD_HELP_BUDGET,
+	         "...and that first segment stops short of the page arrow");
 }
 
 Sint64 JE_totalScore(const Player *this_player)
@@ -6954,6 +7092,17 @@ bool str_pop_int(char *str, int *val)
 	return success;
 }
 
+/* Write `slot` under `name`: a downloaded record is copied in whole, and anything else is the
+ * live game captured as usual. */
+static void save_slot_commit(JE_byte slot, const char *name)
+{
+	if (saveXferPendingApply(slot, name))
+		return;
+
+	network_shop_sync_for_save();
+	JE_saveGame(slot, name);   // persists or clears the endless run for this slot too
+}
+
 void JE_operation(JE_byte slot)
 {
 	JE_byte flash;
@@ -6979,8 +7128,13 @@ void JE_operation(JE_byte slot)
 	}
 	else if (slot % 11 != 0)
 	{
+		/* A downloaded record opens under the name it was sent with, so the field starts from
+		 * what the other machine called it rather than from whatever this slot held. */
+		const JE_SaveFileType *const xfer = saveXferPending();
+		const char *const nameSeed = xfer != NULL ? xfer->name : saveFiles[slot-1].name;
+
 		strcpy(stemp, "              ");
-		memcpy(stemp, saveFiles[slot-1].name, strlen(saveFiles[slot-1].name));
+		memcpy(stemp, nameSeed, MIN(strlen(nameSeed), (size_t)14));
 		temp = strlen(stemp);
 		while (stemp[temp-1] == ' ' && --temp) { }  // trim the trailing pad spaces
 
@@ -7067,10 +7221,7 @@ void JE_operation(JE_byte slot)
 				{
 					quit = true;
 					if (JE_saveRequest(slot, stemp))
-					{
-						network_shop_sync_for_save();
-						JE_saveGame(slot, stemp);   // persists or clears the endless run for this slot too
-					}
+						save_slot_commit(slot, stemp);
 				}
 				else if (lastmouse_x > 151 && lastmouse_x < 237 && lastmouse_y > 123 && lastmouse_y < 149)
 				{
@@ -7112,10 +7263,7 @@ void JE_operation(JE_byte slot)
 					case SDL_SCANCODE_RETURN:
 						quit = true;
 						if (JE_saveRequest(slot, stemp))
-						{
-							network_shop_sync_for_save();
-							JE_saveGame(slot, stemp);   // persists or clears the endless run for this slot too
-						}
+							save_slot_commit(slot, stemp);
 						break;
 					default:
 						break;

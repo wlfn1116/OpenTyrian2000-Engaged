@@ -881,7 +881,7 @@ state, restore text backgrounds, suppress live-only flashes and sounds, and leav
 ### Online saves and records
 
 Online saves use slots 12 through 22. Slot 22 is the read-only `LAST LEVEL`
-backup. `save_record_pack` and `save_record_unpack` define the 89-byte
+backup. `save_record_pack` and `save_record_unpack` define the 97-byte
 little-endian wire record.
 
 Dual-ship tags:
@@ -899,6 +899,31 @@ Endless resume must also adopt the run record or halt the session.
 `coopCampaignScoreNote` owns co-op Campaign record eligibility. Record only a
 completed starting episode, before repeat, outside demos. Do not record a death
 or later episode reached by the same run. Store the Credit rule beside the row.
+
+### LAN save transfer
+
+`net_savexfer.c` copies one save slot between two machines. It owns its socket
+and never touches the session transport, so no game state is involved on either
+side. UDP port 1332, packet types `PACKET_SAVE_OFFER` through `PACKET_SAVE_ACK`,
+and `SAVE_XFER_VERSION` in every packet.
+
+The payload is a 12-byte header, the 97-byte packed record, and the slot's
+Endless text when it has one. The header carries the two facts the record cannot:
+the page the slot came from and its `online_seat`. Chunking follows the custom
+weapon and Endless run shape; the whole stream repeats until the receiver
+acknowledges it.
+
+The receiver copies the record into the chosen slot with
+`saveXferPendingApply`. That path deliberately bypasses `JE_saveGame`: capturing
+live globals would rebuild the record from this machine's session instead of
+copying the one that arrived. `endlessSlotSerialize` and `endlessSlotAdopt` move
+the Endless half the same way, straight through the slot cache. Only the slot
+number and the name differ from the machine that sent it.
+
+`JE_loadScreen` offers the two rows when `net2p` and `saving` are both false,
+which is the title screen's own page. An online session uses the same screen and
+its keep-alive cannot survive a blocking socket wait. Custom weapon designs live
+in `opentyrian.cfg` rather than in a slot, so they do not travel.
 
 ### Destruct and ENGAGE modes
 
