@@ -178,7 +178,7 @@ static Uint32 requested_at_ms;
 static Uint8 requested_extra;
 static Uint32 extra_at_ms;
 static Uint32 presented_signature;
-static bool was_visible = true;
+static Uint8 last_peak = 255;
 
 // See button_texture(): each shown slot keeps its composited button until one of these
 // changes. Palette brightness is deliberately absent, so a fade rebuilds nothing.
@@ -202,6 +202,13 @@ static Uint32 btn_repeat_ms[TOUCH_BTN_COUNT];
 static int clampi(int v, int lo, int hi)
 {
 	return v < lo ? lo : (v > hi ? hi : v);
+}
+
+// The opacity setting scales the alpha a button was authored with, so the middle of the
+// slider is the shipped look, the top is solid, and zero takes the buttons off the screen.
+static Uint8 scaled_alpha(int base)
+{
+	return (Uint8)clampi(base * touchButtonOpacity / TOUCH_OPACITY_DEFAULT, 0, 255);
 }
 
 static bool fresh(Uint32 stamp_ms, Uint32 now_ms)
@@ -423,7 +430,8 @@ static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, b
 	                       dim(held ? 88 : 26, peak), alpha);
 	SDL_RenderFillRect(renderer, r);
 
-	SDL_SetRenderDrawColor(renderer, dim(165, peak), dim(176, peak), dim(205, peak), 235);
+	SDL_SetRenderDrawColor(renderer, dim(165, peak), dim(176, peak), dim(205, peak),
+	                       scaled_alpha(235));
 	SDL_RenderDrawRect(renderer, r);
 
 	const SDL_Rect inner = { r->x + 1, r->y + 1, r->w - 2, r->h - 2 };
@@ -676,13 +684,6 @@ void touch_ui_flush_keys(void)
 	pending_key_count = 0;
 }
 
-// The opacity setting scales the alpha a button was authored with, so the middle of the
-// slider is the shipped look, the top is solid, and zero takes the buttons off the screen.
-static Uint8 scaled_alpha(int base)
-{
-	return (Uint8)clampi(base * touchButtonOpacity / TOUCH_OPACITY_DEFAULT, 0, 255);
-}
-
 /* One button, composited once and kept until something about it changes. Opacity cannot be
  * applied to the drawn primitives directly: a glyph overlaps itself, and the cycle arrow is
  * a run of deliberately overlapping dots, so anything below full alpha blends each overlap
@@ -780,15 +781,22 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	// the hit test together, so nothing is left behind that only an invisible target answers.
 	const bool visible = peak >= TOUCH_VISIBLE_PEAK_MIN && touchButtonOpacity > 0;
 
-	/* Dimming past the floor ends the screen that asked for this layout, so its request goes
-	 * with it rather than waiting to time out. On that edge only: the next screen asks while
-	 * the display is still black, and clearing under it would throw that away. */
-	if (was_visible && !visible)
+	/* Dark and not on the way up: the screen that asked for this layout is leaving, so its
+	 * request goes with it rather than waiting to time out.
+	 *
+	 * The direction is what makes this safe both ways, and one edge is not enough. A screen
+	 * that steps its own fade re-asserts on every frame of it -- the jukebox asks at the top
+	 * of the loop that also steps the palette -- so a single clear is overwritten by the next
+	 * frame and its track buttons ride the next screen's fade-in. Clearing on every dark
+	 * frame instead would erase the request an arriving screen makes while the display is
+	 * still black, which is the one that lets its buttons fade in with it. Falling clears,
+	 * rising does not. */
+	if (!visible && peak <= last_peak)
 	{
 		requested_at_ms = 0;
 		extra_at_ms = 0;
 	}
-	was_visible = visible;
+	last_peak = peak;
 
 	/* fade_palette blocks, so a request made either side of one has to outlive it. Renewing
 	 * a live request for as long as the palette keeps stepping is what puts the buttons on

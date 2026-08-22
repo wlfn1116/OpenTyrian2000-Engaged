@@ -539,12 +539,16 @@ A touch overlay layout is a request with a lifetime, not state a screen owns:
 itself, so no screen has to clean up after the one before it. Two rules keep the
 buttons on the same schedule as the screen they belong to:
 
-- Falling past `TOUCH_VISIBLE_PEAK_MIN` clears the live request, on that edge
-  only. Clearing on every dark frame would erase the arriving screen's request,
-  which is made while the display is still black.
+- A live request is cleared while the palette is dark and not rising. Clearing on
+  every dark frame would erase the arriving screen's request, which is made while
+  the display is still black. Clearing only on the falling edge misses a screen
+  that steps its own palette inside the loop that asserts, as the jukebox does:
+  it re-asserts on every frame of its own fade-out and one clear is undone.
 - A live request is renewed for as long as `palette_fading()` holds. `fade_black`
   and `fade_palette` block for longer than the request's own lifetime, so ask
-  before starting the fade or the buttons only arrive once it has finished.
+  before starting the fade or the buttons only arrive once it has finished. Ask
+  with no present in between, or that frame is dark and not rising and drops it.
+  `DE_RunTick` re-asserts beside its fade for exactly this reason.
 
 `palette_fading()` therefore has to be stamped on both fade paths.
 `smooth_fade_to` replaces `step_fade_palette` whenever Smooth Motion is on,
