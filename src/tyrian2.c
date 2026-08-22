@@ -6649,11 +6649,15 @@ draw_player_shot_loop_end:
 					push_joysticks_as_keyboard();
 					service_SDL_events(false);
 
-					if (!keydown && !mousedown && !joydown)
+					/* mouse_pressed[0] is the touch ports' whole answer here: a finger steering
+					 * the ship sets neither mousedown nor newmouse, so without it a phone can
+					 * arm this but never trigger it. */
+					if (!keydown && !mousedown && !joydown && !mouse_pressed[0])
 					{
 						deathSkipArmed = true;
 					}
-					else if (deathSkipArmed && ((newkey && lastkey_scan != SDL_SCANCODE_ESCAPE) || newmouse))
+					else if (deathSkipArmed && ((newkey && lastkey_scan != SDL_SCANCODE_ESCAPE) ||
+					                            newmouse || mouse_pressed[0]))
 					{
 						reallyEndLevel = true;
 						// A live-input one-shot outside the movement tuples; record it so a
@@ -6687,7 +6691,10 @@ draw_player_shot_loop_end:
 					}
 					// Drop any input still held/queued from the moment of death, so
 					// GAME OVER doesn't dismiss itself instantly; require a fresh press.
+					// The touch latch is a level rather than an edge, so clearing it here is
+					// what makes the finger that was flying the ship let go and tap again.
 					newkey = newmouse = false;
+					mouse_pressed[0] = false;
 					firstGameOver = false;
 				}
 
@@ -6713,7 +6720,10 @@ draw_player_shot_loop_end:
 					// already consumed inter-tick SDL events into newkey/newmouse, so
 					// clearing here would discard the press and GAME OVER would never respond.
 					service_SDL_events(false);
-					if ((newkey || button[0] || button[1] || button[2]) || newmouse)
+					/* button[] carries the pad and the mouse, but only while the ship is alive:
+					 * JE_playerMovement returns before it fills them once is_alive is false. A
+					 * finger therefore reaches this screen through mouse_pressed[0] alone. */
+					if ((newkey || button[0] || button[1] || button[2]) || newmouse || mouse_pressed[0])
 					{
 						reallyEndLevel = true;
 						// A live-input one-shot outside the movement tuples; record it

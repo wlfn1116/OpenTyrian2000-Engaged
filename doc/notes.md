@@ -94,6 +94,19 @@ per simulation tick.
 - Draw `JE_drawPerfOverlay` after the final composite.
 - Keep hitbox overlays in `game_screen`; keep text out of feedback surfaces.
 
+### Dismissing the death screens
+
+`JE_playerMovement` returns as soon as `is_alive` is false, before the block that
+fills `button[]` from the pad and the mouse. Anything drawn after the ship dies,
+including the wreck-animation skip and GAME OVER, therefore cannot read input
+through `button[]`.
+
+A finger reaches those screens through `mouse_pressed[0]` alone: touch in
+relative mode sets neither `mousedown` nor `newmouse`, only that auto-fire latch.
+It is a level rather than an edge, so the fresh-press guard has to clear it the
+same way it clears `newkey` and `newmouse`, or the finger that was flying the
+ship dismisses the screen the instant it appears.
+
 ### Boss vulnerability cue
 
 `vulnerableCue` is presentation-only: Off, Bosses, or All. Arm it only when a

@@ -904,6 +904,10 @@ than the screen edge; that keeps them clear of a display cutout in landscape. A
 that. On a display at exactly 16:9 there is no margin at all, and they fade back
 over the frame edges instead.
 
+On the screens that end a run, the wreck animation and GAME OVER, a tap anywhere
+moves things along. Lift the finger you were flying with first: both wait for a
+fresh press so they cannot dismiss themselves the moment you die.
+
 A finger held on a button never steers and never fires, so the other thumb can
 keep flying.
 
