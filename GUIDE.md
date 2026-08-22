@@ -14,7 +14,7 @@ and controls work as before.
 | Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
 | Change health bars or gauges | Setup > Enhancements > Heads-Up Display |
-| Turn the touch sidekick buttons on or off | Setup > Enhancements > Heads-Up Display |
+| Turn the touch sidekick or nav buttons on or off | Setup > Enhancements > Heads-Up Display |
 | Configure restored content | Setup > Enhancements > Weapons or Gameplay |
 | Choose a music backend | Setup > Sound > Music Synth |
 | Turn on Debug Mode or network logs | Setup > Diagnostics |
@@ -864,8 +864,14 @@ buttons because rows and controls already accept taps. Arrows appear for
 scrolling lists, keyboard-only screens, and the Weapon Creator; holding one
 repeats it.
 
+**Setup > Enhancements > Heads-Up Display > Nav Buttons** puts the four arrows
+and confirm on every menu instead, for playing by button rather than by tap.
+They take the same rows they occupy on the list screens, so a thumb finds them
+in the same places. Off by default, and it changes nothing in a level or on the
+screens that already choose their own buttons.
+
 Sidekick buttons are on by default. Disable them under **Setup > Enhancements >
-Heads-Up Display > Sidekick Buttons**. This control stays outside the
+Heads-Up Display > Sidekick Buttons**. Neither control belongs to the
 Enhancements presets.
 
 Buttons use the pillarbox beside the playfield on phones, the upper margin on

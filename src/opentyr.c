@@ -312,6 +312,7 @@ typedef enum
 	MENU_ITEM_GAUGE_FLASH_SHIELD,
 	MENU_ITEM_GAUGE_FLASH_ARMOR,
 	MENU_ITEM_TOUCH_SIDEKICKS,      // touch ports only: draw the sidekick fire buttons
+	MENU_ITEM_TOUCH_NAV,            // touch ports only: cursor keys on every ordinary menu
 
 	/* Enhancements -> Weapons. */
 	MENU_ITEM_CUSTOM_WEAPONS,
@@ -464,6 +465,7 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_GAUGE_FLASH_SHIELD:  return &gaugeFlashShield;
 	case MENU_ITEM_GAUGE_FLASH_ARMOR:   return &gaugeFlashArmor;
 	case MENU_ITEM_TOUCH_SIDEKICKS:     return &touchSidekickButtons;
+	case MENU_ITEM_TOUCH_NAV:           return &touchNavButtons;
 	case MENU_ITEM_CUSTOM_WEAPONS:      return &customWeaponEnabled;
 	case MENU_ITEM_CHARGE_LASER:        return &chargeLaserCannon;
 	case MENU_ITEM_ZICA_LOCK:           return &zicaLaserLock;
@@ -740,6 +742,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				  .getPickerItemsCount = vulnCueCount, .getPickerItem = vulnCueItem},
 #ifdef TOUCH_UI_BUTTONS
 				{ MENU_ITEM_TOUCH_SIDEKICKS, "Sidekick Buttons:", "On-screen buttons that fire your sidekicks." },
+				{ MENU_ITEM_TOUCH_NAV, "Nav Buttons:",
+				  "Cursor keys and confirm on every menu, not just lists." },
 #endif
 				MENU_DONE_ROW
 			},

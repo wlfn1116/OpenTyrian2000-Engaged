@@ -49,8 +49,19 @@ typedef enum
 typedef enum
 {
 	GATE_ALWAYS,
-	GATE_SIDEKICKS   // the player asked for the sidekick buttons (Enhancements > HUD)
+	GATE_SIDEKICKS,  // the player asked for the sidekick buttons (Enhancements > HUD)
+	GATE_NAV         // the player asked for cursor keys on ordinary menus (same submenu)
 } TouchGate;
+
+static bool gate_open(Uint8 gate)
+{
+	switch (gate)
+	{
+	case GATE_SIDEKICKS: return touchSidekickButtons;
+	case GATE_NAV:       return touchNavButtons;
+	default:             return true;
+	}
+}
 
 typedef struct
 {
@@ -74,10 +85,18 @@ static const TouchButtonDef LAYOUT_GAME[] =
 	{ TOUCH_BTN_SIDEKICK_R,    ICON_POD_R,     1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_SIDEKICKS },
 };
 
-/* Ordinary menus accept taps directly; only Back needs a separate button. */
+/* Ordinary menus accept taps directly, so only Back needs a separate button. The rest are the
+ * same set the lists get, for a player who would rather press a button than tap a row, and are
+ * off unless asked for (Enhancements > HUD). Same rows as everywhere else, so a thumb that has
+ * learned the list screens finds them in the same places here. */
 static const TouchButtonDef LAYOUT_MENU[] =
 {
-	{ TOUCH_BTN_ESC, ICON_CLOSE, -1, 0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -3, SDL_SCANCODE_LEFT,   true,  GATE_NAV },
+	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,  -1, -2, SDL_SCANCODE_RIGHT,  true,  GATE_NAV },
+	{ TOUCH_BTN_UP,     ICON_UP,      1, -3, SDL_SCANCODE_UP,     true,  GATE_NAV },
+	{ TOUCH_BTN_DOWN,   ICON_DOWN,    1, -2, SDL_SCANCODE_DOWN,   true,  GATE_NAV },
+	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_NAV },
 };
 
 /* Debug lists need arrows to reach hidden rows and reverse values, plus Select to confirm. */
@@ -210,6 +229,7 @@ static Uint32 desired_signature(Uint32 now_ms)
 
 	Uint32 sig = (Uint32)layout;
 	sig = sig * 31u + (touchSidekickButtons ? 1u : 0u);
+	sig = sig * 31u + (touchNavButtons ? 1u : 0u);
 	sig = sig * 31u + (Uint32)touchButtonOpacity;
 	sig = sig * 31u + (fresh(extra_at_ms, now_ms) ? (Uint32)requested_extra + 1u : 0u);
 
@@ -347,7 +367,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 	shown_count = 0;
 	for (int i = 0; i < count && shown_count < LAYOUT_MAX_BUTTONS; ++i)
 	{
-		if (defs[i].gate == GATE_SIDEKICKS && !touchSidekickButtons)
+		if (!gate_open(defs[i].gate))
 			continue;
 
 		shown[shown_count] = &defs[i];

@@ -556,8 +556,8 @@ together.
 - `enhancementSettings[]` is the authority for both presets.
 - Engaged values must match fresh-install defaults.
 - `chargeSidekickAutofire` is per-save and stays outside presets.
-- `touchSidekickButtons` and `touchButtonOpacity` are controls, not behaviour, and
-  stay outside presets.
+- `touchSidekickButtons`, `touchNavButtons` and `touchButtonOpacity` are controls,
+  not behaviour, and stay outside presets.
 - Apply table-backed settings through `JE_applyItemDataSettings` immediately.
 
 ### Touch and mobile UI
@@ -585,6 +585,13 @@ Touch layouts are expiring requests. Keep these rules together:
 - Check `outpostListScrolls()` and `outpostRearModeCyclable()` at the top of the
   outpost frame, before `JE_showVGA()`. Keep every scrolling outpost list in the
   first helper.
+
+A button that only some players want carries a `TouchGate` rather than a layout
+of its own, and `gate_open()` is the single place those settings are read. The
+sidekick trio and the optional cursor keys on ordinary menus both work this way,
+which is why the menu layout can hold the same rows as the list layout and still
+draw Back alone by default. Gated settings belong in `desired_signature()` too,
+or an idle screen will not repaint when one is toggled.
 
 Relative mouse mode is active only in a level. There a finger sets
 `mouse_pressed[0]`, so input waits after death must test that latch. Menus disable

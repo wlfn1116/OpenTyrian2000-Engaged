@@ -349,6 +349,8 @@ bool extraParallax = false;
 bool mirroredLayers = true;
 /* On-screen sidekick fire buttons; see config.h. Drawn only where TOUCH_UI_BUTTONS is. */
 bool touchSidekickButtons = true;
+/* Cursor keys on ordinary menus; see config.h. */
+bool touchNavButtons = false;
 /* On-screen button opacity; see config.h. */
 int touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
 /* Thin health bar near an enemy once damaged (draw_enemy_health_bars in tyrian2.c). */
@@ -888,6 +890,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "touch_sidekick_buttons", &touch_sidekick_buttons_enabled);
 		touchSidekickButtons = (touch_sidekick_buttons_enabled != 0);
 
+		int touch_nav_buttons_enabled = touchNavButtons ? 1 : 0;
+		config_get_int_option(section, "touch_nav_buttons", &touch_nav_buttons_enabled);
+		touchNavButtons = (touch_nav_buttons_enabled != 0);
+
 		config_get_int_option(section, "touch_button_opacity", &touchButtonOpacity);
 		if (touchButtonOpacity < 0 || touchButtonOpacity > TOUCH_OPACITY_MAX)
 			touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
@@ -1331,6 +1337,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "extra_parallax", extraParallax ? 1 : 0);
 	config_set_int_option(section, "mirrored_layers", mirroredLayers ? 1 : 0);
 	config_set_int_option(section, "touch_sidekick_buttons", touchSidekickButtons ? 1 : 0);
+	config_set_int_option(section, "touch_nav_buttons", touchNavButtons ? 1 : 0);
 	config_set_int_option(section, "touch_button_opacity", touchButtonOpacity);
 	config_set_string_option(section, "music_device", music_device_names[music_device]);
 
