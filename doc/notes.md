@@ -595,7 +595,15 @@ Relative mouse mode is active only in a level. There a finger sets
 relative mode, allowing taps to satisfy ordinary mouse input.
 
 Queue touch-button keys until `push_joysticks_as_keyboard()`. Injecting a key
-inside the event pump loses it on screens that pump twice. One-shot actions use
+inside the event pump loses it on screens that pump twice.
+
+Every screen that reads keys flushes once a frame, so a long gap since the last
+flush means nothing was listening: an animation, a fade, a session closing.
+`touch_ui_flush_keys()` drops whatever was queued across such a gap instead of
+banking it, or a run of presses arrives together on the next screen that flushes
+and walks several steps back at once. `JE_anyButton()` flushes too, so skippable
+animations and press-any-key waits can be answered by an on-screen button rather
+than only by tapping the screen itself. One-shot actions use
 a release latch instead of `wait_noinput()`, which blocks presentation while a
 finger remains down.
 
