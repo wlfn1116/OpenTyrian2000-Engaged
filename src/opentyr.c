@@ -312,7 +312,7 @@ typedef enum
 	MENU_ITEM_GAUGE_FLASH_SHIELD,
 	MENU_ITEM_GAUGE_FLASH_ARMOR,
 	MENU_ITEM_TOUCH_SIDEKICKS,      // touch ports only: draw the sidekick fire buttons
-	MENU_ITEM_TOUCH_NAV,            // touch ports only: cursor keys on every ordinary menu
+	MENU_ITEM_TOUCH_NAV,
 
 	/* Enhancements -> Weapons. */
 	MENU_ITEM_CUSTOM_WEAPONS,

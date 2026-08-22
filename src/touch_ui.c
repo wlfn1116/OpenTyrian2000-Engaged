@@ -49,8 +49,8 @@ typedef enum
 typedef enum
 {
 	GATE_ALWAYS,
-	GATE_SIDEKICKS,  // the player asked for the sidekick buttons (Enhancements > HUD)
-	GATE_NAV         // the player asked for cursor keys on ordinary menus (same submenu)
+	GATE_SIDEKICKS,
+	GATE_NAV
 } TouchGate;
 
 static bool gate_open(Uint8 gate)
@@ -85,10 +85,7 @@ static const TouchButtonDef LAYOUT_GAME[] =
 	{ TOUCH_BTN_SIDEKICK_R,    ICON_POD_R,     1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_SIDEKICKS },
 };
 
-/* Ordinary menus accept taps directly, so only Back needs a separate button. The rest are the
- * same set the lists get, for a player who would rather press a button than tap a row, and are
- * off unless asked for (Enhancements > HUD). Same rows as everywhere else, so a thumb that has
- * learned the list screens finds them in the same places here. */
+/* Ordinary menus always show Back. Optional navigation reuses the list layout rows. */
 static const TouchButtonDef LAYOUT_MENU[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },

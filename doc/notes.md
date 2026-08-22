@@ -586,12 +586,9 @@ Touch layouts are expiring requests. Keep these rules together:
   outpost frame, before `JE_showVGA()`. Keep every scrolling outpost list in the
   first helper.
 
-A button that only some players want carries a `TouchGate` rather than a layout
-of its own, and `gate_open()` is the single place those settings are read. The
-sidekick trio and the optional cursor keys on ordinary menus both work this way,
-which is why the menu layout can hold the same rows as the list layout and still
-draw Back alone by default. Gated settings belong in `desired_signature()` too,
-or an idle screen will not repaint when one is toggled.
+`TouchGate` controls optional button groups; `gate_open()` applies the gates
+during layout construction. Include each gate's setting in `desired_signature()`
+so an idle screen repaints when it changes.
 
 Relative mouse mode is active only in a level. There a finger sets
 `mouse_pressed[0]`, so input waits after death must test that latch. Menus disable

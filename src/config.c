@@ -349,7 +349,6 @@ bool extraParallax = false;
 bool mirroredLayers = true;
 /* On-screen sidekick fire buttons; see config.h. Drawn only where TOUCH_UI_BUTTONS is. */
 bool touchSidekickButtons = true;
-/* Cursor keys on ordinary menus; see config.h. */
 bool touchNavButtons = false;
 /* On-screen button opacity; see config.h. */
 int touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
