@@ -60,6 +60,11 @@ compiles into `Assets.car` and is then unreachable, so the app shows no icon at
 all. CI checks the merged plist for `CFBundlePrimaryIcon` so that cannot pass
 unnoticed again.
 
+Editing `Info.plist.in` alone re-runs CMake, which rewrites the bundle plist
+from the template and drops those merged keys, while the post-build merge runs
+only when the target links. Delete `ios/build/OpenTyrian2000.app` before such a
+build.
+
 ## Build
 
 ```sh
@@ -95,10 +100,14 @@ identity and entitlements.
 
 ## Frame rate
 
-CoreAnimation caps an app at 60Hz unless its bundle declares
-`CADisableMinimumFrameDuration`, so `Info.plist.in` carries that key. Without it
-a ProMotion device presents 60 of the frames Smooth Motion draws, and no FPS
-Cap setting reaches past that.
+CoreAnimation caps an iPhone app at 60Hz unless its bundle declares
+`CADisableMinimumFrameDurationOnPhone`, so `Info.plist.in` carries that key.
+Without it a ProMotion iPhone presents 60 of the frames Smooth Motion draws and
+no FPS Cap setting reaches past that. iPad Pro needs no opt-in.
+
+The spelling matters. `CADisableMinimumFrameDuration`, without the suffix, was
+the iOS 15 beta name and is what most write-ups still quote; the shipping OS
+reads only the `OnPhone` key and ignores the other silently.
 
 SDL's Metal renderer always presents display-synced on iOS: `displaySyncEnabled`
 is a macOS-only knob, and the iOS path sets `SDL_RENDERER_PRESENTVSYNC` on the
