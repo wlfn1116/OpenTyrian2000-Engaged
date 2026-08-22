@@ -304,6 +304,13 @@ void init_joysticks(void)
 	if (ignore_joystick)
 		return;
 	
+#ifdef __ANDROID__
+	// SDL presents the accelerometer as a 3-axis joystick by default, and the default
+	// assignment binds the first two axes to the directions, so tilting the phone steers
+	// the menus. Nothing in the game reads tilt, so keep it off the joystick list.
+	SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+#endif
+
 	if (SDL_InitSubSystem(SDL_INIT_JOYSTICK))
 	{
 		fprintf(stderr, "warning: failed to initialize joystick system: %s\n", SDL_GetError());

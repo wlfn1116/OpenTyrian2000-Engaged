@@ -205,6 +205,13 @@ void init_video(void)
 	// the window resizable so SDL can follow dock transitions.
 	console_get_output_size(&win_w, &win_h);
 #endif
+
+#ifdef __ANDROID__
+	// A resizable window makes SDL request FULL_SENSOR orientation at creation, overriding
+	// the manifest's landscape lock. This hint is what it honours instead.
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
+
 	main_window = SDL_CreateWindow(opentyrian_str,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		win_w, win_h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
