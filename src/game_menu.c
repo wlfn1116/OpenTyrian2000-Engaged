@@ -306,6 +306,22 @@ static int upgradeSubVisibleRows(void)
 	return total_rows <= 6 ? 6 : 5;
 }
 
+/* An outpost list that has outgrown its window, so part of it is scrolled out of reach. A tap
+ * only lands on the rows currently drawn, which is what earns those screens the cursor keys;
+ * a list that fits does not need them. One place decides, because every scrolling list here
+ * has to be in it: the buy/sell sub-list and the read-only endless perk list are the two. The
+ * E-Shop looks like a third and is not, being a fixed thirteen rows that never scroll. */
+static bool outpostListScrolls(void)
+{
+	if (curMenu == MENU_UPGRADE_SUB)
+		return upgradeSubVisibleRows() < 6;
+
+	if (curMenu == MENU_PERKS && endlessPerkListMode)
+		return menuChoices[MENU_PERKS] - 1 > PERK_LIST_VIS;
+
+	return false;
+}
+
 static JE_byte planetAni, planetAniWait;
 static JE_byte currentDotNum, currentDotWait;
 static JE_real navX, navY, newNavX, newNavY;
@@ -3407,11 +3423,12 @@ void JE_itemScreen(void)
 					}
 				}
 
-				// The buy/sell list drops to five visible rows once it overflows
-				// (upgradeSubVisibleRows), and a tap can only reach the rows drawn, so an
-				// overflowing list gets the cursor keys. A list that fits does not.
-				if (curMenu == MENU_UPGRADE_SUB && upgradeSubVisibleRows() < 6)
+				// Said either way every frame, so leaving a scrolled list takes the cursor keys
+				// with it rather than leaving them up until the request goes stale.
+				if (outpostListScrolls())
 					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+				else
+					touch_ui_clear_layout();
 
 				menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
 
@@ -7606,6 +7623,8 @@ static bool endlessDebugScreen(bool jumpMode)
 		save_opentyrian_config();
 	}
 
+	touch_ui_clear_layout();   // nothing fades here, so take the cursor keys with the panel
+
 	// A debug "Free perk pick" outcome was fired but we're not launching a level -> open the perk
 	// pick now, on return to the menu (the shop's front-gate perk gate already passed this visit).
 	// If a level WAS launched, the queued endlessPerkPending rides the normal next-shop gate instead.
@@ -7999,6 +8018,7 @@ bool JE_debugLevelSelect(void)
 		}
 	}
 
+	touch_ui_clear_layout();   // nothing fades here, so take the cursor keys with the panel
 	wait_noinput(false, false, true);
 
 	VGAScreen = temp_surface;
@@ -10189,6 +10209,7 @@ bool JE_customWeaponCreator(bool canEquip)
 	weaponSimOverlayFn = NULL;  // stop overlaying (JE_weaponSimSmoothPresent is shared with the shop)
 	for (int j = 0; j < MAX_EXPLOSIONS; ++j)  // don't leak editor impacts back to the shop/game
 		explosions[j].ttl = 0;
+	touch_ui_clear_layout();   // nothing fades here, so take the cursor keys with the editor
 	wait_noinput(false, false, true);
 
 	VGAScreen = temp_surface;
@@ -11187,8 +11208,12 @@ void JE_weaponSimUpdate(void)
 		// holds -- outside the weaponSimTime test below, which only makes the caption blink.
 		const bool rearModeCyclable = (curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
 			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2;
+		// Said either way, because this is re-evaluated every frame: moving off the row has to
+		// take the button with it, not leave it up until the request goes stale.
 		if (rearModeCyclable)
 			touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
+		else
+			touch_ui_clear_extra();
 
 		if (rearModeCyclable && (weaponSimTime >= 75))
 		{

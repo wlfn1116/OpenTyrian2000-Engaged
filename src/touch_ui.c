@@ -291,6 +291,16 @@ void touch_ui_set_extra(TouchButton button)
 	extra_at_ms = SDL_GetTicks();
 }
 
+void touch_ui_clear_layout(void)
+{
+	requested_at_ms = 0;
+}
+
+void touch_ui_clear_extra(void)
+{
+	extra_at_ms = 0;
+}
+
 /* Where the buttons live, in preference order: the pillarbox bar beside the frame, which
  * is what a phone gives us; the letterbox band above it, which is what a 4:3 tablet gives
  * us; and the frame's own edge when the display is 16:9 and there is no margin to take.

@@ -1805,6 +1805,9 @@ static void JE_pauseScreen(void)
 	} while (!newkey);
 
 	/* Restore current screen & volume*/
+	// Hand straight back to the battle's own buttons. Nothing fades here, and the present
+	// below would otherwise show the pause screen's pair once more over the resumed game.
+	touch_ui_set_layout(TOUCH_LAYOUT_DESTRUCT);
 	memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->h * VGAScreen->pitch);
 	JE_showVGA();
 

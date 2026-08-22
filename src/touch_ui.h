@@ -59,6 +59,14 @@ void touch_ui_set_layout(TouchLayout layout);
  * so a screen only has to call it while the key is live. */
 void touch_ui_set_extra(TouchButton button);
 
+/* Drop a request now instead of letting it go stale. Simply stopping is enough to make the
+ * buttons go away, but not for a quarter of a second, which is long enough to see. Say so
+ * outright wherever the moment of dismissal is known: leaving a screen that asked for a
+ * layout, or a per-frame condition that has just turned false. Not before a fade, which the
+ * buttons are supposed to dim out with. */
+void touch_ui_clear_layout(void);
+void touch_ui_clear_extra(void);
+
 /* Push the keys the on-screen buttons have queued. Called from push_joysticks_as_keyboard,
  * which every navigable screen runs immediately before the pump it reads: a key pushed from
  * inside the pump itself lands in whichever pump happened to receive the touch, and screens
@@ -113,6 +121,8 @@ void touch_ui_idle_repaint(void);
 #define touch_ui_idle_repaint()           ((void)0)
 #define touch_ui_set_layout(layout)       ((void)0)
 #define touch_ui_set_extra(button)        ((void)0)
+#define touch_ui_clear_layout()           ((void)0)
+#define touch_ui_clear_extra()            ((void)0)
 #define touch_ui_held(button)             (false)
 #define touch_ui_take_tap(button)         (false)
 

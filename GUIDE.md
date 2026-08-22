@@ -873,7 +873,8 @@ In an ordinary menu that is the only button, because a tap is already a click:
 menu rows, sliders and pickers all follow your finger. Cursor keys only appear
 where tapping cannot do the job. That means a list longer than its frame, where a
 tap only reaches the rows currently drawn: the debug screens, and the shop's buy
-and sell list when the outpost is carrying more than six items. The
+and sell list when the outpost is carrying more than six items, and the endless
+perk list once you have earned more perks than fit on a page. The
 Weapon Creator has them for a related reason: it does hit-test every row, but a
 tap there both moves the cursor and acts on it, so the arrows are the only way to
 line a field up before changing it. Destruct's mode

@@ -587,6 +587,29 @@ buttons on the same schedule as the screen they belong to:
   with no present in between, or that frame is dark and not rising and drops it.
   `DE_RunTick` re-asserts beside its fade for exactly this reason.
 
+`outpostListScrolls()` is the single test for "this outpost list has scrolled out
+of reach, so it needs the cursor keys". Every scrolling list here has to be in
+it: today the buy/sell sub-list and the read-only endless perk list. The E-Shop
+looks like a third and is not, being a fixed thirteen rows.
+
+What a finger can answer at all depends on `mouseGetRelative()`, and that is on
+only inside the level loop: `JE_main` turns it off before every between-level
+screen and back on after `JE_loadMap`, and each screen that needs taps
+(`JE_debugMenu`, `JE_operation`, high-score entry, the in-game menu, the swkbd,
+the network halt) turns it off and restores it. In a menu a tap sets `mousedown`,
+so `JE_anyButton` and `wait_input` are satisfied by touching the screen and need
+no button. Inside the level loop a finger sets only `mouse_pressed[0]`, which is
+why the wreck-animation skip and GAME OVER have to test that latch by hand.
+Anything new that waits for input inside the level loop needs the same.
+
+Going stale is the backstop, not the way a screen should end. A quarter of a
+second of buttons that no longer belong is long enough to see, so say so outright
+wherever the moment of dismissal is known: `touch_ui_clear_layout` on the way out
+of a screen that has no fade to dim through (the debug screens, the level select,
+the Weapon Creator), and both it and `touch_ui_clear_extra` on the else branch of
+a per-frame condition (the shop's overflowing buy list, its dual-mode rear gun).
+Not before a fade, which the buttons are supposed to leave with.
+
 `palette_fading()` therefore has to be stamped on both fade paths.
 `smooth_fade_to` replaces `step_fade_palette` whenever Smooth Motion is on,
 which is most of the time.

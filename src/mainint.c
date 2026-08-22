@@ -5645,6 +5645,10 @@ void JE_debugMenu(bool center)
 		network_debug_sync_send();
 #endif
 
+	// Nothing fades on the way out of here, so the cursor keys would sit over the screen
+	// underneath until the request went stale. Drop them with the panel.
+	touch_ui_clear_layout();
+
 	mouseSetRelative(wasRelative);
 	debugMenuOverHud = wasOverHud;
 
