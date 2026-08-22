@@ -23,6 +23,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "opentyr.h"
+#include "touch_ui.h"
 #include "vga256d.h"
 #include "video.h"
 
@@ -34,6 +35,12 @@ JE_boolean inputDetected;
 
 JE_boolean JE_anyButton(void)
 {
+	/* Ahead of the pump, as everywhere else: this is what a skippable animation and every
+	 * "press any key" wait poll, and without it an on-screen button press is not one of the
+	 * things they can be answered by. Tapping the screen itself already counted, because that
+	 * sets mousedown; tapping Back did not, because a button claims its finger instead. */
+	touch_ui_flush_keys();
+
 	poll_joysticks();
 	service_SDL_events(true);
 	return newkey || mousedown || joydown;

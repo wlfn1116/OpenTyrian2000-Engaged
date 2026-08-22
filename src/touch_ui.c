@@ -624,6 +624,7 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 #define PENDING_KEY_MAX  4
 static SDL_Scancode pending_key[PENDING_KEY_MAX];
 static int pending_key_count;
+static Uint32 last_flush_ms;
 
 static void queue_key(SDL_Scancode scan)
 {
@@ -652,7 +653,21 @@ static void service_repeat(Uint32 now_ms)
 
 void touch_ui_flush_keys(void)
 {
-	service_repeat(SDL_GetTicks());
+	const Uint32 now_ms = SDL_GetTicks();
+
+	/* Every screen that reads keys flushes once a frame, so a long gap since the last flush
+	 * means nothing was listening: a title animation, a fade, a session tearing itself down.
+	 * Whatever was queued across that gap is dropped rather than banked, because banking it
+	 * delivers the whole run at once to whichever screen flushes next -- press Back a few
+	 * times during the logo and they all land when it ends, walking out of the game. What is
+	 * queued below belongs to this flush and goes out normally. */
+	const bool had_reader = fresh(last_flush_ms, now_ms);
+	last_flush_ms = now_ms;
+
+	if (!had_reader)
+		pending_key_count = 0;
+
+	service_repeat(now_ms);
 
 	for (int i = 0; i < pending_key_count; ++i)
 		push_key(pending_key[i]);
