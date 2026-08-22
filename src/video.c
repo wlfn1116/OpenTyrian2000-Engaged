@@ -175,6 +175,15 @@ void init_video(void)
 	if (SDL_WasInit(SDL_INIT_VIDEO))
 		return;
 
+#ifdef _WIN32
+	/* Windows gives a process that never declares DPI awareness a virtualised desktop and
+	 * bitmap-scales its window, which costs the same detail a low drawable does once the
+	 * display is at 125% or more. This asks for the split the Retina backends already have:
+	 * window sizes stay in points, so a window keeps the size it has on screen, and the
+	 * drawable behind it carries the display's own pixels. Set before the video subsystem. */
+	SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
+#endif
+
 	if (SDL_InitSubSystem(SDL_INIT_VIDEO) == -1)
 	{
 		fprintf(stderr, "error: failed to initialize SDL video: %s\n", SDL_GetError());
@@ -212,13 +221,11 @@ void init_video(void)
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
 
-	Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
-#ifdef TARGET_IOS
-	// Retina drawable. Without this the UIKit view keeps a content scale of 1, so the renderer
-	// output is the screen measured in points -- a third of the panel's pixels on a modern
-	// iPhone -- and iOS upscales everything the game draws. See video_output_size().
-	window_flags |= SDL_WINDOW_ALLOW_HIGHDPI;
-#endif
+	/* Ask for a drawable the size of the pixels behind the window. Cocoa, UIKit and Wayland
+	 * otherwise render at the window's point size and let the system upscale the result: a
+	 * Retina iPhone draws a third of its pixels and a Retina Mac half of its own. The backends
+	 * with no point/pixel split ignore the flag. See video_output_size(). */
+	const Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI;
 
 	main_window = SDL_CreateWindow(opentyrian_str,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -449,6 +456,16 @@ void video_on_win_resize(void)
 		scaler_h = scalers[scaler].height;
 	}
 
+	// A scaler's size is a pixel count, and a high-DPI drawable fits it into fewer points.
+	// Clamping the window to the raw number would demand a window twice the width it needs,
+	// which a 5x scaler cannot even fit on a Retina laptop display.
+	{
+		float scale_x, scale_y;
+		video_output_pixel_scale(&scale_x, &scale_y);
+		scaler_w = (int)((float)scaler_w / scale_x);
+		scaler_h = (int)((float)scaler_h / scale_y);
+	}
+
 	if (w < scaler_w || h < scaler_h)
 	{
 		w = w < scaler_w ? scaler_w : w;
@@ -575,9 +592,9 @@ static void fit_rect_to_aspect(SDL_Rect *const r, int win_w, int win_h, float as
 }
 
 /* Renderer output size, in pixels. SDL measures the window in points, which a high-DPI
- * drawable (iOS) makes smaller than the pixels behind it, so every render-side rectangle is
- * sized from here rather than from the window. Falls back to the window size while there is
- * no renderer to ask. */
+ * drawable makes smaller than the pixels behind it, so every render-side rectangle is sized
+ * from here rather than from the window. Falls back to the window size while there is no
+ * renderer to ask. */
 void video_output_size(int *out_w, int *out_h)
 {
 	int w = 0, h = 0;
@@ -708,7 +725,16 @@ static void calc_dst_render_rect(SDL_Surface *const src_surface, SDL_Rect *const
 	switch (scaling_mode)
 	{
 	case SCALE_CENTER:
-		SDL_QueryTexture(main_window_texture, NULL, NULL, &dst_rect->w, &dst_rect->h);
+		// The texture's own size, in the points the window was sized in. Measuring it in
+		// output pixels would shrink the frame to a corner of a high-DPI drawable.
+		{
+			float scale_x, scale_y;
+			video_output_pixel_scale(&scale_x, &scale_y);
+
+			SDL_QueryTexture(main_window_texture, NULL, NULL, &dst_rect->w, &dst_rect->h);
+			dst_rect->w = (int)((float)dst_rect->w * scale_x);
+			dst_rect->h = (int)((float)dst_rect->h * scale_y);
+		}
 		break;
 	case SCALE_INTEGER:
 		dst_rect->w = src_surface->w;

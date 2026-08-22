@@ -93,6 +93,18 @@ Non-Xcode generators do not sign at all, so there is nothing to switch off. To
 sign the bundle yourself, run `codesign` over it afterwards with your own
 identity and entitlements.
 
+## Frame rate
+
+CoreAnimation caps an app at 60Hz unless its bundle declares
+`CADisableMinimumFrameDuration`, so `Info.plist.in` carries that key. Without it
+a ProMotion device presents 60 of the frames Smooth Motion draws, and no FPS
+Cap setting reaches past that.
+
+SDL's Metal renderer always presents display-synced on iOS: `displaySyncEnabled`
+is a macOS-only knob, and the iOS path sets `SDL_RENDERER_PRESENTVSYNC` on the
+renderer whatever was asked for. The in-game VSync row therefore does not change
+how presents are paced here, only whether the FPS Cap is applied on top of them.
+
 ## Files
 
 Configuration, saves, and logs live in the app's Application Support directory

@@ -125,9 +125,10 @@ void set_menu_centered(bool centered);
 int video_get_menu_x_offset(void);
 
 /* Two units live side by side: SDL reports the window and its events in points, while the
- * renderer draws in output pixels. A high-DPI drawable (iOS) makes them differ, so every
+ * renderer draws in output pixels. A high-DPI drawable makes them differ, so every
  * render-side rectangle is measured with video_output_size() and input converts by the
- * per-axis scale below. Elsewhere the two are equal and the scale is 1. */
+ * per-axis scale below. Where a backend has no such split the two are equal and the scale
+ * is 1. */
 void video_output_size(int *out_w, int *out_h);
 void video_output_pixel_scale(float *out_sx, float *out_sy);
 

@@ -201,13 +201,18 @@ The frame is 356x200. The playfield is 299x184 and the HUD is 57 pixels wide.
 - Row walks use the surface pitch.
 
 SDL measures the window and its input events in points, while the renderer draws
-in output pixels. The two differ only where the window asks for a high-DPI
-drawable, which iOS does; without that request the drawable is the screen in
-points and the system upscales the result.
+in output pixels. The window asks for a high-DPI drawable, so the two differ on
+every backend that has such a split: Cocoa, UIKit, and Wayland. Windows joins
+them through `SDL_HINT_WINDOWS_DPI_SCALING`, which also declares the process DPI
+aware. Without those the backend draws at the point size and the system upscales
+the result.
 
 - Render-side rectangles come from `video_output_size`, not `SDL_GetWindowSize`.
 - Mouse and finger positions convert with `video_output_pixel_scale`.
-- Limits written in points, such as the touch buttons' size clamps, scale by it.
+- Limits written in points scale by it: the touch buttons' size clamps, the
+  windowed minimum size, and the rectangle the Center scaling mode fills.
+- Windowed sizes stay in points, so a scaler still opens the window it always
+  did and the drawable behind it carries the display's own pixels.
 
 Validate every `Sprite2_array` index. A 2x2 sprite uses the base index plus 1,
 19, and 20. Specials use `spriteSheet10`; ship `itemgraphic` values do not.

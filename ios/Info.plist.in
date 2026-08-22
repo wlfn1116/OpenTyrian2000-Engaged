@@ -49,6 +49,11 @@
 	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Present at the display's real refresh rate. CoreAnimation holds an app that does not
+	     declare this to 60Hz, so a ProMotion screen would show 60 of the frames the render-rate
+	     interpolation already draws, whatever the in-game FPS Cap says. Ignored before iOS 15. -->
+	<key>CADisableMinimumFrameDuration</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

@@ -37,14 +37,16 @@ The useful settings are under **Setup > Graphics**.
   effects. Turning it off renders the feedback and its source layers at native
   size, reducing the cost at 3x and above. Foreground objects stay sub-pixel.
   Console builds default this off.
-- Android and iOS draw at the device's full panel resolution, so **Native**
-  resolves above the fixed modes on a high-density screen.
+- The frame is drawn at the display's full pixel size. On a Retina screen or a
+  desktop with display scaling, **Native** resolves above the fixed modes.
 - The Vita always resolves Sub-pixel to 1x.
 - On Vita this setting is named **Smooth FX**. Turning it off updates the
   smoothie background once per 35 Hz simulation tick while foreground movement
   remains display-rate, avoiding repeated feedback filters on the same tick.
 - **FPS Cap** accepts Left/Right steps or a typed number. Use 35 or higher for
   online play. A value of 0 means Uncapped.
+- iOS presents at the screen's refresh rate, so a ProMotion device runs at up
+  to 120 Hz.
 
 The simulation still runs at 35 Hz. Demo recording and demo playback use
 fixed-step ship movement even when Smooth Motion is enabled. Online play sets
