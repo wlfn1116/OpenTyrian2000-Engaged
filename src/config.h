@@ -325,12 +325,12 @@ extern bool enemyBars;      // show a small health bar on damaged enemies
 // purpose: a preset describes how the game behaves, not which controls you are given, and
 // on a phone these are the only way to fire a sidekick at all.
 extern bool touchSidekickButtons;
-/* How solid the on-screen buttons are drawn, as a scale on their shipped alpha rather than
- * an alpha of its own: TOUCH_OPACITY_DEFAULT is the shipped look, the top of the range is
- * fully solid, and 0 removes them from the screen and from the hit test together. Outside
- * the presets for the same reason as touchSidekickButtons above. */
-#define TOUCH_OPACITY_MAX     255
-#define TOUCH_OPACITY_DEFAULT 128
+/* How visible the on-screen buttons are drawn, as a percentage of the alpha they are
+ * authored with: full is how they are meant to look, and 0 removes them from the screen and
+ * from the hit test together. Outside the presets for the same reason as touchSidekickButtons
+ * above. */
+#define TOUCH_OPACITY_MAX     100
+#define TOUCH_OPACITY_DEFAULT 100
 extern int touchButtonOpacity;
 extern int enemyBarLayout;    // EnemyBarLayout
 extern int enemyBarPosition;  // EnemyBarPosition

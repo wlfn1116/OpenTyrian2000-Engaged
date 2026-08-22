@@ -204,11 +204,11 @@ static int clampi(int v, int lo, int hi)
 	return v < lo ? lo : (v > hi ? hi : v);
 }
 
-// The opacity setting scales the alpha a button was authored with, so the middle of the
-// slider is the shipped look, the top is solid, and zero takes the buttons off the screen.
+// The opacity setting is a percentage of the alpha a button was authored with, so the top of
+// the slider is how it is meant to look and zero takes the buttons off the screen.
 static Uint8 scaled_alpha(int base)
 {
-	return (Uint8)clampi(base * touchButtonOpacity / TOUCH_OPACITY_DEFAULT, 0, 255);
+	return (Uint8)clampi(base * touchButtonOpacity / TOUCH_OPACITY_MAX, 0, 255);
 }
 
 static bool fresh(Uint32 stamp_ms, Uint32 now_ms)

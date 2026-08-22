@@ -844,12 +844,11 @@ on its own. Which buttons appear depends on the screen, so nothing is on display
 that would do nothing if you pressed it. They ride the screen's own fade, dimming
 away with the screen that is leaving and brightening in with the one arriving.
 
-**Setup > Button Opacity** sets how solid they are drawn. The middle of the
-slider, marked in blue like the Sensitivity one above it, is the standard look;
-the right end is fully solid. Turning it all the way down removes the buttons
-completely, and a button that cannot be seen cannot be pressed either, so with
-the slider at zero there is no on-screen pause while you are flying. Setup is
-still reachable by tapping, which is how you turn them back on.
+**Setup > Button Opacity** sets how visible they are, from fully drawn at the
+right end of the slider down to nothing at the left. An empty slider removes them
+completely, and a button that cannot be seen cannot be pressed either, so there
+is no on-screen pause while you are flying at that setting. Setup is still
+reachable by tapping, which is how you turn them back on.
 
 | Screen | Left side | Right side |
 | --- | --- | --- |

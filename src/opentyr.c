@@ -545,7 +545,7 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_TOUCH_OPACITY:
-		touchButtonOpacity = MIN(MAX(0, touchButtonOpacity + dir * 8), TOUCH_OPACITY_MAX);
+		touchButtonOpacity = MIN(MAX(0, touchButtonOpacity + dir * 5), TOUCH_OPACITY_MAX);
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_FPS:
@@ -659,7 +659,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
 #ifdef TOUCH_UI_BUTTONS
-				{ MENU_ITEM_TOUCH_OPACITY, "Button Opacity", "How solid the on-screen buttons are; none hides them." },
+				{ MENU_ITEM_TOUCH_OPACITY, "Button Opacity",
+				  "How visible the on-screen buttons are; empty hides them." },
 #endif
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
@@ -1199,13 +1200,11 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			case MENU_ITEM_TOUCH_OPACITY:
 			{
-				// Same bar and same blue marker as Sensitivity above, and for the same reason:
-				// the middle of the travel is the value the game ships with.
-				const int amt = (touchButtonOpacity + 4) / 8;
-				const int mark = (TOUCH_OPACITY_DEFAULT + 4) / 8;
+				// A plain percentage of the bar, empty to full, with no neutral point to mark:
+				// the whole range is useful and the top of it is simply how the buttons look.
+				const int bars = (wMenuItemValue + 1) / 3;   // segments are 2 px plus a 1 px gap
+				const int amt = (touchButtonOpacity * bars + TOUCH_OPACITY_MAX / 2) / TOUCH_OPACITY_MAX;
 				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, 174, amt, 2, 10);
-				JE_barDrawMark(VGAScreen, xMenuItemValue, y,
-				               amt >= mark ? SHIP_SENS_MARK_COL : SHIP_SENS_MARK_COL_DIM, mark, 2, 10);
 				JE_rectangle(VGAScreen, xMenuItemValue - 2, y - 2, xMenuItemValue + 96, y + 11, 242);
 				break;
 			}
