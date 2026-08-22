@@ -1,4 +1,4 @@
-/*
+﻿/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
  * On-screen touch controls; see touch_ui.h.
@@ -781,17 +781,18 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	// the hit test together, so nothing is left behind that only an invisible target answers.
 	const bool visible = peak >= TOUCH_VISIBLE_PEAK_MIN && touchButtonOpacity > 0;
 
-	/* Dark and not on the way up: the screen that asked for this layout is leaving, so its
+	/* Dark and still getting darker: the screen that asked for this layout is leaving, so its
 	 * request goes with it rather than waiting to time out.
 	 *
-	 * The direction is what makes this safe both ways, and one edge is not enough. A screen
-	 * that steps its own fade re-asserts on every frame of it -- the jukebox asks at the top
-	 * of the loop that also steps the palette -- so a single clear is overwritten by the next
-	 * frame and its track buttons ride the next screen's fade-in. Clearing on every dark
-	 * frame instead would erase the request an arriving screen makes while the display is
-	 * still black, which is the one that lets its buttons fade in with it. Falling clears,
-	 * rising does not. */
-	if (!visible && peak <= last_peak)
+	 * All three parts of that test were paid for. Clearing on every dark frame erases the
+	 * request an arriving screen makes while the display is still black, which is the one
+	 * that lets its buttons fade in with it. Clearing on the falling edge alone misses a
+	 * screen that steps its own palette inside the loop that asserts, as the jukebox does:
+	 * it re-asserts on every frame of its own fade-out and one clear is undone by the next.
+	 * And the fall has to be strict, because a fade-in's first frame is still on the palette
+	 * it started from -- smooth_fade_to lands frame one at frac 0 -- so a flat dark frame is
+	 * as likely to be the start of a fade-in as the tail of a fade-out. */
+	if (!visible && peak < last_peak)
 	{
 		requested_at_ms = 0;
 		extra_at_ms = 0;

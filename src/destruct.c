@@ -2576,12 +2576,7 @@ de_sim_pass:
 		 * restores the flag with everything else, and fading a palette that is already up would
 		 * stall the battle for the fade's own 25 ticks. */
 		if (de_present && !drb_resim())
-		{
-			// Re-asked for here, not just at the top of the tick: with Smooth Motion off the
-			// present above lands on a black screen between the two, which drops the request.
-			touch_ui_set_layout(TOUCH_LAYOUT_DESTRUCT);
 			fade_palette(colors, 25, 0, 255);
-		}
 		destructFirstTime = false;
 		de_endDelay = 0;
 	}

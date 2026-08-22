@@ -572,6 +572,13 @@ blending is off and every primitive writes its pixels instead.
 Clip the weapon simulator's starfield to its preview box with
 `starfield_set_clip`; it treats any black surface pixel as drawable.
 
+A press that must act once and then wait for release latches
+(`awaitClickRelease` in `JE_itemScreen`) instead of calling `wait_noinput`.
+`wait_noinput` spins without presenting, so the outpost stopped animating for as
+long as the button was held. A mouse click is over too quickly to notice; a tap
+is held for a moment and read as a hang. The latch is cleared and tested beside
+`inputDetected`, which keeps the wait inside the loop that already draws.
+
 Custom preset state is a positional list guarded by `enhancementTableShape`.
 Reordering or retuning the table invalidates the stored list. Capture Custom
 when the live values match neither built-in preset.

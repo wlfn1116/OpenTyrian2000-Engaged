@@ -2322,6 +2322,11 @@ void JE_itemScreen(void)
 	}
 
 	bool quit = false;
+	/* Set by a press that must act once and then wait for the button to come up. Latching it
+	 * replaces a wait_noinput at each of those presses: that spins without presenting, so the
+	 * outpost stopped animating for as long as the button was held. A mouse click is over too
+	 * quickly to notice, but a tap is held for a moment, which read as the game hanging. */
+	bool awaitClickRelease = false;
 	// Full-ship online modes show the local ship's hull, guns, and cash. Modes with one shared
 	// arsenal continue to use player 0.
 	shopPlayerIndex = gameplay_local_player_index();
@@ -3413,7 +3418,13 @@ void JE_itemScreen(void)
 				push_joysticks_as_keyboard();
 				service_SDL_events(false);
 				mouseButton = JE_mousePosition(&mouseX, &mouseY);
-				inputDetected = newkey || mouseButton > 0;
+
+				// A press that has already acted keeps waiting here rather than leaving the
+				// loop, so the outpost carries on drawing until the button comes up.
+				if (!mousedown)
+					awaitClickRelease = false;
+
+				inputDetected = newkey || (mouseButton > 0 && !awaitClickRelease);
 
 #if defined(__SWITCH__) || defined(__vita__)
 				// Shoulder-button edges cycle the preview's rear-fire mode, matching
@@ -3570,7 +3581,7 @@ void JE_itemScreen(void)
 
 		/* The rest of this just grabs input events, handles them, then proceeds on. */
 
-		if (mouseButton > 0)
+		if (mouseButton > 0 && !awaitClickRelease)
 		{
 			lastDirection = 1;
 
@@ -3782,7 +3793,7 @@ void JE_itemScreen(void)
 					}
 				}
 
-				wait_noinput(false, true, false);
+				awaitClickRelease = true;
 			}
 
 			if (curMenu == MENU_UPGRADE_SUB &&
@@ -3802,7 +3813,7 @@ void JE_itemScreen(void)
 
 						break;
 					}
-					wait_noinput(false, true, false);
+					awaitClickRelease = true;
 				}
 
 				if ((mouseX >= 119) && (mouseX <= 131) && (mouseY >= 149) && (mouseY <= 168))
@@ -3819,7 +3830,7 @@ void JE_itemScreen(void)
 
 						break;
 					}
-					wait_noinput(false, true, false);
+					awaitClickRelease = true;
 				}
 			}
 		}
