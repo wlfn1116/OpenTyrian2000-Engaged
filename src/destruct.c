@@ -1042,13 +1042,15 @@ static void DE_netIntroBarrier(void)
 
 	while (true)
 	{
+		// Any key readies up and Escape steps back out, neither of which a finger can express.
+		// Ahead of the present, or the first frame of this screen carries whatever buttons the
+		// one before it left behind.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
 		DE_composeIntro(localReady, peerReady);
 		JE_showVGA();
 		if (!output_vsync)
 			limit_render_fps();
-
-		// Any key readies up and Escape steps back out, neither of which a finger can express.
-		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 
 		watchdog_heartbeat();
 		push_joysticks_as_keyboard();  // a controller confirms too (no keyboard on Switch)

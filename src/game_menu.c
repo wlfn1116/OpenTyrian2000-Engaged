@@ -1709,6 +1709,11 @@ void shopWaitNotice(const char *text, const char *detail, const char *hint)
 // this runs at the top of each pass. Vsync-on paces through JE_showVGA; off it follows the cap.
 void shopWaitFrame(void)
 {
+	/* These screens read Esc, so the pad and the on-screen Back button have to reach them:
+	 * this is what turns a pad press into a key, and what pushes the key an on-screen button
+	 * queued. Without it the hint says "Press Esc to go back" on a machine with no Esc. */
+	push_joysticks_as_keyboard();
+
 	service_SDL_events(false);
 	mouseCursor = MOUSE_POINTER_NORMAL;
 	JE_mouseStart();
