@@ -48,6 +48,7 @@
 #include "render_list.h"
 #include "shots.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "vga256d.h"
@@ -2321,6 +2322,11 @@ void JE_itemScreen(void)
 	}
 
 	bool quit = false;
+	/* Set by a press that must act once and then wait for the button to come up. Latching it
+	 * replaces a wait_noinput at each of those presses: that spins without presenting, so the
+	 * outpost stopped animating for as long as the button was held. A mouse click is over too
+	 * quickly to notice, but a tap is held for a moment, which read as the game hanging. */
+	bool awaitClickRelease = false;
 	// Full-ship online modes show the local ship's hull, guns, and cash. Modes with one shared
 	// arsenal continue to use player 0.
 	shopPlayerIndex = gameplay_local_player_index();
@@ -3401,12 +3407,24 @@ void JE_itemScreen(void)
 					}
 				}
 
+				// The buy/sell list drops to five visible rows once it overflows
+				// (upgradeSubVisibleRows), and a tap can only reach the rows drawn, so an
+				// overflowing list gets the cursor keys. A list that fits does not.
+				if (curMenu == MENU_UPGRADE_SUB && upgradeSubVisibleRows() < 6)
+					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+
 				menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
 
 				push_joysticks_as_keyboard();
 				service_SDL_events(false);
 				mouseButton = JE_mousePosition(&mouseX, &mouseY);
-				inputDetected = newkey || mouseButton > 0;
+
+				// A press that has already acted keeps waiting here rather than leaving the
+				// loop, so the outpost carries on drawing until the button comes up.
+				if (!mousedown)
+					awaitClickRelease = false;
+
+				inputDetected = newkey || (mouseButton > 0 && !awaitClickRelease);
 
 #if defined(__SWITCH__) || defined(__vita__)
 				// Shoulder-button edges cycle the preview's rear-fire mode, matching
@@ -3563,7 +3581,7 @@ void JE_itemScreen(void)
 
 		/* The rest of this just grabs input events, handles them, then proceeds on. */
 
-		if (mouseButton > 0)
+		if (mouseButton > 0 && !awaitClickRelease)
 		{
 			lastDirection = 1;
 
@@ -3775,7 +3793,7 @@ void JE_itemScreen(void)
 					}
 				}
 
-				wait_noinput(false, true, false);
+				awaitClickRelease = true;
 			}
 
 			if (curMenu == MENU_UPGRADE_SUB &&
@@ -3795,7 +3813,7 @@ void JE_itemScreen(void)
 
 						break;
 					}
-					wait_noinput(false, true, false);
+					awaitClickRelease = true;
 				}
 
 				if ((mouseX >= 119) && (mouseX <= 131) && (mouseY >= 149) && (mouseY <= 168))
@@ -3812,7 +3830,7 @@ void JE_itemScreen(void)
 
 						break;
 					}
-					wait_noinput(false, true, false);
+					awaitClickRelease = true;
 				}
 			}
 		}
@@ -7125,6 +7143,9 @@ static bool endlessDebugScreen(bool jumpMode)
 			draw_font_hv(VGAScreen, mid_x, py1 - 18, help, small_font, centered, 15, 1);
 		draw_font_hv(VGAScreen, mid_x, py1 - 9, screenKeys[screen], small_font, centered, 15, -3);
 
+		// A scrolling list: this screen keeps the cursor keys (see JE_debugMenu).
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
 		JE_showVGA();
@@ -7401,9 +7422,9 @@ static bool endlessDebugScreen(bool jumpMode)
 				switch (selKind)
 				{
 				case EDR_ZONE:
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 				{
-					// No physical keyboard on the consoles: the software keypad is how a far zone
+					// No physical keyboard here: the software keypad is how a far zone
 					// gets reached without thousands of button presses.
 					char kb[8];
 					snprintf(kb, sizeof(kb), "%d", dbgZone);
@@ -7784,6 +7805,9 @@ bool JE_debugLevelSelect(void)
 		draw_font_hv(VGAScreen, mid_x, py1 - 9, "Enter Play   L/R Episode   Esc Back",
 		             small_font, centered, 15, -3);
 #endif
+
+		// A scrolling list: this screen keeps the cursor keys (see JE_debugMenu).
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
@@ -8621,7 +8645,11 @@ static const char *cwRowHelp(int row)
 	case CWROW_TARGET_ARMOR: return "Target toughness (higher = armour drains slower)";
 	case CWROW_SHIP_X:      return "Move the ship / shot origin left-right";
 	case CWROW_SHIP_Y:      return "Move the ship / shot origin up-down";
+#ifdef PLATFORM_HANDHELD
+	case CWROW_NAME:        return "Confirm to rename";
+#else
 	case CWROW_NAME:        return "Type to rename";
+#endif
 	case CWROW_EQUIP_SLOT:  return "Where it mounts (gun or sidekick)";
 	case CWROW_COST:        return "Shop price";
 	case CWROW_POWER_USE:   return "Generator drain per shot";
@@ -9846,7 +9874,11 @@ bool JE_customWeaponCreator(bool canEquip)
 			if (cwNoticeTicks > 0)           hint = cwNotice;
 			else if (cwNumRow >= 0)          hint = "Type a value   -   Enter: set   -   Esc: cancel";
 			else if (selected == 0)          hint = "Click left/right: -/+   Tab: view   PgUp/Dn: level";
+#ifdef PLATFORM_HANDHELD
+			else if (selField == CWROW_NAME) hint = "Confirm to rename   -   Esc: back";
+#else
 			else if (selField == CWROW_NAME) hint = "Type to rename   -   Esc: back";
+#endif
 			else if (selField >= 0 && !cwRowActive(selField)) hint = cwRowInactiveReason(selField);
 			else if (selField >= 0 && cwNumericRange(selField, &lo, &hi))
 			{
@@ -9861,6 +9893,14 @@ bool JE_customWeaponCreator(bool canEquip)
 
 		rl_finalize();
 		rl_capture_residual(VGAScreenSeg, game_screen);
+
+		/* The editor hit-tests every row, but on a touchscreen a tap both selects and acts,
+		 * so there is no way to move the cursor without changing something, and the field
+		 * list scrolls past its frame. The cursor keys give that back: up and down move the
+		 * selection, left and right adjust it without having to land on the correct half of
+		 * a row, and confirm triggers the selected action. Back stands in for the
+		 * right-click that leaves. */
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
@@ -10100,6 +10140,28 @@ bool JE_customWeaponCreator(bool canEquip)
 					JE_playSampleNum(S_SPRING);  // greyed: doesn't apply to the current Equip slot
 				else if (cwInlineActionId(selField) >= 0)
 					cwPerformAction(cwInlineActionId(selField), &done, &equipped);
+#ifdef PLATFORM_HANDHELD
+				else if (selField == CWROW_NAME)
+				{
+					// The name is otherwise typed, and nothing here produces a keystroke.
+					// Confirming the row opens the system keyboard instead, as the save and
+					// high-score name fields do.
+					char kb[sizeof(customWeaponName)];
+					SDL_strlcpy(kb, customWeaponName, sizeof(kb));
+					if (console_swkbd(kb, sizeof(kb), sizeof(kb) - 1, kb, "Weapon name", false))
+					{
+						size_t out = 0;
+						for (const char *c = kb; *c != '\0' && out + 1 < sizeof(customWeaponName); ++c)
+						{
+							if ((unsigned char)*c >= 32 && (unsigned char)*c < 127)
+								customWeaponName[out++] = *c;
+						}
+						customWeaponName[out] = '\0';
+						customWeaponMaterialize();
+						cwHistoryRecord();
+					}
+				}
+#endif
 				else if (selField == CWROW_LIB_SELECT || selField == CWROW_POWER_LEVEL ||
 				         selField == CWROW_TWO_MODES ||
 				         selField == CWROW_FIRE_MODE || selField == CWROW_SHOW_TARGETS ||
@@ -11120,11 +11182,16 @@ void JE_weaponSimUpdate(void)
 
 		temp = shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power;
 
-		if ((curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
-			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2
-			&& (weaponSimTime >= 75))
+		// A rear gun with a second firing mode, which the / key cycles here so the change can
+		// be watched in the preview. The touch ports get it as a button for as long as that
+		// holds -- outside the weaponSimTime test below, which only makes the caption blink.
+		const bool rearModeCyclable = (curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
+			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2;
+		if (rearModeCyclable)
+			touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
+
+		if (rearModeCyclable && (weaponSimTime >= 75))
 		{
-			// [/] Rear Weapon Mode
 #if defined(__SWITCH__) || defined(__vita__)
 			// No [/] key on the consoles; the shoulder buttons cycle the mode
 			// (see the L/R handler in JE_itemScreen). x nudged left so the

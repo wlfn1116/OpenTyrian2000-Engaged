@@ -387,6 +387,21 @@ static void write_registers(FILE *f, const CONTEXT *c)
 	        (unsigned long long)c->R14, (unsigned long long)c->R15);
 	fprintf(f, "  RIP=%016llX EFL=%08lX\n",
 	        (unsigned long long)c->Rip, (unsigned long)c->EFlags);
+#elif defined(_M_ARM64)
+	// X29 and X30 share storage with Fp and Lr, so the array stops at X28.
+	for (int i = 0; i < 28; i += 4)
+	{
+		fprintf(f, "  X%-2d=%016llX X%-2d=%016llX X%-2d=%016llX X%-2d=%016llX\n",
+		        i + 0, (unsigned long long)c->X[i + 0],
+		        i + 1, (unsigned long long)c->X[i + 1],
+		        i + 2, (unsigned long long)c->X[i + 2],
+		        i + 3, (unsigned long long)c->X[i + 3]);
+	}
+	fprintf(f, "  X28=%016llX FP =%016llX LR =%016llX SP =%016llX\n",
+	        (unsigned long long)c->X[28], (unsigned long long)c->Fp,
+	        (unsigned long long)c->Lr, (unsigned long long)c->Sp);
+	fprintf(f, "  PC =%016llX PSR=%08lX\n",
+	        (unsigned long long)c->Pc, (unsigned long)c->Cpsr);
 #else
 	fprintf(f, "  EAX=%08lX EBX=%08lX ECX=%08lX EDX=%08lX\n",
 	        (unsigned long)c->Eax, (unsigned long)c->Ebx,
@@ -413,6 +428,11 @@ static void write_stack_trace(FILE *f, HANDLE proc, HANDLE thr, CONTEXT *ctx)
 	frame.AddrPC.Offset    = ctx->Rip;
 	frame.AddrFrame.Offset = ctx->Rbp;
 	frame.AddrStack.Offset = ctx->Rsp;
+#elif defined(_M_ARM64)
+	machine = IMAGE_FILE_MACHINE_ARM64;
+	frame.AddrPC.Offset    = ctx->Pc;
+	frame.AddrFrame.Offset = ctx->Fp;
+	frame.AddrStack.Offset = ctx->Sp;
 #else
 	machine = IMAGE_FILE_MACHINE_I386;
 	frame.AddrPC.Offset    = ctx->Eip;

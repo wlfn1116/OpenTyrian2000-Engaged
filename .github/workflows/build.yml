@@ -1,5 +1,5 @@
 # Builds all release targets on pushes, pull requests, and manual runs. Master
-# refreshes the `latest` pre-release; version tags attach the same four artifacts
+# refreshes the `latest` pre-release; version tags attach the same nine artifacts
 # to a tagged release. The data job supplies one stripped freeware-data artifact
 # to every platform job.
 
@@ -49,11 +49,21 @@ jobs:
           path: data
           retention-days: 1
 
+  # Both architectures run the suite: the replay fixtures are canonical state hashes, so this
+  # is where an ARM build proves its simulation matches everyone else's.
   tests:
-    name: Correctness suite
+    name: Correctness suite ${{ matrix.label }}
     needs: data
     timeout-minutes: 45
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            label: x86-64
+          - runner: ubuntu-24.04-arm
+            label: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
 
@@ -158,11 +168,166 @@ jobs:
           name: OpenTyrian2000-Engaged-Windows-x86_64-pdb
           path: opentyrian-x64-Release.pdb
 
+  windows-arm:
+    name: Windows ARM64
+    needs: data
+    timeout-minutes: 60
+    # The VS 2026 image is the ARM64 runner that carries the v145 toolset. MIDI is absent from
+    # this build: the FluidSynth conditions in the project files are x64-only.
+    runs-on: windows-11-vs2026-arm
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: arm64
+
+      # SDL's VC packages ship x86 and x64 import libraries only, so ARM64 builds its own and
+      # stages them in the include + lib\<platform> layout that sdl_paths.props describes.
+      - name: Restore the cached ARM64 SDL SDKs
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: visualc/sdk
+          key: windows-arm64-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Build SDL2 and SDL2_net for ARM64
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          # Without this, a failed cmake only surfaces further down as a confusing cascade of
+          # errors from the steps that follow it.
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          New-Item -ItemType Directory -Force -Path visualc\external\SDL2, visualc\external\SDL2_net | Out-Null
+          curl.exe -fL --retry 3 -o sdl2.tar.gz `
+            "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL2_VERSION/SDL2-$env:SDL2_VERSION.tar.gz"
+          curl.exe -fL --retry 3 -o sdl2net.tar.gz `
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$env:SDL2_NET_VERSION/SDL2_net-$env:SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C visualc\external\SDL2
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C visualc\external\SDL2_net
+
+          # SDL2 asks for compatibility with CMake 3.0, which CMake 4 refuses without this.
+          # Quoted whole: PowerShell splits a bare -Dname=3.5 at the decimal point.
+          # SDL_LIBC=ON because SDL2's own libc links /NODEFAULTLIB, which it skips for ARM32
+          # but not ARM64, where MSVC leaves the CRT's _Interlocked helpers unresolved. The
+          # game already imports the same CRT, so this adds nothing to the package.
+          cmake -S visualc\external\SDL2 -B visualc\external\SDL2\build -A ARM64 `
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+            -DSDL_LIBC=ON -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF
+          cmake --build visualc\external\SDL2\build --config Release --parallel
+          # Absolute prefix: a relative one is resolved against the install script's own
+          # directory, not this one.
+          cmake --install visualc\external\SDL2\build --config Release `
+            --prefix "$pwd\visualc\external\SDL2-install"
+
+          cmake -S visualc\external\SDL2_net -B visualc\external\SDL2_net\build -A ARM64 `
+            "-DCMAKE_PREFIX_PATH=$pwd\visualc\external\SDL2-install" -DSDL2NET_SAMPLES=OFF
+          cmake --build visualc\external\SDL2_net\build --config Release --parallel
+          cmake --install visualc\external\SDL2_net\build --config Release `
+            --prefix "$pwd\visualc\external\SDL2_net-install"
+
+          # CMake installs headers under include\SDL2 and splits the DLL from its import
+          # library; the project files expect the VC package layout instead.
+          foreach ($name in 'SDL2', 'SDL2_net') {
+            New-Item -ItemType Directory -Force -Path "visualc\sdk\$name\include", "visualc\sdk\$name\lib\arm64" | Out-Null
+            Copy-Item "visualc\external\$name-install\include\SDL2\*" "visualc\sdk\$name\include\"
+            Copy-Item "visualc\external\$name-install\lib\*.lib" "visualc\sdk\$name\lib\arm64\"
+            Copy-Item "visualc\external\$name-install\bin\*.dll" "visualc\sdk\$name\lib\arm64\"
+          }
+
+      # Runs on a cache hit too, so a partial cache fails here rather than during the link.
+      - name: Check the staged SDKs
+        run: |
+          foreach ($f in 'visualc\sdk\SDL2\include\SDL.h', 'visualc\sdk\SDL2\lib\arm64\SDL2.lib',
+                         'visualc\sdk\SDL2\lib\arm64\SDL2main.lib', 'visualc\sdk\SDL2\lib\arm64\SDL2.dll',
+                         'visualc\sdk\SDL2_net\include\SDL_net.h', 'visualc\sdk\SDL2_net\lib\arm64\SDL2_net.lib',
+                         'visualc\sdk\SDL2_net\lib\arm64\SDL2_net.dll') {
+            if (-not (Test-Path $f)) { throw "missing $f" }
+          }
+
+      - name: Build (Release ARM64)
+        run: |
+          $commit = $env:GITHUB_SHA.Substring(0, 7)
+          msbuild visualc\opentyrian.sln /m /v:minimal /t:Build `
+            /p:Configuration=Release /p:Platform=ARM64 `
+            "/p:SDL2BaseDir=${{ github.workspace }}\visualc\sdk\SDL2" `
+            "/p:SDL2netBaseDir=${{ github.workspace }}\visualc\sdk\SDL2_net" `
+            "/p:OPENTYRIAN_COMMIT=$commit"
+
+      # An x64 build would run on this machine and pass everything below it, so read the PE
+      # machine field rather than trusting that /p:Platform reached the compiler.
+      - name: Check the executable is ARM64
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes('opentyrian-ARM64-Release.exe')
+          $machine = [System.BitConverter]::ToUInt16($bytes, [System.BitConverter]::ToInt32($bytes, 0x3C) + 4)
+          if ($machine -ne 0xAA64) { throw ('machine 0x{0:X4}, expected 0xAA64' -f $machine) }
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: pkg/data
+
+      - name: Correctness suite (Windows ARM64)
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          python testing\run_unit_suite.py `
+            --exe .\opentyrian-ARM64-Release.exe --data pkg\data
+          python testing\run_replay_fixtures.py `
+            --exe .\opentyrian-ARM64-Release.exe --data pkg\data
+          python testing\network_fault_test.py `
+            --exe .\opentyrian-ARM64-Release.exe --data pkg\data --base-port 46200
+
+      - name: Package 7z
+        run: |
+          Copy-Item opentyrian-ARM64-Release.exe pkg\OpenTyrian2000-Engaged-Windows-arm64.exe
+          Copy-Item visualc\sdk\SDL2\lib\arm64\SDL2.dll, visualc\sdk\SDL2_net\lib\arm64\SDL2_net.dll pkg\
+          7z a -mx=9 OpenTyrian2000-Engaged-Windows-arm64.7z .\pkg\*
+
+      # Run the packaged game headless for 15 seconds; an early exit fails the job.
+      - name: Smoke test (headless)
+        run: |
+          $env:SDL_VIDEODRIVER = 'dummy'
+          $env:SDL_AUDIODRIVER = 'dummy'
+          $p = Start-Process -FilePath .\pkg\OpenTyrian2000-Engaged-Windows-arm64.exe -WorkingDirectory .\pkg -PassThru
+          if ($p.WaitForExit(15000)) { throw "game exited early (code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host 'survived 15s headless'
+
+      # Avoid recompressing the 7z inside GitHub's artifact wrapper.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-Windows-arm64
+          path: OpenTyrian2000-Engaged-Windows-arm64.7z
+          compression-level: 0
+
+      # Keep symbols separately for crash-log decoding.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-Windows-arm64-pdb
+          path: opentyrian-ARM64-Release.pdb
+
   linux:
-    name: Linux x86-64
+    name: Linux ${{ matrix.label }}
     needs: data
     timeout-minutes: 25
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # `arch` names the package, `label` names the job; they differ only in the separator
+      # that the released x86_64 file names have always used.
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+            label: x86-64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            label: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
 
@@ -182,7 +347,7 @@ jobs:
       - name: Package tar.gz
         run: |
           cp opentyrian2000 stage/opentyrian2000/
-          tar -C stage -czf OpenTyrian2000-Engaged-Linux-x86_64.tar.gz opentyrian2000
+          tar -C stage -czf OpenTyrian2000-Engaged-Linux-${{ matrix.arch }}.tar.gz opentyrian2000
 
       # Exit 124 means the headless game survived the 15-second timeout.
       - name: Smoke test (headless)
@@ -196,8 +361,291 @@ jobs:
       # The tar layer preserves the executable bit; avoid recompressing it.
       - uses: actions/upload-artifact@v6
         with:
-          name: OpenTyrian2000-Engaged-Linux
-          path: OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+          name: OpenTyrian2000-Engaged-Linux-${{ matrix.arch }}
+          path: OpenTyrian2000-Engaged-Linux-${{ matrix.arch }}.tar.gz
+          compression-level: 0
+
+  android:
+    name: Android
+    needs: data
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+      ANDROID_NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ndk-build compiles the SDL sources alongside the game, so the port pins its own
+      # SDL rather than inheriting whatever the runner image happens to ship.
+      - name: Restore cached SDL sources
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            android/app/src/main/jni/SDL2
+            android/app/src/main/jni/SDL2_net
+          key: android-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Download SDL sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          jni=android/app/src/main/jni
+          mkdir -p "$jni/SDL2" "$jni/SDL2_net"
+          curl -fL --retry 3 -o sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL2_VERSION/SDL2-$SDL2_VERSION.tar.gz"
+          curl -fL --retry 3 -o sdl2net.tar.gz \
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$SDL2_NET_VERSION/SDL2_net-$SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C "$jni/SDL2"
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C "$jni/SDL2_net"
+
+      # SDL ships a sample Android project whose Gradle wrapper JAR is not a published
+      # Gradle release, and setup-gradle refuses to run while any unrecognised wrapper is
+      # anywhere in the workspace. Only SDL's Java sources are used here, so drop the
+      # wrappers. Unconditional, because a cache saved before this step still holds them.
+      - name: Drop SDL's bundled Gradle wrappers
+        run: |
+          find android/app/src/main/jni -name 'gradle-wrapper.jar' -print -delete
+          find android/app/src/main/jni -name 'gradle-wrapper.properties' -delete
+
+      # tools/make_app_icons.ps1 writes these and they are committed, so a missing one
+      # means the generator was not re-run. Checked here because the APK is no place to
+      # look: a release build renames resources.
+      - name: Check the committed launcher icons
+        run: |
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            for f in ic_launcher ic_launcher_foreground; do
+              p="android/app/src/main/res/mipmap-$d/$f.png"
+              test -s "$p" || { echo "missing $p; re-run tools/make_app_icons.ps1"; exit 1; }
+            done
+          done
+
+      - name: Install the pinned NDK and platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;$ANDROID_NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: android/app/src/main/assets/data
+
+      # An APK keeps its assets inside the archive, so the game unpacks them on first run
+      # (src/mobile_platform.c). That needs a manifest, because asset directories cannot be
+      # enumerated from C. Build it outside the directory so it never lists itself.
+      - name: Index the packaged data
+        working-directory: android/app/src/main/assets/data
+        run: |
+          ls -1 > ../filelist.tmp
+          mv ../filelist.tmp filelist.txt
+          test -s filelist.txt
+
+      # A sideloaded build is signed with Gradle's debug key. Caching it keeps the
+      # signature stable, so a new build installs over the previous one.
+      - name: Cache the debug signing key
+        uses: actions/cache@v5
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      # v6 runs on Node 24; v4 is pinned to the deprecated Node 20.
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.12'
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          gradle --no-daemon assembleRelease \
+            -PopentyrianCommit="$(printf %.7s "$GITHUB_SHA")"
+          cp app/build/outputs/apk/release/app-release.apk \
+             "$GITHUB_WORKSPACE/OpenTyrian2000-Engaged-Android.apk"
+
+      # There is no way to run the game on a runner, so check what the APK actually
+      # contains: both ABIs, and the data the first launch unpacks.
+      - name: Verify APK contents
+        run: |
+          list=$(unzip -Z1 OpenTyrian2000-Engaged-Android.apk)
+          for want in lib/arm64-v8a/libmain.so lib/armeabi-v7a/libmain.so \
+                      lib/arm64-v8a/libSDL2.so lib/arm64-v8a/libSDL2_net.so \
+                      assets/data/tyrian1.lvl assets/data/filelist.txt; do
+            printf '%s\n' "$list" | grep -qx "$want" || { echo "missing $want"; exit 1; }
+          done
+          # No icon check here: a release build runs the resources through aapt2 optimize,
+          # which renames them, so nothing about their APK path or name is stable. The
+          # committed sources are checked before the build instead.
+
+      # Already a compressed archive; skip GitHub's wrapper compression.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-Android
+          path: OpenTyrian2000-Engaged-Android.apk
+          compression-level: 0
+
+  ios:
+    name: iOS
+    needs: data
+    timeout-minutes: 45
+    runs-on: macos-latest
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+    steps:
+      - uses: actions/checkout@v5
+
+      # ios/CMakeLists.txt globs data/ at configure time, so the files have to land first.
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: data
+
+      - name: Restore cached SDL sources
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ios/external/SDL2
+            ios/external/SDL2_net
+          key: ios-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Download SDL sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ios/external/SDL2 ios/external/SDL2_net
+          curl -fL --retry 3 -o sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL2_VERSION/SDL2-$SDL2_VERSION.tar.gz"
+          curl -fL --retry 3 -o sdl2net.tar.gz \
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$SDL2_NET_VERSION/SDL2_net-$SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C ios/external/SDL2
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C ios/external/SDL2_net
+
+      # Ninja, never -G Xcode: SDL2's several hundred configure probes each become a
+      # separate xcodebuild process under that generator, which turns a one-minute
+      # configure into a ten-minute one on a runner billed at ten times the Linux rate.
+      # Device slice only, and unsigned, since a public runner has no signing identity;
+      # the .ipa is for sideloading (see ios/README.md).
+      - name: Configure
+        run: |
+          command -v ninja > /dev/null || brew install ninja
+          cmake -S ios -B ios/build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
+
+      - name: Build
+        run: cmake --build ios/build --parallel
+
+      - name: Package unsigned IPA
+        run: |
+          app=ios/build/OpenTyrian2000.app
+          test -x "$app/OpenTyrian2000" || { echo "no app binary at $app"; exit 1; }
+          test -f "$app/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
+          test -f "$app/Assets.car" || { echo "icon asset catalog missing from the bundle"; exit 1; }
+          # A compiled catalog is not enough: iOS finds the icon through the keys actool
+          # writes into its partial plist, which the build merges into Info.plist. Without
+          # them the app shows no icon at all, and nothing else here would notice.
+          echo "--- actool partial plist ---"
+          cat ios/build/actool-partial.plist || true
+          echo "--- bundle Info.plist ---"
+          plutil -p "$app/Info.plist"
+          plutil -p "$app/Info.plist" | grep -q CFBundleIconName ||
+            { echo "Info.plist has no CFBundleIconName"; exit 1; }
+          plutil -p "$app/Info.plist" | grep -q CFBundlePrimaryIcon ||
+            { echo "actool's icon keys were not merged into Info.plist"; exit 1; }
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$app" Payload/
+          zip -qry OpenTyrian2000-Engaged-iOS.ipa Payload
+
+      # Already a compressed archive; skip GitHub's wrapper compression.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-iOS
+          path: OpenTyrian2000-Engaged-iOS.ipa
+          compression-level: 0
+
+  macos:
+    name: macOS universal
+    needs: data
+    timeout-minutes: 60
+    runs-on: macos-latest
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+    steps:
+      - uses: actions/checkout@v5
+
+      # macos/CMakeLists.txt globs data/ at configure time, so the files have to land first.
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: data
+
+      - name: Restore cached SDL sources
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            macos/external/SDL2
+            macos/external/SDL2_net
+          key: macos-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Download SDL sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p macos/external/SDL2 macos/external/SDL2_net
+          curl -fL --retry 3 -o sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL2_VERSION/SDL2-$SDL2_VERSION.tar.gz"
+          curl -fL --retry 3 -o sdl2net.tar.gz \
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$SDL2_NET_VERSION/SDL2_net-$SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C macos/external/SDL2
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C macos/external/SDL2_net
+
+      # Ninja rather than -G Xcode, for the reason given in the iOS job above. Architectures
+      # and deployment target come from macos/CMakeLists.txt so one file states them.
+      - name: Configure
+        run: |
+          command -v ninja > /dev/null || brew install ninja
+          cmake -S macos -B macos/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
+
+      - name: Build
+        run: cmake --build macos/build --parallel
+
+      # Apple Silicon refuses to run an unsigned binary at all, and the post-build copies
+      # into the bundle invalidate the ad-hoc signature the linker applied, so re-sign the
+      # finished bundle. This is not notarization; macos/README.md covers what a user still
+      # has to do on first launch. ditto rather than zip, which mangles bundle metadata.
+      - name: Sign and package
+        run: |
+          app=macos/build/OpenTyrian2000.app
+          bin="$app/Contents/MacOS/OpenTyrian2000"
+          test -x "$bin" || { echo "no app binary at $app"; exit 1; }
+          test -f "$app/Contents/Resources/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
+          test -f "$app/Contents/Resources/tyrian2000.icns" || { echo "icon missing from the bundle"; exit 1; }
+          archs=$(lipo -archs "$bin")
+          for want in arm64 x86_64; do
+            printf '%s\n' "$archs" | grep -qw "$want" || { echo "no $want slice (got: $archs)"; exit 1; }
+          done
+          codesign --force --sign - "$app"
+          codesign --verify --strict "$app"
+          ditto -c -k --keepParent "$app" OpenTyrian2000-Engaged-macOS-universal.zip
+
+      # Already a compressed archive; skip GitHub's wrapper compression.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-macOS
+          path: OpenTyrian2000-Engaged-macOS-universal.zip
           compression-level: 0
 
   switch:
@@ -279,7 +727,7 @@ jobs:
   prerelease:
     name: Update latest pre-release
     if: github.ref == 'refs/heads/master'
-    needs: [windows, linux, switch, vita, tests, sanitizers]
+    needs: [windows, windows-arm, linux, macos, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -295,7 +743,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
+                  OpenTyrian2000-Engaged-Windows-arm64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-Linux-aarch64.tar.gz
+                  OpenTyrian2000-Engaged-macOS-universal.zip
+                  OpenTyrian2000-Engaged-Android.apk
+                  OpenTyrian2000-Engaged-iOS.ipa
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
           subject=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" \
@@ -308,7 +761,7 @@ jobs:
   release:
     name: Attach to release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, linux, switch, vita, tests, sanitizers]
+    needs: [windows, windows-arm, linux, macos, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -325,7 +778,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
+                  OpenTyrian2000-Engaged-Windows-arm64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-Linux-aarch64.tar.gz
+                  OpenTyrian2000-Engaged-macOS-universal.zip
+                  OpenTyrian2000-Engaged-Android.apk
+                  OpenTyrian2000-Engaged-iOS.ipa
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then

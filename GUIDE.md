@@ -14,6 +14,7 @@ and controls work as before.
 | Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
 | Change health bars or gauges | Setup > Enhancements > Heads-Up Display |
+| Turn the touch sidekick buttons on or off | Setup > Enhancements > Heads-Up Display |
 | Configure restored content | Setup > Enhancements > Weapons or Gameplay |
 | Choose a music backend | Setup > Sound > Music Synth |
 | Turn on Debug Mode or network logs | Setup > Diagnostics |
@@ -813,25 +814,111 @@ work only in a normal solo game.
 | Backend | Requirement |
 | --- | --- |
 | OPL3 | None; default |
-| FluidSynth | A `.sf2`, `.sf3`, or `.sf` SoundFont |
+| FluidSynth | Windows x86-64 with a `.sf2`, `.sf3`, or `.sf` SoundFont |
 | Native MIDI | Windows x86-64 |
 
 Choose a backend under **Setup > Sound > Music Synth**. Put a SoundFont beside
 the executable or in `data`; FluidSynth is unavailable in the menu until one is
 found.
 
-## Console builds
+## Console and mobile builds
 
-Switch and Vita builds include online play and use the system keyboard for text
-fields. MIDI is disabled.
+Switch, Vita, Android, and iOS builds include online play and use the system
+keyboard for text fields. MIDI is disabled.
 
 - [Nintendo Switch](switch/README.md)
 - [PlayStation Vita](vita/README.md)
+- [Android](android/README.md)
+- [iOS](ios/README.md)
+
+### Touch controls
+
+Every touch build steers the same way: drag anywhere on the screen and the ship
+follows your finger, no matter where the drag started. Holding a finger down
+also holds the main weapon down, so there is no separate fire control. **Setup >
+Sensitivity** scales how far the ship travels per finger movement; the middle of
+the slider tracks your finger one to one.
+
+Phones and tablets add on-screen buttons for everything a finger cannot express
+on its own. Which buttons appear depends on the screen, so nothing is on display
+that would do nothing if you pressed it. They ride the screen's own fade, dimming
+away with the screen that is leaving and brightening in with the one arriving.
+
+**Setup > Button Opacity** sets how visible they are, from fully drawn at the
+right end of the slider down to nothing at the left. An empty slider removes them
+completely, and a button that cannot be seen cannot be pressed either, so there
+is no on-screen pause while you are flying at that setting. Setup is still
+reachable by tapping, which is how you turn them back on.
+
+| Screen | Left side | Right side |
+| --- | --- | --- |
+| Flying a level | Pause, left sidekick | Rear weapon mode, both sidekicks, right sidekick |
+| Any menu | Back | None |
+| A list too long to fit | Back, left, right | Up, down, confirm |
+| Weapon Creator | Back, left, right | Up, down, confirm |
+| Destruct mode select | Back | Up, down, confirm |
+| A screen waiting for any key | Back | Confirm |
+| Jukebox | Back, previous track | Hide text, next track |
+| Rear Gun in the shop | Back | Rear weapon mode |
+| Destruct | Back, aim left, aim right, change unit | Next weapon, more power, less power, fire |
+
+Back is always the top left button and always does what Esc does on a keyboard,
+so no screen can trap you.
+
+In an ordinary menu that is the only button, because a tap is already a click:
+menu rows, sliders and pickers all follow your finger. Cursor keys only appear
+where tapping cannot do the job. That means a list longer than its frame, where a
+tap only reaches the rows currently drawn: the debug screens, and the shop's buy
+and sell list when the outpost is carrying more than six items. The
+Weapon Creator has them for a related reason: it does hit-test every row, but a
+tap there both moves the cursor and acts on it, so the arrows are the only way to
+line a field up before changing it. Destruct's mode
+select gets up, down and confirm for a different reason. It reads the keyboard
+directly and hit-tests nothing, so a tap there does nothing at all, and its
+title, help and pause screens get confirm for the same reason. Holding an arrow
+repeats it.
+
+The jukebox's top right button hides its three lines of text, leaving the
+starfield alone on the screen; press it again to bring them back. The buttons
+themselves stay up, since one of them is the way out.
+
+Destruct holds its aim, power, and fire buttons the way a key would, and steps
+the unit and weapon one press at a time.
+
+Rows line up across the two sides: left sits level with up, right with down, and
+whatever that screen treats as its main action sits on the bottom row.
+
+The three sidekick buttons are the exception to "only what the screen needs":
+they are the only way to fire a sidekick by hand on a touch device, but nothing
+requires them, so **Setup > Enhancements > Heads-Up Display > Sidekick Buttons**
+turns them off. They are on by default, and the setting is not part of the
+Enhancements presets: a preset describes how the game behaves, not which
+controls you are given. Each icon shows both sidekick slots, with the ones that
+button fires drawn firing.
+
+The buttons sit outside the playfield. A phone is wider than the 16:9 frame the
+game draws, so they take the pillarbox beside it, against the frame edge rather
+than the screen edge; that keeps them clear of a display cutout in landscape. A
+4:3 tablet has no pillarbox but does have a band above the frame, and they use
+that. On a display at exactly 16:9 there is no margin at all, and they fade back
+over the frame edges instead.
+
+On the screens that end a run, the wreck animation and GAME OVER, a tap anywhere
+moves things along. Lift the finger you were flying with first: both wait for a
+fresh press so they cannot dismiss themselves the moment you die.
+
+A finger held on a button never steers and never fires, so the other thumb can
+keep flying.
+
+Switch and Vita have physical buttons and draw none of this.
 
 ## Files and logs
 
 On Windows, files sit beside the executable. Linux uses
-`~/.config/opentyrian2000`. Console locations are listed in their build guides.
+`~/.config/opentyrian2000`, and the macOS app bundle uses
+`~/Library/Application Support/OpenTyrian/OpenTyrian2000`. Console and mobile
+locations are listed in their build guides; on Android and iOS the files live in
+app-private storage that the system deletes on uninstall.
 
 | File | Contents |
 | --- | --- |

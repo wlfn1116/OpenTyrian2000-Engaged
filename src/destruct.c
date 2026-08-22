@@ -42,6 +42,7 @@
 #include "qa.h"
 #include "sim_math.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "varz.h"
 #include "vga256d.h"
 #include "video.h"
@@ -1046,6 +1047,9 @@ static void DE_netIntroBarrier(void)
 		if (!output_vsync)
 			limit_render_fps();
 
+		// Any key readies up and Escape steps back out, neither of which a finger can express.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
 		watchdog_heartbeat();
 		push_joysticks_as_keyboard();  // a controller confirms too (no keyboard on Switch)
 		service_SDL_events(false);
@@ -1106,6 +1110,12 @@ static void JE_introScreen(void)
 
 	DE_composeIntro(false, false);
 	JE_showVGA();
+
+	/* Before the fade, not by the wait below it: a screen that only asks once it is running
+	 * shows nothing until its fade-in is over. The offline wait and the online barrier want
+	 * the same confirm, so one request here covers both. */
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
 	fade_palette(colors, 15, 0, 255);
 
 	newkey = false;
@@ -1118,6 +1128,8 @@ static void JE_introScreen(void)
 #endif
 	while (!newkey)
 	{
+		// Waiting for any key, which a finger cannot express: offer confirm.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // let a controller dismiss the title (no keyboard on Switch)
 		service_SDL_events(false);
 		SDL_Delay(16);
@@ -1148,6 +1160,7 @@ static enum de_mode_t JE_modeSelect(void)
 	DrawModeSelectMenu(mode);
 
 	JE_showVGA();
+	touch_ui_set_layout(TOUCH_LAYOUT_PICK);   // before the fade, so the arrows fade in with it
 	fade_palette(colors, 15, 0, 255);
 
 	while (true)
@@ -1158,6 +1171,12 @@ static enum de_mode_t JE_modeSelect(void)
 		newkey = false;
 		do
 		{
+			// Keyboard-only: nothing here hit-tests a tap, so the touch ports need the
+			// cursor keys and confirm to pick a mode at all. Asserted inside this wait,
+			// not around it: the wait is where all the time goes, and a layout request
+			// left unrenewed goes stale in a fraction of a second.
+			touch_ui_set_layout(TOUCH_LAYOUT_PICK);
+
 			push_joysticks_as_keyboard();  // controller -> arrows/Return/Escape (no keyboard on Switch)
 			service_SDL_events(false);
 			SDL_Delay(16);
@@ -1748,10 +1767,13 @@ static void JE_helpScreen(void)
 	}
 	JE_outText(VGAScreen, 30, 190, destructHelp[24], 3, 4);
 	JE_showVGA();
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);   // before the fade, so confirm fades in with it
 	fade_palette(colors, 15, 0, 255);
 
 	do  /* wait until user hits a key */
 	{
+		// Waiting for any key, which a finger cannot express: offer confirm.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
 		SDL_Delay(16);
@@ -1760,6 +1782,7 @@ static void JE_helpScreen(void)
 	fade_black(15);
 	memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->h * VGAScreen->pitch);
 	JE_showVGA();
+	touch_ui_set_layout(TOUCH_LAYOUT_DESTRUCT);   // the battle is what fades back in here
 	fade_palette(colors, 15, 0, 255);
 }
 
@@ -1774,6 +1797,8 @@ static void JE_pauseScreen(void)
 
 	do  /* wait until user hits a key */
 	{
+		// Waiting for any key, which a finger cannot express: offer confirm.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
 		SDL_Delay(16);
@@ -2117,6 +2142,33 @@ static void DE_SmoothPresent(int scale)
 	setDelay(1);   /* keep `target` current for other timing readers */
 }
 
+/* Action bits from the on-screen buttons, shaped like DE_NetLocalActions so both the
+ * offline and the online gather can fold them in. Holding a direction repeats through the
+ * per-tick read, exactly as a held key does; the two cyclers are taps and are consumed
+ * here, so this runs once per live tick and never during a re-simulation. */
+static Uint8 DE_TouchActions(void)
+{
+	Uint8 bits = 0;
+
+	if (touch_ui_held(TOUCH_BTN_LEFT))       bits |= 1 << KEY_LEFT;
+	if (touch_ui_held(TOUCH_BTN_RIGHT))      bits |= 1 << KEY_RIGHT;
+	if (touch_ui_held(TOUCH_BTN_UP))         bits |= 1 << KEY_UP;
+	if (touch_ui_held(TOUCH_BTN_DOWN))       bits |= 1 << KEY_DOWN;
+	if (touch_ui_held(TOUCH_BTN_FIRE))       bits |= 1 << KEY_FIRE;
+	if (touch_ui_take_tap(TOUCH_BTN_CHANGE)) bits |= 1 << KEY_CHANGE;
+	if (touch_ui_take_tap(TOUCH_BTN_CYCLE))  bits |= 1 << KEY_CYUP;
+
+	/* Quit is a control rather than an action, and it is set here the way the pad's pause
+	 * button is, rather than by pushing an Escape key. A pushed key arrives as a down/up
+	 * pair, and DE_SmoothPresent pumps events in the middle of the tick: whenever that pump
+	 * fell between the two, it consumed the release and cleared the flag before the tick
+	 * read it. Writing keysactive directly leaves nothing that a later pump can undo. */
+	if (touch_ui_take_tap(TOUCH_BTN_ESC))
+		keysactive[SDL_SCANCODE_ESCAPE] = true;
+
+	return bits;
+}
+
 #ifdef WITH_NETWORK
 
 /* Local action bits for this tick.  Online, BOTH keyboard layouts drive the local side --
@@ -2163,6 +2215,8 @@ static Uint8 DE_NetLocalActions(void)
 		// quit control bit by the gather below.
 		if (joystick[0].action_pressed[5]) keysactive[SDL_SCANCODE_ESCAPE] = true;
 	}
+
+	bits |= DE_TouchActions();
 
 	return bits;
 }
@@ -2318,6 +2372,7 @@ static void DE_StateRestore(const void* src)
  * de_net_peer_bits are applied at the same point of the tick the offline path reads its keys. */
 static enum de_state_t DE_NetExchange(void)
 {
+	touch_ui_flush_keys();
 	service_SDL_events(true);
 
 	const Uint8 actions = DE_NetLocalActions();
@@ -2435,6 +2490,7 @@ static void DE_RollbackApplyMoves(void)
 		}
 		else
 		{
+			touch_ui_flush_keys();
 			service_SDL_events(true);
 			drb_record_local(DE_NetLocalActions(), DE_NetLocalControls());
 		}
@@ -2459,6 +2515,10 @@ static void DE_RollbackApplyMoves(void)
 static enum de_state_t DE_RunTick(void)
 {
 	setDelay(1);
+
+	// Aim, power, fire, and the two cyclers are more than a pad's face buttons carry, so
+	// the touch ports get a Destruct-specific set (see DE_TouchActions).
+	touch_ui_set_layout(TOUCH_LAYOUT_DESTRUCT);
 
 #ifdef WITH_NETWORK
 	// The lockstep exchange leads the tick so its verdicts (leave, new round) settle
@@ -3386,6 +3446,9 @@ static void DE_RunTickGetInput(void)
 	SDL_Scancode key;
 
 	/* Key and action arrays share indices, including alternate binding slots. */
+	// Destruct pumps its own events rather than going through push_joysticks_as_keyboard,
+	// so the on-screen buttons' queued keys have to be pushed here instead.
+	touch_ui_flush_keys();
 	service_SDL_events(true);
 
 	for (player_index = 0; player_index < MAX_PLAYERS; player_index++)
@@ -3442,6 +3505,24 @@ static void DE_RunTickGetInput(void)
 			if (joystick[0].action_pressed[1]) act[KEY_CHANGE] = true;  // change unit (tap)
 			if (joystick[0].action_pressed[2]) act[KEY_CYDN]   = true;  // previous weapon (tap)
 			if (joystick[0].action_pressed[3]) act[KEY_CYUP]   = true;  // next weapon (tap)
+		}
+	}
+
+	// Touch: one gather for the tick, then fanned out to every human player the same way
+	// the pad above is.
+	const Uint8 touch = DE_TouchActions();
+	if (touch != 0)
+	{
+		for (player_index = 0; player_index < MAX_PLAYERS; player_index++)
+		{
+			if (destruct_player[player_index].is_cpu)
+				continue;
+
+			for (key_index = 0; key_index < MAX_KEY; key_index++)
+			{
+				if (touch & (1 << key_index))
+					destruct_player[player_index].moves.actions[key_index] = true;
+			}
 		}
 	}
 }

@@ -50,6 +50,7 @@
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
+#include "touch_ui.h"
 #include "net_rollback.h"
 #include "shots.h"
 #include "sndmast.h"
@@ -5283,6 +5284,10 @@ void JE_debugMenu(bool center)
 		             small_font, centered, 15, -3);
 #endif
 
+		// A scrolling list, so a tap only reaches the rows already drawn: this screen keeps
+		// the cursor keys.
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
 		JE_showVGA();
@@ -5526,8 +5531,8 @@ void JE_debugMenu(bool center)
 				}
 				// Declare debug wallet overwrites without classifying them as earned income.
 				case DBG_ADD_CASH:
-#if defined(__SWITCH__) || defined(__vita__)
-					// No physical keyboard on the consoles: pop the software keyboard to fill the field.
+#ifdef PLATFORM_HANDHELD
+					// No physical keyboard here: pop the software keyboard to fill the field.
 					console_swkbd(dbgCashStr, sizeof(dbgCashStr), cashMaxDigits, dbgCashStr, "Add Cash", true);
 #endif
 					if (dbgCashStr[0])  // ignore a bare Enter on an empty field (don't zero cash by accident)
@@ -5540,7 +5545,7 @@ void JE_debugMenu(bool center)
 					}
 					break;
 				case DBG_HANG_TIMEOUT:  // apply the typed watchdog timeout in seconds (clamps to range)
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 					console_swkbd(dbgHangStr, sizeof(dbgHangStr), sizeof(dbgHangStr) - 1, dbgHangStr, "Hang timeout (seconds)", true);
 #endif
 					if (dbgHangStr[0])  // ignore a bare Enter on an empty field
@@ -5833,8 +5838,8 @@ void JE_highScoreCheck(void)
 				strcpy(stemp, "                             ");
 				temp = 0;
 
-#if defined(__SWITCH__) || defined(__vita__)
-				// No physical keyboard on the consoles: get the name from the software keyboard
+#ifdef PLATFORM_HANDHELD
+				// No physical keyboard here: get the name from the software keyboard
 				// and fill the field directly (see JE_operation for why not injected as an event).
 				{
 					char kb[29];
@@ -6973,8 +6978,8 @@ void JE_operation(JE_byte slot)
 		temp = strlen(stemp);
 		while (stemp[temp-1] == ' ' && --temp) { }  // trim the trailing pad spaces
 
-#if defined(__SWITCH__) || defined(__vita__)
-		// No physical keyboard on the consoles: get the name from the software keyboard and
+#ifdef PLATFORM_HANDHELD
+		// No physical keyboard here: get the name from the software keyboard and
 		// fill the field DIRECTLY here (deterministic). Delivering it as an injected SDL
 		// TEXTINPUT event raced with service_SDL_events clearing new_text and sometimes lost
 		// the whole name. The dialog then shows it and the user taps SAVE to confirm.
@@ -9054,13 +9059,14 @@ redo:
 						ingamemenu_pressed |= joystick[j].action_pressed[4];
 						pause_pressed |= joystick[j].action_pressed[5];
 					}
-
-					// vt_ship_step polls the pad at render rate and consumes the change-fire
-					// press-edge before this tick reads it, so it latches the edge for us.
-					// Fold the latched press in here (no-op when Smooth Motion / VT isn't driving).
-					button[3] |= changefire_pressed;
-					changefire_pressed = false;
 				}
+
+				// Change-fire arrives as a latch from two places: vt_ship_step, which polls the
+				// pad at render rate and would otherwise consume the press-edge before this tick
+				// reads it, and the touch port's on-screen button. Drain it outside the pad
+				// branch above, which a phone with no controller never enters.
+				button[3] |= changefire_pressed;
+				changefire_pressed = false;
 
 				service_SDL_events(false);
 
@@ -9072,8 +9078,8 @@ redo:
 				/* mouse input */
 				if ((inputDevice == 0 || inputDevice == 2) && has_mouse)
 				{
-#if defined(__SWITCH__) || defined(__vita__)
-					/* On the consoles mouse_pressed[0] is the touchscreen's auto-fire
+#ifdef PLATFORM_HANDHELD
+					/* On the touch ports mouse_pressed[0] is the touchscreen's auto-fire
 					 * (a drag holds it, keyboard.c). Under Toggle Fire a touch must
 					 * neither shoot nor flip the toggle, so keep it out of the fire
 					 * button entirely; only real buttons reach the latch below. */

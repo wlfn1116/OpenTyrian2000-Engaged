@@ -18,6 +18,7 @@
  */
 #include "mouse.h"
 
+#include "console_platform.h"  // PLATFORM_HANDHELD
 #include "keyboard.h"
 #include "nortvars.h"
 #include "sprite.h"
@@ -35,9 +36,9 @@ JE_byte mouseCursor;
 JE_word mouseX, mouseY, mouseButton;
 JE_word mouseXB, mouseYB;
 
-// Console touch input needs no cursor sprite. Keep pixel grab/restore active
+// Touch input needs no cursor sprite. Keep pixel grab/restore active
 // so hiding it does not leave trails.
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 #define MOUSE_CURSOR_HIDDEN 1
 #else
 #define MOUSE_CURSOR_HIDDEN 0

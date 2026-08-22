@@ -347,6 +347,10 @@ bool debugMode     = false;
 bool extraParallax = false;
 /* Reflects columns beyond a map row's edge in both parallax modes. */
 bool mirroredLayers = true;
+/* On-screen sidekick fire buttons; see config.h. Drawn only where TOUCH_UI_BUTTONS is. */
+bool touchSidekickButtons = true;
+/* On-screen button opacity; see config.h. */
+int touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
 /* Thin health bar near an enemy once damaged (draw_enemy_health_bars in tyrian2.c). */
 bool enemyBars       = true;
 int enemyBarLayout   = ENEMY_BAR_HORIZONTAL;
@@ -768,7 +772,7 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "show_fps", &show_fps_enabled);
 		show_fps = (show_fps_enabled != 0);
 
-		// Ship-control sensitivity slider: touch on the consoles, mouse on desktop.
+		// Ship-control sensitivity slider: touch on the handheld ports, mouse on desktop.
 		config_get_int_option(section, SHIP_SENS_CFG, &ship_sensitivity);
 		if (ship_sensitivity < 0 || ship_sensitivity > SHIP_SENS_MAX)
 			ship_sensitivity = SHIP_SENS_DEFAULT;
@@ -879,6 +883,14 @@ bool load_opentyrian_config(void)
 		int mirrored_layers_enabled = mirroredLayers ? 1 : 0;
 		config_get_int_option(section, "mirrored_layers", &mirrored_layers_enabled);
 		mirroredLayers = (mirrored_layers_enabled != 0);
+
+		int touch_sidekick_buttons_enabled = touchSidekickButtons ? 1 : 0;
+		config_get_int_option(section, "touch_sidekick_buttons", &touch_sidekick_buttons_enabled);
+		touchSidekickButtons = (touch_sidekick_buttons_enabled != 0);
+
+		config_get_int_option(section, "touch_button_opacity", &touchButtonOpacity);
+		if (touchButtonOpacity < 0 || touchButtonOpacity > TOUCH_OPACITY_MAX)
+			touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
 
 		// Music device (OPL3 / FluidSynth / Native MIDI) + SoundFont path. The
 		// MIDI devices only take effect in a WITH_MIDI build; otherwise init_audio()
@@ -1318,6 +1330,8 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "extra_sparks", extraSparks ? 1 : 0);
 	config_set_int_option(section, "extra_parallax", extraParallax ? 1 : 0);
 	config_set_int_option(section, "mirrored_layers", mirroredLayers ? 1 : 0);
+	config_set_int_option(section, "touch_sidekick_buttons", touchSidekickButtons ? 1 : 0);
+	config_set_int_option(section, "touch_button_opacity", touchButtonOpacity);
 	config_set_string_option(section, "music_device", music_device_names[music_device]);
 
 	config_set_string_option(section, "net_player_name", network_player_name);
@@ -1845,6 +1859,21 @@ const char *get_user_directory(void)
 #elif defined(__vita__)
 		// Fixed writable location on the memory card; vita_platform_init() creates it.
 		strcpy(user_dir, VITA_USER_DIR);
+#elif defined(__ANDROID__) || defined(TARGET_IOS)
+		// App-private storage, resolved by mobile_platform_init(). Nothing here survives
+		// an uninstall on either system.
+		snprintf(user_dir, sizeof(user_dir), "%s", mobile_user_dir());
+#elif defined(TARGET_MACOS)
+		// ~/Library/Application Support, where a bundled app is expected to write; a .app
+		// has no directory of its own a user could reach. SDL_GetPrefPath() creates the
+		// directory and returns it with a trailing separator, which dir_fopen() re-adds.
+		char *pref = SDL_GetPrefPath("OpenTyrian", "OpenTyrian2000");
+		snprintf(user_dir, sizeof(user_dir), "%s", pref != NULL ? pref : ".");
+		SDL_free(pref);
+
+		const size_t pref_len = strlen(user_dir);
+		if (pref_len > 1 && user_dir[pref_len - 1] == '/')
+			user_dir[pref_len - 1] = '\0';
 #elif !defined(TARGET_WIN32)
 		char *xdg_config_home = getenv("XDG_CONFIG_HOME");
 		if (xdg_config_home != NULL)

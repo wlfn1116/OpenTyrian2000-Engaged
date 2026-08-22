@@ -19,6 +19,7 @@
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
+#include "console_platform.h"  // PLATFORM_HANDHELD
 #include "opentyr.h"
 
 #include "SDL.h"
@@ -51,7 +52,7 @@ extern char last_text[SDL_TEXTINPUTEVENT_TEXT_SIZE];
 #define SHIP_SENS_MARK_COL     144  // bright blue: the fill has reached the middle slot
 #define SHIP_SENS_MARK_COL_DIM 136  // dark blue:   the fill is still below the middle slot
 #define SHIP_SENS_NAME "Sensitivity"
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 #define SHIP_SENS_HELP "Touchscreen ship control sensitivity."
 #define SHIP_SENS_CFG  "touch_sensitivity"
 #else

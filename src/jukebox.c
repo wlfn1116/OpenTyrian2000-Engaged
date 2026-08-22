@@ -30,6 +30,7 @@
 #include "palette.h"
 #include "sprite.h"
 #include "starlib.h"
+#include "touch_ui.h"
 #include "vga_palette.h"
 #include "video.h"
 
@@ -101,6 +102,10 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 
 	for (; ; )
 	{
+		// Track stepping is the whole interface here, so the touch ports get it as a
+		// prev/next pair rather than the generic menu arrows.
+		touch_ui_set_layout(TOUCH_LAYOUT_JUKEBOX);
+
 		Uint64 now = SDL_GetPerformanceCounter();
 		float step = (float)((double)(now - last_frame) * 1000.0 / perf_freq) / get_delay_period();
 		last_frame = now;

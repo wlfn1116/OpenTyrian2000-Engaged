@@ -11,6 +11,15 @@ collected under `build`. `-FailFast` stops after the first failed target.
 
 - PC executables run beside `data`. `build` is an output directory.
 - MIDI is available on Windows x86-64.
+- Windows and Linux release both x86-64 and ARM64. The MSVC project's MIDI
+  conditions are x64-only, so ARM64 excludes FluidSynth and midiproc.
+- SDL's VC packages hold x86 and x64 import libraries only. The ARM64 job builds
+  SDL2 and SDL2_net from source, restages them as `include` plus `lib\arm64`, and
+  caches the result. That build needs two options: CMake 4 refuses SDL2 without
+  `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, and `-DSDL_LIBC=ON` keeps SDL2 off the
+  `/NODEFAULTLIB` path it takes on ARM64, where the CRT's `_Interlocked` helpers
+  would go unresolved.
+- MSVC has no `-fsigned-char`, so `opentyr.c` asserts the default at compile time.
 - Switch builds use devkitPro bash and an MSYS-style `DEVKITPRO` path.
 - Vita builds use native CMake and Ninja. MSYS paths do not work there.
 - Console Release builds define `NDEBUG`.
@@ -84,6 +93,19 @@ per simulation tick.
 - Advance ready flashes only on live ticks.
 - Draw `JE_drawPerfOverlay` after the final composite.
 - Keep hitbox overlays in `game_screen`; keep text out of feedback surfaces.
+
+### Dismissing the death screens
+
+`JE_playerMovement` returns as soon as `is_alive` is false, before the block that
+fills `button[]` from the pad and the mouse. Anything drawn after the ship dies,
+including the wreck-animation skip and GAME OVER, therefore cannot read input
+through `button[]`.
+
+A finger reaches those screens through `mouse_pressed[0]` alone: touch in
+relative mode sets neither `mousedown` nor `newmouse`, only that auto-fire latch.
+It is a level rather than an edge, so the fresh-press guard has to clear it the
+same way it clears `newkey` and `newmouse`, or the finger that was flying the
+ship dismisses the screen the instant it appears.
 
 ### Boss vulnerability cue
 
@@ -521,10 +543,64 @@ together.
 - `enhancementSettings[]` is the authority for both presets.
 - Engaged values must match fresh-install defaults.
 - `chargeSidekickAutofire` is per-save and stays outside presets.
+- `touchSidekickButtons` and `touchButtonOpacity` are controls, not behaviour, and
+  stay outside presets.
 - Apply table-backed settings through `JE_applyItemDataSettings` immediately.
+
+Nothing in this game fills an SDL surface palette; `scale_and_flip` maps the
+indices itself. `SDL_ConvertSurface` and `SDL_DuplicateSurface` therefore both
+fail on `VGAScreen` with "Empty destination palette", and `SDL_BlitSurface`
+between two 8-bit surfaces goes through palette matching. Copy screen-sized
+surfaces row by row instead, as the `memcpy` pairs around `VGAScreen2` already
+do. The on-screen keyboard learned this the hard way: its backdrop copy was
+always NULL, so the panel was never restored, and `JE_barShade` halves the shade
+of what is already there rather than filling, which turned deleted text into
+darkening ghosts.
+
+A touch overlay layout is a request with a lifetime, not state a screen owns:
+`touch_ui_set_layout` is called from inside a screen's loop and goes stale by
+itself, so no screen has to clean up after the one before it. Two rules keep the
+buttons on the same schedule as the screen they belong to:
+
+- A live request is cleared while the palette is dark and not rising. Clearing on
+  every dark frame would erase the arriving screen's request, which is made while
+  the display is still black. Clearing only on the falling edge misses a screen
+  that steps its own palette inside the loop that asserts, as the jukebox does:
+  it re-asserts on every frame of its own fade-out and one clear is undone.
+- A live request is renewed for as long as `palette_fading()` holds. `fade_black`
+  and `fade_palette` block for longer than the request's own lifetime, so ask
+  before starting the fade or the buttons only arrive once it has finished. Ask
+  with no present in between, or that frame is dark and not rising and drops it.
+  `DE_RunTick` re-asserts beside its fade for exactly this reason.
+
+`palette_fading()` therefore has to be stamped on both fade paths.
+`smooth_fade_to` replaces `step_fade_palette` whenever Smooth Motion is on,
+which is most of the time.
+
+Each button is composited into its own texture before it reaches the screen, so
+that `touchButtonOpacity` has a single alpha to act on. Drawing the primitives
+straight to the screen cannot carry an opacity setting: a glyph overlaps itself,
+and the cycle arrow is a run of deliberately overlapping dots, so anything below
+full alpha blends each overlap twice and the glyph beads. Inside the texture
+blending is off and every primitive writes its pixels instead.
+
+- Palette brightness is applied with `SDL_SetTextureColorMod`, which is the same
+  arithmetic `dim()` does, so a fade rebuilds nothing.
+- The cache key is deliberately narrow: size, glyph, held, plate alpha, opacity.
+- `touch_ui_renderer_lost()` drops the handles when the renderer that owned them
+  goes away. A resolution change destroys the renderer.
+- Opacity zero clears `layout_valid`, so the buttons leave the hit test with the
+  screen. That does mean no on-screen pause exists at zero.
 
 Clip the weapon simulator's starfield to its preview box with
 `starfield_set_clip`; it treats any black surface pixel as drawable.
+
+A press that must act once and then wait for release latches
+(`awaitClickRelease` in `JE_itemScreen`) instead of calling `wait_noinput`.
+`wait_noinput` spins without presenting, so the outpost stopped animating for as
+long as the button was held. A mouse click is over too quickly to notice; a tap
+is held for a moment and read as a hang. The latch is cleared and tested beside
+`inputDetected`, which keeps the wait inside the loop that already draws.
 
 Custom preset state is a positional list guarded by `enhancementTableShape`.
 Reordering or retuning the table invalidates the stored list. Capture Custom

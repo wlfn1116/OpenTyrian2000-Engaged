@@ -1,0 +1,121 @@
+/* On-screen touch controls for the phone and tablet ports. */
+#ifndef TOUCH_UI_H
+#define TOUCH_UI_H
+
+#include "SDL.h"
+
+#include <stdbool.h>
+
+/* Android and iOS have no buttons of their own, so anything a finger cannot express gets
+ * an on-screen button. Steering and firing in a level stay gestures: a drag anywhere moves
+ * the ship and holding a finger down fires. Handhelds with physical controls (Switch,
+ * Vita) never draw any of this. */
+#if defined(__ANDROID__) || defined(TARGET_IOS)
+#define TOUCH_UI_BUTTONS 1
+#endif
+
+#ifdef TOUCH_UI_BUTTONS
+
+typedef enum
+{
+	TOUCH_BTN_PAUSE,    // in a level: open the pause menu
+	TOUCH_BTN_WEAPON,   // in a level: cycle the rear weapon mode
+	TOUCH_BTN_ESC,      // back out of the current screen
+	TOUCH_BTN_SELECT,   // confirm the highlighted row
+	TOUCH_BTN_UP,
+	TOUCH_BTN_DOWN,
+	TOUCH_BTN_LEFT,
+	TOUCH_BTN_RIGHT,
+	TOUCH_BTN_FIRE,     // Destruct
+	TOUCH_BTN_CHANGE,   // Destruct: next unit
+	TOUCH_BTN_CYCLE,    // Destruct: next weapon
+	TOUCH_BTN_SIDEKICK_L,     // in a level, optional: fire the left sidekick
+	TOUCH_BTN_SIDEKICK_R,
+	TOUCH_BTN_SIDEKICK_BOTH,
+	TOUCH_BTN_REAR_MODE,      // shop preview: cycle the rear weapon mode, the / key
+	TOUCH_BTN_FULLSCREEN,     // jukebox: hide the text overlay, leaving only the starfield
+	TOUCH_BTN_COUNT
+} TouchButton;
+
+typedef enum
+{
+	TOUCH_LAYOUT_GAME,      // chosen automatically while a level is being flown
+	TOUCH_LAYOUT_MENU,      // the default everywhere else
+	TOUCH_LAYOUT_LIST,      // a scrolling list a tap cannot reach all of: the debug screens
+	TOUCH_LAYOUT_PICK,      // a short keyboard-only menu: up, down, confirm
+	TOUCH_LAYOUT_CONFIRM,   // a screen waiting for any key: confirm
+	TOUCH_LAYOUT_JUKEBOX,
+	TOUCH_LAYOUT_DESTRUCT
+} TouchLayout;
+
+/* Ask for a layout other than the automatic one. Screens re-assert this every frame or
+ * tick; the request goes stale in a fraction of a second, so a screen that exits without
+ * clearing it -- including the longjmp out of an online Destruct teardown -- cannot strand
+ * the wrong buttons on a later screen. */
+void touch_ui_set_layout(TouchLayout layout);
+
+/* Ask for one extra button on top of the current layout, for a screen that reads a key the
+ * menu set does not cover. Re-asserted every frame and stale-checked like a layout request,
+ * so a screen only has to call it while the key is live. */
+void touch_ui_set_extra(TouchButton button);
+
+/* Push the keys the on-screen buttons have queued. Called from push_joysticks_as_keyboard,
+ * which every navigable screen runs immediately before the pump it reads: a key pushed from
+ * inside the pump itself lands in whichever pump happened to receive the touch, and screens
+ * that pump twice per iteration (JE_mouseStart does) then clear it before reading. */
+void touch_ui_flush_keys(void);
+
+// True while a finger is on the button. Destruct reads its held actions this way.
+bool touch_ui_held(TouchButton button);
+
+// Consume one press edge, for actions that must not repeat while held.
+bool touch_ui_take_tap(TouchButton button);
+
+// Claim a finger that landed on a button and fire its action. Coordinates are
+// window-normalized, as SDL reports them. A true result keeps the touch out of ship
+// steering, so the buttons can be used while the other thumb is flying.
+bool touch_ui_finger_down(SDL_FingerID finger, float nx, float ny);
+
+// Release a claimed finger. True when this finger was holding a button.
+bool touch_ui_finger_up(SDL_FingerID finger);
+
+// Drop every held button. Backgrounding an app can swallow the matching FINGERUP, which
+// would otherwise leave a finger id claimed for the rest of the session.
+void touch_ui_release_all(void);
+
+// True while this finger is held on a button; its drag must not steer the ship.
+bool touch_ui_owns_finger(SDL_FingerID finger);
+
+// Draw the buttons over the presented frame. `frame` is the on-screen rectangle the
+// game's output occupies; the buttons sit in the pillarbox beside it wherever the device
+// is wider than 16:9. Call after the frame copy and before SDL_RenderPresent.
+void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame);
+
+// Called when the renderer is torn down. Each button is cached as a texture that renderer
+// owned, so the handles have to be dropped without being freed a second time.
+void touch_ui_renderer_lost(void);
+
+/* Re-present the finished frame from inside a wait loop when the buttons would now be
+ * drawn differently. Screens that draw once and then spin on the event pump never present
+ * again on their own, so without this their buttons are simply absent -- and a button that
+ * was never drawn is one nothing can press, because the press test runs against the last
+ * drawn layout. Only presents when something actually changed. */
+void touch_ui_idle_repaint(void);
+
+#else
+
+/* Callers are ordinary cross-platform code, so everything it uses collapses to nothing off
+ * the touch ports. Each unused macro argument disappears with the expansion, which is why
+ * the button and layout names need no definition here. */
+#define touch_ui_render(renderer, frame)  ((void)0)
+#define touch_ui_renderer_lost()          ((void)0)
+#define touch_ui_flush_keys()             ((void)0)
+#define touch_ui_idle_repaint()           ((void)0)
+#define touch_ui_set_layout(layout)       ((void)0)
+#define touch_ui_set_extra(button)        ((void)0)
+#define touch_ui_held(button)             (false)
+#define touch_ui_take_tap(button)         (false)
+
+#endif // TOUCH_UI_BUTTONS
+
+#endif // TOUCH_UI_H

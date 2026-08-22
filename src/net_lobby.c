@@ -38,6 +38,7 @@
 #include "player.h"
 #include "qa.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "vga256d.h"
 #include "video.h"
 
@@ -226,8 +227,8 @@ static bool lobbyWaitForInput(void)
 static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
                            bool (*filter)(char), bool numeric)
 {
-#if defined(__SWITCH__) || defined(__vita__)
-	// No physical keyboard on the consoles, and nothing there produces SDL_TEXTINPUT, so the
+#ifdef PLATFORM_HANDHELD
+	// No physical keyboard on these platforms, and no desktop-style typing, so the
 	// field below would never see a character.  The system keyboard replaces it wholesale.
 	(void)title;
 

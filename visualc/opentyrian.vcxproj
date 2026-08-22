@@ -17,6 +17,14 @@
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
@@ -121,6 +129,15 @@
       <AdditionalLibraryDirectories Condition="'$(WITH_MIDI)'=='true'">$(FluidSynthBaseDir)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
+  <!-- No FluidSynth here: the MIDI conditions above are x64-only, so ARM64 builds without it. -->
+  <ItemDefinitionGroup Condition="'$(Platform)'=='ARM64'">
+    <ClCompile>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(SDL2BaseDir)\lib\arm64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories Condition="'$(WITH_NETWORK)'=='true'">$(SDL2netBaseDir)\lib\arm64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\animlib.c" />
     <ClCompile Include="..\src\arg_parse.c" />
@@ -187,6 +204,7 @@
     <ClCompile Include="..\src\sndmast.c" />
     <ClCompile Include="..\src\sprite.c" />
     <ClCompile Include="..\src\starlib.c" />
+    <ClCompile Include="..\src\touch_ui.c" />
     <ClCompile Include="..\src\tyrian2.c" />
     <ClCompile Include="..\src\varz.c" />
     <ClCompile Include="..\src\vga256d.c" />
@@ -360,6 +378,7 @@
     <ClInclude Include="..\src\sndmast.h" />
     <ClInclude Include="..\src\sprite.h" />
     <ClInclude Include="..\src\starlib.h" />
+    <ClInclude Include="..\src\touch_ui.h" />
     <ClInclude Include="..\src\tyrian2.h" />
     <ClInclude Include="..\src\varz.h" />
     <ClInclude Include="..\src\vga256d.h" />
@@ -384,6 +403,10 @@
     <Dependency Condition="'$(WITH_MIDI)'=='true'" Include="$(FluidSynthBaseDir)\lib\x64\*.dll" />
     <Dependency Condition="$(WITH_NETWORK)=='true'" Include="$(SDL2netBaseDir)\lib\x64\*.dll" />
   </ItemGroup>
+  <ItemGroup Condition="'$(Platform)'=='ARM64'">
+    <Dependency Include="$(SDL2BaseDir)\lib\arm64\*.dll" />
+    <Dependency Condition="$(WITH_NETWORK)=='true'" Include="$(SDL2netBaseDir)\lib\arm64\*.dll" />
+  </ItemGroup>
   <PropertyGroup>
     <BuildDependsOn>CopyPropsTemplates;EnsureSDLExists;$(BuildDependsOn)</BuildDependsOn>
   </PropertyGroup>
@@ -395,6 +418,9 @@
     <Error Condition="!Exists($(SDL2BaseDir))" Text="Set 'SDL2BaseDir' in 'sdl_paths.props' to the directory where SDL2 is located." />
     <Error Condition="'$(WITH_NETWORK)'=='true' AND !Exists($(SDL2netBaseDir))" Text="Set 'SDL2netBaseDir' in 'sdl_paths.props' to the directory where SDL2_net is located." />
     <Error Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64' AND !Exists($(FluidSynthBaseDir))" Text="Set 'FluidSynthBaseDir' in 'sdl_paths.props' to a FluidSynth SDK (the repo ships one in stuff\fluidsynth), or set WITH_MIDI=false in 'opentyrian.props'." />
+    <!-- The official SDL VC packages ship x86 and x64 only, so ARM64 needs SDKs built from source. -->
+    <Error Condition="'$(Platform)'=='ARM64' AND !Exists('$(SDL2BaseDir)\lib\arm64')" Text="'$(SDL2BaseDir)\lib\arm64' is missing. Point 'SDL2BaseDir' at an SDL2 built for ARM64; see README.md." />
+    <Error Condition="'$(Platform)'=='ARM64' AND '$(WITH_NETWORK)'=='true' AND !Exists('$(SDL2netBaseDir)\lib\arm64')" Text="'$(SDL2netBaseDir)\lib\arm64' is missing. Point 'SDL2netBaseDir' at an SDL2_net built for ARM64; see README.md." />
   </Target>
   <Target Name="CopyDependencies" AfterTargets="Build">
     <Copy SourceFiles="@(Dependency)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />

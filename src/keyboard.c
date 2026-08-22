@@ -25,6 +25,7 @@
 #include "network.h"
 #include "opentyr.h"
 #include "rollback.h"
+#include "touch_ui.h"
 #include "console_platform.h"
 #include "video.h"
 #include "video_scale.h"
@@ -33,14 +34,14 @@
 
 #include <stdio.h>
 
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 // Touch-drag -> ship travel multiplier. The base 4.0 cancels VT_MOUSE_SENS (0.25) so at the
 // slider's middle the ship tracks the finger 1:1; the Touch Sensitivity slider scales it
 // linearly around SHIP_SENS_DEFAULT.
-#define SWITCH_TOUCH_SHIP_SENS_BASE 4.0f
+#define TOUCH_SHIP_SENS_BASE 4.0f
 #endif
 
-// Touch (consoles) / Mouse (desktop) ship-control sensitivity. See keyboard.h.
+// Touch (handhelds) / Mouse (desktop) ship-control sensitivity. See keyboard.h.
 int ship_sensitivity = SHIP_SENS_DEFAULT;
 
 JE_boolean ESCPressed;
@@ -110,7 +111,7 @@ void init_keyboard(void)
 	SDL_SetHint(SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, "1");
 #endif
 
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 	// Handle touch explicitly (see service_SDL_events); don't also let SDL synthesise
 	// mouse events from it, which would double-count and teleport on each re-touch.
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
@@ -140,8 +141,8 @@ JE_word JE_mousePosition(JE_word *mouseX, JE_word *mouseY)
 	return mousedown ? lastmouse_but : 0;
 }
 
-#if !defined(__SWITCH__) && !defined(__vita__)
-// Mouse Sensitivity slider factor; the consoles instead scale at the touch source
+#ifndef PLATFORM_HANDHELD
+// Mouse Sensitivity slider factor; the touch ports instead scale at the touch source
 // (see SDL_FINGERMOTION below), so their reads stay 1:1.
 static float shipSensScale(void)
 {
@@ -154,7 +155,7 @@ void mouseGetRelativePosition(Sint32 *const out_x, Sint32 *const out_y)
 	service_SDL_events(false);
 
 	scaleWindowDistanceToScreen(&mouseWindowXRelative, &mouseWindowYRelative);
-#if !defined(__SWITCH__) && !defined(__vita__)
+#ifndef PLATFORM_HANDHELD
 	// Sensitivity-scale with a fractional carry so slow motion is never rounded away.
 	static float fracX, fracY;
 	fracX += (float)mouseWindowXRelative * shipSensScale();
@@ -180,7 +181,7 @@ void mouseGetRelativeMotionF(float *const out_x, float *const out_y)
 	float x = (float)mouseWindowXRelative;
 	float y = (float)mouseWindowYRelative;
 	scaleWindowDistanceToScreenF(&x, &y);
-#if !defined(__SWITCH__) && !defined(__vita__)
+#ifndef PLATFORM_HANDHELD
 	x *= shipSensScale();
 	y *= shipSensScale();
 #endif
@@ -229,6 +230,9 @@ void service_SDL_events(JE_boolean clear_new)
 					windowHasFocus = false;
 
 					mouseSetRelative(mouseRelativeEnabled);
+#ifdef TOUCH_UI_BUTTONS
+					touch_ui_release_all();
+#endif
 					break;
 
 				case SDL_WINDOWEVENT_FOCUS_GAINED:
@@ -355,7 +359,7 @@ void service_SDL_events(JE_boolean clear_new)
 				}
 				break;
 
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 			// Touch acts as an absolute pointer in menus and a relative trackpad in play.
 			// SDL reports touch coordinates normalized to the window.
 			case SDL_FINGERDOWN:
@@ -366,6 +370,20 @@ void service_SDL_events(JE_boolean clear_new)
 				// The Vita has two touch panels: front (touch device 0) and rear (device 1).
 				// Ignore rear touch so normal grip cannot steer or click.
 				if (SDL_GetNumTouchDevices() >= 2 && ev.tfinger.touchId == SDL_GetTouchDevice(1))
+					break;
+#endif
+#ifdef TOUCH_UI_BUTTONS
+				// An on-screen button claims its finger for the whole press, so a thumb
+				// resting on Pause never steers the ship and never opens fire.
+				bool claimedByButton;
+				if (ev.type == SDL_FINGERDOWN)
+					claimedByButton = touch_ui_finger_down(ev.tfinger.fingerId, ev.tfinger.x, ev.tfinger.y);
+				else if (ev.type == SDL_FINGERUP)
+					claimedByButton = touch_ui_finger_up(ev.tfinger.fingerId);
+				else
+					claimedByButton = touch_ui_owns_finger(ev.tfinger.fingerId);
+
+				if (claimedByButton)
 					break;
 #endif
 				int ww = 0, wh = 0;
@@ -380,7 +398,7 @@ void service_SDL_events(JE_boolean clear_new)
 					if (ev.type == SDL_FINGERMOTION && windowHasFocus)
 					{
 						// Scale the 1:1 base by the slider; SHIP_SENS_DEFAULT reproduces 1:1.
-						const float sens = SWITCH_TOUCH_SHIP_SENS_BASE * (float)ship_sensitivity / (float)SHIP_SENS_DEFAULT;
+						const float sens = TOUCH_SHIP_SENS_BASE * (float)ship_sensitivity / (float)SHIP_SENS_DEFAULT;
 						mouseWindowXRelative += (Sint32)(ev.tfinger.dx * (float)ww * sens);
 						mouseWindowYRelative += (Sint32)(ev.tfinger.dy * (float)wh * sens);
 					}

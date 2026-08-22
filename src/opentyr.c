@@ -49,6 +49,7 @@
 #include "rollback.h"
 #include "sprite.h"
 #include "console_platform.h"
+#include "touch_ui.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "vga256d.h"
@@ -64,12 +65,16 @@
 #include <string.h>
 #include <time.h>
 
+// Every other toolchain is built with -fsigned-char. MSVC has no equivalent switch, so the
+// assumption is checked here instead of being left to a target's default.
+typedef char assert_char_is_signed[(char)-1 < 0 ? 1 : -1];
+
 const char *opentyrian_str = "OpenTyrian 2000 Engaged";
 const char *opentyrian_version = OPENTYRIAN_VERSION;
 const char *opentyrian_commit = OPENTYRIAN_COMMIT;
 
-#if !defined(__SWITCH__) && !defined(__vita__)
-// The consoles (Switch / Vita) have a single, always-fullscreen display managed by the
+#ifndef PLATFORM_HANDHELD
+// The console and mobile ports have a single, always-fullscreen display managed by the
 // video driver, so the Window/Display picker is meaningless there and is omitted from
 // the Graphics menu below.
 static size_t getDisplayPickerItemsCount(void)
@@ -280,6 +285,7 @@ typedef enum
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
+	MENU_ITEM_TOUCH_OPACITY,        // on-screen button opacity, touch ports only
 
 	/* Enhancements. */
 	MENU_ITEM_ENH_PRESET,           // writes the whole enhancement set at once (config.c)
@@ -305,6 +311,7 @@ typedef enum
 	MENU_ITEM_GAUGE_GRAD_ARMOR,
 	MENU_ITEM_GAUGE_FLASH_SHIELD,
 	MENU_ITEM_GAUGE_FLASH_ARMOR,
+	MENU_ITEM_TOUCH_SIDEKICKS,      // touch ports only: draw the sidekick fire buttons
 
 	/* Enhancements -> Weapons. */
 	MENU_ITEM_CUSTOM_WEAPONS,
@@ -456,6 +463,7 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_ENEMY_BARS:          return &enemyBars;
 	case MENU_ITEM_GAUGE_FLASH_SHIELD:  return &gaugeFlashShield;
 	case MENU_ITEM_GAUGE_FLASH_ARMOR:   return &gaugeFlashArmor;
+	case MENU_ITEM_TOUCH_SIDEKICKS:     return &touchSidekickButtons;
 	case MENU_ITEM_CUSTOM_WEAPONS:      return &customWeaponEnabled;
 	case MENU_ITEM_CHARGE_LASER:        return &chargeLaserCannon;
 	case MENU_ITEM_ZICA_LOCK:           return &zicaLaserLock;
@@ -534,6 +542,10 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 		break;
 	case MENU_ITEM_SHIP_SENS:
 		ship_sensitivity = MIN(MAX(0, ship_sensitivity + dir * 8), SHIP_SENS_MAX);
+		JE_playSampleNum(S_CURSOR);
+		break;
+	case MENU_ITEM_TOUCH_OPACITY:
+		touchButtonOpacity = MIN(MAX(0, touchButtonOpacity + dir * 5), TOUCH_OPACITY_MAX);
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_FPS:
@@ -646,6 +658,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Enhancements...", "Presets and every change this fork adds to the game.", MENU_ENHANCEMENTS },
 				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
+#ifdef TOUCH_UI_BUTTONS
+				{ MENU_ITEM_TOUCH_OPACITY, "Button Opacity",
+				  "How visible the on-screen buttons are; empty hides them." },
+#endif
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},
@@ -653,7 +669,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_GRAPHICS] = {
 			.header = "Graphics",
 			.items = {
-#if !defined(__SWITCH__) && !defined(__vita__)
+#ifndef PLATFORM_HANDHELD
 				{ MENU_ITEM_DISPLAY, "Display:", "Change the display mode.",
 				  .getPickerItemsCount = getDisplayPickerItemsCount, .getPickerItem = getDisplayPickerItem },
 #endif
@@ -722,6 +738,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Gauges...", "Gradient and damage flash of the three gauges.", MENU_GAUGES },
 				{MENU_ITEM_BOSS_VULN_CUE, "Vulnerable Cue:", "Which hulls flash when they turn damageable.",
 				  .getPickerItemsCount = vulnCueCount, .getPickerItem = vulnCueItem},
+#ifdef TOUCH_UI_BUTTONS
+				{ MENU_ITEM_TOUCH_SIDEKICKS, "Sidekick Buttons:", "On-screen buttons that fire your sidekicks." },
+#endif
 				MENU_DONE_ROW
 			},
 		},
@@ -887,8 +906,8 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_DEBUG_MODE, "Debug Mode:", "Enable the debug menu and debug level select." },
 				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to a net log file." },
-#if defined(__SWITCH__) || defined(__vita__)
-				// Console users need an in-game way to clear crash and network logs.
+#ifdef PLATFORM_HANDHELD
+				// These platforms need an in-game way to clear crash and network logs.
 				{ MENU_ITEM_CLEAR_LOGS, "Clear Logs", "Delete every log file saved on this system." },
 #endif
 				MENU_DONE_ROW
@@ -1179,6 +1198,17 @@ static bool runOptionsMenu(MenuId startMenu)
 				break;
 			}
 
+			case MENU_ITEM_TOUCH_OPACITY:
+			{
+				// A plain percentage of the bar, empty to full, with no neutral point to mark:
+				// the whole range is useful and the top of it is simply how the buttons look.
+				const int bars = (wMenuItemValue + 1) / 3;   // segments are 2 px plus a 1 px gap
+				const int amt = (touchButtonOpacity * bars + TOUCH_OPACITY_MAX / 2) / TOUCH_OPACITY_MAX;
+				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, 174, amt, 2, 10);
+				JE_rectangle(VGAScreen, xMenuItemValue - 2, y - 2, xMenuItemValue + 96, y + 11, 242);
+				break;
+			}
+
 			default:
 				// Submenu rows, headings, Done, and the Super Arcade ship codes carry no value.
 				break;
@@ -1375,6 +1405,15 @@ static bool runOptionsMenu(MenuId startMenu)
 									{
 										int value = (lastmouse_x - xMenuItemValue) * SHIP_SENS_MAX / (wMenuItemValue - 1);
 										ship_sensitivity = MIN(MAX(0, value), SHIP_SENS_MAX);
+
+										JE_playSampleNum(S_CURSOR);
+										break;
+									}
+									case MENU_ITEM_TOUCH_OPACITY:
+									{
+										int value = (lastmouse_x - xMenuItemValue) * TOUCH_OPACITY_MAX
+										            / (wMenuItemValue - 1);
+										touchButtonOpacity = MIN(MAX(0, value), TOUCH_OPACITY_MAX);
 
 										JE_playSampleNum(S_CURSOR);
 										break;
@@ -1619,8 +1658,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				}
 				case MENU_ITEM_FPS:
 				{
-#if defined(__SWITCH__) || defined(__vita__)
-					// No physical keyboard on the consoles; the system keypad stands in
+#ifdef PLATFORM_HANDHELD
+					// No physical keyboard here; the system keypad stands in
 					// for the desktop's typed digits.
 					char kb[8];
 					snprintf(kb, sizeof(kb), "%d", fps_cap);
@@ -1927,7 +1966,7 @@ static bool runOptionsMenu(MenuId startMenu)
 #endif
 int main(int argc, char *argv[])
 {
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 	// Mount data and prepare the user directory before file access.
 	console_platform_init();
 #endif

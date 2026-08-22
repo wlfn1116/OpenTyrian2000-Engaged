@@ -32,6 +32,25 @@
 
 const char *custom_data_dir = NULL;
 
+#ifdef TARGET_MACOS
+/* The read-only copy inside the .app, where SDL_GetBasePath() resolves to
+ * Contents/Resources. A bundle launched from Finder inherits "/" as its working directory,
+ * so the relative entries in data_dir() can never reach the game files. */
+static const char *macos_bundle_data_dir(void)
+{
+	static char path[512] = "";
+
+	if (path[0] == '\0')
+	{
+		char *base = SDL_GetBasePath();
+		snprintf(path, sizeof(path), "%sdata", base != NULL ? base : "./");
+		SDL_free(base);
+	}
+
+	return path;
+}
+#endif
+
 // finds the Tyrian data directory
 const char *data_dir(void)
 {
@@ -49,7 +68,15 @@ const char *data_dir(void)
 		VITA_USER_DIR,
 		VITA_DATA_DIR,
 #endif
+#if defined(__ANDROID__) || defined(TARGET_IOS)
+		// The app bundle on iOS, and the copy unpacked out of the APK on Android;
+		// mobile_platform_init() resolves both before this runs.
+		mobile_data_dir(),
+#endif
 		custom_data_dir,
+#ifdef TARGET_MACOS
+		macos_bundle_data_dir(),
+#endif
 		TYRIAN_DIR,
 		"data",
 		".",

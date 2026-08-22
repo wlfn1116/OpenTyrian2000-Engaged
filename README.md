@@ -13,8 +13,8 @@ This fork adds:
 - two-player online play across every mode;
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
-- FluidSynth and native MIDI support on Windows;
-- Nintendo Switch and PlayStation Vita homebrew ports.
+- FluidSynth and native MIDI support on Windows x86-64;
+- macOS, Nintendo Switch, PlayStation Vita, Android, and iOS ports.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
@@ -28,9 +28,9 @@ See the [player guide](GUIDE.md) for menu paths and feature details.
 Release packages include the freeware Tyrian 2000 data. Source builds need a
 copy from [camanis.net](https://www.camanis.net/tyrian/tyrian2000.zip).
 
-On Windows and Linux, the executable should be beside the `data` directory.
-Console packages bundle the data and can also use an external copy; see
-their build guides.
+On Windows and Linux, the executable should be beside the `data` directory. The
+macOS app bundle and the console packages carry the data inside them; the
+consoles can also use an external copy. See their build guides.
 
 ## Display and controls
 
@@ -54,15 +54,19 @@ Default keyboard controls:
 
 Keys and controllers can be rebound in Setup.
 
+On Android and iOS a drag anywhere steers the ship and also fires; pause and
+rear weapon mode get on-screen buttons in the pillarbox beside the playfield.
+See [Touch controls](GUIDE.md#touch-controls).
+
 ## Online play
 
 Open **Online Multiplayer** from the main menu. A host can be found over LAN
 or joined by address. The default port is UDP 1333.
 
-Players can mix Windows, Linux, Switch, and Vita builds when both copies use the
-same game version. Rollback is the default netcode; delay-based lockstep remains
-available from the lobby. Campaign and Endless sessions can be saved and resumed
-through their original game type.
+Players can mix Windows, macOS, Linux, Android, iOS, Switch, and Vita builds
+when both copies use the same game version. Rollback is the default netcode;
+delay-based lockstep remains available from the lobby. Campaign and Endless
+sessions can be saved and resumed through their original game type.
 
 For lobby settings, co-op rules, saving, and desync reports, see
 [Online play](GUIDE.md#online-play).
@@ -83,6 +87,13 @@ one or more targets and collect their outputs under `build`:
 
 Run `.\build-all.ps1 -Help` for the complete option list.
 
+`-Platform ARM64` builds for Windows on ARM. SDL ships x86 and x64 import
+libraries only, so `SDL2BaseDir` and `SDL2netBaseDir` in
+`visualc\sdl_paths.props` have to point at SDKs built from source, each holding
+an `include` directory and a `lib\arm64` directory. The `windows-arm` job in
+`.github/workflows/build.yml` is the recipe for building and staging them. MIDI
+is x86-64 only and is left out of ARM64 builds.
+
 ### Linux
 
 Install the SDL2 development packages, then use the root Makefile:
@@ -93,12 +104,26 @@ make
 ```
 
 Release builds need only the SDL2 runtime packages. Package names vary by
-distribution.
+distribution. The same Makefile builds the released aarch64 package.
 
-### Consoles
+### macOS
+
+The root Makefile also works here:
+
+```sh
+brew install sdl2 sdl2_net pkg-config
+make
+```
+
+For the universal `.app` bundle that release packages ship, which carries its
+own static SDL2 and game data, see [macos/README.md](macos/README.md).
+
+### Consoles and mobile
 
 - [Nintendo Switch](switch/README.md)
 - [PlayStation Vita](vita/README.md)
+- [Android](android/README.md)
+- [iOS](ios/README.md)
 
 ## Tests
 
@@ -113,8 +138,10 @@ The suite covers deterministic replays, rollback state, save migrations,
 malformed inputs, Endless generation, and two network peers behind a fault
 proxy. [testing/README.md](testing/README.md) lists the runners and scenarios.
 
-GitHub Actions builds Windows, Linux, Switch, and Vita. Current artifacts are
-available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
+GitHub Actions builds Windows (x86-64 and ARM64), Linux (x86-64 and aarch64),
+macOS, Android, iOS, Switch, and Vita. The suite runs on both architectures of
+both desktop systems.
+Current artifacts are available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
 and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
 
 ## License
