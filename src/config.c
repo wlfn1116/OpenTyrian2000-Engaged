@@ -349,6 +349,8 @@ bool extraParallax = false;
 bool mirroredLayers = true;
 /* On-screen sidekick fire buttons; see config.h. Drawn only where TOUCH_UI_BUTTONS is. */
 bool touchSidekickButtons = true;
+/* On-screen button opacity; see config.h. */
+int touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
 /* Thin health bar near an enemy once damaged (draw_enemy_health_bars in tyrian2.c). */
 bool enemyBars       = true;
 int enemyBarLayout   = ENEMY_BAR_HORIZONTAL;
@@ -886,6 +888,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "touch_sidekick_buttons", &touch_sidekick_buttons_enabled);
 		touchSidekickButtons = (touch_sidekick_buttons_enabled != 0);
 
+		config_get_int_option(section, "touch_button_opacity", &touchButtonOpacity);
+		if (touchButtonOpacity < 0 || touchButtonOpacity > TOUCH_OPACITY_MAX)
+			touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
+
 		// Music device (OPL3 / FluidSynth / Native MIDI) + SoundFont path. The
 		// MIDI devices only take effect in a WITH_MIDI build; otherwise init_audio()
 		// falls back to OPL (see loudness.c).
@@ -1325,6 +1331,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "extra_parallax", extraParallax ? 1 : 0);
 	config_set_int_option(section, "mirrored_layers", mirroredLayers ? 1 : 0);
 	config_set_int_option(section, "touch_sidekick_buttons", touchSidekickButtons ? 1 : 0);
+	config_set_int_option(section, "touch_button_opacity", touchButtonOpacity);
 	config_set_string_option(section, "music_device", music_device_names[music_device]);
 
 	config_set_string_option(section, "net_player_name", network_player_name);

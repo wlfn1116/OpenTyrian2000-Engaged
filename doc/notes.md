@@ -530,7 +530,8 @@ together.
 - `enhancementSettings[]` is the authority for both presets.
 - Engaged values must match fresh-install defaults.
 - `chargeSidekickAutofire` is per-save and stays outside presets.
-- `touchSidekickButtons` is a control, not a behaviour, and stays outside presets.
+- `touchSidekickButtons` and `touchButtonOpacity` are controls, not behaviour, and
+  stay outside presets.
 - Apply table-backed settings through `JE_applyItemDataSettings` immediately.
 
 A touch overlay layout is a request with a lifetime, not state a screen owns:
@@ -548,6 +549,21 @@ buttons on the same schedule as the screen they belong to:
 `palette_fading()` therefore has to be stamped on both fade paths.
 `smooth_fade_to` replaces `step_fade_palette` whenever Smooth Motion is on,
 which is most of the time.
+
+Each button is composited into its own texture before it reaches the screen, so
+that `touchButtonOpacity` has a single alpha to act on. Drawing the primitives
+straight to the screen cannot carry an opacity setting: a glyph overlaps itself,
+and the cycle arrow is a run of deliberately overlapping dots, so anything below
+full alpha blends each overlap twice and the glyph beads. Inside the texture
+blending is off and every primitive writes its pixels instead.
+
+- Palette brightness is applied with `SDL_SetTextureColorMod`, which is the same
+  arithmetic `dim()` does, so a fade rebuilds nothing.
+- The cache key is deliberately narrow: size, glyph, held, plate alpha, opacity.
+- `touch_ui_renderer_lost()` drops the handles when the renderer that owned them
+  goes away. A resolution change destroys the renderer.
+- Opacity zero clears `layout_valid`, so the buttons leave the hit test with the
+  screen. That does mean no on-screen pause exists at zero.
 
 Clip the weapon simulator's starfield to its preview box with
 `starfield_set_clip`; it treats any black surface pixel as drawable.

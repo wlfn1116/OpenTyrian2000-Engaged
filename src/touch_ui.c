@@ -46,7 +46,8 @@ typedef enum
 	ICON_PAUSE, ICON_CYCLE, ICON_CLOSE, ICON_SELECT,
 	ICON_UP, ICON_DOWN, ICON_LEFT, ICON_RIGHT,
 	ICON_FIRE, ICON_CHANGE,
-	ICON_POD_L, ICON_POD_R, ICON_POD_BOTH
+	ICON_POD_L, ICON_POD_R, ICON_POD_BOTH,
+	ICON_EXPAND
 } TouchIcon;
 
 // What has to be true for a button to be drawn at all.
@@ -127,11 +128,15 @@ static const TouchButtonDef LAYOUT_CONFIRM[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
+/* The top right slot takes the text toggle, which is the jukebox's own fullscreen: the
+ * starfield is the whole point of the screen and the three lines of help sit over it. The
+ * buttons themselves stay up, because one of them is the way back out. */
 static const TouchButtonDef LAYOUT_JUKEBOX[] =
 {
-	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
-	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -1, SDL_SCANCODE_LEFT,   false, GATE_ALWAYS },
-	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,   1, -1, SDL_SCANCODE_RIGHT,  false, GATE_ALWAYS },
+	{ TOUCH_BTN_ESC,        ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_FULLSCREEN, ICON_EXPAND,  1,  0, SDL_SCANCODE_F,      false, GATE_ALWAYS },
+	{ TOUCH_BTN_LEFT,       ICON_LEFT,   -1, -1, SDL_SCANCODE_LEFT,   false, GATE_ALWAYS },
+	{ TOUCH_BTN_RIGHT,      ICON_RIGHT,   1, -1, SDL_SCANCODE_RIGHT,  false, GATE_ALWAYS },
 };
 
 /* Destruct wants five held actions and two taps, which is more than a pad's face buttons
@@ -174,6 +179,19 @@ static Uint8 requested_extra;
 static Uint32 extra_at_ms;
 static Uint32 presented_signature;
 static bool was_visible = true;
+
+// See button_texture(): each shown slot keeps its composited button until one of these
+// changes. Palette brightness is deliberately absent, so a fade rebuilds nothing.
+typedef struct
+{
+	SDL_Texture *tex;
+	int size;
+	Uint8 icon;
+	bool held;
+	Uint8 plate_base;
+	Uint8 opacity;
+} ButtonCache;
+static ButtonCache btn_cache[LAYOUT_MAX_BUTTONS];
 
 static SDL_FingerID btn_finger[TOUCH_BTN_COUNT];
 static bool btn_held[TOUCH_BTN_COUNT];
@@ -220,6 +238,7 @@ static Uint32 desired_signature(Uint32 now_ms)
 
 	Uint32 sig = (Uint32)layout;
 	sig = sig * 31u + (touchSidekickButtons ? 1u : 0u);
+	sig = sig * 31u + (Uint32)touchButtonOpacity;
 	sig = sig * 31u + (fresh(extra_at_ms, now_ms) ? (Uint32)requested_extra + 1u : 0u);
 
 	for (int i = 0; i < TOUCH_BTN_COUNT; ++i)
@@ -582,6 +601,21 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 		break;
 	}
 
+	case ICON_EXPAND:
+	{
+		// Four corner brackets, the usual "fill the screen" glyph.
+		const float arm = rad * 0.6f;
+		for (int i = 0; i < 4; ++i)
+		{
+			const float sx = (i & 1) ? 1.f : -1.f;
+			const float sy = (i & 2) ? 1.f : -1.f;
+			const float x = cx + sx * rad, y = cy + sy * rad;
+			fill_bar(renderer, x, y, x - sx * arm, y, thick);
+			fill_bar(renderer, x, y, x, y - sy * arm, thick);
+		}
+		break;
+	}
+
 	case ICON_CHANGE:
 	{
 		// Two opposed arrows: this swaps which unit you are commanding.
@@ -642,6 +676,77 @@ void touch_ui_flush_keys(void)
 	pending_key_count = 0;
 }
 
+// The opacity setting scales the alpha a button was authored with, so the middle of the
+// slider is the shipped look, the top is solid, and zero takes the buttons off the screen.
+static Uint8 scaled_alpha(int base)
+{
+	return (Uint8)clampi(base * touchButtonOpacity / TOUCH_OPACITY_DEFAULT, 0, 255);
+}
+
+/* One button, composited once and kept until something about it changes. Opacity cannot be
+ * applied to the drawn primitives directly: a glyph overlaps itself, and the cycle arrow is
+ * a run of deliberately overlapping dots, so anything below full alpha blends each overlap
+ * twice and the glyph beads. Drawn into a texture with blending off, every primitive writes
+ * its pixels instead, and the finished image carries one clean alpha out to the screen. */
+static SDL_Texture *button_texture(SDL_Renderer *renderer, int slot, const TouchButtonDef *def,
+                                   int size, bool held, Uint8 plate_base)
+{
+	ButtonCache *const c = &btn_cache[slot];
+	const Uint8 opacity = (Uint8)clampi(touchButtonOpacity, 0, TOUCH_OPACITY_MAX);
+
+	if (c->tex != NULL && c->size == size && c->icon == def->icon && c->held == held &&
+	    c->plate_base == plate_base && c->opacity == opacity)
+		return c->tex;
+
+	if (c->tex == NULL || c->size != size)
+	{
+		if (c->tex != NULL)
+			SDL_DestroyTexture(c->tex);
+
+		c->tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+		                           SDL_TEXTUREACCESS_TARGET, size, size);
+		c->size = size;
+		if (c->tex == NULL)
+			return NULL;
+
+		SDL_SetTextureBlendMode(c->tex, SDL_BLENDMODE_BLEND);
+	}
+
+	SDL_Texture *const prev_target = SDL_GetRenderTarget(renderer);
+	if (SDL_SetRenderTarget(renderer, c->tex) != 0)
+	{
+		SDL_DestroyTexture(c->tex);
+		c->tex = NULL;
+		return NULL;
+	}
+
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+	SDL_RenderClear(renderer);
+
+	// Full brightness: the palette fade is applied as a colour mod when this is copied out.
+	const SDL_Rect local = { 0, 0, size, size };
+	draw_plate(renderer, &local, scaled_alpha(plate_base), held, 255);
+	SDL_SetRenderDrawColor(renderer, 226, 232, 248, scaled_alpha(255));
+	draw_icon(renderer, (TouchIcon)def->icon, &local);
+
+	SDL_SetRenderTarget(renderer, prev_target);
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+	c->icon = def->icon;
+	c->held = held;
+	c->plate_base = plate_base;
+	c->opacity = opacity;
+	return c->tex;
+}
+
+void touch_ui_renderer_lost(void)
+{
+	// The renderer owned these, so they are already gone; only the handles are left.
+	for (int i = 0; i < LAYOUT_MAX_BUTTONS; ++i)
+		btn_cache[i] = (ButtonCache){ 0 };
+}
+
 void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 {
 	if (renderer == NULL)
@@ -670,7 +775,10 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	 * floor they are dark enough to be invisible, so nothing is drawn and nothing can be
 	 * pressed -- a button nobody can see must not be a button anybody can hit. */
 	const Uint8 peak = palette_peak();
-	const bool visible = peak >= TOUCH_VISIBLE_PEAK_MIN;
+
+	// Opacity zero is the same bargain as the floor below: the buttons leave the screen and
+	// the hit test together, so nothing is left behind that only an invisible target answers.
+	const bool visible = peak >= TOUCH_VISIBLE_PEAK_MIN && touchButtonOpacity > 0;
 
 	/* Dimming past the floor ends the screen that asked for this layout, so its request goes
 	 * with it rather than waiting to time out. On that edge only: the next screen asks while
@@ -714,13 +822,22 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	{
 		const SDL_Rect *r = &shown_rect[i];
 		const bool held = btn_held[shown[i]->id];
-		const Uint8 alpha = overlaps_frame(r, frame) ? TOUCH_BTN_ALPHA_OVERLAP : TOUCH_BTN_ALPHA_CLEAR;
+		const Uint8 base = overlaps_frame(r, frame) ? TOUCH_BTN_ALPHA_OVERLAP : TOUCH_BTN_ALPHA_CLEAR;
 
-		draw_plate(renderer, r, alpha, held, peak);
+		SDL_Texture *tex = button_texture(renderer, i, shown[i], r->w, held, base);
+		if (tex != NULL)
+		{
+			// The fade rides the colour mod rather than the drawn colours, which is the same
+			// arithmetic dim() does and keeps a transition from rebuilding every button.
+			SDL_SetTextureColorMod(tex, peak, peak, peak);
+			SDL_RenderCopy(renderer, tex, NULL, r);
+			continue;
+		}
 
-		// Opaque, even over a translucent plate: an icon built from overlapping shapes
-		// blends twice where they meet, and any alpha below full shows that as a seam.
-		// The plate already brightens on press, so the icon needs no second cue.
+		/* No render target to be had. Drawn straight to the screen the glyph's overlaps
+		 * compound, so it stays opaque and only the plate carries the setting: worse than
+		 * the composited path, but still a usable button. */
+		draw_plate(renderer, r, scaled_alpha(base), held, peak);
 		SDL_SetRenderDrawColor(renderer, dim(226, peak), dim(232, peak), dim(248, peak), 255);
 		draw_icon(renderer, (TouchIcon)shown[i]->icon, r);
 	}

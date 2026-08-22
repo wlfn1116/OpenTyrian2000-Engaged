@@ -285,6 +285,7 @@ typedef enum
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
+	MENU_ITEM_TOUCH_OPACITY,        // on-screen button opacity, touch ports only
 
 	/* Enhancements. */
 	MENU_ITEM_ENH_PRESET,           // writes the whole enhancement set at once (config.c)
@@ -543,6 +544,10 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 		ship_sensitivity = MIN(MAX(0, ship_sensitivity + dir * 8), SHIP_SENS_MAX);
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_TOUCH_OPACITY:
+		touchButtonOpacity = MIN(MAX(0, touchButtonOpacity + dir * 8), TOUCH_OPACITY_MAX);
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_FPS:
 		if (dir > 0)
 			fps_cap += 5;
@@ -653,6 +658,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Enhancements...", "Presets and every change this fork adds to the game.", MENU_ENHANCEMENTS },
 				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
+#ifdef TOUCH_UI_BUTTONS
+				{ MENU_ITEM_TOUCH_OPACITY, "Button Opacity", "How solid the on-screen buttons are; none hides them." },
+#endif
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},
@@ -1189,6 +1197,19 @@ static bool runOptionsMenu(MenuId startMenu)
 				break;
 			}
 
+			case MENU_ITEM_TOUCH_OPACITY:
+			{
+				// Same bar and same blue marker as Sensitivity above, and for the same reason:
+				// the middle of the travel is the value the game ships with.
+				const int amt = (touchButtonOpacity + 4) / 8;
+				const int mark = (TOUCH_OPACITY_DEFAULT + 4) / 8;
+				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, 174, amt, 2, 10);
+				JE_barDrawMark(VGAScreen, xMenuItemValue, y,
+				               amt >= mark ? SHIP_SENS_MARK_COL : SHIP_SENS_MARK_COL_DIM, mark, 2, 10);
+				JE_rectangle(VGAScreen, xMenuItemValue - 2, y - 2, xMenuItemValue + 96, y + 11, 242);
+				break;
+			}
+
 			default:
 				// Submenu rows, headings, Done, and the Super Arcade ship codes carry no value.
 				break;
@@ -1385,6 +1406,15 @@ static bool runOptionsMenu(MenuId startMenu)
 									{
 										int value = (lastmouse_x - xMenuItemValue) * SHIP_SENS_MAX / (wMenuItemValue - 1);
 										ship_sensitivity = MIN(MAX(0, value), SHIP_SENS_MAX);
+
+										JE_playSampleNum(S_CURSOR);
+										break;
+									}
+									case MENU_ITEM_TOUCH_OPACITY:
+									{
+										int value = (lastmouse_x - xMenuItemValue) * TOUCH_OPACITY_MAX
+										            / (wMenuItemValue - 1);
+										touchButtonOpacity = MIN(MAX(0, value), TOUCH_OPACITY_MAX);
 
 										JE_playSampleNum(S_CURSOR);
 										break;

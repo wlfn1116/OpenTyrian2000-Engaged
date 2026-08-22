@@ -293,6 +293,7 @@ static void deinit_renderer(void)
 {
 	if (main_window_renderer != NULL)
 	{
+		touch_ui_renderer_lost();   // the overlay caches textures this renderer owns
 		SDL_DestroyRenderer(main_window_renderer);
 		main_window_renderer = NULL;
 	}

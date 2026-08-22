@@ -33,6 +33,7 @@ typedef enum
 	TOUCH_BTN_SIDEKICK_R,
 	TOUCH_BTN_SIDEKICK_BOTH,
 	TOUCH_BTN_REAR_MODE,      // shop preview: cycle the rear weapon mode, the / key
+	TOUCH_BTN_FULLSCREEN,     // jukebox: hide the text overlay, leaving only the starfield
 	TOUCH_BTN_COUNT
 } TouchButton;
 
@@ -90,6 +91,10 @@ bool touch_ui_owns_finger(SDL_FingerID finger);
 // is wider than 16:9. Call after the frame copy and before SDL_RenderPresent.
 void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame);
 
+// Called when the renderer is torn down. Each button is cached as a texture that renderer
+// owned, so the handles have to be dropped without being freed a second time.
+void touch_ui_renderer_lost(void);
+
 /* Re-present the finished frame from inside a wait loop when the buttons would now be
  * drawn differently. Screens that draw once and then spin on the event pump never present
  * again on their own, so without this their buttons are simply absent -- and a button that
@@ -103,6 +108,7 @@ void touch_ui_idle_repaint(void);
  * the touch ports. Each unused macro argument disappears with the expansion, which is why
  * the button and layout names need no definition here. */
 #define touch_ui_render(renderer, frame)  ((void)0)
+#define touch_ui_renderer_lost()          ((void)0)
 #define touch_ui_flush_keys()             ((void)0)
 #define touch_ui_idle_repaint()           ((void)0)
 #define touch_ui_set_layout(layout)       ((void)0)

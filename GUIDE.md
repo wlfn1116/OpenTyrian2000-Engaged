@@ -844,6 +844,13 @@ on its own. Which buttons appear depends on the screen, so nothing is on display
 that would do nothing if you pressed it. They ride the screen's own fade, dimming
 away with the screen that is leaving and brightening in with the one arriving.
 
+**Setup > Button Opacity** sets how solid they are drawn. The middle of the
+slider, marked in blue like the Sensitivity one above it, is the standard look;
+the right end is fully solid. Turning it all the way down removes the buttons
+completely, and a button that cannot be seen cannot be pressed either, so with
+the slider at zero there is no on-screen pause while you are flying. Setup is
+still reachable by tapping, which is how you turn them back on.
+
 | Screen | Left side | Right side |
 | --- | --- | --- |
 | Flying a level | Pause, left sidekick | Rear weapon mode, both sidekicks, right sidekick |
@@ -852,7 +859,7 @@ away with the screen that is leaving and brightening in with the one arriving.
 | Weapon Creator | Back, left, right | Up, down, confirm |
 | Destruct mode select | Back | Up, down, confirm |
 | A screen waiting for any key | Back | Confirm |
-| Jukebox | Back, previous track | Next track |
+| Jukebox | Back, previous track | Hide text, next track |
 | Rear Gun in the shop | Back | Rear weapon mode |
 | Destruct | Back, aim left, aim right, change unit | Next weapon, more power, less power, fire |
 
@@ -871,6 +878,10 @@ select gets up, down and confirm for a different reason. It reads the keyboard
 directly and hit-tests nothing, so a tap there does nothing at all, and its
 title, help and pause screens get confirm for the same reason. Holding an arrow
 repeats it.
+
+The jukebox's top right button hides its three lines of text, leaving the
+starfield alone on the screen; press it again to bring them back. The buttons
+themselves stay up, since one of them is the way out.
 
 Destruct holds its aim, power, and fire buttons the way a key would, and steps
 the unit and weapon one press at a time.
