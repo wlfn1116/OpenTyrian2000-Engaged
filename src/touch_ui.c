@@ -28,6 +28,10 @@
 #define TOUCH_BTN_ALPHA_CLEAR    195
 #define TOUCH_BTN_ALPHA_OVERLAP  105
 
+// The outline is this fraction of the button wide, so it thickens with the drawable rather
+// than staying a hairline. Roughly a point and a half at every scale.
+#define TOUCH_BTN_EDGE_DIVISOR   36
+
 // A layout request or a navigable-screen report older than this is ignored, so both
 // decay on their own rather than needing every screen to clean up after itself.
 #define TOUCH_ASSERT_TTL_MS  250
@@ -447,12 +451,18 @@ static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, b
 	                       dim(held ? 88 : 26, peak), alpha);
 	SDL_RenderFillRect(renderer, r);
 
+	/* Drawn as nested rings whose count follows the button, which measure() has already sized in
+	 * points: a fixed two device pixels is a hairline on a 3x drawable, where everything around
+	 * it is three times the size, and the outline all but disappears. */
 	SDL_SetRenderDrawColor(renderer, dim(165, peak), dim(176, peak), dim(205, peak),
 	                       scaled_alpha(235));
-	SDL_RenderDrawRect(renderer, r);
 
-	const SDL_Rect inner = { r->x + 1, r->y + 1, r->w - 2, r->h - 2 };
-	SDL_RenderDrawRect(renderer, &inner);
+	const int edge = clampi((r->w + TOUCH_BTN_EDGE_DIVISOR / 2) / TOUCH_BTN_EDGE_DIVISOR, 2, 6);
+	for (int i = 0; i < edge; ++i)
+	{
+		const SDL_Rect ring = { r->x + i, r->y + i, r->w - 2 * i, r->h - 2 * i };
+		SDL_RenderDrawRect(renderer, &ring);
+	}
 }
 
 // Scanline fill; SDL's renderer has no triangle primitive before 2.0.18, and every icon
