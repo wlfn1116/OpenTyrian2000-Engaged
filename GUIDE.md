@@ -46,8 +46,8 @@ The useful settings are under **Setup > Graphics**.
   remains display-rate, avoiding repeated feedback filters on the same tick.
 - **FPS Cap** accepts Left/Right steps or a typed number. Use 35 or higher for
   online play. A value of 0 means Uncapped.
-- Android and iOS are able to present at the screen's refresh rate,
-  so a ProMotion device runs at up to 120 Hz.
+- Android and iOS can present at the screen's refresh rate, so a ProMotion
+  device runs at up to 120 Hz.
 
 The simulation still runs at 35 Hz. Demo recording and demo playback use
 fixed-step ship movement even when Smooth Motion is enabled. Online play sets
@@ -884,51 +884,35 @@ Switch and Vita have physical buttons and draw none of this.
 
 ## Transferring saves between devices
 
-Two devices on the same network can copy a save between them. Both need this
-build. The device sharing the save listens on UDP port 1332; allow that if a
-firewall asks.
-
-**Download** and **Upload** sit on the same line as **Exit to Main Menu** at the
-bottom of **Load Game**, and the up and down keys reach them. They appear on the
-title screen's Load Game menu only; the save screen an online session opens
-leaves them out.
+Use **Load Game > Upload** and **Download** to copy a save between devices on the
+same network. Both devices need this build. Transfers use UDP port 1332, which a
+firewall may ask you to allow.
 
 To send a save:
 
 1. Choose **Upload**, then pick the save from the list.
-2. The screen shows this machine's addresses and waits. Esc cancels.
-3. On the other device, choose **Download**.
+2. On the other device, choose **Download** and select the offered save.
+3. Choose a destination slot and confirm or change the save name.
 
-The receiving device searches the network, lists what it finds, and pulls the
-save you pick. It then asks for the slot to keep it in and the name to file it
-under, the same prompt every other save uses. The name starts as whatever the
-sending device called it, so you can rename it or keep it.
+If the devices do not find each other:
 
-The last two rows of that list do not depend on the search finding anything, and
-are there even when it found nothing:
+- **Enter an address...** connects directly to an address shown on the Upload
+  screen. Hostnames also work.
+- **Wait for a sender** shows the receiving device's address. On the Upload
+  screen, press Enter and send to that address.
 
-- **Enter an address...** asks one machine directly. Type the address the upload
-  screen shows. A hostname works in place of an address.
-- **Wait for a sender** turns the receiving device around: it waits, shows its own
-  address, and the sending device pushes to it. On the upload screen press Enter
-  and type the waiting device's address.
-
-Either direction moves the same save; use whichever one your devices allow. The
-address you type is remembered until you close the game.
-
-Everything inside the save crosses unchanged: progress, both loadouts, cash,
-difficulty, cheat settings, and an Endless run's whole state. The slot number and
-the name are the only things the receiving device decides. A one-player save
-lands on the one-player page, and a two-player save on the two-player page.
+The save contents, including an Endless run, cross unchanged. The receiving
+device chooses only the slot and name. One-player and two-player saves stay on
+their original pages.
 
 Custom weapons stay where they are. A save that used one plays with whatever
 design the receiving device holds.
 
-iPhone and iPad need the push direction. iOS answers connections other devices
-open but will not open one itself without the local network permission, and it
-reserves broadcast for apps carrying an Apple entitlement this build does not
-have, so searching finds nothing there. Choose **Wait for a sender** on the iOS
-device and send to the address it shows.
+iPhone and iPad cannot use network search in this build. Choose **Wait for a
+sender** on the iOS device and send to the address it shows.
+
+Upload and Download appear only on the title screen's Load Game menu, not while
+an online session is running.
 
 ## Files and logs
 

@@ -43,18 +43,13 @@
 
 #ifdef WITH_NETWORK
 
-/* Transfers run on their own UDP port so an offered save is never mistaken for a joinable game,
- * and so a machine can host a game and share a save without the two sockets colliding. Open this
- * port alongside the game port when a firewall asks. */
+// Separate from the game-session port.
 #define SAVE_XFER_PORT   1332
 
-/* Bumped when the payload or any packet below changes meaning. Both sides carry it in every
- * packet and ignore anything that disagrees, so a mixed-version pair finds nothing rather than
- * writing a record it cannot read. */
+// Bump when the payload or packet semantics change.
 #define SAVE_XFER_VERSION 1
 
-/* Payload: one packed save record, the slot's Endless half if it has one, and the two facts the
- * receiver cannot derive from the record itself. Fixed offsets, little endian. */
+// Fixed-offset, little-endian header. The save record and Endless text follow it.
 #define SX_MAGIC         0    /* 4: "OTSV"                                              */
 #define SX_VERSION       4    /* 2: SAVE_XFER_VERSION                                   */
 #define SX_FLAGS         6    /* 1: bit 0 set for a two-player slot                     */
@@ -68,8 +63,7 @@
 
 static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
-/* Chunk header, the shape network.c already uses for custom weapons and Endless runs. The
- * generation retires a stale stream when a receiver comes back for a second transfer. */
+// A generation separates consecutive transfers from stale chunks.
 #define SXC_TYPE      0    /* 2 */
 #define SXC_VERSION   2    /* 2 */
 #define SXC_GEN       4    /* 2 */
@@ -79,8 +73,7 @@ static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 #define SXC_HDR      12
 #define SXC_PAYLOAD  (NET_PACKET_SIZE - SXC_HDR)
 
-/* Offer reply: everything the pick list shows, at fixed offsets so a short or padded packet
- * cannot shift a field. */
+// Fixed-width offer fields keep short or padded packets from shifting data.
 #define SXR_TYPE       0    /* 2  */
 #define SXR_VERSION    2    /* 2  */
 #define SXR_PORT       4    /* 2  */
@@ -101,18 +94,16 @@ static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
 #define SX_XCENTER  (320 / 2)
 
-/* Every line these screens centre on the 320px menu field. Named at file scope so
- * qa_test_save_transfer_strings can measure each against the budget: a line wider than the
- * field runs off both edges at once, which the source does not show.  */
+// Tests measure these proportional-font strings against the 320px menu field.
 #define SX_LINE_MAX_PX 300
 
 static const char sxWaitingForDownload[] = "Waiting for a receiver...";
-static const char sxUploadKeys        [] = "Enter to send, Esc to cancel";
+static const char sxUploadKeys        [] = "Enter to custom send, Esc to cancel";
 static const char sxSending           [] = "Sending...";
 static const char sxThisMachine       [] = "This machine:";
 static const char sxSearching         [] = "Searching the local network...";
 static const char sxNothingAnswered   [] = "Nothing on this network answered.";
-static const char sxDownloadKeys      [] = "Enter to download, Esc to go back";
+static const char sxDownloadKeys      [] = "Esc to go back";
 static const char sxRowTypedAddress   [] = "Enter an address...";
 static const char sxRowWaitForSender  [] = "Wait for a sender";
 static const char sxAskingAddress     [] = "Asking that address...";
@@ -136,7 +127,7 @@ typedef struct
 }
 SaveXferOffer;
 
-// The downloaded record, held between the transfer and the slot the player picks for it.
+// Held until the player chooses a destination slot.
 static struct
 {
 	bool            valid;
@@ -148,15 +139,11 @@ static struct
 }
 save_xfer_pending;
 
-/* Last address typed into the pick list, kept for the rest of the session so a second transfer
- * between the same two machines is one Enter. */
+// Remember the last typed address for this process.
 static char save_xfer_address[64];
 
 bool saveXferAvailable(void) { return true; }
 
-/* Transfers happen outside a session, so nothing else is writing the network log while they run.
- * Every outcome lands here, because a transfer that finds nobody looks identical from the menu
- * whether the packets were refused, lost, or simply unanswered. */
 static void saveXferLog(const char *what, const char *detail)
 {
 	char line[192];
@@ -165,10 +152,9 @@ static void saveXferLog(const char *what, const char *detail)
 	crashlog_netlog_line("save transfer", line);
 }
 
-/* --- screen furniture ------------------------------------------------------------------- */
+/* Screen */
 
-/* The saved-games picture, so a transfer screen reads as part of the menu it was opened from.
- * Its palette leaves the 224..239 ramp fire-red; nothing here draws in that bank. */
+// The Load Game backdrop does not draw with the fire-red 224..239 palette ramp.
 static void saveXferBackdrop(const char *title)
 {
 	JE_loadPic(VGAScreen2, 2, false);
@@ -190,7 +176,6 @@ static void saveXferPresent(void)
 		limit_render_fps();
 }
 
-// Re-present the current frame with a live cursor while a socket loop waits.
 static void saveXferPoll(void)
 {
 	watchdog_heartbeat();
@@ -199,7 +184,6 @@ static void saveXferPoll(void)
 	saveXferPresent();
 }
 
-// Wait for a key, a button, or mouse motion; true means the mouse moved.
 static bool saveXferWaitForInput(void)
 {
 	const Uint16 startMouseX = mouse_x;
@@ -218,8 +202,7 @@ static bool saveXferWaitForInput(void)
 	}
 }
 
-/* Slot names are stored padded out to fourteen characters. The pad would push a centred line off
- * centre and open a gap in the middle of a list row, so every screen here draws the trimmed name. */
+// Slot names are padded to fourteen characters on disk; draw them without that padding.
 static void saveXferTrimName(char *dst, size_t size, const char *src)
 {
 	while (*src == ' ')
@@ -232,7 +215,6 @@ static void saveXferTrimName(char *dst, size_t size, const char *src)
 		dst[--n] = '\0';
 }
 
-// One line of feedback over the backdrop, held until the player acknowledges it.
 static void saveXferNotice(const char *title, const char *line1, const char *line2)
 {
 	saveXferBackdrop(title);
@@ -253,9 +235,9 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 	fade_black(10);
 }
 
-/* --- payload --------------------------------------------------------------------------- */
+/* Payload */
 
-// Pack one slot for the wire. Returns 0 for an empty slot or a record with no room to encode.
+// Return 0 for an empty slot or an encoding failure.
 static size_t saveXferPack(Uint8 *out, JE_byte slot)
 {
 	if (slot < 1 || slot > SAVE_FILES_NUM || saveFiles[slot - 1].level == 0)
@@ -269,9 +251,7 @@ static size_t saveXferPack(Uint8 *out, JE_byte slot)
 	out[SX_SEAT] = (Uint8)save_slot_online_player(slot);
 	save_record_pack(&out[SX_RECORD], &saveFiles[slot - 1]);
 
-	/* Serializing returns nothing both for a slot holding no run and for a run that would not
-	 * encode. Sending the second as the first would quietly hand over a save with its Endless
-	 * half missing, so a slot that has a run and cannot encode it sends nothing at all. */
+	// Never send an Endless save without its run record.
 	const size_t endlessLen = endlessSlotSerialize(slot, &out[SX_ENDLESS], ENDLESS_RUN_WIRE_MAX);
 	if (endlessLen == 0 && endlessSlotHasRun(slot))
 		return 0;
@@ -281,7 +261,6 @@ static size_t saveXferPack(Uint8 *out, JE_byte slot)
 	return SX_ENDLESS + endlessLen;
 }
 
-// Validate a received payload and arm it for the slot picker.
 static bool saveXferUnpack(const Uint8 *buf, size_t len)
 {
 	if (buf == NULL || len < SX_ENDLESS)
@@ -326,8 +305,6 @@ void saveXferPendingClear(void)
 	memset(&save_xfer_pending, 0, sizeof(save_xfer_pending));
 }
 
-/* The whole point of the transfer: the record lands byte for byte as it left, so the copy plays
- * out identically. Only the slot it sits in and the name over it are the receiver's. */
 bool saveXferPendingApply(JE_byte slot, const char *name)
 {
 	if (!save_xfer_pending.valid || slot < 1 || slot > SAVE_FILES_NUM || name == NULL)
@@ -337,8 +314,7 @@ bool saveXferPendingApply(JE_byte slot, const char *name)
 	SDL_strlcpy(saveFiles[slot - 1].name, name, sizeof(saveFiles[slot - 1].name));
 	save_slot_set_online_player(slot, save_xfer_pending.seat);
 
-	// A record with no run has to clear whatever run the target slot held, or the two halves
-	// of the slot would describe different games.
+	// Do not leave the target slot's old Endless half attached to a Campaign save.
 	if (save_xfer_pending.endlessLen == 0
 	    || !endlessSlotAdopt(slot, save_xfer_pending.endless, save_xfer_pending.endlessLen))
 		endlessSlotClear(slot);
@@ -347,9 +323,8 @@ bool saveXferPendingApply(JE_byte slot, const char *name)
 	return true;
 }
 
-/* --- socket ---------------------------------------------------------------------------- */
+/* Socket */
 
-// Fill an offer reply describing `slot` for the pick list.
 static void saveXferFillReply(Uint8 *data, JE_byte slot)
 {
 	memset(data, 0, SXR_LEN);
@@ -366,9 +341,7 @@ static void saveXferFillReply(Uint8 *data, JE_byte slot)
 	SDL_strlcpy((char *)&data[SXR_SENDER], network_player_name, NET_NAME_MAX + 1);
 }
 
-/* False means the datagram did not leave this machine. A single loss is normal and the retries
- * above cover it, but a send that never succeeds is the signature of a platform or firewall
- * refusing local network access outright, which is worth telling the player apart from silence. */
+// False reports a local send failure.
 static bool saveXferSendTo(UDPsocket sock, UDPpacket *packet, const IPaddress *to, int len)
 {
 	packet->address = *to;
@@ -376,9 +349,7 @@ static bool saveXferSendTo(UDPsocket sock, UDPpacket *packet, const IPaddress *t
 	return SDLNet_UDP_Send(sock, -1, packet) > 0;
 }
 
-/* One round of offer probes: global broadcast plus each interface's directed /24. False means not
- * one of them left the machine, which is what iOS looks like: it reserves broadcast for apps
- * carrying Apple's multicast entitlement. */
+// Probe global broadcast and each interface's directed /24.
 static bool saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
 {
 	IPaddress local[8];
@@ -395,7 +366,7 @@ static bool saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
 		if (local[i].host == 0)
 			continue;
 
-		// Addresses are network byte order, so the host part is the top byte as stored.
+		// `host` is already in network byte order.
 		to.host = local[i].host | SDL_SwapBE32(0x000000ffu);
 		sent |= saveXferSendTo(sock, probe, &to, len);
 	}
@@ -403,7 +374,6 @@ static bool saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
 	return sent;
 }
 
-// True when this packet is one of ours and speaks our version. Every minLen covers the header.
 static bool saveXferIsOurs(const UDPpacket *packet, Uint16 type, int minLen)
 {
 	return packet->len >= minLen
@@ -411,9 +381,8 @@ static bool saveXferIsOurs(const UDPpacket *packet, Uint16 type, int minLen)
 	    && SDLNet_Read16(&packet->data[2]) == SAVE_XFER_VERSION;
 }
 
-/* --- upload ---------------------------------------------------------------------------- */
+/* Upload */
 
-// The addresses to read out to the other player, drawn under the waiting message.
 static void saveXferDrawLocalAddresses(int y)
 {
 	IPaddress addr[8];
@@ -439,8 +408,7 @@ static void saveXferDrawLocalAddresses(int y)
 	}
 }
 
-/* Stream the payload to one puller and wait for its acknowledgement. Delivery of the last chunk
- * is not proof the other side assembled the whole thing, so the receiver says so itself. */
+// Repeat the stream until the receiver acknowledges the complete generation.
 static bool saveXferSendPayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                 const IPaddress *to, const Uint8 *payload, size_t total, Uint16 gen,
                                 bool *cancelled)
@@ -452,8 +420,7 @@ static bool saveXferSendPayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 
 	while (SDL_GetTicks() - started < SX_TRANSFER_MS)
 	{
-		// Resend the whole stream while the acknowledgement is outstanding: a receiver that
-		// lost one chunk is waiting for exactly that chunk to come round again.
+		// A receiver missing one chunk waits for it to come around again.
 		if (first || SDL_GetTicks() - sentAt >= SX_PULL_MS)
 		{
 			for (Uint32 c = 0; c < chunks; ++c)
@@ -493,8 +460,7 @@ static bool saveXferSendPayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 	return false;
 }
 
-/* The upload screen, redrawn from scratch: the address field and each new probe land on top of it.
- * `note` is a transient line under the addresses, or NULL. */
+// `note` is a transient status line under the addresses.
 static void saveXferUploadScreen(const char *saveName, const char *note)
 {
 	saveXferRestore();
@@ -509,9 +475,7 @@ static void saveXferUploadScreen(const char *saveName, const char *note)
 	saveXferPresent();
 }
 
-/* Push the save at an address the player types, rather than waiting to be asked. This is the way
- * round that works when the other machine cannot open a local network connection of its own but
- * can still answer one, which is where iOS sits without Apple's local network permission. */
+// Push to a receiver that cannot discover or initiate the transfer itself.
 static bool saveXferSendToAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                   const Uint8 *payload, size_t total, Uint16 gen,
                                   const char *saveName, bool *cancelled)
@@ -523,7 +487,7 @@ static bool saveXferSendToAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 		return false;
 	}
 
-	// Both machines use the same fixed port, so a pasted ":port" says nothing new.
+	// Ignore a pasted port; transfers always use SAVE_XFER_PORT.
 	char host[sizeof(save_xfer_address)];
 	SDL_strlcpy(host, save_xfer_address, sizeof(host));
 	char *const colon = strrchr(host, ':');
@@ -550,7 +514,6 @@ void saveXferUpload(JE_byte slot)
 	if (total == 0)
 	{
 		free(payload);
-		// The caller rejects an empty slot, so reaching here means the record would not encode.
 		saveXferNotice("Upload Save", "That save could not be prepared to send.", NULL);
 		return;
 	}
@@ -571,7 +534,6 @@ void saveXferUpload(JE_byte slot)
 		if (sock) SDLNet_UDP_Close(sock);
 		SDLNet_Quit();
 		free(payload);
-		// The port is the one thing a second copy of the game on this machine takes away.
 		saveXferNotice("Upload Save", "Could not open the transfer port.",
 		               "Another copy may already be sharing.");
 		return;
@@ -584,7 +546,7 @@ void saveXferUpload(JE_byte slot)
 	saveXferUploadScreen(offeredName, NULL);
 	fade_palette(colors, 10, 0, 255);
 
-	// Whatever opened this screen is still latched; a fresh press is what cancels it.
+	// Discard the press that opened this screen.
 	service_SDL_events(true);
 
 	bool sent = false;
@@ -603,9 +565,7 @@ void saveXferUpload(JE_byte slot)
 				saveXferFillReply(out->data, slot);
 				saveXferSendTo(sock, out, &in->address, SXR_LEN);
 
-				/* Name whoever asked. Without it a device that cannot be reached back looks
-				 * exactly like one whose packets never arrived, and only this side can tell
-				 * those apart. */
+				// Show that the probe arrived even if the reply cannot get back.
 				const Uint32 host = SDL_SwapBE32(in->address.host);
 				snprintf(asked, sizeof(asked), "Asked by %u.%u.%u.%u", (host >> 24) & 0xff,
 				         (host >> 16) & 0xff, (host >> 8) & 0xff, host & 0xff);
@@ -657,10 +617,9 @@ void saveXferUpload(JE_byte slot)
 	}
 }
 
-/* --- download -------------------------------------------------------------------------- */
+/* Download */
 
-/* Read one offer reply into a list row. The strings are fixed-width fields from another machine,
- * so each is copied by a bounded run and terminated here rather than trusted to end. */
+// Copy fixed-width wire strings into zeroed, bounded fields.
 static void saveXferReadReply(const UDPpacket *in, SaveXferOffer *o)
 {
 	memset(o, 0, sizeof(*o));
@@ -677,8 +636,7 @@ static void saveXferReadReply(const UDPpacket *in, SaveXferOffer *o)
 	memcpy(o->sender, &in->data[SXR_SENDER], sizeof(o->sender) - 1);
 }
 
-/* Ask one named machine directly, for a network whose broadcasts do not carry. The answer is the
- * same reply the volley collects, so the row shows the save's name before anything is pulled. */
+// Ask one address directly and collect the same reply used by discovery.
 static bool saveXferProbeAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                  const char *host, SaveXferOffer *result)
 {
@@ -718,7 +676,6 @@ static bool saveXferProbeAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 	return false;
 }
 
-// Probe the network and collect what answers. Returns how many distinct machines replied.
 static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, SaveXferOffer *offers)
 {
 	SDLNet_Write16(PACKET_SAVE_OFFER, &out->data[0]);
@@ -732,7 +689,7 @@ static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, Sav
 
 	while (SDL_GetTicks() - started < SX_SEARCH_MS && found < SX_MAX_OFFERS)
 	{
-		// A probe is one datagram; repeat the round so a single loss cannot empty the list.
+		// Retry discovery to tolerate packet loss.
 		if (SDL_GetTicks() - volleyAt >= SX_VOLLEY_MS)
 		{
 			volleyAt = SDL_GetTicks();
@@ -747,7 +704,6 @@ static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, Sav
 			SaveXferOffer answered;
 			saveXferReadReply(in, &answered);
 
-			// One machine answers once per probe we sent it, so drop the repeats.
 			bool duplicate = false;
 			for (int i = 0; i < found; ++i)
 			{
@@ -770,7 +726,6 @@ static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, Sav
 	return found;
 }
 
-// One row of the pick list: who is sharing, what it is called, and where it left off.
 static void saveXferOfferLine(char *line, size_t size, const SaveXferOffer *o)
 {
 	char where[32];
@@ -779,7 +734,6 @@ static void saveXferOfferLine(char *line, size_t size, const SaveXferOffer *o)
 	else
 		snprintf(where, sizeof(where), "Episode %u", o->episode);
 
-	// The name arrives trimmed, but it came off another machine, so trim it here as well.
 	char saveName[sizeof(o->saveName)];
 	saveXferTrimName(saveName, sizeof(saveName), o->saveName);
 
@@ -787,15 +741,11 @@ static void saveXferOfferLine(char *line, size_t size, const SaveXferOffer *o)
 	         saveName, where);
 }
 
-/* Let the player choose where the save comes from. `offers` holds `count` machines that answered
- * the broadcast plus one spare row, which the typed-address item fills by asking an address
- * directly. The last row instead sets *waitForPush and lets the other machine drive, which is the
- * only route on a platform that will not let this one open a local network connection.
- * Returns NULL if the player backed out. */
+/* Select a discovered or typed source. The passive row sets `waitForPush`; cancellation and
+ * passive mode both return NULL. */
 static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                               SaveXferOffer *offers, int count, bool *waitForPush)
 {
-	// Both fixed rows sit below whatever answered, so they stay put as machines appear above.
 	const int typedRow = count;
 	const int waitRow = count + 1;
 	const int rows = count + 2;
@@ -805,7 +755,6 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 	char status[64];
 	status[0] = '\0';
 
-	// Nothing answered leaves the two fixed rows, clear of the line that says so.
 	const int yItems = (count > 0) ? 60 : 96;
 	const int dyItems = 18;
 	const int hItem = 13;
@@ -839,8 +788,7 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 180, sxDownloadKeys,
 		                    normal_font, centered, 15, -5, false, 2);
 
-		// Drop whatever opened this screen: the press that started the search stays latched
-		// through the whole discovery window and would read here as an instant pick.
+		// Discard the press that started discovery.
 		service_SDL_events(true);
 		saveXferPresent();
 
@@ -917,11 +865,10 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 		if (!networkTextEntry("Download Save", "Sender address:", save_xfer_address,
 		                      sizeof(save_xfer_address), networkFilterAddress, false))
 		{
-			// The field drew over the backdrop; the loop above redraws the list either way.
 			continue;
 		}
 
-		// Both machines use the same fixed port, so a pasted ":port" says nothing new.
+		// Ignore a pasted port; transfers always use SAVE_XFER_PORT.
 		char host[sizeof(save_xfer_address)];
 		SDL_strlcpy(host, save_xfer_address, sizeof(host));
 		char *const colon = strrchr(host, ':');
@@ -950,13 +897,8 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 	}
 }
 
-/* Assemble a payload out of the chunks arriving on `sock`.
- *
- * With an `offer`, this machine drives: it asks that address for the save and keeps asking until
- * the stream starts. With `offer` NULL it is the passive half of a push, waiting for a sender that
- * a person still has to set going on the other machine, so nothing is sent and the deadline does
- * not start until the first chunk lands. Either way the acknowledgement goes back to whoever the
- * chunks actually came from. */
+/* Pull from `offer`, or wait passively when it is NULL. A passive wait starts its deadline with
+ * the first chunk. */
 static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                    const SaveXferOffer *offer, bool *cancelled)
 {
@@ -985,7 +927,6 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 
 	while (!done)
 	{
-		// A wait has no deadline of its own; the transfer clock starts with the first chunk.
 		if ((asking || have > 0) && SDL_GetTicks() - started >= SX_TRANSFER_MS)
 			break;
 
@@ -1011,10 +952,10 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 			    || (size_t)chunkCount * SXC_PAYLOAD > SX_MAX)
 				continue;
 
-			// A new generation is a fresh stream; whatever was half-assembled is stale.
+			// A new generation replaces any partial stream.
 			if (buf == NULL || gen != packetGen || count != chunkCount)
 			{
-				// The wait's clock runs from here, and the answer goes where the chunks came from.
+				// The fresh stream owns the deadline and reply address.
 				started = SDL_GetTicks();
 				to = in->address;
 
@@ -1047,8 +988,7 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 			{
 				done = saveXferUnpack(buf, total);
 
-				// Answer either way: a payload we could not use is still one we received, and
-				// the sender resends the whole stream until something answers.
+				// Stop the resend even if payload validation failed.
 				SDLNet_Write16(PACKET_SAVE_ACK,   &in->data[0]);
 				SDLNet_Write16(SAVE_XFER_VERSION, &in->data[2]);
 				SDLNet_Write16((Uint16)gen,       &in->data[4]);
@@ -1071,8 +1011,7 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 	free(buf);
 	free(seen);
 
-	// Not one request left the machine: the platform or a firewall refused the socket outright,
-	// which is a different thing from asking and hearing nothing back.
+	// Distinguish refused sends from an unanswered peer.
 	if (!done && asking && !anySent)
 		saveXferLog("every request refused", SDLNet_GetError());
 
@@ -1101,8 +1040,6 @@ bool saveXferDownload(void)
 		return false;
 	}
 
-	// Draw the searching frame first: the probe runs for its whole window and is re-presented
-	// from saveXferPoll while it does.
 	saveXferBackdrop("Download Save");
 	saveXferRestore();
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 90, sxSearching,
@@ -1110,7 +1047,6 @@ bool saveXferDownload(void)
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
 
-	// One spare row past the broadcast's own limit: the pick list fills it from a typed address.
 	SaveXferOffer offers[SX_MAX_OFFERS + 1];
 	const int count = saveXferFindOffers(sock, out, in, offers);
 
@@ -1119,7 +1055,6 @@ bool saveXferDownload(void)
 	bool waitForPush = false;
 	bool portBusy = false;
 
-	// The list is shown even when nothing answered: both of its fixed rows still apply.
 	const SaveXferOffer *const pick = saveXferPickOffer(sock, out, in, offers, count, &waitForPush);
 
 	if (pick != NULL)
@@ -1133,8 +1068,7 @@ bool saveXferDownload(void)
 	}
 	else if (waitForPush)
 	{
-		/* A push arrives at the well-known port, so trade the ephemeral socket for that one. The
-		 * search is over by now and nothing else needs the old one. */
+		// Passive transfers need the well-known port instead of the discovery socket.
 		SDLNet_UDP_Close(sock);
 		sock = SDLNet_UDP_Open(SAVE_XFER_PORT);
 		if (sock == NULL)
@@ -1163,7 +1097,6 @@ bool saveXferDownload(void)
 	saveXferLog(got ? "download finished" : "download did not finish",
 	            waitForPush ? "waiting for a sender" : "asking a sender");
 
-	// Backing out is a decision, not a fault; only a real failure is worth a notice.
 	if (portBusy)
 		saveXferNotice("Download Save", "Could not open the transfer port.",
 		               "Another copy may already be using it.");
@@ -1180,14 +1113,11 @@ bool saveXferDownload(void)
 	return got;
 }
 
-/* --- tests ----------------------------------------------------------------------------- */
+/* Tests */
 
-/* The payload codec, exercised without a socket: a record survives the round trip whole, and the
- * three ways a hostile or mismatched payload can arrive are all refused. */
 void qa_test_save_transfer(void)
 {
-	/* Centred text that outgrows the field runs off both edges, and neither the source nor a
-	 * character count shows it: the font is proportional and lives in tyrian.shp. */
+	// The font is proportional, so source length does not prove these lines fit.
 	static const char *const centred[] = {
 		sxWaitingForDownload, sxUploadKeys, sxSending, sxThisMachine, sxSearching,
 		sxNothingAnswered, sxDownloadKeys, sxRowTypedAddress, sxRowWaitForSender,
@@ -1202,8 +1132,6 @@ void qa_test_save_transfer(void)
 		qa_check(JE_textWidth(centred[i], normal_font) <= SX_LINE_MAX_PX, label);
 	}
 
-	/* Which interfaces these screens are willing to read out. Only the platforms with an
-	 * interface list run the enumeration, but the rule itself is checked everywhere. */
 	{
 		const unsigned int up = 0x0001u, broadcast = 0x0002u, loopback = 0x0008u,
 		                   pointopoint = 0x0010u, running = 0x0040u;

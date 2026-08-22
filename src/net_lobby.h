@@ -24,9 +24,8 @@
  * state clean and returns to the title screen. */
 bool networkLobby(void);
 
-/* Blocking single-line text field on the standard menu backdrop. `filter` returns true for the
- * characters the field accepts, and `numeric` asks for a keypad on platforms whose system
- * keyboard has one. False means the player cancelled; `buf` is then unchanged. */
+/* Show a blocking text field on the standard menu backdrop. `numeric` requests a keypad where
+ * available. On cancellation, return false and leave `buf` unchanged. */
 bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
                       bool (*filter)(char), bool numeric);
 

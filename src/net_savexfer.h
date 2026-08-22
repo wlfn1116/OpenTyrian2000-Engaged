@@ -21,32 +21,21 @@
 #include "config.h"
 #include "opentyr.h"
 
-/* Copying a save slot between two machines on the same network. The sending machine offers one
- * slot; the receiving machine finds it, pulls it, and writes it into a slot of its own choosing
- * under a name of its own choosing. Everything else in the record crosses unchanged.
- *
- * Both screens are blocking and own their own socket, so neither may be entered from a live
- * session; the load screen offers them only on the title screen's own page. */
+/* Blocking LAN save-transfer screens. They own their sockets and must not run during a live
+ * network session. */
 
-// Whether this build can transfer saves at all. False without network support compiled in.
 bool saveXferAvailable(void);
 
-// Offer `slot` until another machine takes it or the player backs out.
 void saveXferUpload(JE_byte slot);
 
-/* Pull a save from a machine offering one. True arms the pending record: the caller then runs the
- * save-slot picker and JE_operation writes it through saveXferPendingApply. */
+// A successful download remains pending until the caller opens the destination-slot picker.
 bool saveXferDownload(void);
 
-// The record waiting for a slot, or NULL when no download is pending.
 const JE_SaveFileType *saveXferPending(void);
 
-// Which load-screen page the pending record belongs to, taken from the slot it was sent from.
 bool saveXferPendingTwoPlayer(void);
 
-/* Write the pending record into `slot` under `name` and persist. Only the slot number and the
- * name differ from the machine that sent it. False when nothing is pending, which is every
- * ordinary save. */
+// Apply and persist the pending record. Return false when no download is pending.
 bool saveXferPendingApply(JE_byte slot, const char *name);
 
 void saveXferPendingClear(void);

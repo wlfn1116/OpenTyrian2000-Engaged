@@ -586,26 +586,19 @@ Touch layouts are expiring requests. Keep these rules together:
   outpost frame, before `JE_showVGA()`. Keep every scrolling outpost list in the
   first helper.
 
-`TouchGate` controls optional button groups; `gate_open()` applies the gates
-during layout construction. Include each gate's setting in `desired_signature()`
-so an idle screen repaints when it changes.
+`TouchGate` controls optional button groups. Include every gate setting in
+`desired_signature()` so idle screens repaint when a gate changes.
 
 Relative mouse mode is active only in a level. There a finger sets
 `mouse_pressed[0]`, so input waits after death must test that latch. Menus disable
 relative mode, allowing taps to satisfy ordinary mouse input.
 
 Queue touch-button keys until `push_joysticks_as_keyboard()`. Injecting a key
-inside the event pump loses it on screens that pump twice.
-
-Every screen that reads keys flushes once a frame, so a long gap since the last
-flush means nothing was listening: an animation, a fade, a session closing.
-`touch_ui_flush_keys()` drops whatever was queued across such a gap instead of
-banking it, or a run of presses arrives together on the next screen that flushes
-and walks several steps back at once. `JE_anyButton()` flushes too, so skippable
-animations and press-any-key waits can be answered by an on-screen button rather
-than only by tapping the screen itself. One-shot actions use
-a release latch instead of `wait_noinput()`, which blocks presentation while a
-finger remains down.
+inside the event pump loses it on screens that pump twice. Drop queued keys after
+a gap in flushing; the next screen must not receive input collected during a
+fade or animation. `JE_anyButton()` also flushes so touch buttons work on
+press-any-key screens. One-shot actions use a release latch because
+`wait_noinput()` blocks presentation while a finger remains down.
 
 Composite each button into a texture before applying opacity; drawing
 overlapping glyph primitives directly would blend some pixels more than once.
@@ -910,71 +903,41 @@ or later episode reached by the same run. Store the Credit rule beside the row.
 
 ### LAN save transfer
 
-`net_savexfer.c` copies one save slot between two machines. It owns its socket
-and never touches the session transport, so no game state is involved on either
-side. UDP port 1332, packet types `PACKET_SAVE_OFFER` through `PACKET_SAVE_ACK`,
-and `SAVE_XFER_VERSION` in every packet.
+`net_savexfer.c` uses a blocking socket on UDP port 1332, separate from the game
+session. Offer it only from the title screen's Load Game menu; an active session
+cannot service its keep-alive while the transfer UI waits.
 
-The payload is a 12-byte header, the 97-byte packed record, and the slot's
-Endless text when it has one. The header carries the two facts the record cannot:
-the page the slot came from and its `online_seat`. Chunking follows the custom
-weapon and Endless run shape; the whole stream repeats until the receiver
-acknowledges it.
+Wire rules:
 
-The download pick list always carries a trailing typed-address row, so a network
-that drops broadcasts still has a route. It sends the same `PACKET_SAVE_OFFER`
-directly to the address and waits for the ordinary reply, which means the row
-shows the save's name before anything is pulled and a wrong address fails at the
-probe rather than as a transfer timeout. The field is `networkTextEntry`,
-exported from `net_lobby.c` so both screens share its handheld keyboard and paste
-handling. A pasted `:port` suffix is stripped: both machines use the same fixed
-port.
+- Every packet carries `SAVE_XFER_VERSION`. Packet types run from
+  `PACKET_SAVE_OFFER` through `PACKET_SAVE_ACK`.
+- The payload contains a 12-byte header, the 97-byte packed save record, and the
+  slot's Endless text. The header supplies the save page and `online_seat`.
+- Chunks repeat until the receiver acknowledges the complete generation.
+- A pending download bypasses `JE_saveGame`, which would capture the receiver's
+  live globals. It copies the record and Endless slot cache directly. A record
+  without an Endless run must clear the target slot's old Endless half.
+- The receiving machine chooses only the destination slot and name. Custom
+  weapon designs stay in `opentyrian.cfg` and are not transferred.
 
-The receiver copies the record into the chosen slot with
-`saveXferPendingApply`. That path deliberately bypasses `JE_saveGame`: capturing
-live globals would rebuild the record from this machine's session instead of
-copying the one that arrived. `endlessSlotSerialize` and `endlessSlotAdopt` move
-the Endless half the same way, straight through the slot cache. Only the slot
-number and the name differ from the machine that sent it.
+Discovery sends both global broadcast and directed `/24` probes. The typed
+address row uses the normal offer reply before pulling; strip a pasted `:port`
+because the transfer port is fixed.
 
-Transfers work in both directions because one of them is the only route on iOS.
-The receiver drives by default: it asks an address and pulls. **Wait for a sender**
-turns that around, binding the well-known port and letting the sender push, and
-`saveXferReceivePayload` serves both from one loop (a NULL offer means wait, send
-nothing, and start the deadline at the first chunk rather than at entry).
+Either side may initiate the transfer. A normal download pulls from an offer.
+**Wait for a sender** binds port 1332 and accepts a push; its transfer deadline
+starts with the first chunk, not when the waiting screen opens.
 
-That matters because of how iOS is gated. `NSLocalNetworkUsageDescription` in
-`ios/Info.plist.in` is what lets the system ask for local network permission;
-without the key iOS never asks and drops outbound local traffic silently, which
-reads as a working socket that finds nobody. Broadcast needs Apple's
-`com.apple.developer.networking.multicast` entitlement on top, which this build
-does not carry. What iOS never blocks is answering a connection another machine
-opened, which is why hosting a game there has always worked. Pushing to a waiting
-iOS device therefore works whatever the permission says. macOS 15 prompts the same
-way, so `macos/Info.plist.in` carries the key too.
+iOS local-network access needs `NSLocalNetworkUsageDescription`. Broadcast also
+needs Apple's multicast entitlement, which this build does not have, so the push
+path must work without discovery. macOS 15 uses the same permission description.
 
-`network_local_addresses` reads the interface list through `getifaddrs` wherever
-one exists, keeping what `network_interface_carries_lan` accepts: up, running, and
-broadcast capable, and neither loopback nor point-to-point. SDL_net's own
-enumeration returns loopback and whatever tunnels and cellular interfaces are up,
-and on Apple platforms it can miss Wi-Fi outright: an iPhone reported 127.0.0.1
-plus two carrier 10.x addresses while the LAN saw it at 192.168.0.225. Both
-callers need the address another machine can reach, so a wrong list is not
-cosmetic. Android reaches the same path through `__linux__`; `getifaddrs` needs
-API 24 and `minSdk` is 26.
-
-The interface flags have module-local `NET_IFF_*` names because the desktop,
-Android, and console builds all compile as strict C99, where glibc keeps `IFF_*`
-behind `__USE_MISC` and Darwin behind `_DARWIN_C_SOURCE`. `ifa_flags` is visible
-either way. A compile-time assert ties the local values to the platform's
-wherever those do come through, and naming them here is also what lets the rule
-be compiled and tested on Windows and the consoles, which have no interface list
-to read.
-
-`JE_loadScreen` offers the two rows when `net2p` and `saving` are both false,
-which is the title screen's own page. An online session uses the same screen and
-its keep-alive cannot survive a blocking socket wait. Custom weapon designs live
-in `opentyrian.cfg` rather than in a slot, so they do not travel.
+On platforms with `getifaddrs`, `network_local_addresses` accepts only IPv4
+interfaces that are up, running, broadcast-capable, and neither loopback nor
+point-to-point. This avoids tunnel and carrier addresses and SDL_net omitting
+Wi-Fi on Apple devices. Android supports the call because its minimum API is 26.
+Strict C99 can hide the platform `IFF_*` macros, so the module uses checked
+`NET_IFF_*` values.
 
 ### Destruct and ENGAGE modes
 

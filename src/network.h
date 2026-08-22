@@ -128,8 +128,7 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_DISCOVER      0x50    // <>            broadcast: "any games out there?"
 #define PACKET_DISCOVER_REPLY 0x51   // version, port, name
 
-/* LAN save transfer (net_savexfer.c). Its own socket on its own port, so an offered save is never
- * mistaken for a joinable game and neither side needs a session. */
+// LAN save transfer uses its own socket and does not require a game session.
 #define PACKET_SAVE_OFFER    0x52    // version       broadcast: "anyone sharing a save?"
 #define PACKET_SAVE_REPLY    0x53    // version, port, slot summary
 #define PACKET_SAVE_PULL     0x54    // version       "send it"
@@ -250,8 +249,7 @@ NetworkHostInfo;
 // Local addresses in network byte order. Returns zero if none are available.
 int network_local_addresses(IPaddress *out, int max);
 
-/* Whether an interface with these flags reaches other machines on the local network. Exposed so
- * the rule is testable where there is no interface list to read. */
+// Exposed for tests on platforms without an interface list.
 bool network_interface_carries_lan(unsigned int flags);
 
 // Discover up to max LAN hosts with a short-lived socket. Do not call while a game socket is

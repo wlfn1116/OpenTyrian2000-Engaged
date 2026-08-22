@@ -418,8 +418,8 @@ void endlessReseedPlayers(Uint64 salt);
  * clears the slot's half through endlessSaveCaptureSlot before the file is written. */
 bool endlessSlotHasRun(JE_byte slot);
 void endlessSaveCaptureSlot(JE_byte slot);
-/* One stored slot's half, moved without going through the live run: a LAN save transfer copies
- * the record it finds rather than replaying it. Serialize returns 0 for a slot holding no run. */
+/* Access a slot's cached Endless record without touching the live run. Serialize returns 0 when
+ * the slot has no Endless record. */
 size_t endlessSlotSerialize(JE_byte slot, Uint8 *out, size_t max);
 bool   endlessSlotAdopt(JE_byte slot, const Uint8 *bytes, size_t len);
 void   endlessSlotClear(JE_byte slot);

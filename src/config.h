@@ -323,7 +323,7 @@ extern bool mirroredLayers; // over-panned layer edges continue as a flipped mir
 extern bool enemyBars;      // show a small health bar on damaged enemies
 // On-screen sidekick fire buttons. This control preference stays outside gameplay presets.
 extern bool touchSidekickButtons;
-// Optional arrow and Select buttons on ordinary touch menus.
+// Show navigation buttons on ordinary touch menus.
 extern bool touchNavButtons;
 // Touch-control alpha percentage. Zero also removes their hit targets.
 #define TOUCH_OPACITY_MAX     100

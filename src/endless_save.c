@@ -2112,9 +2112,7 @@ bool endlessRunAdopt(const Uint8 *bytes, size_t len)
 	return true;
 }
 
-/* A stored slot's Endless half as the same text opentyrian.sav holds. Unlike endlessRunSerialize
- * above these three never touch the live run: they move one slot's record, which is what copying
- * a save between machines needs (net_savexfer.c). */
+/* These operate on the slot cache, not the live run. The serialized form matches opentyrian.sav. */
 size_t endlessSlotSerialize(JE_byte slot, Uint8 *out, size_t max)
 {
 	if (slot < 1 || slot > SAVE_FILES_NUM || out == NULL || !endlessSlotCache[slot - 1].used)

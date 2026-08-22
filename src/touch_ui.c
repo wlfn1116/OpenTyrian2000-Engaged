@@ -655,12 +655,7 @@ void touch_ui_flush_keys(void)
 {
 	const Uint32 now_ms = SDL_GetTicks();
 
-	/* Every screen that reads keys flushes once a frame, so a long gap since the last flush
-	 * means nothing was listening: a title animation, a fade, a session tearing itself down.
-	 * Whatever was queued across that gap is dropped rather than banked, because banking it
-	 * delivers the whole run at once to whichever screen flushes next -- press Back a few
-	 * times during the logo and they all land when it ends, walking out of the game. What is
-	 * queued below belongs to this flush and goes out normally. */
+	// A gap means no screen was reading input. Do not carry those keys into the next screen.
 	const bool had_reader = fresh(last_flush_ms, now_ms);
 	last_flush_ms = now_ms;
 

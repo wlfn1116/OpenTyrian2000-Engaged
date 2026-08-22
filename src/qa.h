@@ -88,10 +88,8 @@ void qa_test_online_suite(void);
 // Lobby row, value, help and action strings against their width budgets (net_lobby.c).
 void qa_test_net_lobby_strings(void);
 
-// The LAN save transfer payload codec (net_savexfer.c).
 void qa_test_save_transfer(void);
 
-// The load screen's own help line, whose wrap point keeps it clear of the page arrow.
 void qa_test_load_screen_help(void);
 // The Relaxed death prompt's rows and widths against the choice enum (mainint.c).
 void qa_test_endless_death_menu(void);

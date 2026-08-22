@@ -72,8 +72,7 @@
 #include <assert.h>
 #include <stdlib.h>
 
-/* Reading the interface list directly, where the platform keeps one. See
- * network_local_addresses for why SDL_net's own enumeration is not enough. */
+// SDL_net may omit the LAN interface; use the platform list where available.
 #if defined(WITH_NETWORK) && (defined(__APPLE__) || defined(__linux__)) \
     && !defined(__SWITCH__) && !defined(__vita__)
 #define NET_HAVE_IFADDRS 1
@@ -82,18 +81,15 @@
 #include <netinet/in.h>
 #endif
 
-/* Interface flags, under this module's own names because the platform's are not always in reach:
- * the desktop, Android, and console builds all compile as strict C99, where glibc keeps IFF_*
- * behind __USE_MISC and Darwin behind _DARWIN_C_SOURCE. `ifa_flags` itself is visible either way,
- * and these values have been fixed since 4.3BSD. Naming them here also lets the rule below be
- * compiled and tested on platforms that have no interface list at all. */
+/* Strict C99 hides IFF_* on some targets. These BSD values are checked below when the platform
+ * macros are visible. */
 #define NET_IFF_UP          0x0001u
 #define NET_IFF_BROADCAST   0x0002u
 #define NET_IFF_LOOPBACK    0x0008u
 #define NET_IFF_POINTOPOINT 0x0010u
 #define NET_IFF_RUNNING     0x0040u
 
-#ifdef IFF_UP   // where the real ones did come through, they have to agree
+#ifdef IFF_UP
 SDL_COMPILE_TIME_ASSERT(net_iff_up, NET_IFF_UP == IFF_UP);
 SDL_COMPILE_TIME_ASSERT(net_iff_broadcast, NET_IFF_BROADCAST == IFF_BROADCAST);
 SDL_COMPILE_TIME_ASSERT(net_iff_loopback, NET_IFF_LOOPBACK == IFF_LOOPBACK);
@@ -101,9 +97,6 @@ SDL_COMPILE_TIME_ASSERT(net_iff_pointopoint, NET_IFF_POINTOPOINT == IFF_POINTOPO
 SDL_COMPILE_TIME_ASSERT(net_iff_running, NET_IFF_RUNNING == IFF_RUNNING);
 #endif
 
-/* Whether an interface with these flags can carry traffic to another machine on the local network.
- * Loopback reaches nobody. A point-to-point link is a tunnel or the cellular interface, which is
- * how an iPhone came to report two carrier 10.x addresses while the LAN saw it elsewhere. */
 bool network_interface_carries_lan(unsigned int flags)
 {
 	const unsigned int needed = NET_IFF_UP | NET_IFF_RUNNING | NET_IFF_BROADCAST;
@@ -4168,11 +4161,7 @@ int network_local_addresses(IPaddress *out, int max)
 		return 0;
 
 #ifdef NET_HAVE_IFADDRS
-	/* SDL_net returns loopback along with whatever tunnels and cellular interfaces happen to be
-	 * up, and on Apple platforms it can miss Wi-Fi outright: an iPhone reported 127.0.0.1 and two
-	 * carrier 10.x addresses while the LAN saw it at 192.168.0.225. Both uses here need the
-	 * address another machine can reach, so read the list and drop what cannot carry LAN traffic.
-	 * A point-to-point link is a tunnel or the cellular interface; neither is the local network. */
+	// Keep only addresses another machine on the LAN can reach.
 	struct ifaddrs *interfaces = NULL;
 	int found = 0;
 

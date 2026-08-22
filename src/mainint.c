@@ -798,8 +798,7 @@ bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p)
 	return !coop && !save_record_is_dual_arcade(rec);
 }
 
-/* The bottom line of the load screen. Exit sits at the left of it; on the title screen's own page
- * the two LAN save transfer actions share the line and take their turn in the up/down cycle. */
+// These are separate keyboard rows but share the bottom line on screen.
 enum
 {
 	LOAD_SLOT_ROWS = 11,
@@ -809,12 +808,10 @@ enum
 	LOAD_ROW_COUNT,
 };
 
-/* Where the help line starts and where the right-hand page arrow begins. A wrapped line whose
- * first segment reaches the arrow draws over it; qa_test_load_screen_help holds the budget. */
+// Keep Upload's first help line left of the page arrow.
 #define LOAD_HELP_X       103
 #define LOAD_HELP_BUDGET  (213 - LOAD_HELP_X)
 
-// Upload's line wraps here, which is what keeps its first segment clear of the arrow.
 static const char loadHelpUpload[] = "Choose a save to send to the other device.";
 static const char loadHelpUploadLine1[] = "Choose a save to send";
 
@@ -828,14 +825,11 @@ int JE_loadScreen(bool net2p, bool saving)
 
 	bool restart = true;
 
-	/* Save transfers are offered on the plain load menu only: this screen also serves live online
-	 * sessions, whose keep-alive cannot survive a blocking socket wait. */
+	// Transfer screens block, so an active network session cannot open them.
 	const bool xferOffered = !net2p && !saving && saveXferAvailable();
-	// Upload borrowed this list to choose which save to send.
 	bool uploadPick = false;
-	// A downloaded record is waiting for the slot this screen is being used to pick.
 	const bool xferSaving = saving && saveXferPending() != NULL;
-	// The page is fixed for an online session, and for a downloaded record by the slot it left.
+	// Downloads stay on their original one-player or two-player page.
 	const bool pinPage = net2p || xferSaving;
 
 	size_t playersIndex = net2p ? 1 : 0;
@@ -877,11 +871,9 @@ int JE_loadScreen(bool net2p, bool saving)
 
 		// Draw menu items.
 
-		// Only the plain load menu shows the transfer actions, and never while Upload is using
-		// the list as its own picker.
 		const size_t menuItemsCount = (xferOffered && !uploadPick) ? LOAD_ROW_COUNT : LOAD_ROW_EXIT + 1;
 
-		// The bottom row's three labels have their own widths, so the hit test needs their spans.
+		// Each label on the shared bottom line has its own hit box.
 		int xBottom[LOAD_ROW_COUNT - LOAD_ROW_EXIT] = { 0 };
 		int wBottom[LOAD_ROW_COUNT - LOAD_ROW_EXIT] = { 0 };
 
@@ -916,7 +908,7 @@ int JE_loadScreen(bool net2p, bool saving)
 			const int saveEpisode = save_effective_episode(saveFile);
 			const bool epLocked = net2p && !saving && !disabled &&
 			                      (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1]);
-			// Upload copies a slot rather than flying it, so no record is off limits there.
+			// Upload accepts every non-empty save type.
 			const bool typeLocked = !saving && !uploadPick && !disabled &&
 			                      !save_type_compatible(saveFile, slot, net2p);
 
@@ -959,8 +951,6 @@ int JE_loadScreen(bool net2p, bool saving)
 			blit_sprite2x2(VGAScreen, xRightControl, yControls, shopSpriteSheet, 281);
 
 		const char *helpLine = miscText[55];
-		// JE_helpBox wraps on a character budget. Upload's line is the only one drawn while the
-		// page arrows are up, and 25 carries it far enough right to run under the right-hand one.
 		unsigned int helpWidth = 25;
 		if (uploadPick)
 		{
@@ -1042,8 +1032,7 @@ int JE_loadScreen(bool net2p, bool saving)
 			}
 			else
 			{
-				// Find menu item that was hovered or clicked. The bottom row's items share a
-				// line, so each takes its own span there rather than the full row width.
+				// Bottom-line items use their label spans instead of the full row width.
 				if (mouse_x >= xMenuItem && mouse_x < xMenuItem + wMenuItem)
 				{
 					for (size_t i = 0; i < menuItemsCount; ++i)
@@ -1163,8 +1152,7 @@ int JE_loadScreen(bool net2p, bool saving)
 
 				fade_black(15);
 
-				/* The transfer arms the record; this screen then re-enters itself as the slot
-				 * picker for it, pinned to the page the record was sent from. */
+				// Keep the download pending while the recursive call picks its destination.
 				if (saveXferDownload())
 				{
 					JE_loadScreen(saveXferPendingTwoPlayer(), true);
@@ -1246,7 +1234,6 @@ int JE_loadScreen(bool net2p, bool saving)
 			}
 		}
 
-		// Every way out lands here: Upload's picker hands the list back, anything else leaves.
 		if (backOut)
 		{
 			if (uploadPick)
@@ -1267,8 +1254,7 @@ int JE_loadScreen(bool net2p, bool saving)
 	}
 }
 
-/* Upload's help line shares the bottom of the screen with the page arrows, so where it wraps is
- * load-bearing: its first segment has to stop short of the right-hand one. */
+// Pin the Upload help wrap before the page arrow.
 void qa_test_load_screen_help(void)
 {
 	const size_t line1 = sizeof(loadHelpUploadLine1) - 1;
@@ -7092,8 +7078,7 @@ bool str_pop_int(char *str, int *val)
 	return success;
 }
 
-/* Write `slot` under `name`: a downloaded record is copied in whole, and anything else is the
- * live game captured as usual. */
+// A pending download bypasses the usual live-game capture.
 static void save_slot_commit(JE_byte slot, const char *name)
 {
 	if (saveXferPendingApply(slot, name))
@@ -7128,8 +7113,7 @@ void JE_operation(JE_byte slot)
 	}
 	else if (slot % 11 != 0)
 	{
-		/* A downloaded record opens under the name it was sent with, so the field starts from
-		 * what the other machine called it rather than from whatever this slot held. */
+		// Seed a downloaded save with its sender's name.
 		const JE_SaveFileType *const xfer = saveXferPending();
 		const char *const nameSeed = xfer != NULL ? xfer->name : saveFiles[slot-1].name;
 

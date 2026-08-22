@@ -221,10 +221,6 @@ static bool lobbyWaitForInput(void)
 	}
 }
 
-// Blocking single-line prompt.  `filter` returns true for characters the field accepts, and
-// `numeric` asks for a keypad rather than a full keyboard where the platform has one.
-// Returns false if the player cancelled.  Shared with the save transfer screens, which draw the
-// same backdrop and want the same handheld keyboard and paste behaviour.
 bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
                       bool (*filter)(char), bool numeric)
 {

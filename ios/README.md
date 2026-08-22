@@ -92,36 +92,23 @@ how presents are paced here, only whether the FPS Cap is applied on top of them.
 
 ## Networking
 
-iOS 14 gates every packet an app sends to the local network behind a permission
-prompt. `Info.plist.in` carries `NSLocalNetworkUsageDescription`, which is what
-allows that prompt to appear; the first time online play or a save transfer opens
-a socket, iOS asks, and the answer is remembered under Settings > Privacy and
-Security > Local Network. Without the key the system never asks and the traffic
-is dropped with no error, so the game finds no host and no sender.
+iOS asks for local-network access when online play or a save transfer first opens
+a socket. The choice is under **Settings > Privacy & Security > Local Network**.
+`Info.plist.in` supplies the text for that prompt.
 
-Broadcast is a second, separate gate. Sending or receiving IP broadcast needs
-Apple's `com.apple.developer.networking.multicast` entitlement, which is granted
-on request against a paid developer account, and this build does not carry it.
-So the screens that search the network find nothing here.
-
-What does work in every case is being the machine that gets connected to, which is
-why hosting a game on iOS and joining it from a desktop needs nothing special.
-Prefer that shape:
+This build does not carry Apple's multicast entitlement, so broadcast search is
+unavailable. Use one of these paths instead:
 
 - **Online Multiplayer > Host Game** and join from the other device.
 - **Load Game > Download > Wait for a sender**, then push from the other device
   with **Upload**, Enter, and the address iOS shows.
 
-Opening the connection from iOS instead (**Join by IP Address**, or
-**Enter an address...**) works only once the local network permission is granted.
+After granting local-network access, **Join by IP Address** and **Enter an
+address...** also work. Waiting screens show the Wi-Fi address and omit
+loopback, carrier, and tunnel addresses.
 
-An address iOS shows has to be its Wi-Fi one. `network_local_addresses` reads the
-interface list and drops loopback and point-to-point links for that reason: left
-to SDL_net's enumeration an iPhone reports its carrier 10.x addresses, which no
-other machine on the LAN can reach.
-
-The machine being connected to needs its own firewall to allow the inbound port:
-1333 for a game, 1332 for a save transfer.
+The other machine may need firewall access for UDP port 1333 for a game or 1332
+for a save transfer.
 
 ## Files
 
