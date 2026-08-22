@@ -317,7 +317,10 @@ bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
 		else
 			fill_rectangle_xy(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2, 0);
 
+		// Twice, the second pass inset, the way the in-game menu and help boxes are drawn:
+		// the interior drops far enough to read against and the rim stays one step lighter.
 		JE_barShade(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2);
+		JE_barShade(VGAScreen, panel_x1 + 2, SWKBD_PANEL_Y1 + 2, panel_x2 - 2, SWKBD_PANEL_Y2 - 2);
 		JE_rectangle(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2, 244);
 
 		if (guide != NULL)
