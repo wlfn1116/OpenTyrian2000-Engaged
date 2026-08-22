@@ -82,6 +82,38 @@
 #include <netinet/in.h>
 #endif
 
+/* Interface flags, under this module's own names because the platform's are not always in reach:
+ * the desktop, Android, and console builds all compile as strict C99, where glibc keeps IFF_*
+ * behind __USE_MISC and Darwin behind _DARWIN_C_SOURCE. `ifa_flags` itself is visible either way,
+ * and these values have been fixed since 4.3BSD. Naming them here also lets the rule below be
+ * compiled and tested on platforms that have no interface list at all. */
+#define NET_IFF_UP          0x0001u
+#define NET_IFF_BROADCAST   0x0002u
+#define NET_IFF_LOOPBACK    0x0008u
+#define NET_IFF_POINTOPOINT 0x0010u
+#define NET_IFF_RUNNING     0x0040u
+
+#ifdef IFF_UP   // where the real ones did come through, they have to agree
+SDL_COMPILE_TIME_ASSERT(net_iff_up, NET_IFF_UP == IFF_UP);
+SDL_COMPILE_TIME_ASSERT(net_iff_broadcast, NET_IFF_BROADCAST == IFF_BROADCAST);
+SDL_COMPILE_TIME_ASSERT(net_iff_loopback, NET_IFF_LOOPBACK == IFF_LOOPBACK);
+SDL_COMPILE_TIME_ASSERT(net_iff_pointopoint, NET_IFF_POINTOPOINT == IFF_POINTOPOINT);
+SDL_COMPILE_TIME_ASSERT(net_iff_running, NET_IFF_RUNNING == IFF_RUNNING);
+#endif
+
+/* Whether an interface with these flags can carry traffic to another machine on the local network.
+ * Loopback reaches nobody. A point-to-point link is a tunnel or the cellular interface, which is
+ * how an iPhone came to report two carrier 10.x addresses while the LAN saw it elsewhere. */
+bool network_interface_carries_lan(unsigned int flags)
+{
+	const unsigned int needed = NET_IFF_UP | NET_IFF_RUNNING | NET_IFF_BROADCAST;
+
+	if ((flags & needed) != needed)
+		return false;
+
+	return (flags & (NET_IFF_LOOPBACK | NET_IFF_POINTOPOINT)) == 0;
+}
+
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
 #define NET_VERSION       83           /* See doc/notes.md#wire-compatibility. */
@@ -4151,10 +4183,7 @@ int network_local_addresses(IPaddress *out, int max)
 			if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET)
 				continue;
 
-			const unsigned int flags = ifa->ifa_flags;
-			if ((flags & (IFF_UP | IFF_RUNNING | IFF_BROADCAST)) != (IFF_UP | IFF_RUNNING | IFF_BROADCAST))
-				continue;
-			if ((flags & (IFF_LOOPBACK | IFF_POINTOPOINT)) != 0)
+			if (!network_interface_carries_lan(ifa->ifa_flags))
 				continue;
 
 			const struct sockaddr_in *const address =

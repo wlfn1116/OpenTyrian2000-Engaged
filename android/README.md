@@ -63,6 +63,19 @@ changing it requires an uninstall.
 Only `arm64-v8a` and `armeabi-v7a` are built. Add `x86_64` to `abiFilters` in
 `app/build.gradle` for an emulator build.
 
+## Networking
+
+`INTERNET` and `ACCESS_WIFI_STATE` are the only permissions the manifest asks
+for, and Android has no equivalent of the iOS local network prompt, so online
+play and save transfers work in either direction.
+
+The addresses the waiting screens read out come from `network_local_addresses`,
+which uses `getifaddrs` here. That needs API 24 and `minSdk` is 26, so it is
+always available. It keeps only interfaces that are up, running, and broadcast
+capable, which leaves Wi-Fi and drops loopback along with the mobile data and VPN
+links; those are point-to-point and no other machine on the LAN can reach them.
+Read the Wi-Fi address off the screen and expect nothing else to be listed.
+
 ## Files
 
 Configuration, saves, logs, and the unpacked data live in app-private storage

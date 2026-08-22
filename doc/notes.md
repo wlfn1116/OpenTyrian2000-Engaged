@@ -946,12 +946,22 @@ iOS device therefore works whatever the permission says. macOS 15 prompts the sa
 way, so `macos/Info.plist.in` carries the key too.
 
 `network_local_addresses` reads the interface list through `getifaddrs` wherever
-one exists, keeping only IPv4 interfaces that are up, running, and broadcast
-capable, and dropping loopback and point-to-point links. SDL_net's own enumeration
-returns loopback and whatever tunnels and cellular interfaces are up, and on Apple
-platforms it can miss Wi-Fi outright: an iPhone reported 127.0.0.1 plus two
-carrier 10.x addresses while the LAN saw it at 192.168.0.225. Both callers need
-the address another machine can reach, so a wrong list is not cosmetic.
+one exists, keeping what `network_interface_carries_lan` accepts: up, running, and
+broadcast capable, and neither loopback nor point-to-point. SDL_net's own
+enumeration returns loopback and whatever tunnels and cellular interfaces are up,
+and on Apple platforms it can miss Wi-Fi outright: an iPhone reported 127.0.0.1
+plus two carrier 10.x addresses while the LAN saw it at 192.168.0.225. Both
+callers need the address another machine can reach, so a wrong list is not
+cosmetic. Android reaches the same path through `__linux__`; `getifaddrs` needs
+API 24 and `minSdk` is 26.
+
+The interface flags have module-local `NET_IFF_*` names because the desktop,
+Android, and console builds all compile as strict C99, where glibc keeps `IFF_*`
+behind `__USE_MISC` and Darwin behind `_DARWIN_C_SOURCE`. `ifa_flags` is visible
+either way. A compile-time assert ties the local values to the platform's
+wherever those do come through, and naming them here is also what lets the rule
+be compiled and tested on Windows and the consoles, which have no interface list
+to read.
 
 `JE_loadScreen` offers the two rows when `net2p` and `saving` are both false,
 which is the title screen's own page. An online session uses the same screen and

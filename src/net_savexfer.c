@@ -101,6 +101,29 @@ static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
 #define SX_XCENTER  (320 / 2)
 
+/* Every line these screens centre on the 320px menu field. Named at file scope so
+ * qa_test_save_transfer_strings can measure each against the budget: a line wider than the
+ * field runs off both edges at once, which the source does not show.  */
+#define SX_LINE_MAX_PX 300
+
+static const char sxWaitingForDownload[] = "Waiting for a receiver...";
+static const char sxUploadKeys        [] = "Enter to send, Esc to cancel";
+static const char sxSending           [] = "Sending...";
+static const char sxThisMachine       [] = "This machine:";
+static const char sxSearching         [] = "Searching the local network...";
+static const char sxNothingAnswered   [] = "Nothing on this network answered.";
+static const char sxDownloadKeys      [] = "Enter to download, Esc to go back";
+static const char sxRowTypedAddress   [] = "Enter an address...";
+static const char sxRowWaitForSender  [] = "Wait for a sender";
+static const char sxAskingAddress     [] = "Asking that address...";
+static const char sxDownloading       [] = "Downloading...";
+static const char sxWaitingForSender  [] = "Waiting for a sender...";
+static const char sxSendHere          [] = "Send to this address.";
+static const char sxCancelKey         [] = "Esc to cancel";
+static const char sxAnyButton         [] = "Press any button";
+static const char sxNoSaveThere       [] = "That address is not sharing a save.";
+static const char sxNeedAddress       [] = "Enter an address.";
+
 typedef struct
 {
 	char   address[48];
@@ -218,7 +241,7 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 90, line1, normal_font, centered, 15, -2, false, 2);
 	if (line2 != NULL)
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 110, line2, normal_font, centered, 15, -4, false, 2);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, "Press any button", normal_font, centered, 15, -5, false, 2);
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, sxAnyButton, normal_font, centered, 15, -5, false, 2);
 
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
@@ -398,7 +421,7 @@ static void saveXferDrawLocalAddresses(int y)
 	if (count <= 0)
 		return;
 
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, y, "This machine:", normal_font, centered, 15, -5, false, 2);
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, y, sxThisMachine, normal_font, centered, 15, -5, false, 2);
 
 	int shown = 0;
 	for (int i = 0; i < count && shown < 3; ++i)
@@ -476,12 +499,12 @@ static void saveXferUploadScreen(const char *saveName, const char *note)
 {
 	saveXferRestore();
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 60, saveName, normal_font, centered, 15, -1, false, 2);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 82, "Waiting for another device to download...",
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 82, sxWaitingForDownload,
 	                    normal_font, centered, 15, -2, false, 2);
 	saveXferDrawLocalAddresses(110);
 	if (note != NULL)
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 156, note, normal_font, centered, 15, -3, false, 2);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 172, "Enter to send to an address, Esc to cancel",
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 172, sxUploadKeys,
 	                    normal_font, centered, 15, -5, false, 2);
 	saveXferPresent();
 }
@@ -515,7 +538,7 @@ static bool saveXferSendToAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 	}
 
 	saveXferBackdrop("Upload Save");
-	saveXferUploadScreen(saveName, "Sending...");
+	saveXferUploadScreen(saveName, sxSending);
 
 	return saveXferSendPayload(sock, out, in, &to, payload, total, gen, cancelled);
 }
@@ -792,16 +815,16 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 		saveXferRestore();
 
 		if (count == 0)
-			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 70, "Nothing on this network answered.",
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 70, sxNothingAnswered,
 			                    normal_font, centered, 15, -2, false, 2);
 
 		for (int i = 0; i < rows; ++i)
 		{
 			char line[96];
 			if (i == typedRow)
-				SDL_strlcpy(line, "Enter an address...", sizeof(line));
+				SDL_strlcpy(line, sxRowTypedAddress, sizeof(line));
 			else if (i == waitRow)
-				SDL_strlcpy(line, "Wait for a sender", sizeof(line));
+				SDL_strlcpy(line, sxRowWaitForSender, sizeof(line));
 			else
 				saveXferOfferLine(line, sizeof(line), &offers[i]);
 
@@ -813,7 +836,7 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 		if (status[0] != '\0')
 			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, status, normal_font, centered, 15, -3, false, 2);
 
-		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 180, "Enter to download, Esc to go back",
+		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 180, sxDownloadKeys,
 		                    normal_font, centered, 15, -5, false, 2);
 
 		// Drop whatever opened this screen: the press that started the search stays latched
@@ -907,12 +930,12 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 
 		if (host[0] == '\0')
 		{
-			SDL_strlcpy(status, "Enter an address.", sizeof(status));
+			SDL_strlcpy(status, sxNeedAddress, sizeof(status));
 			continue;
 		}
 
 		saveXferRestore();
-		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 100, "Asking that address...",
+		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 100, sxAskingAddress,
 		                    normal_font, centered, 15, -2, false, 2);
 		saveXferPresent();
 
@@ -923,7 +946,7 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 		}
 
 		JE_playSampleNum(S_CLINK);
-		SDL_strlcpy(status, "That address is not sharing a save.", sizeof(status));
+		SDL_strlcpy(status, sxNoSaveThere, sizeof(status));
 	}
 }
 
@@ -1082,7 +1105,7 @@ bool saveXferDownload(void)
 	// from saveXferPoll while it does.
 	saveXferBackdrop("Download Save");
 	saveXferRestore();
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 90, "Searching the local network...",
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 90, sxSearching,
 	                    normal_font, centered, 15, -2, false, 2);
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
@@ -1102,7 +1125,7 @@ bool saveXferDownload(void)
 	if (pick != NULL)
 	{
 		saveXferRestore();
-		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 100, "Downloading...",
+		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 100, sxDownloading,
 		                    normal_font, centered, 15, -2, false, 2);
 		saveXferPresent();
 
@@ -1121,12 +1144,12 @@ bool saveXferDownload(void)
 		else
 		{
 			saveXferRestore();
-			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 60, "Waiting for a sender...",
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 60, sxWaitingForSender,
 			                    normal_font, centered, 15, -2, false, 2);
 			saveXferDrawLocalAddresses(90);
-			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 150, "Send to this address from the other device.",
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 150, sxSendHere,
 			                    normal_font, centered, 15, -4, false, 2);
-			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 170, "Esc to cancel",
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 170, sxCancelKey,
 			                    normal_font, centered, 15, -5, false, 2);
 			saveXferPresent();
 			service_SDL_events(true);
@@ -1163,6 +1186,41 @@ bool saveXferDownload(void)
  * three ways a hostile or mismatched payload can arrive are all refused. */
 void qa_test_save_transfer(void)
 {
+	/* Centred text that outgrows the field runs off both edges, and neither the source nor a
+	 * character count shows it: the font is proportional and lives in tyrian.shp. */
+	static const char *const centred[] = {
+		sxWaitingForDownload, sxUploadKeys, sxSending, sxThisMachine, sxSearching,
+		sxNothingAnswered, sxDownloadKeys, sxRowTypedAddress, sxRowWaitForSender,
+		sxAskingAddress, sxDownloading, sxWaitingForSender, sxSendHere, sxCancelKey,
+		sxAnyButton, sxNoSaveThere, sxNeedAddress,
+	};
+
+	for (unsigned i = 0; i < COUNTOF(centred); ++i)
+	{
+		char label[128];
+		snprintf(label, sizeof(label), "the save transfer line '%s' fits the menu field", centred[i]);
+		qa_check(JE_textWidth(centred[i], normal_font) <= SX_LINE_MAX_PX, label);
+	}
+
+	/* Which interfaces these screens are willing to read out. Only the platforms with an
+	 * interface list run the enumeration, but the rule itself is checked everywhere. */
+	{
+		const unsigned int up = 0x0001u, broadcast = 0x0002u, loopback = 0x0008u,
+		                   pointopoint = 0x0010u, running = 0x0040u;
+		const unsigned int wifi = up | broadcast | running;
+
+		qa_check(network_interface_carries_lan(wifi),
+		         "an up, running, broadcast interface is offered as this machine's address");
+		qa_check(!network_interface_carries_lan(wifi | loopback),
+		         "...loopback is not, having nobody to reach");
+		qa_check(!network_interface_carries_lan((up | running) | pointopoint),
+		         "...nor a point-to-point link, which is a tunnel or the cellular interface");
+		qa_check(!network_interface_carries_lan(up | broadcast),
+		         "...nor an interface that is up but not running");
+		qa_check(!network_interface_carries_lan(up | running),
+		         "...nor one that carries no broadcast");
+	}
+
 	qa_check(SX_ENDLESS == 109 && SXR_LEN == 45 && SXC_HDR == 12,
 	         "save-transfer wire offsets retain their protocol widths");
 

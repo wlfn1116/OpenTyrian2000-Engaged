@@ -250,6 +250,10 @@ NetworkHostInfo;
 // Local addresses in network byte order. Returns zero if none are available.
 int network_local_addresses(IPaddress *out, int max);
 
+/* Whether an interface with these flags reaches other machines on the local network. Exposed so
+ * the rule is testable where there is no interface list to read. */
+bool network_interface_carries_lan(unsigned int flags);
+
 // Discover up to max LAN hosts with a short-lived socket. Do not call while a game socket is
 // open. poll may be NULL and keeps the UI responsive during the blocking wait.
 int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void));
