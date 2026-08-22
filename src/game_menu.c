@@ -3228,6 +3228,24 @@ void JE_itemScreen(void)
 			{
 			/* Animate the active menu and handle events that do not need the outer input path. */
 
+				/* Both asked either way, and from here rather than from the code that draws the
+				 * thing they belong to: this runs on every frame the outpost does, whatever is
+				 * on screen, so leaving a row or a list takes its buttons with it instead of
+				 * leaving them up until the request goes stale.
+				 *
+				 * Ahead of the present below, so the frame that moves the highlight carries the
+				 * matching buttons. Deciding after it left them a frame behind, and a frame here
+				 * is however long the weapon sim's delay runs: long enough to look like lag. */
+				if (outpostListScrolls())
+					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+				else
+					touch_ui_clear_layout();
+
+				if (outpostRearModeCyclable())
+					touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
+				else
+					touch_ui_clear_extra();
+
 				NETWORK_KEEP_ALIVE();
 				while (network_shop_pump())
 					;
@@ -3432,20 +3450,6 @@ void JE_itemScreen(void)
 
 					}
 				}
-
-				/* Both asked either way, and from here rather than from the code that draws the
-				 * thing they belong to: this runs on every frame the outpost does, whatever is
-				 * on screen, so leaving a row or a list takes its buttons with it instead of
-				 * leaving them up until the request goes stale. */
-				if (outpostListScrolls())
-					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
-				else
-					touch_ui_clear_layout();
-
-				if (outpostRearModeCyclable())
-					touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
-				else
-					touch_ui_clear_extra();
 
 				menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
 

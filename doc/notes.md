@@ -592,13 +592,18 @@ buttons on the same schedule as the screen they belong to:
 first: today the buy/sell sub-list and the read-only endless perk list. The
 E-Shop looks like a third and is not, being a fixed thirteen rows.
 
-Both are asked from the outpost's own frame path, not from the code that draws
-what they belong to. **A condition tested only where it holds can never report
-that it has stopped holding.** The rear-mode button was decided inside
-`JE_weaponSimUpdate`, which only runs while that very row is selected, so
-selecting a dual-mode gun and then leaving the menu never reached the else at
-all and the button stayed up. An assert and its clear belong together in a path
-that runs every frame regardless of the answer.
+Both are asked at the top of the outpost's frame loop, and both parts of that
+placement were paid for:
+
+- Not from the code that draws what they belong to. **A condition tested only
+  where it holds can never report that it has stopped holding.** The rear-mode
+  button was decided inside `JE_weaponSimUpdate`, which only runs while that very
+  row is selected, so selecting a dual-mode gun and leaving the menu never
+  reached the else at all.
+- Ahead of the loop's `JE_showVGA`, not after it. Deciding afterwards leaves the
+  frame that moves the highlight carrying the previous frame's buttons, and one
+  frame here is however long the weapon sim's `setDelay(3)` runs, which reads as
+  the buttons lagging the cursor.
 
 What a finger can answer at all depends on `mouseGetRelative()`, and that is on
 only inside the level loop: `JE_main` turns it off before every between-level
