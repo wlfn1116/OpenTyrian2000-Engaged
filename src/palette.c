@@ -195,6 +195,10 @@ static void smooth_fade_to(const SDL_Color *target, int steps, unsigned int firs
 			yuv_palette[i] = rgb_to_yuv(palette[i].r, palette[i].g, palette[i].b);
 		}
 
+		// Stamped here as well as in step_fade_palette, because this path replaces it whenever
+		// Smooth Motion is on: without it palette_fading() reads false through most real fades.
+		fade_step_ms = SDL_GetTicks();
+
 		JE_showVGA();
 
 		if (done)

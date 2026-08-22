@@ -173,6 +173,7 @@ static Uint32 requested_at_ms;
 static Uint8 requested_extra;
 static Uint32 extra_at_ms;
 static Uint32 presented_signature;
+static bool was_visible = true;
 
 static SDL_FingerID btn_finger[TOUCH_BTN_COUNT];
 static bool btn_held[TOUCH_BTN_COUNT];
@@ -671,16 +672,26 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	const Uint8 peak = palette_peak();
 	const bool visible = peak >= TOUCH_VISIBLE_PEAK_MIN;
 
-	/* Black also means the screen that asked for a layout is over, so its request is dropped
-	 * here rather than left to time out. A timeout outlives the transition: the jukebox's
-	 * track buttons were still on screen while the menu behind it faded back in, because the
-	 * fade-in crossed the visibility floor before the request went stale. A screen that is
-	 * still running re-asserts within a frame or a tick, and nothing is drawn at this
-	 * brightness anyway, so there is nothing to lose by clearing early. */
-	if (!visible)
+	/* Dimming past the floor ends the screen that asked for this layout, so its request goes
+	 * with it rather than waiting to time out. On that edge only: the next screen asks while
+	 * the display is still black, and clearing under it would throw that away. */
+	if (was_visible && !visible)
 	{
 		requested_at_ms = 0;
 		extra_at_ms = 0;
+	}
+	was_visible = visible;
+
+	/* fade_palette blocks, so a request made either side of one has to outlive it. Renewing
+	 * a live request for as long as the palette keeps stepping is what puts the buttons on
+	 * the screen's own schedule; one cleared above stays cleared, which keeps a transition's
+	 * two halves apart. See "Menus and UI" in doc/notes.md. */
+	if (palette_fading())
+	{
+		if (fresh(requested_at_ms, now_ms))
+			requested_at_ms = now_ms;
+		if (fresh(extra_at_ms, now_ms))
+			extra_at_ms = now_ms;
 	}
 
 	build_layout(frame, out_w, out_h, now_ms);

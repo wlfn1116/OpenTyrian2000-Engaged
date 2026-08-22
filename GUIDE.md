@@ -841,7 +841,8 @@ the slider tracks your finger one to one.
 
 Phones and tablets add on-screen buttons for everything a finger cannot express
 on its own. Which buttons appear depends on the screen, so nothing is on display
-that would do nothing if you pressed it.
+that would do nothing if you pressed it. They ride the screen's own fade, dimming
+away with the screen that is leaving and brightening in with the one arriving.
 
 | Screen | Left side | Right side |
 | --- | --- | --- |

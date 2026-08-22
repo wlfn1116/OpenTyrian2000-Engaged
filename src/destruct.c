@@ -1047,6 +1047,9 @@ static void DE_netIntroBarrier(void)
 		if (!output_vsync)
 			limit_render_fps();
 
+		// Any key readies up and Escape steps back out, neither of which a finger can express.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
 		watchdog_heartbeat();
 		push_joysticks_as_keyboard();  // a controller confirms too (no keyboard on Switch)
 		service_SDL_events(false);
@@ -1107,6 +1110,12 @@ static void JE_introScreen(void)
 
 	DE_composeIntro(false, false);
 	JE_showVGA();
+
+	/* Before the fade, not by the wait below it: a screen that only asks once it is running
+	 * shows nothing until its fade-in is over. The offline wait and the online barrier want
+	 * the same confirm, so one request here covers both. */
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
 	fade_palette(colors, 15, 0, 255);
 
 	newkey = false;
@@ -1151,6 +1160,7 @@ static enum de_mode_t JE_modeSelect(void)
 	DrawModeSelectMenu(mode);
 
 	JE_showVGA();
+	touch_ui_set_layout(TOUCH_LAYOUT_PICK);   // before the fade, so the arrows fade in with it
 	fade_palette(colors, 15, 0, 255);
 
 	while (true)
@@ -1757,6 +1767,7 @@ static void JE_helpScreen(void)
 	}
 	JE_outText(VGAScreen, 30, 190, destructHelp[24], 3, 4);
 	JE_showVGA();
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);   // before the fade, so confirm fades in with it
 	fade_palette(colors, 15, 0, 255);
 
 	do  /* wait until user hits a key */
@@ -1771,6 +1782,7 @@ static void JE_helpScreen(void)
 	fade_black(15);
 	memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->h * VGAScreen->pitch);
 	JE_showVGA();
+	touch_ui_set_layout(TOUCH_LAYOUT_DESTRUCT);   // the battle is what fades back in here
 	fade_palette(colors, 15, 0, 255);
 }
 

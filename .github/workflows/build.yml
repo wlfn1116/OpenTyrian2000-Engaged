@@ -197,6 +197,10 @@ jobs:
       - name: Build SDL2 and SDL2_net for ARM64
         if: steps.sdl-cache.outputs.cache-hit != 'true'
         run: |
+          # Without this, a failed cmake only surfaces further down as a confusing cascade of
+          # errors from the steps that follow it.
+          $PSNativeCommandUseErrorActionPreference = $true
+
           New-Item -ItemType Directory -Force -Path visualc\external\SDL2, visualc\external\SDL2_net | Out-Null
           curl.exe -fL --retry 3 -o sdl2.tar.gz `
             "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL2_VERSION/SDL2-$env:SDL2_VERSION.tar.gz"
@@ -206,16 +210,21 @@ jobs:
           tar -xzf sdl2net.tar.gz --strip-components=1 -C visualc\external\SDL2_net
 
           # SDL2 asks for compatibility with CMake 3.0, which CMake 4 refuses without this.
+          # Quoted whole: PowerShell splits a bare -Dname=3.5 at the decimal point.
           cmake -S visualc\external\SDL2 -B visualc\external\SDL2\build -A ARM64 `
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
             -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF
           cmake --build visualc\external\SDL2\build --config Release --parallel
-          cmake --install visualc\external\SDL2\build --config Release --prefix visualc\external\SDL2-install
+          # Absolute prefix: a relative one is resolved against the install script's own
+          # directory, not this one.
+          cmake --install visualc\external\SDL2\build --config Release `
+            --prefix "$pwd\visualc\external\SDL2-install"
 
           cmake -S visualc\external\SDL2_net -B visualc\external\SDL2_net\build -A ARM64 `
-            -DCMAKE_PREFIX_PATH="$pwd\visualc\external\SDL2-install" -DSDL2NET_SAMPLES=OFF
+            "-DCMAKE_PREFIX_PATH=$pwd\visualc\external\SDL2-install" -DSDL2NET_SAMPLES=OFF
           cmake --build visualc\external\SDL2_net\build --config Release --parallel
-          cmake --install visualc\external\SDL2_net\build --config Release --prefix visualc\external\SDL2_net-install
+          cmake --install visualc\external\SDL2_net\build --config Release `
+            --prefix "$pwd\visualc\external\SDL2_net-install"
 
           # CMake installs headers under include\SDL2 and splits the DLL from its import
           # library; the project files expect the VC package layout instead.
