@@ -45,8 +45,8 @@ The useful settings are under **Setup > Graphics**.
   remains display-rate, avoiding repeated feedback filters on the same tick.
 - **FPS Cap** accepts Left/Right steps or a typed number. Use 35 or higher for
   online play. A value of 0 means Uncapped.
-- iOS presents at the screen's refresh rate, so a ProMotion device runs at up
-  to 120 Hz.
+- Android and iOS are able to present at the screen's refresh rate,
+  so a ProMotion device runs at up to 120 Hz.
 
 The simulation still runs at 35 Hz. Demo recording and demo playback use
 fixed-step ship movement even when Smooth Motion is enabled. Online play sets
