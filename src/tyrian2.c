@@ -1109,9 +1109,8 @@ void qa_test_chain_cascade(void)
 		                                 : enemy[0].armorleft == hulls[h].armor), label);
 	}
 
-	/* Sustained fire finishes the job: a boss the blast can damage is a boss the blast can kill, and
-	 * a multi-tile one goes down whole rather than leaving tiles behind. Every tile pays out, the
-	 * same as if a shot had landed the last hit. */
+	/* Sustained fire can kill every damageable boss. Linked tiles die and pay out together,
+	 * matching a final shot hit. */
 	for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
 	{
 		memset(&enemy[i], 0, sizeof(enemy[i]));
@@ -6650,9 +6649,7 @@ draw_player_shot_loop_end:
 					push_joysticks_as_keyboard();
 					service_SDL_events(false);
 
-					/* mouse_pressed[0] is the touch ports' whole answer here: a finger steering
-					 * the ship sets neither mousedown nor newmouse, so without it a phone can
-					 * arm this but never trigger it. */
+					// Steering touches use mouse_pressed[0], not mousedown or newmouse.
 					if (!keydown && !mousedown && !joydown && !mouse_pressed[0])
 					{
 						deathSkipArmed = true;
@@ -6690,10 +6687,7 @@ draw_player_shot_loop_end:
 						musicFade = false;
 						set_volume(tyrMusicVolume, fxVolume);
 					}
-					// Drop any input still held/queued from the moment of death, so
-					// GAME OVER doesn't dismiss itself instantly; require a fresh press.
-					// The touch latch is a level rather than an edge, so clearing it here is
-					// what makes the finger that was flying the ship let go and tap again.
+					// Require a fresh press for GAME OVER, including the held touch-fire latch.
 					newkey = newmouse = false;
 					mouse_pressed[0] = false;
 					firstGameOver = false;
@@ -6721,9 +6715,7 @@ draw_player_shot_loop_end:
 					// already consumed inter-tick SDL events into newkey/newmouse, so
 					// clearing here would discard the press and GAME OVER would never respond.
 					service_SDL_events(false);
-					/* button[] carries the pad and the mouse, but only while the ship is alive:
-					 * JE_playerMovement returns before it fills them once is_alive is false. A
-					 * finger therefore reaches this screen through mouse_pressed[0] alone. */
+					// Dead-player touch input still arrives through mouse_pressed[0].
 					if ((newkey || button[0] || button[1] || button[2]) || newmouse || mouse_pressed[0])
 					{
 						reallyEndLevel = true;
@@ -8578,9 +8570,7 @@ static void networkTimedBattleReady(void)
 
 	for (;;)
 	{
-		/* Any key readies up and Esc steps back, neither of which a finger can express. Asked
-		 * for ahead of the present below so the first frame carries it, which is the frame the
-		 * fade-in starts from: the buttons come up with the card rather than after it. */
+		// Expose ready and Back before presenting the first frame.
 		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);

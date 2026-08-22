@@ -38,32 +38,16 @@ The app is named "Tyrian 2000 Engaged". Its icons are generated from
 committed, so a build never runs it; re-run it after changing the source icon.
 
 `ios/Assets.xcassets` is compiled into the bundle by `actool` during the build,
-and is the only icon the app carries. Its artwork has a transparent background
-and it holds dark and tinted variants, so the system draws its own material
-behind the ship rather than the icon supplying a slab of colour, which is what
-the Liquid Glass treatment expects.
+and is the only icon source. The transparent artwork includes dark and tinted
+variants so iOS can provide the background material.
 
-Two things are easy to get wrong here, and both were.
+The post-build step merges `actool`'s partial plist into the bundle plist. iOS
+uses those keys to find `Assets.car`; do not add `CFBundleIconFiles` or separate
+bundle-root icons. CI checks the merged plist for `CFBundlePrimaryIcon`.
 
-Nothing declares `CFBundleIconFiles`. Flat bundle-root PNGs were there as a
-fallback while it was still unclear whether `actool` would run without the Xcode
-generator; it does. Those PNGs have to be opaque, because that path composites
-alpha onto black, so leaving them declared handed iOS a second and slab-backed
-answer to the same question.
-
-And a compiled catalog is not enough on its own. `actool` names the icons it
-rasterised in the file it writes to `--output-partial-info-plist`, and iOS reads
-those keys, not the catalog, to find them. Xcode merges that file into the app's
-Info.plist as a matter of course; this build has to do it explicitly, which is
-what the `PlistBuddy -c Merge` step after `actool` is for. Skip it and the icon
-compiles into `Assets.car` and is then unreachable, so the app shows no icon at
-all. CI checks the merged plist for `CFBundlePrimaryIcon` so that cannot pass
-unnoticed again.
-
-Editing `Info.plist.in` alone re-runs CMake, which rewrites the bundle plist
-from the template and drops those merged keys, while the post-build merge runs
-only when the target links. Delete `ios/build/OpenTyrian2000.app` before such a
-build.
+After editing `Info.plist.in`, delete `ios/build/OpenTyrian2000.app` before
+rebuilding. CMake rewrites the plist, while the post-build merge only runs when
+the target links.
 
 ## Build
 
@@ -77,10 +61,8 @@ cmake -S ios -B ios/build -G Ninja \
 cmake --build ios/build --parallel
 ```
 
-Use Ninja rather than `-G Xcode`. SDL2's CMakeLists runs several hundred
-feature probes, and the Xcode generator makes each one a separate `xcodebuild`
-process, which stretches configure from about a minute to over ten. Nothing in
-this project depends on Xcode-generator behaviour.
+Use Ninja. SDL2 runs several hundred feature probes, and the Xcode generator
+starts a separate `xcodebuild` for each one. This project does not require it.
 
 ## Install
 
@@ -94,20 +76,14 @@ cp -R ios/build/OpenTyrian2000.app Payload/
 zip -qry OpenTyrian2000-Engaged-iOS.ipa Payload
 ```
 
-Non-Xcode generators do not sign at all, so there is nothing to switch off. To
-sign the bundle yourself, run `codesign` over it afterwards with your own
-identity and entitlements.
+Ninja leaves the bundle unsigned. To sign it yourself, run `codesign` afterwards
+with your own identity and entitlements.
 
 ## Frame rate
 
-CoreAnimation caps an iPhone app at 60Hz unless its bundle declares
-`CADisableMinimumFrameDurationOnPhone`, so `Info.plist.in` carries that key.
-Without it a ProMotion iPhone presents 60 of the frames Smooth Motion draws and
-no FPS Cap setting reaches past that. iPad Pro needs no opt-in.
-
-The spelling matters. `CADisableMinimumFrameDuration`, without the suffix, was
-the iOS 15 beta name and is what most write-ups still quote; the shipping OS
-reads only the `OnPhone` key and ignores the other silently.
+`Info.plist.in` sets `CADisableMinimumFrameDurationOnPhone`, allowing ProMotion
+iPhones to present above 60 Hz. The older unsuffixed beta key is ignored. iPad
+Pro needs no opt-in.
 
 SDL's Metal renderer always presents display-synced on iOS: `displaySyncEnabled`
 is a macOS-only knob, and the iOS path sets `SDL_RENDERER_PRESENTVSYNC` on the

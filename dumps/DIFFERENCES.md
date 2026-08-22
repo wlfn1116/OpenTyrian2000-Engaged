@@ -1,16 +1,13 @@
 # What changed between Tyrian 1.1, 2.1 and 2000
 
-Three releases of Tyrian shipped between 1995 and 1999, and all three data
-directories are decoded side by side in this folder. Everything below was read
-out of those three trees, so any claim here can be checked against a file:
-`dump_11/`, `dump_21/` and `dump_2000/` hold the same folders in the same
-layout, and each one names the file it came from.
+This compares decoded data from Tyrian 1.1, 2.1, and 2000. The matching
+`dump_11/`, `dump_21/`, and `dump_2000/` trees use the same layout and identify
+the source file for every record.
 
-The short story: **2.1 is where the game grew up, and 2000 is where it got a
-fifth episode and a new publisher.** Between 1.1 and 2.1 almost every asset was
-touched. Between 2.1 and 2000 more than half the files were left alone, and the
-work went mostly into appended records and new banks, with a few reused or
-inserted slots described below.
+Tyrian 2.1 changed almost every asset. Tyrian 2000 added episode 5 and changed
+publisher, while more than half of the 2.1 files remained untouched. Most of its
+data changes are appended records and new banks, with a few reused or inserted
+slots described below.
 
 ## The three releases
 
@@ -131,7 +128,7 @@ Miscellaneous Option Weapons changed from weapon record 0 to record 1. Tyrian
 
 ## Sidekicks
 
-Three sidekick names changed in 2.1, but only the first was just a rename:
+Three sidekick names changed in 2.1, but only the first was a pure rename:
 
 | Slot | 1.1 | 2.1 and 2000 |
 | --- | --- | --- |
@@ -152,8 +149,10 @@ Twelve sidekicks arrived in 2.1: Companion Ship Warfly, MicroSol FrontBlaster,
 Companion Ship Gerund, BattleShip-Class Firebomb, Protron Cannon Indigo,
 Companion Ship Quicksilver, Protron Cannon Tangerine, MicroSol FrontBlaster II,
 Beno Wallop Beam, Beno Protron System -B-, Tropical Cherry Companion and
-Satellite Marlo. Tyrian 2000 added Bubble Gum-Gun and Flying Punch, then five
-empty slots named `None`.
+Satellite Marlo.
+
+Tyrian 2000 added Bubble Gum-Gun and Flying Punch, then five empty slots named
+`None`.
 
 ## Specials
 
@@ -161,9 +160,10 @@ This table reused six consecutive slots instead of only appending. The names in
 slots 0 to 13 and 20 to 25 survive, but five of those inherited records still
 changed in 2.1: Ice Beam's power went 20 to 5, Protron Dispersal's 0 to 30 and
 Astral Zone's 20 to 2, while MineField and Dual Vulcan changed their displayed
-graphics from 125 to 283 and 131 respectively. Slots 14 to 19 were taken over by
-new weapons, and the six specials that used to live there were moved to the end
-of the table:
+graphics from 125 to 283 and 131 respectively.
+
+Slots 14 to 19 were taken over by new weapons, and the six specials that used to
+live there were moved to the end of the table:
 
 | Slot | 1.1 | 2.1 and 2000 |
 | --- | --- | --- |
@@ -179,8 +179,9 @@ MicroSol Options, then Invulnerability, Atom Bomb, Seeker Bombs, Lightning Zone,
 SDF Main Gun, Ice Blast, Repair Player 1, Pearl Wind, 8-Way Microbomb and Protron
 Field. Six of those are the ones evicted from slots 14 to 19. Their records are
 identical at the new slots except that Invulnerability acquires graphic 129.
-Tyrian 2000 added **Super Pretzel** and **Dragon Lightning**, then six slots
-named `None`.
+
+Tyrian 2000 added **Super Pretzel** and **Dragon Lightning**, then six slots named
+`None`.
 
 The renumbering means a slot number alone does not identify a special across
 releases. A 1.1 save naming special 15 would find MegaLaser Dual in that slot
@@ -192,17 +193,18 @@ The six generators never changed, down to the misspelling of `Advanced
 MircoFusion` that survives in all three releases.
 
 Shields were stable until 2000 inserted **Gencore Solar Shield** at slot 8,
-pushing MicroCorp HXS Class A, B and C down one place each. The new shield is
-also the only non-placeholder item in Tyrian 2000 whose shop icon differs
-between table sets: the episode 1-3 table draws it with icon 165 and the episode
-4 and 5 tables with icon 153. The `Test`/`None` weapon-port block also changes
-icons, but it is placeholder data rather than a normal item.
+pushing MicroCorp HXS Class A, B and C down one place each.
 
-## Weapons: a lot of noise, very little signal
+The new shield is the only non-placeholder item in Tyrian 2000 whose shop icon
+differs between table sets: icon 165 for episodes 1-3 and icon 153 for episodes 4
+and 5. The placeholder `Test`/`None` weapon-port block also changes icons.
+
+## Weapon records
 
 The weapon table looks like it was rewritten. Much of that impression comes
 from data in pattern positions that firing never reaches, but the rule is not
 "the first `multi` slots." A record carries eight parallel shot-pattern slots.
+
 For player fire, `multi` is the number of bullets emitted per trigger while the
 cursor cycles through `max` pattern positions, or all eight when `max` is zero.
 Enemy fire also uses `max`, and falls back to the first position when it is zero.
@@ -237,7 +239,7 @@ bank at indices 1001 to 1850.
 | 1.1 to 2.1 | 47 of 851 | 26 re-pointed at a different sprite bank, 12 changed score value, 9 moved their start position, 8 changed armor |
 | 2.1 to 2000 | 35 of 851 | 25 changed explosion type, 8 changed turret setup, 2 changed armor |
 
-## Where a release disagrees with itself
+## Differences within each release
 
 Each release ships more than one copy of the item tables, and the copies are not
 identical. This matters if you read one set and assume it holds everywhere.
@@ -245,9 +247,10 @@ identical. This matters if you read one set and assume it holds everywhere.
 **Tyrian 1.1** keeps a set at the end of every level file. All three agree on
 every table except weapons. Each pair of weapon copies differs in 630 of 721 raw
 records, but the differences are outside reachable pattern positions except for
-the first slot of records 0 and 39. Record 0 is the `None` sentinel and record
-39 is not selected by any item or enemy; neither can fire, so the three copies
-are gameplay-equivalent.
+the first slot of records 0 and 39.
+
+Record 0 is the `None` sentinel and record 39 is not selected by any item or
+enemy. Neither can fire, so the three copies are gameplay-equivalent.
 
 **Tyrian 2.1 and 2000** split their tables between `tyrian.hdt`, for episodes 1
 to 3, and the level file of each later episode. The non-weapon item differences
@@ -261,20 +264,21 @@ are small but pointed:
 - In Tyrian 2000, the thirteen `Test` weapon ports exist only in the episode 1-3
   table. In the episode 4 and 5 tables those slots are named `None` and cost
   nothing.
-- The enemy tables are where the sets really part company: 385 of 851 records
-  differ between the two sets in 2.1. In 2000, each later-episode table differs
+- The enemy tables differ in 385 of 851 records between the two sets in 2.1. In
+  2000, each later-episode table differs
   from the episodes 1-3 table in 699 of 1701 records; the episode 4 and 5 enemy
   tables are identical. The later episodes reuse enemy slots for their own
   creatures.
 
 The weapon copies diverge at least as strongly. In 2.1, the episodes 1-3 and
 episode 4 copies differ in 694 of 781 raw records, including 391 records with a
-scalar field or pattern position that an engine firing path can read. In 2000,
-the episodes 1-3 copy differs from episode 4 in 1,504 of 1,638 raw records and
-from episode 5 in 1,336. The episode 4 and 5 copies also differ heavily byte for
-byte, but their reachable differences are confined to six unreferenced sentinel
-records; their usable weapon data is equivalent. `shipBlastFilter` is the most
-common scalar disagreement: 341 records in 2.1 and 705 in 2000.
+scalar field or pattern position that an engine firing path can read.
+
+In 2000, the episodes 1-3 copy differs from episode 4 in 1,504 of 1,638 raw
+records and from episode 5 in 1,336. The episode 4 and 5 copies differ heavily
+byte for byte, but their reachable differences are confined to six unreferenced
+sentinel records; their usable weapon data is equivalent. `shipBlastFilter` is
+the most common scalar disagreement: 341 records in 2.1 and 705 in 2000.
 
 ## The interface
 
@@ -312,13 +316,12 @@ for configuring and resetting mouse buttons. Mouse input itself was not new;
 STEALTH, STORMWIND, TECHNO, ENEMY, WEIRD, UNKNOWN, NORTSHIPZ, DESTRUCT, ENGAGE to
 the same list with **LIZARD** and **PRETZEL** inserted before DESTRUCT in 2000.
 
-**Seventeen text groups are new in 2000**, and they say a lot about the release:
-ten groups of setup menu text, mouse settings, licensing information, ordering
-information, default high score names, default team names, Super Tyrian text and
-the Timed Battle planet list. Tyrian 1.1 and 2.1 handle setup with the separate
-DOS programs that ship beside them.
+**Seventeen text groups are new in 2000:** ten groups of setup menu text, mouse
+settings, licensing and ordering information, default high score and team names,
+Super Tyrian text, and the Timed Battle planet list. Tyrian 1.1 and 2.1 handle
+setup with separate DOS programs.
 
-Smaller wording changes worth noting:
+Other wording changes:
 
 - The event banner `Unexplained speed increase!` became `Afterburners
   activated!` in 2.1.
@@ -336,8 +339,8 @@ Smaller wording changes worth noting:
 
 ## Datacubes
 
-The story-text counts were reshuffled hard in 2.1. They stayed fixed in 2000,
-but the text itself did not.
+The story-text counts changed substantially in 2.1. They stayed fixed in 2000,
+but the text itself changed.
 
 | Episode | 1.1 | 2.1 | 2000 |
 | --- | --- | --- | --- |
@@ -348,7 +351,7 @@ but the text itself did not.
 | 5 | | | 13 |
 
 Episode 1 more than doubled while episode 2 lost six cubes. That does not mean
-the missing records were simply moved: exact comparison finds no nonblank 1.1
+the missing records were moved: exact comparison finds no nonblank 1.1
 episode 2 cube copied verbatim into 2.1 episode 1. All four `cubetxt` files that
 exist in both 2.1 and 2000 were edited for 2000, but their cube counts did not
 move.
@@ -429,16 +432,14 @@ episode 4's levels get their scenery. The number of tiles actually drawn is:
 | `shapesy.dat` | 187 | 226 | 306 |
 | `shapesz.dat` | 362 | 361 | 473 |
 
-`shapesw.dat` is the odd one out: it lost 27 tiles in 2.1. `shapesz.dat` is the
-workhorse, used by 37 of the 70 levels in Tyrian 2000, and it gained 112 tiles in
-that release after losing one tile in 2.1.
+`shapesw.dat` lost 27 tiles in 2.1. `shapesz.dat`, used by 37 of Tyrian 2000's 70
+levels, gained 112 tiles in that release after losing one in 2.1.
 
 ## Sound and music
 
 **Music.** Tyrian 1.1 ships 34 songs. Tyrian 2.1 added seven: One Mustn't Fall,
 Sarah's Song, A Field for Mag, Rock Garden, Quest for Peace, Composition in Q and
-BEER. Tyrian 2000 did not touch music at all; `music.mus` is byte for byte
-identical to the 2.1 file.
+BEER. Tyrian 2000's `music.mus` is byte-identical to the 2.1 file.
 
 **Sound effects.** Tyrian 1.1 and 2.1 both hold 29 effects, but five of them were
 re-recorded in 2.1: SCALEDN2, PASS3, LAZB, HYPERD2 and SCALEDN1. Tyrian 2000
@@ -483,43 +484,46 @@ The German and UK ordering sheets are 1.1 only.
 
 **Added in 2000:** `cubetxt5.dat`, `levels5.dat`, `tyrian5.lvl`, `estpa.shp`,
 `newsh$.shp`, `newsh%.shp`, `newsh'.shp`, `newsh(.shp`, `newsh@.shp` (back
-again), four Windows icons and `readme.txt`. The directory also contains this
-port's runtime: `opentyrian2000.exe`, `gm.sf2` and ten DLLs; three `.pif`
-shortcuts; and `opentyrian.cfg`, `tyrian.cfg` and `tyrian.sav`. The two renamed
-DOS binaries described above account for the remaining additions.
+again), four Windows icons and `readme.txt`.
 
-**Removed in 2000:** most of the DOS distribution and support surface. The whole
-network toolchain (`netarena.exe`, `netipx.exe`, `netmodem.exe`, `netterm.exe`,
-`netterm.int`, and the five network PCX screens), the ordering program
-(`order.exe`, `order.tfp`, `order.doc`), the documents (`manual.doc`,
-`helpme.doc`, `license.doc`, `modems.txt`, `shipedit.doc`, `file_id.diz`),
-`setup.ini`, `setup.int`, `helpme.exe`, `tyrset.pcx` and the single `tyrian.ico`,
-which four Windows icons replace. It was not literally everything DOS-facing:
-`shipedit.exe`, `dpmi16bi.ovl`, `rtm.exe` and the old launcher binaries remain.
+The directory also contains this port's runtime: `opentyrian2000.exe`, `gm.sf2`,
+ten DLLs, three `.pif` shortcuts, `opentyrian.cfg`, `tyrian.cfg`, and
+`tyrian.sav`. The two renamed DOS binaries described above account for the
+remaining additions.
 
-The DOS exit screen tells the same story. Tyrian 1.1 and 2.1 print a thank-you
+**Removed in 2000:** most of the DOS distribution and support files:
+
+- `netarena.exe`, `netipx.exe`, `netmodem.exe`, `netterm.exe`, `netterm.int`,
+  and their five PCX screens;
+- `order.exe`, `order.tfp`, and `order.doc`;
+- `manual.doc`, `helpme.doc`, `license.doc`, `modems.txt`, `shipedit.doc`, and
+  `file_id.diz`;
+- `setup.ini`, `setup.int`, `helpme.exe`, `tyrset.pcx`, and `tyrian.ico`.
+
+`shipedit.exe`, `dpmi16bi.ovl`, `rtm.exe`, and the old launchers remain.
+
+The DOS exit screen also changed publisher. Tyrian 1.1 and 2.1 print a thank-you
 box with instructions for reaching Epic MegaGames on CompuServe. Tyrian 2000
-keeps the box, retitles it `Tyrian 2000`, blanks the upper message area, and
-replaces the bottom ordering panel with XSIV Games' postal, telephone and web
-details.
+retitles it `Tyrian 2000`, blanks the upper message area, and replaces the bottom
+ordering panel with XSIV Games' postal, telephone, and web details.
 
-So do the credits. Tyrian 1.1 and 2.1 share an identical `tyrian.cdt`; 2000 adds
-a Tyrian 2000 artwork credit for Cayenne Mandua and an installer credit for Devon
-Tackett, removes the Epic thank-you block naming Tim Sweeney, Mark Rein, Cliff
-Bleszinski and others, and replaces the "Team Beta" line with a new betatester
-list.
+The credits follow the same split. Tyrian 1.1 and 2.1 share an identical
+`tyrian.cdt`; 2000 adds artwork and installer credits, removes the Epic thank-you
+block, and replaces the "Team Beta" line with a new betatester list.
 
-## Format changes, for anyone reading the data
+## Container format changes
 
-Five things changed in the containers themselves. Any tool that reads Tyrian data
-has to handle all five.
+Five things changed in the containers themselves. Data readers must handle all
+five.
 
 **1. Where the item tables live.** Tyrian 1.1 keeps a complete set of item and
 enemy tables at the end of every `tyrian?.lvl` file, and `tyrian.hdt` holds text
-only. Tyrian 2.1 moved the episode 1-3 set into `tyrian.hdt`, behind the text,
-and put a four-byte offset at the front of the file pointing at it. Episode 4
-still keeps its own set at the end of `tyrian4.lvl`. Tyrian 2000 followed the
-same rule for episode 5.
+only.
+
+Tyrian 2.1 moved the episode 1-3 set into `tyrian.hdt`, behind the text, and put
+a four-byte offset at the front of the file pointing at it. Episode 4 still
+keeps its own set at the end of `tyrian4.lvl`. Tyrian 2000 followed the same
+rule for episode 5.
 
 **2. The stored table sizes.** Every item block starts with seven counts, and
 they identify the release on their own:
@@ -538,7 +542,7 @@ The number of specials is not in that header. It is 25, 46 and 54.
 one extra duplicate enemy record with no graphics, which the game never loads.
 
 **4. The compiled sprite terminator.** Tyrian 2.1 introduced the `0x0f` byte that
-ends a compiled 12-pixel frame. In Tyrian 1.1 there is no terminator at all: a
+ends a compiled 12-pixel frame. Tyrian 1.1 has no terminator: a
 frame runs until the next offset in the sheet's own table, and the streams are
 padded with zero bytes that skip nothing. A decoder written for 2.1 will read
 straight through a 1.1 frame into the next one.
@@ -560,14 +564,15 @@ stores it in `file0001.exe`, and later releases only append entries:
 No slot was ever reassigned, so bank 3 means `newsh7.shp` (and bank 7 means
 `newshc.shp`) in all three releases.
 
-Level scripts gained commands as the game gained features. Tyrian 2.1 added
-`]g` GALAGA mode, `]e` ENGAGE mini-game mode, `]x` extra game, `]2` two-player
-section jump, `]w` the Stalker 21.126 gate into TIME WAR, `]t` a timer jump,
-`]l` a jump taken when a player has died, `]s` savepoint, `]b` backup save slot,
-`]i` shop music, `]n` clear the escape flag, `]h` a difficulty-gated line and
-`]+` extra datacube capacity. The one command used in 1.1 but not in later
-scripts is `]S`, which synchronizes network text. Tyrian 2000 added `]T` and
-`]q` for Timed Battle.
+Tyrian 2.1 added these level-script commands:
+
+- `]g` GALAGA, `]e` ENGAGE, `]x` extra game, and `]2` two-player section jump;
+- `]w` Stalker 21.126's TIME WAR gate, `]t` timer jump, and `]l` dead-player jump;
+- `]s` savepoint, `]b` backup save slot, and `]i` shop music;
+- `]n` clear escape, `]h` difficulty gate, and `]+` extra datacube capacity.
+
+Tyrian 1.1 alone uses `]S` to synchronize network text. Tyrian 2000 added `]T`
+and `]q` for Timed Battle.
 
 ## Curiosities
 

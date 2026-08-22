@@ -49,20 +49,13 @@ const char *mobile_data_dir(void)
 
 #ifdef __ANDROID__
 
-// The APK keeps assets inside the archive, where the C library cannot reach them, so
-// every data file is unpacked once into the writable directory. The list is generated at
-// package time because asset directory enumeration is not exposed to C.
+// Generated at package time; SDL's C API cannot enumerate APK asset directories.
 #define ASSET_LIST  "data/filelist.txt"
 
-// Where the unpacked copy lands. Deliberately not "data": SDL_RWFromFile resolves a
-// relative path against internal storage before it falls back to the asset system, so
-// unpacking to <internal>/data would make each file shadow the asset it came from and
-// freeze the game on whatever the first install wrote.
+// Avoid "data": unpacked files there would shadow newer assets in the APK.
 #define UNPACK_SUBDIR  "gamedata"
 
-// Unpack one asset unless an identical-length copy is already in place. Returns false
-// only when the asset itself could not be read; an unwritable destination is reported
-// and skipped, since a partial data set still beats refusing to start.
+// Keep an existing copy when its length matches. Returns false only if the asset is unreadable.
 static bool unpack_asset(const char *name)
 {
 	char asset_path[512], dest_path[512];
@@ -143,7 +136,7 @@ static void unpack_assets(void)
 void mobile_platform_init(void)
 {
 #ifdef __ANDROID__
-	// Private app storage: no permission needed, and the system clears it on uninstall.
+	// Private storage needs no permission and is removed on uninstall.
 	const char *internal = SDL_AndroidGetInternalStoragePath();
 	SDL_strlcpy(user_dir, internal != NULL ? internal : ".", sizeof(user_dir));
 	snprintf(data_dir_path, sizeof(data_dir_path), "%s/%s", user_dir, UNPACK_SUBDIR);
@@ -151,8 +144,7 @@ void mobile_platform_init(void)
 	mkdir(data_dir_path, 0700);
 	unpack_assets();
 #else
-	// iOS: the bundle is an ordinary read-only directory, so the data files are opened
-	// where they were installed. SDL owns both strings it returns here.
+	// iOS reads data from the app bundle and writes state to SDL's preference directory.
 	char *pref = SDL_GetPrefPath("OpenTyrian", "OpenTyrian2000");
 	SDL_strlcpy(user_dir, pref != NULL ? pref : ".", sizeof(user_dir));
 	SDL_free(pref);
@@ -208,11 +200,7 @@ bool mobile_get_local_ip(uint32_t *out)
 #endif
 }
 
-/* Software keyboard.
- *
- * Neither system offers a modal text dialog through SDL, so the game draws the prompt and
- * SDL_StartTextInput() raises the platform IME over it. Everything typed arrives as
- * ordinary SDL_TEXTINPUT, which the loop below collects. */
+/* SDL has no mobile text dialog, so the game draws one beneath the platform IME. */
 
 #define SWKBD_PANEL_W   240
 #define SWKBD_PANEL_Y1  50
@@ -221,24 +209,18 @@ bool mobile_get_local_ip(uint32_t *out)
 #define SWKBD_BUTTON_H  16
 #define SWKBD_BUTTON_Y  (SWKBD_PANEL_Y2 - 26)
 
-// Most callers are legacy 320-wide screens, which present pillarboxed. Drawing to the same
-// axis they use puts the panel over the middle of the display in either mode.
+// Centre against the logical screen used by both 320-wide and full-width callers.
 static int swkbd_center_x(void)
 {
 	return vga_width / 2 - video_get_menu_x_offset();
 }
 
-/* Told apart by shade, not by a palette index. This panel opens over whatever screen was up, and
- * a fixed index is a different colour in each one: the pair used to be 240 against 236, which
- * reads as one step brighter but is really shade 0 of the next bank against shade 12 of this one,
- * so the lit button came out near black beside a gold one. Shading moves within the bank already
- * on screen, which behaves the same wherever this opens. */
+/* Shade within the current palette bank; fixed indices change colour between screens. */
 static void swkbd_draw_button(int x, const char *label, bool highlight)
 {
 	const int x2 = x + SWKBD_BUTTON_W, y2 = SWKBD_BUTTON_Y + SWKBD_BUTTON_H;
 
-	// Both plates dark, so the label is legible on either; the lit one is told apart the way a
-	// selected menu row is, by a brighter border and brighter text.
+	// Highlight with the same brighter border and text used by selected menu rows.
 	JE_barShade(VGAScreen, x, SWKBD_BUTTON_Y, x2, y2);
 	JE_rectangle(VGAScreen, x, SWKBD_BUTTON_Y, x2, y2, highlight ? 250 : 244);
 
@@ -253,8 +235,7 @@ static bool swkbd_button_hit(int x)
 	       lastmouse_y >= SWKBD_BUTTON_Y && lastmouse_y <= SWKBD_BUTTON_Y + SWKBD_BUTTON_H;
 }
 
-// Row by row rather than SDL_BlitSurface, which between two 8-bit surfaces goes through
-// palette matching. Pitch carries padding these screens never use, so only w bytes move.
+// Copy indices directly; an 8-bit SDL blit would try to match empty surface palettes.
 static void swkbd_copy_screen(SDL_Surface *dst, const SDL_Surface *src)
 {
 	for (int y = 0; y < src->h; ++y)
@@ -264,11 +245,7 @@ static void swkbd_copy_screen(SDL_Surface *dst, const SDL_Surface *src)
 	}
 }
 
-/* SDL_ConvertSurface cannot copy VGAScreen, and neither can SDL_DuplicateSurface, which is
- * built on it: converting to an indexed format needs a populated destination palette, and
- * this game never fills a surface palette at all -- scale_and_flip maps the indices itself.
- * Both fail with "Empty destination palette". Build the copy the way video.c builds the
- * screen and move the rows across. */
+/* Recreate the indexed surface and copy its rows; SDL's conversion path rejects empty palettes. */
 static SDL_Surface *swkbd_clone_screen(const SDL_Surface *src)
 {
 	SDL_Surface *copy = SDL_CreateRGBSurface(0, src->w, src->h, 8, 0, 0, 0, 0);
@@ -292,8 +269,7 @@ bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
 		text[max_len] = '\0';
 	size_t len = strlen(text);
 
-	// Absolute tap-to-click, so the OK and Cancel boxes can be hit even when a level is
-	// running behind this prompt.
+	// Use absolute input so the buttons work over a running level.
 	const bool was_relative = mouseGetRelative();
 	mouseSetRelative(false);
 
@@ -318,17 +294,13 @@ bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
 
 	while (!done)
 	{
-		/* Restoring first is what makes the panel redrawable: JE_barShade halves the shade of
-		 * the pixels already there rather than filling, so it can never erase the last frame.
-		 * With no copy to restore from, fill instead -- a flatter panel, but text that is
-		 * deleted has to leave. */
+		// Restore before shading because JE_barShade does not erase the previous frame.
 		if (backdrop != NULL)
 			swkbd_copy_screen(VGAScreen, backdrop);
 		else
 			fill_rectangle_xy(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2, 0);
 
-		// Twice, the second pass inset, the way the in-game menu and help boxes are drawn:
-		// the interior drops far enough to read against and the rim stays one step lighter.
+		// Match the inset shading used by the in-game menu and help boxes.
 		JE_barShade(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2);
 		JE_barShade(VGAScreen, panel_x1 + 2, SWKBD_PANEL_Y1 + 2, panel_x2 - 2, SWKBD_PANEL_Y2 - 2);
 		JE_rectangle(VGAScreen, panel_x1, SWKBD_PANEL_Y1, panel_x2, SWKBD_PANEL_Y2, 244);
@@ -357,8 +329,7 @@ bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
 		JE_showVGA();
 		JE_mouseReplace();
 
-		// Pairing service_SDL_events with limit_render_fps drops SDL_TEXTINPUT events;
-		// service_wait_delay is the pump that keeps them.
+		// service_wait_delay preserves SDL_TEXTINPUT events while pacing the loop.
 		setDelay(1);
 		push_joysticks_as_keyboard();
 		service_wait_delay();

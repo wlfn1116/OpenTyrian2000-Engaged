@@ -1200,8 +1200,7 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			case MENU_ITEM_TOUCH_OPACITY:
 			{
-				// A plain percentage of the bar, empty to full, with no neutral point to mark:
-				// the whole range is useful and the top of it is simply how the buttons look.
+				// Opacity uses the full bar and has no neutral marker.
 				const int bars = (wMenuItemValue + 1) / 3;   // segments are 2 px plus a 1 px gap
 				const int amt = (touchButtonOpacity * bars + TOUCH_OPACITY_MAX / 2) / TOUCH_OPACITY_MAX;
 				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, 174, amt, 2, 10);

@@ -138,11 +138,8 @@ static SDL_Texture *main_window_texture = NULL;
 // Texture for the supersampled present path, recreated on size change.
 static SDL_Texture *hi_texture = NULL;  // streaming: the palette-converted hi frame
 
-/* Whichever texture the last present actually used. video_repeat_last_present re-shows it
- * without rebuilding anything, which is the only safe way to redraw an overlay on a screen
- * that composes its frame somewhere other than VGAScreen: the jukebox presents a
- * supersampled starfield through present_hi, so re-running JE_showVGA there would put the
- * bare 1x text layer on screen for a frame. Cleared wherever a texture is destroyed. */
+/* Texture used by the last present. Reuse it for overlay-only redraws, including screens
+ * composed outside VGAScreen. Clear the handle when its texture is destroyed. */
 static SDL_Texture *last_present_texture = NULL;
 static int hi_texture_w = 0, hi_texture_h = 0;
 
@@ -176,11 +173,8 @@ void init_video(void)
 		return;
 
 #ifdef _WIN32
-	/* Windows gives a process that never declares DPI awareness a virtualised desktop and
-	 * bitmap-scales its window, which costs the same detail a low drawable does once the
-	 * display is at 125% or more. This asks for the split the Retina backends already have:
-	 * window sizes stay in points, so a window keeps the size it has on screen, and the
-	 * drawable behind it carries the display's own pixels. Set before the video subsystem. */
+	/* Request per-monitor DPI awareness before SDL video starts. Window sizes remain in
+	 * points while the drawable uses the display's native pixels. */
 	SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
 #endif
 
@@ -221,10 +215,8 @@ void init_video(void)
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
 
-	/* Ask for a drawable the size of the pixels behind the window. Cocoa, UIKit and Wayland
-	 * otherwise render at the window's point size and let the system upscale the result: a
-	 * Retina iPhone draws a third of its pixels and a Retina Mac half of its own. The backends
-	 * with no point/pixel split ignore the flag. See video_output_size(). */
+	/* Request native-pixel drawables on high-DPI backends. Other backends ignore the flag.
+	 * See video_output_size(). */
 	const Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI;
 
 	main_window = SDL_CreateWindow(opentyrian_str,
@@ -456,9 +448,7 @@ void video_on_win_resize(void)
 		scaler_h = scalers[scaler].height;
 	}
 
-	// A scaler's size is a pixel count, and a high-DPI drawable fits it into fewer points.
-	// Clamping the window to the raw number would demand a window twice the width it needs,
-	// which a 5x scaler cannot even fit on a Retina laptop display.
+	// Convert the scaler's pixel size to window points before clamping.
 	{
 		float scale_x, scale_y;
 		video_output_pixel_scale(&scale_x, &scale_y);
@@ -591,10 +581,7 @@ static void fit_rect_to_aspect(SDL_Rect *const r, int win_w, int win_h, float as
 	}
 }
 
-/* Renderer output size, in pixels. SDL measures the window in points, which a high-DPI
- * drawable makes smaller than the pixels behind it, so every render-side rectangle is sized
- * from here rather than from the window. Falls back to the window size while there is no
- * renderer to ask. */
+/* Renderer output size in pixels, falling back to window points before a renderer exists. */
 void video_output_size(int *out_w, int *out_h)
 {
 	int w = 0, h = 0;
@@ -612,9 +599,7 @@ void video_output_size(int *out_w, int *out_h)
 		*out_h = h;
 }
 
-// Output pixels per window point, per axis. Input arrives in points while the output
-// rectangles are in pixels, so the input mappings and any limit written in points convert by
-// it. Either pointer may be NULL.
+// Output pixels per window point, used to map point-based input and limits. Pointers may be NULL.
 void video_output_pixel_scale(float *out_sx, float *out_sy)
 {
 	float sx = 1.f, sy = 1.f;

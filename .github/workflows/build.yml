@@ -1,7 +1,5 @@
-# Builds all release targets on pushes, pull requests, and manual runs. Master
-# refreshes the `latest` pre-release; version tags attach the same nine artifacts
-# to a tagged release. The data job supplies one stripped freeware-data artifact
-# to every platform job.
+# Builds every release target. Master refreshes `latest`; tags publish the same artifacts.
+# The data job supplies one stripped freeware-data package to all platform jobs.
 
 name: build
 
@@ -49,8 +47,7 @@ jobs:
           path: data
           retention-days: 1
 
-  # Both architectures run the suite: the replay fixtures are canonical state hashes, so this
-  # is where an ARM build proves its simulation matches everyone else's.
+  # Replay hashes must match on x86-64 and ARM64.
   tests:
     name: Correctness suite ${{ matrix.label }}
     needs: data
@@ -172,8 +169,7 @@ jobs:
     name: Windows ARM64
     needs: data
     timeout-minutes: 60
-    # The VS 2026 image is the ARM64 runner that carries the v145 toolset. MIDI is absent from
-    # this build: the FluidSynth conditions in the project files are x64-only.
+    # This ARM64 image carries the v145 toolset. MIDI remains x64-only.
     runs-on: windows-11-vs2026-arm
     env:
       SDL2_VERSION: 2.30.11
@@ -185,8 +181,7 @@ jobs:
         with:
           msbuild-architecture: arm64
 
-      # SDL's VC packages ship x86 and x64 import libraries only, so ARM64 builds its own and
-      # stages them in the include + lib\<platform> layout that sdl_paths.props describes.
+      # Build ARM64 SDL SDKs in the layout expected by sdl_paths.props.
       - name: Restore the cached ARM64 SDL SDKs
         id: sdl-cache
         uses: actions/cache@v5
@@ -197,8 +192,7 @@ jobs:
       - name: Build SDL2 and SDL2_net for ARM64
         if: steps.sdl-cache.outputs.cache-hit != 'true'
         run: |
-          # Without this, a failed cmake only surfaces further down as a confusing cascade of
-          # errors from the steps that follow it.
+          # Fail this step immediately when a native command fails.
           $PSNativeCommandUseErrorActionPreference = $true
 
           New-Item -ItemType Directory -Force -Path visualc\external\SDL2, visualc\external\SDL2_net | Out-Null
@@ -209,17 +203,13 @@ jobs:
           tar -xzf sdl2.tar.gz --strip-components=1 -C visualc\external\SDL2
           tar -xzf sdl2net.tar.gz --strip-components=1 -C visualc\external\SDL2_net
 
-          # SDL2 asks for compatibility with CMake 3.0, which CMake 4 refuses without this.
-          # Quoted whole: PowerShell splits a bare -Dname=3.5 at the decimal point.
-          # SDL_LIBC=ON because SDL2's own libc links /NODEFAULTLIB, which it skips for ARM32
-          # but not ARM64, where MSVC leaves the CRT's _Interlocked helpers unresolved. The
-          # game already imports the same CRT, so this adds nothing to the package.
+          # CMake 4 needs the policy floor; PowerShell needs that argument quoted.
+          # SDL_LIBC keeps ARM64 SDL linked to the CRT used by the game. See doc/notes.md.
           cmake -S visualc\external\SDL2 -B visualc\external\SDL2\build -A ARM64 `
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
             -DSDL_LIBC=ON -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF
           cmake --build visualc\external\SDL2\build --config Release --parallel
-          # Absolute prefix: a relative one is resolved against the install script's own
-          # directory, not this one.
+          # CMake resolves a relative install prefix against its script directory.
           cmake --install visualc\external\SDL2\build --config Release `
             --prefix "$pwd\visualc\external\SDL2-install"
 
@@ -229,8 +219,7 @@ jobs:
           cmake --install visualc\external\SDL2_net\build --config Release `
             --prefix "$pwd\visualc\external\SDL2_net-install"
 
-          # CMake installs headers under include\SDL2 and splits the DLL from its import
-          # library; the project files expect the VC package layout instead.
+          # Restage CMake's output into the VC package layout.
           foreach ($name in 'SDL2', 'SDL2_net') {
             New-Item -ItemType Directory -Force -Path "visualc\sdk\$name\include", "visualc\sdk\$name\lib\arm64" | Out-Null
             Copy-Item "visualc\external\$name-install\include\SDL2\*" "visualc\sdk\$name\include\"
@@ -238,7 +227,7 @@ jobs:
             Copy-Item "visualc\external\$name-install\bin\*.dll" "visualc\sdk\$name\lib\arm64\"
           }
 
-      # Runs on a cache hit too, so a partial cache fails here rather than during the link.
+      # Validate both fresh and cached SDKs before linking.
       - name: Check the staged SDKs
         run: |
           foreach ($f in 'visualc\sdk\SDL2\include\SDL.h', 'visualc\sdk\SDL2\lib\arm64\SDL2.lib',
@@ -257,8 +246,7 @@ jobs:
             "/p:SDL2netBaseDir=${{ github.workspace }}\visualc\sdk\SDL2_net" `
             "/p:OPENTYRIAN_COMMIT=$commit"
 
-      # An x64 build would run on this machine and pass everything below it, so read the PE
-      # machine field rather than trusting that /p:Platform reached the compiler.
+      # Read the PE machine field; an accidental x64 build would also run on this host.
       - name: Check the executable is ARM64
         run: |
           $bytes = [System.IO.File]::ReadAllBytes('opentyrian-ARM64-Release.exe')
@@ -382,8 +370,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # ndk-build compiles the SDL sources alongside the game, so the port pins its own
-      # SDL rather than inheriting whatever the runner image happens to ship.
+      # Android builds the pinned SDL sources alongside the game.
       - name: Restore cached SDL sources
         id: sdl-cache
         uses: actions/cache@v5
@@ -405,18 +392,13 @@ jobs:
           tar -xzf sdl2.tar.gz --strip-components=1 -C "$jni/SDL2"
           tar -xzf sdl2net.tar.gz --strip-components=1 -C "$jni/SDL2_net"
 
-      # SDL ships a sample Android project whose Gradle wrapper JAR is not a published
-      # Gradle release, and setup-gradle refuses to run while any unrecognised wrapper is
-      # anywhere in the workspace. Only SDL's Java sources are used here, so drop the
-      # wrappers. Unconditional, because a cache saved before this step still holds them.
+      # setup-gradle rejects SDL's sample wrappers, including copies restored from cache.
       - name: Drop SDL's bundled Gradle wrappers
         run: |
           find android/app/src/main/jni -name 'gradle-wrapper.jar' -print -delete
           find android/app/src/main/jni -name 'gradle-wrapper.properties' -delete
 
-      # tools/make_app_icons.ps1 writes these and they are committed, so a missing one
-      # means the generator was not re-run. Checked here because the APK is no place to
-      # look: a release build renames resources.
+      # Check committed icon output before aapt2 renames it.
       - name: Check the committed launcher icons
         run: |
           for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
@@ -437,9 +419,7 @@ jobs:
           name: tyrian2000-data
           path: android/app/src/main/assets/data
 
-      # An APK keeps its assets inside the archive, so the game unpacks them on first run
-      # (src/mobile_platform.c). That needs a manifest, because asset directories cannot be
-      # enumerated from C. Build it outside the directory so it never lists itself.
+      # Build the manifest used to unpack archived APK assets. Keep it out of its own listing.
       - name: Index the packaged data
         working-directory: android/app/src/main/assets/data
         run: |
@@ -447,8 +427,7 @@ jobs:
           mv ../filelist.tmp filelist.txt
           test -s filelist.txt
 
-      # A sideloaded build is signed with Gradle's debug key. Caching it keeps the
-      # signature stable, so a new build installs over the previous one.
+      # Keep the debug signature stable so sideloaded builds upgrade in place.
       - name: Cache the debug signing key
         uses: actions/cache@v5
         with:
@@ -468,8 +447,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk \
              "$GITHUB_WORKSPACE/OpenTyrian2000-Engaged-Android.apk"
 
-      # There is no way to run the game on a runner, so check what the APK actually
-      # contains: both ABIs, and the data the first launch unpacks.
+      # The runner cannot launch the APK, so verify its ABIs and packaged data.
       - name: Verify APK contents
         run: |
           list=$(unzip -Z1 OpenTyrian2000-Engaged-Android.apk)
@@ -478,9 +456,7 @@ jobs:
                       assets/data/tyrian1.lvl assets/data/filelist.txt; do
             printf '%s\n' "$list" | grep -qx "$want" || { echo "missing $want"; exit 1; }
           done
-          # No icon check here: a release build runs the resources through aapt2 optimize,
-          # which renames them, so nothing about their APK path or name is stable. The
-          # committed sources are checked before the build instead.
+          # aapt2 renames icons; their committed inputs were checked before the build.
 
       # Already a compressed archive; skip GitHub's wrapper compression.
       - uses: actions/upload-artifact@v6
@@ -526,11 +502,7 @@ jobs:
           tar -xzf sdl2.tar.gz --strip-components=1 -C ios/external/SDL2
           tar -xzf sdl2net.tar.gz --strip-components=1 -C ios/external/SDL2_net
 
-      # Ninja, never -G Xcode: SDL2's several hundred configure probes each become a
-      # separate xcodebuild process under that generator, which turns a one-minute
-      # configure into a ten-minute one on a runner billed at ten times the Linux rate.
-      # Device slice only, and unsigned, since a public runner has no signing identity;
-      # the .ipa is for sideloading (see ios/README.md).
+      # Ninja avoids a separate xcodebuild for every SDL probe. Build one unsigned device slice.
       - name: Configure
         run: |
           command -v ninja > /dev/null || brew install ninja
@@ -550,9 +522,7 @@ jobs:
           test -x "$app/OpenTyrian2000" || { echo "no app binary at $app"; exit 1; }
           test -f "$app/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
           test -f "$app/Assets.car" || { echo "icon asset catalog missing from the bundle"; exit 1; }
-          # A compiled catalog is not enough: iOS finds the icon through the keys actool
-          # writes into its partial plist, which the build merges into Info.plist. Without
-          # them the app shows no icon at all, and nothing else here would notice.
+          # Verify that actool's icon keys reached the bundle plist.
           echo "--- actool partial plist ---"
           cat ios/build/actool-partial.plist || true
           echo "--- bundle Info.plist ---"
@@ -610,8 +580,7 @@ jobs:
           tar -xzf sdl2.tar.gz --strip-components=1 -C macos/external/SDL2
           tar -xzf sdl2net.tar.gz --strip-components=1 -C macos/external/SDL2_net
 
-      # Ninja rather than -G Xcode, for the reason given in the iOS job above. Architectures
-      # and deployment target come from macos/CMakeLists.txt so one file states them.
+      # CMakeLists.txt owns the universal architectures and deployment target.
       - name: Configure
         run: |
           command -v ninja > /dev/null || brew install ninja
@@ -622,10 +591,8 @@ jobs:
       - name: Build
         run: cmake --build macos/build --parallel
 
-      # Apple Silicon refuses to run an unsigned binary at all, and the post-build copies
-      # into the bundle invalidate the ad-hoc signature the linker applied, so re-sign the
-      # finished bundle. This is not notarization; macos/README.md covers what a user still
-      # has to do on first launch. ditto rather than zip, which mangles bundle metadata.
+      # Post-build copies invalidate the ad-hoc signature. Re-sign, then use ditto to preserve
+      # bundle metadata. This does not notarize the app; see macos/README.md.
       - name: Sign and package
         run: |
           app=macos/build/OpenTyrian2000.app

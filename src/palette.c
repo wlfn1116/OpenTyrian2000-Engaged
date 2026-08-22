@@ -74,9 +74,7 @@ void set_palette(Palette colors, unsigned int first_color, unsigned int last_col
 	}
 }
 
-/* Wall-clock of the last fade step. Every screen transition steps the palette through
- * step_fade_palette below, so a fresh stamp means a transition is running. Anything drawn
- * outside the palettized frame reads this to keep off the screen while one does. */
+/* Timestamp of the last palette-fade step, used by overlays outside the indexed frame. */
 static Uint32 fade_step_ms;
 
 bool palette_fading(void)
@@ -88,11 +86,8 @@ bool palette_fading(void)
 	return fade_step_ms != 0 && SDL_GetTicks() - fade_step_ms < quiet_ms;
 }
 
-/* Brightest component anywhere in the live palette: 255 on any real screen, because every
- * palette the game ships holds something near white, and 0 once a fade has reached black.
- * Overlays outside the palettized frame follow it so they darken exactly as the frame does,
- * and so they stay hidden through the pause between a transition's fade-out and fade-in,
- * which no timer can predict the length of. */
+/* Brightest live palette component. Rendered overlays use it to follow fades and remain
+ * hidden between a fade-out and fade-in. */
 Uint8 palette_peak(void)
 {
 	Uint8 peak = 0;

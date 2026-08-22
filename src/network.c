@@ -3244,10 +3244,7 @@ void network_end_screen_rendezvous(bool local_dismissed)
 
 	while (network_peer_alive())
 	{
-		/* This screen draws once and then only pumps, so its buttons are put up and kept fresh
-		 * from here: the request would otherwise go stale mid-wait. push_joysticks_as_keyboard
-		 * is what turns a pad press into a key and what pushes the key the confirm button
-		 * queued, and it repaints the overlay for a loop that never presents again. */
+		// Renew Select and synthesize its key inside this draw-once wait loop.
 		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 
 		watchdog_heartbeat();

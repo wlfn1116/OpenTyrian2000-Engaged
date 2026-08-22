@@ -267,12 +267,8 @@ void push_joysticks_as_keyboard(void)
 	if (rollback_resim)
 		return;
 
-	/* Screens that want menu-style keys all call this, immediately before the pump they
-	 * read, which is exactly where the on-screen buttons' keys have to land. It is also the
-	 * one place every hand-rolled wait loop passes through, so the buttons are repainted
-	 * from here too: several of those loops draw once and then only pump, and a layout that
-	 * went stale after the screen changed would otherwise stay on screen -- leaving the
-	 * jukebox's track buttons behind on the menu that follows it. */
+	/* Deliver touch keys beside controller keys, immediately before the screen's event pump.
+	 * Idle wait loops also use this point to repaint changed controls. */
 	touch_ui_flush_keys();
 	touch_ui_idle_repaint();
 
@@ -305,9 +301,7 @@ void init_joysticks(void)
 		return;
 	
 #ifdef __ANDROID__
-	// SDL presents the accelerometer as a 3-axis joystick by default, and the default
-	// assignment binds the first two axes to the directions, so tilting the phone steers
-	// the menus. Nothing in the game reads tilt, so keep it off the joystick list.
+	// Ignore mobile accelerometers so the default axis mapping does not steer menus by tilt.
 	SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 #endif
 

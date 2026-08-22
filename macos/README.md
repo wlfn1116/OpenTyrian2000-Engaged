@@ -51,8 +51,8 @@ from `visualc/tyrian2000.ico` by `tools/make_app_icons.ps1` and committed, so a
 build never runs the generator; re-run it after changing the source icon. The
 build packs the set into `tyrian2000.icns` with `iconutil`.
 
-The artwork carries the rounded square of Apple's icon grid itself, an 824-of-
-1024 plate, because macOS draws no mask of its own the way iOS and Android do.
+The artwork includes an 824/1024 rounded-square plate because macOS does not
+apply the iOS or Android icon mask.
 
 ## Build
 
@@ -67,34 +67,27 @@ The build is universal by default and takes about twice as long for it. For a
 local build you only intend to run yourself, add
 `-DCMAKE_OSX_ARCHITECTURES=arm64`.
 
-Use Ninja rather than `-G Xcode`. SDL2's CMakeLists runs several hundred
-feature probes, and the Xcode generator makes each one a separate `xcodebuild`
-process, which stretches configure from about a minute to over ten. Nothing in
-this project depends on Xcode-generator behaviour.
+Use Ninja. SDL2 runs several hundred feature probes, and the Xcode generator
+starts a separate `xcodebuild` for each one. This project does not require it.
 
 ## Signing and Gatekeeper
 
-Copying the data into the bundle after the link invalidates the ad-hoc
-signature the linker applies, and Apple Silicon will not run a binary whose
-signature does not match, so re-sign the finished bundle:
+Copying data into the bundle invalidates the linker's ad-hoc signature. Re-sign
+the finished bundle so it runs on Apple Silicon:
 
 ```sh
 codesign --force --sign - macos/build/OpenTyrian2000.app
 ```
 
-That is enough to launch it locally. It is not notarization: a bundle
-downloaded from a release is quarantined, and macOS refuses to open it with a
-message about an unidentified developer or a damaged app. Either strip the
-quarantine flag:
+Release bundles are not notarized. If macOS quarantines a download, either
+remove the quarantine flag:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/OpenTyrian2000.app
 ```
 
-or open it once from the Finder's right-click menu, or allow it under System
-Settings > Privacy & Security after the first refusal. Removing that step for
-good needs a paid Apple Developer account to sign and notarize with, which this
-project does not have; the iOS build is unsigned for the same reason.
+or open it once from Finder's right-click menu, or allow it under **System
+Settings > Privacy & Security** after the first refusal.
 
 ## Files
 

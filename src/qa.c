@@ -7110,10 +7110,8 @@ static void qa_test_weapon_bay_tags(void)
 	       JE_textWidth(SHOP_FRONT_GUN_TAG, TINY_FONT), JE_textWidth(SHOP_REAR_GUN_TAG, TINY_FONT));
 }
 
-/* The shield/armor damage glow is presentation state held out of the rollback registry, so it has
- * to step once per REAL tick and stay each ship's own. Both halves are easy to get wrong online:
- * a replay pass that steps it again spends a whole glow inside one displayed frame, and a shared
- * counter would have one ship's hit cutting the partner's glow short. */
+/* Shield and armor glows are personal presentation state. They advance once per real tick,
+ * outside rollback re-simulation. */
 static void qa_test_gauge_flash_lifetime(void)
 {
 	if (VGAScreenSeg == NULL)

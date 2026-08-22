@@ -6090,9 +6090,7 @@ void JE_timedBattleResult(void)
 	                    centered, 15, 2, false, 1);
 
 	JE_showVGA();
-	// "Press a key", which a finger cannot express: offer confirm. Asked for between the present
-	// and the fade so it brightens in with the card; the rendezvous below keeps it alive, and the
-	// fade_black at the end of this function takes it away again.
+	// Offer Select before the card fades in and keep it live through the wait.
 	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 	fade_palette(colors, 15, 0, 255);
 
@@ -9069,10 +9067,7 @@ redo:
 					}
 				}
 
-				// Change-fire arrives as a latch from two places: vt_ship_step, which polls the
-				// pad at render rate and would otherwise consume the press-edge before this tick
-				// reads it, and the touch port's on-screen button. Drain it outside the pad
-				// branch above, which a phone with no controller never enters.
+				// Drain the render-rate controller/touch latch even when no controller is attached.
 				button[3] |= changefire_pressed;
 				changefire_pressed = false;
 
@@ -9087,10 +9082,8 @@ redo:
 				if ((inputDevice == 0 || inputDevice == 2) && has_mouse)
 				{
 #ifdef PLATFORM_HANDHELD
-					/* On the touch ports mouse_pressed[0] is the touchscreen's auto-fire
-					 * (a drag holds it, keyboard.c). Under Toggle Fire a touch must
-					 * neither shoot nor flip the toggle, so keep it out of the fire
-					 * button entirely; only real buttons reach the latch below. */
+					/* Touch auto-fire shares mouse_pressed[0]. Toggle Fire ignores it so drags
+					 * neither shoot nor flip the latch; physical buttons still reach it. */
 					if (!debugToggleFire)
 						button[0] |= mouse_pressed[0];
 #else

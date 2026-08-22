@@ -1,14 +1,8 @@
-# iOS build. Produces an unsigned OpenTyrian2000.app; ios/README.md covers turning that
-# into an installable .ipa. SDL2 and SDL2_net sources are expected under ios/external.
+# Unsigned iOS bundle. See ios/README.md for dependencies and IPA packaging.
 cmake_minimum_required(VERSION 3.21)
 
-# SDL2's iOS backend is Objective-C and its HIDAPI is C++. Enabling both here rather than
-# letting the subproject do it keeps the toolchain probes at the top level.
-#
-# Build this with Ninja or Makefiles, not -G Xcode. SDL2's CMakeLists runs several hundred
-# feature probes, and under the Xcode generator every try_compile is a separate xcodebuild
-# process: configure alone takes over ten minutes, against roughly one with Ninja. Nothing
-# here depends on Xcode-generator behaviour.
+# Enable Objective-C and C++ at the top level for SDL's iOS backend and HIDAPI.
+# Use Ninja or Makefiles; Xcode runs every SDL feature probe in a separate xcodebuild.
 project(OpenTyrian2000 C CXX OBJC)
 
 set(CMAKE_C_STANDARD 99)
@@ -30,8 +24,7 @@ set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST OFF CACHE BOOL "" FORCE)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/SDL2" sdl2 EXCLUDE_FROM_ALL)
 
-# SDL2_net is four C files. Compiling them into the app avoids exporting an SDL2 package
-# config just so its CMake project can find_package() the copy we already built.
+# Compile SDL2_net into the app so its project does not need an exported SDL2 package.
 set(SDL_NET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL2_net")
 set(SDL_NET_SOURCES
   "${SDL_NET_DIR}/SDLnet.c"
@@ -48,21 +41,13 @@ endif()
 
 add_executable(OpenTyrian2000 MACOSX_BUNDLE ${OT_SOURCES} ${SDL_NET_SOURCES})
 
-# Read-only game data, copied into OpenTyrian2000.app/data where SDL_GetBasePath finds it.
-# A post-build copy rather than MACOSX_PACKAGE_LOCATION, which only the Xcode generator
-# honours, and this build deliberately avoids Xcode (see the note above the project call).
+# Copy data post-build; MACOSX_PACKAGE_LOCATION works only with the Xcode generator.
 add_custom_command(TARGET OpenTyrian2000 POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
           "${OT_ROOT}/data" "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/data"
   COMMENT "Copying game data into the bundle")
 
-# Launcher icons: the compiled asset catalog, and nothing else.
-#
-# The catalog is the only place iOS reads a per-appearance icon from, and its artwork has a
-# transparent background so the system supplies the material behind the ship rather than the
-# icon carrying a slab of colour, which is what the Liquid Glass treatment expects; the
-# tinted variant is monochrome for the same reason. actool ships with Xcode, so compiling
-# the catalog needs no Xcode generator.
+# Compile the transparent normal, dark, and tinted icons into one asset catalog.
 add_custom_command(TARGET OpenTyrian2000 POST_BUILD
   COMMAND xcrun actool "${CMAKE_CURRENT_SOURCE_DIR}/Assets.xcassets"
           --compile "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>"
@@ -71,10 +56,7 @@ add_custom_command(TARGET OpenTyrian2000 POST_BUILD
           --target-device iphone --target-device ipad
           --app-icon AppIcon
           --output-partial-info-plist "${CMAKE_CURRENT_BINARY_DIR}/actool-partial.plist"
-  # actool names the icons it rasterised in that partial plist, and iOS reads those keys
-  # rather than the catalog to find them. Xcode merges the file into the app's Info.plist
-  # as a matter of course; nothing did that here, so the icon compiled into Assets.car and
-  # was then unreachable. Merge adds only the keys the template does not already carry.
+  # Non-Xcode builds must merge actool's icon keys into the bundle plist.
   COMMAND /usr/libexec/PlistBuddy
           -c "Merge ${CMAKE_CURRENT_BINARY_DIR}/actool-partial.plist"
           "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/Info.plist"
@@ -82,8 +64,7 @@ add_custom_command(TARGET OpenTyrian2000 POST_BUILD
 
 target_include_directories(OpenTyrian2000 PRIVATE "${OT_ROOT}/src" "${SDL_NET_DIR}")
 
-# TARGET_IOS selects the mobile platform layer; the float and char flags keep this build's
-# simulation bit-identical to the desktop and console targets for netplay and replays.
+# Keep iOS simulation compatible with the other netplay and replay targets.
 target_compile_definitions(OpenTyrian2000 PRIVATE
   NDEBUG
   TARGET_UNIX

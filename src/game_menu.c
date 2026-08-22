@@ -306,11 +306,7 @@ static int upgradeSubVisibleRows(void)
 	return total_rows <= 6 ? 6 : 5;
 }
 
-/* An outpost list that has outgrown its window, so part of it is scrolled out of reach. A tap
- * only lands on the rows currently drawn, which is what earns those screens the cursor keys;
- * a list that fits does not need them. One place decides, because every scrolling list here
- * has to be in it: the buy/sell sub-list and the read-only endless perk list are the two. The
- * E-Shop looks like a third and is not, being a fixed thirteen rows that never scroll. */
+/* Touch arrows are needed only for outpost lists that can scroll beyond their window. */
 static bool outpostListScrolls(void)
 {
 	if (curMenu == MENU_UPGRADE_SUB)
@@ -322,10 +318,7 @@ static bool outpostListScrolls(void)
 	return false;
 }
 
-/* The rear gun on this row has a second firing mode, which the / key cycles so the change can
- * be watched in the preview. Asked here rather than beside the preview drawing, because that
- * only runs while this very row is selected: a condition tested only where it is true can
- * never report that it has become false, which left the button on screen after leaving. */
+/* Show the rear-mode button only while its weapon-preview row is selected. */
 static bool outpostRearModeCyclable(void)
 {
 	return curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4
@@ -1709,9 +1702,7 @@ void shopWaitNotice(const char *text, const char *detail, const char *hint)
 // this runs at the top of each pass. Vsync-on paces through JE_showVGA; off it follows the cap.
 void shopWaitFrame(void)
 {
-	/* These screens read Esc, so the pad and the on-screen Back button have to reach them:
-	 * this is what turns a pad press into a key, and what pushes the key an on-screen button
-	 * queued. Without it the hint says "Press Esc to go back" on a machine with no Esc. */
+	// Synthesize keys so controller and touch users can follow the Esc prompt.
 	push_joysticks_as_keyboard();
 
 	service_SDL_events(false);
@@ -2353,10 +2344,7 @@ void JE_itemScreen(void)
 	}
 
 	bool quit = false;
-	/* Set by a press that must act once and then wait for the button to come up. Latching it
-	 * replaces a wait_noinput at each of those presses: that spins without presenting, so the
-	 * outpost stopped animating for as long as the button was held. A mouse click is over too
-	 * quickly to notice, but a tap is held for a moment, which read as the game hanging. */
+	// Latch one-shot presses without blocking outpost animation while the button is held.
 	bool awaitClickRelease = false;
 	// Full-ship online modes show the local ship's hull, guns, and cash. Modes with one shared
 	// arsenal continue to use player 0.
@@ -3233,14 +3221,7 @@ void JE_itemScreen(void)
 			{
 			/* Animate the active menu and handle events that do not need the outer input path. */
 
-				/* Both asked either way, and from here rather than from the code that draws the
-				 * thing they belong to: this runs on every frame the outpost does, whatever is
-				 * on screen, so leaving a row or a list takes its buttons with it instead of
-				 * leaving them up until the request goes stale.
-				 *
-				 * Ahead of the present below, so the frame that moves the highlight carries the
-				 * matching buttons. Deciding after it left them a frame behind, and a frame here
-				 * is however long the weapon sim's delay runs: long enough to look like lag. */
+				// Refresh conditional buttons before each outpost frame is presented.
 				if (outpostListScrolls())
 					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 				else
@@ -3462,8 +3443,7 @@ void JE_itemScreen(void)
 				service_SDL_events(false);
 				mouseButton = JE_mousePosition(&mouseX, &mouseY);
 
-				// A press that has already acted keeps waiting here rather than leaving the
-				// loop, so the outpost carries on drawing until the button comes up.
+				// Keep presenting the outpost until an acted-on press is released.
 				if (!mousedown)
 					awaitClickRelease = false;
 
@@ -9940,12 +9920,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		rl_finalize();
 		rl_capture_residual(VGAScreenSeg, game_screen);
 
-		/* The editor hit-tests every row, but on a touchscreen a tap both selects and acts,
-		 * so there is no way to move the cursor without changing something, and the field
-		 * list scrolls past its frame. The cursor keys give that back: up and down move the
-		 * selection, left and right adjust it without having to land on the correct half of
-		 * a row, and confirm triggers the selected action. Back stands in for the
-		 * right-click that leaves. */
+		// The scrolling editor needs arrows, Select, and Back in addition to direct row taps.
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		push_joysticks_as_keyboard();
@@ -10189,9 +10164,7 @@ bool JE_customWeaponCreator(bool canEquip)
 #ifdef PLATFORM_HANDHELD
 				else if (selField == CWROW_NAME)
 				{
-					// The name is otherwise typed, and nothing here produces a keystroke.
-					// Confirming the row opens the system keyboard instead, as the save and
-					// high-score name fields do.
+					// Open the system keyboard when Select activates the name row.
 					char kb[sizeof(customWeaponName)];
 					SDL_strlcpy(kb, customWeaponName, sizeof(kb));
 					if (console_swkbd(kb, sizeof(kb), sizeof(kb) - 1, kb, "Weapon name", false))

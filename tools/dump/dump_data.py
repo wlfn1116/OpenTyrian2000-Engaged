@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Dump every file in the Tyrian data directory into a browsable tree.
+"""Decode a Tyrian data directory into a browsable tree under ``dumps/``.
 
-Sprites and backdrops become PNGs, tables become JSON and CSV, text becomes
-plain text, sound becomes WAV, and level maps become both CSV and rendered
-images. Anything with no decoder is copied verbatim so the dump covers the
-whole directory. `dump/index.csv` lists every source file, what it holds, what
-it produced, and which part of the game reads it. Nothing in data/ is modified.
+The output uses PNG for graphics, JSON or CSV for tables, plain text for text,
+and WAV for sound. Undecoded files are copied into ``raw/``. Each tree's
+``index.csv`` maps source files to their output and engine loader. Source data is
+never modified.
 
-    python tools/dump/dump_data.py                 # dump everything into dump/
+    python tools/dump/dump_data.py                 # dump into dumps/<release tree>/
     python tools/dump/dump_data.py --list          # show the section names
     python tools/dump/dump_data.py --only audio text
 
@@ -33,17 +32,14 @@ import tyrian_formats as tf                             # noqa: E402
 
 REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 
-# Palette 0 is the one gameplay and the shop run on (src/tyrian2.c), so it is
-# the sane default for anything whose palette is not stored with it.
+# Palette 0 is the gameplay/shop default for assets without a stored palette.
 DEFAULT_PALETTE = 0
 
 # A DOS text file ends at its first end-of-file marker; whatever follows is padding.
 DOS_EOF = bytes([0x1a])
 
-# Contact sheets are a browsing aid, not data, so they are laid out to be read.
-# A compiled sheet's own rows are 19 frames wide, which is what makes a 2x2 item
-# out of frames N, N+1, N+19 and N+20; on that grid it draws as one picture.
-# 12x14 cells are too small to study at native size, so those sheets magnify.
+# Use the source's 19-frame rows so 2x2 items remain contiguous on contact sheets.
+# Magnify 12x14 cells for inspection.
 SPRITE2_COLUMNS = 19
 SPRITE2_CELL = (tf.SPRITE2_WIDTH, 14)
 SPRITE2_SHEET_SCALE = 3
@@ -52,10 +48,7 @@ SHEET_BACKGROUND = ((26, 26, 30), (38, 38, 45))
 SECTIONS = ["palettes", "images", "sprites", "tiles", "anim",
             "gamedata", "text", "levels", "audio", "demos", "raw"]
 
-# What each data file holds and which part of the game reads it. Patterns are
-# matched in order, so specific names come before wildcards. The "used by"
-# column names the loader; `src_references` adds anything else that mentions the
-# file by name.
+# Data-file catalog. Match specific names before wildcards; src_references adds other users.
 CATALOG = [
     ("palette.dat", "graphics", "VGA palettes of 256 six-bit colours",
      "src/palette.c JE_loadPals; every 8-bit draw resolves through one of these"),
@@ -206,12 +199,7 @@ def write_text(path, text):
 
 
 def write_records(path, lines):
-    """One decrypted record per line, each terminated.
-
-    Joining with newlines instead would lose a trailing empty record, which four
-    of the shipped script files end with. A reader drops exactly one empty entry
-    from the end of a split.
-    """
+    """Write one terminated record per line, preserving a final empty record."""
     ensure_dir(os.path.dirname(path))
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         for line in lines:
@@ -475,9 +463,8 @@ class Dumper(object):
     def dump_ico(self, src, out_dir, name):
         """Convert a palette-indexed Windows icon to RGBA PNG beside its copy.
 
-        Handles the 1, 4 and 8 bit-per-pixel DIB forms the shipped icons use. Both
-        bitmaps are stored bottom-up with 4-byte row padding, and the 1bpp AND mask
-        that follows the image marks transparent pixels.
+        Supports the shipped 1, 4, and 8 bpp DIBs, including bottom-up rows,
+        four-byte padding, and the trailing 1 bpp transparency mask.
         """
         try:
             data = tf.read_file(src)
@@ -530,9 +517,7 @@ class Dumper(object):
     def write_sprite_array(self, sprites, out_dir, title, palette_index=None):
         """Individual PNGs plus a contact sheet for one Sprite_array bank.
 
-        `palette_index` picks a palette per sprite. The cutscene faces need it:
-        each one is drawn with a palette of its own (src/pcxmast.c, facepal) and
-        is unreadable in any other.
+        `palette_index` selects per-sprite palettes for cutscene faces.
         """
         ensure_dir(out_dir)
         entries, decoded, used = [], [], []
@@ -605,11 +590,8 @@ class Dumper(object):
                             pad=2, scale=1):
         """One image holding every frame of a bank, laid out on a grid.
 
-        `columns` and `cell` pin the layout when the format has a row width of
-        its own, so the parts of a multi-cell item land side by side and read as
-        one picture instead of four scattered quarters. Cells alternate between
-        two dark tones, which shows where each one ends without a border cutting
-        through a sprite that spans several.
+        `columns` and `cell` preserve native rows so multi-cell items stay joined.
+        Alternating backgrounds mark cells without cutting through sprites.
         """
         items = [d for d in decoded if d is not None]
         if not items:
@@ -1456,13 +1438,7 @@ into `raw/` without being parsed.""" % name_list(state))
         return notes
 
     def write_dumps_index(self):
-        """Refresh the index beside the trees, from whatever manifests are there.
-
-        Each tree explains itself in its own README. This one explains the set:
-        which release each tree holds and how they compare. It is rebuilt from
-        the manifests rather than from this run, so regenerating any one tree
-        keeps the whole table honest.
-        """
+        """Rebuild the shared index from every tree manifest currently present."""
         root = os.path.dirname(self.out)
         if os.path.basename(root) != DUMP_ROOT:
             return

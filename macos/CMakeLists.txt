@@ -1,22 +1,13 @@
-# macOS build. Produces a self-contained OpenTyrian2000.app; macos/README.md covers
-# signing it and getting it past Gatekeeper. SDL2 and SDL2_net sources are expected under
-# macos/external.
+# Self-contained macOS bundle. See macos/README.md for dependencies and signing.
 cmake_minimum_required(VERSION 3.21)
 
-# SDL2's Cocoa backend is Objective-C and its HIDAPI is C++. Enabling both here rather than
-# letting the subproject do it keeps the toolchain probes at the top level.
-#
-# Build this with Ninja or Makefiles, not -G Xcode. SDL2's CMakeLists runs several hundred
-# feature probes, and under the Xcode generator every try_compile is a separate xcodebuild
-# process: configure alone takes over ten minutes, against roughly one with Ninja. Nothing
-# here depends on Xcode-generator behaviour.
+# Enable Objective-C and C++ at the top level for SDL's Cocoa backend and HIDAPI.
+# Use Ninja or Makefiles; Xcode runs every SDL feature probe in a separate xcodebuild.
 project(OpenTyrian2000 C CXX OBJC)
 
 set(CMAKE_C_STANDARD 99)
 
-# Universal by default, so one download runs on both Apple Silicon and Intel. Both slices
-# are built from the same sources with the same float flags, which is what netplay and
-# replay hashes need. Set this to just arm64 to halve the build time.
+# Build matching Apple Silicon and Intel slices by default. Set only arm64 for a local build.
 if(NOT CMAKE_OSX_ARCHITECTURES)
   set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
@@ -38,15 +29,13 @@ else()
   set(OT_VERSION "1.0")
 endif()
 
-# SDL2, built static so the app bundle needs no embedded frameworks and nothing has to be
-# rewritten by install_name_tool afterwards.
+# Build SDL2 static so the bundle needs no embedded frameworks.
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST OFF CACHE BOOL "" FORCE)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/SDL2" sdl2 EXCLUDE_FROM_ALL)
 
-# SDL2_net is four C files. Compiling them into the app avoids exporting an SDL2 package
-# config just so its CMake project can find_package() the copy we already built.
+# Compile SDL2_net into the app so its project does not need an exported SDL2 package.
 set(SDL_NET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL2_net")
 set(SDL_NET_SOURCES
   "${SDL_NET_DIR}/SDLnet.c"
@@ -63,19 +52,14 @@ endif()
 
 add_executable(OpenTyrian2000 MACOSX_BUNDLE ${OT_SOURCES} ${SDL_NET_SOURCES})
 
-# Read-only game data. Unlike iOS, SDL_GetBasePath() on macOS resolves to Contents/Resources
-# rather than the bundle root, so the data has to land there; src/file.c looks for it at
-# exactly that path. A post-build copy rather than MACOSX_PACKAGE_LOCATION, which only the
-# Xcode generator honours, and this build deliberately avoids Xcode (see the note above the
-# project call).
+# SDL_GetBasePath() resolves to Contents/Resources on macOS. Copy data there post-build;
+# MACOSX_PACKAGE_LOCATION works only with the Xcode generator.
 add_custom_command(TARGET OpenTyrian2000 POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
           "${OT_ROOT}/data" "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/Resources/data"
   COMMENT "Copying game data into the bundle")
 
-# Launcher icon. iconutil packs the committed .iconset into the single .icns the Finder
-# reads; it ships with macOS, so this needs no Xcode generator. The artwork already carries
-# the rounded square of Apple's icon grid, so the system adds no shape of its own.
+# Pack the committed iconset into the .icns read by Finder.
 add_custom_command(TARGET OpenTyrian2000 POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E make_directory
           "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/Resources"
@@ -86,9 +70,7 @@ add_custom_command(TARGET OpenTyrian2000 POST_BUILD
 
 target_include_directories(OpenTyrian2000 PRIVATE "${OT_ROOT}/src" "${SDL_NET_DIR}")
 
-# TARGET_MACOS selects the bundle's own data and preferences directories, which a plain
-# `make` build does not want; the float and char flags keep this build's simulation
-# bit-identical to the other targets for netplay and replays.
+# TARGET_MACOS selects bundle paths; the flags preserve netplay and replay compatibility.
 target_compile_definitions(OpenTyrian2000 PRIVATE
   NDEBUG
   TARGET_UNIX

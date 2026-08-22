@@ -192,8 +192,7 @@ function Build-PC {
     }
 
     if ($Platform -eq 'ARM64') {
-        # The build stages its SDL2 DLLs beside the executable, so the repository root ends up
-        # holding ARM64 copies until an x64 build puts its own back.
+		# ARM64 stages its SDL DLLs in the repository root, replacing any x64 copies.
         Write-Host '  ARM64 replaces the SDL2 DLLs in the repository root.' -ForegroundColor Yellow
     }
 

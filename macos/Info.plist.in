@@ -29,8 +29,7 @@
 	<string>11.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.arcade-games</string>
-	<!-- Without this the window is scaled up from a 1x backing store and the playfield
-	     looks soft on every display Apple has shipped since 2012. -->
+	<!-- Render into the display's high-resolution backing store. -->
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<!-- The game renders a 320x200 playfield; there is no reason to wake a discrete GPU. -->

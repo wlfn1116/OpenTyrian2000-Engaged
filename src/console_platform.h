@@ -2,10 +2,8 @@
 #ifndef CONSOLE_PLATFORM_H
 #define CONSOLE_PLATFORM_H
 
-/* Traits every non-desktop port shares: SDL owns the window size, the pointer is a
- * touchscreen or a pad, and there is no physical keyboard, so text fields go through
- * console_swkbd. Gates that are really about a console's buttons stay spelled out per
- * platform. */
+/* Shared non-desktop traits: SDL owns the window size and text uses console_swkbd.
+ * Console-specific button checks remain explicit. */
 #if defined(__SWITCH__) || defined(__vita__) || defined(__ANDROID__) || defined(TARGET_IOS)
   #define PLATFORM_HANDHELD 1
 #endif

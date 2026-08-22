@@ -8,28 +8,21 @@
 
 #if defined(__ANDROID__) || defined(TARGET_IOS)
 
-// Read-only game data. iOS reads it straight out of the app bundle; Android has no
-// filesystem view of its assets, so mobile_platform_init() unpacks them into the
-// writable directory first and this then points there.
+// Read-only game data: the iOS bundle or Android's unpacked asset copy.
 const char *mobile_data_dir(void);
 
-// Writable directory for opentyrian.cfg, saves, and log/. Private to the app on both
-// systems, so nothing here survives an uninstall.
+// App-private writable directory for settings, saves, and logs.
 const char *mobile_user_dir(void);
 
-// Resolve both directories and, on Android, unpack any data file that is missing or
-// stale. Call once at the top of main(), before any file access.
+// Resolve the directories and unpack stale Android assets before file access.
 void mobile_platform_init(void);
 
-// Modal single-line text prompt, standing in for the physical keyboard the platform
-// lacks. `max_len` 0 uses the output buffer's full capacity, and `numeric` asks for a
-// number pad. Returns false on cancel.
+// Modal text prompt. `max_len` 0 uses the whole buffer; `numeric` requests a number pad.
+// Returns false on cancel.
 bool mobile_swkbd(char *out, size_t out_size, size_t max_len,
                   const char *initial, const char *guide, bool numeric);
 
-// This device's own IPv4 address in network byte order, for the lobby's host line.
-// Returns false when the address is unknown; SDL_net's own enumeration works here, so
-// this is only a fallback.
+// Fallback IPv4 lookup for the lobby host line. Returns false if none is known.
 bool mobile_get_local_ip(uint32_t *out);
 
 // Native display size in pixels. Either output pointer may be NULL.

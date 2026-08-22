@@ -321,14 +321,9 @@ extern bool debugMode;      // gates the debug menu and debug level select
 extern bool extraParallax;
 extern bool mirroredLayers; // over-panned layer edges continue as a flipped mirror image (both parallax modes)
 extern bool enemyBars;      // show a small health bar on damaged enemies
-// On-screen sidekick fire buttons on the touch ports. Outside the enhancement presets on
-// purpose: a preset describes how the game behaves, not which controls you are given, and
-// on a phone these are the only way to fire a sidekick at all.
+// On-screen sidekick fire buttons. This control preference stays outside gameplay presets.
 extern bool touchSidekickButtons;
-/* How visible the on-screen buttons are drawn, as a percentage of the alpha they are
- * authored with: full is how they are meant to look, and 0 removes them from the screen and
- * from the hit test together. Outside the presets for the same reason as touchSidekickButtons
- * above. */
+// Touch-control alpha percentage. Zero also removes their hit targets.
 #define TOUCH_OPACITY_MAX     100
 #define TOUCH_OPACITY_DEFAULT 100
 extern int touchButtonOpacity;

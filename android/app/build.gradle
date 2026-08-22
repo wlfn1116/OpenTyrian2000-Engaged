@@ -2,16 +2,14 @@ plugins {
 	id 'com.android.application'
 }
 
-// Single source of truth for the version string: src/opentyrian_version.h, the same header
-// the title screen and the Vita packaging read.
+// Read the version from the header shared by the game and other packages.
 def engagedVersion() {
 	def header = file('../../src/opentyrian_version.h').text
 	def match = header =~ /OPENTYRIAN_VERSION\s+"[^"0-9]*([0-9]+(?:\.[0-9]+)*)"/
 	return match ? match[0][1] : '1.0'
 }
 
-// versionCode has to increase monotonically for Android to accept an in-place upgrade, and
-// it has to be an integer, so pack the dotted version into one.
+// Pack the dotted version into Android's monotonically increasing integer versionCode.
 def engagedVersionCode(String version) {
 	def parts = version.tokenize('.').collect { it.toInteger() }
 	while (parts.size() < 3) parts << 0
@@ -46,16 +44,14 @@ android {
 	}
 
 	sourceSets {
-		// SDL ships the Java half of its Android backend with its sources; the activity in
-		// src/main/java only names the libraries to load.
+		// Include SDL's Java backend; the local activity only supplies platform policy.
 		main.java.srcDirs += 'src/main/jni/SDL2/android-project/app/src/main/java'
 	}
 
 	buildTypes {
 		release {
 			minifyEnabled false
-			// Debug keys, because a sideloaded build has no store identity to protect. CI
-			// caches the keystore so upgrades install over an earlier build.
+			// CI caches this debug key so sideloaded builds upgrade in place.
 			signingConfig signingConfigs.debug
 		}
 	}

@@ -102,10 +102,8 @@ including the wreck-animation skip and GAME OVER, therefore cannot read input
 through `button[]`.
 
 A finger reaches those screens through `mouse_pressed[0]` alone: touch in
-relative mode sets neither `mousedown` nor `newmouse`, only that auto-fire latch.
-It is a level rather than an edge, so the fresh-press guard has to clear it the
-same way it clears `newkey` and `newmouse`, or the finger that was flying the
-ship dismisses the screen the instant it appears.
+relative mode sets neither `mousedown` nor `newmouse`. The latch stays set while
+held, so the fresh-press guard must clear it with `newkey` and `newmouse`.
 
 ### Boss vulnerability cue
 
@@ -202,10 +200,11 @@ The frame is 356x200. The playfield is 299x184 and the HUD is 57 pixels wide.
 
 SDL measures the window and its input events in points, while the renderer draws
 in output pixels. The window asks for a high-DPI drawable, so the two differ on
-every backend that has such a split: Cocoa, UIKit, and Wayland. Windows joins
-them through `SDL_HINT_WINDOWS_DPI_SCALING`, which also declares the process DPI
-aware. Without those the backend draws at the point size and the system upscales
-the result.
+backends with that split, including Cocoa, UIKit, and Wayland.
+
+Windows uses `SDL_HINT_WINDOWS_DPI_SCALING`, which also declares the process DPI
+aware. Without high-DPI support, the backend draws at the point size and the
+system upscales the result.
 
 - Render-side rectangles come from `video_output_size`, not `SDL_GetWindowSize`.
 - Mouse and finger positions convert with `video_output_pixel_scale`.
@@ -561,96 +560,53 @@ together.
   stay outside presets.
 - Apply table-backed settings through `JE_applyItemDataSettings` immediately.
 
-Nothing in this game fills an SDL surface palette; `scale_and_flip` maps the
-indices itself. `SDL_ConvertSurface` and `SDL_DuplicateSurface` therefore both
-fail on `VGAScreen` with "Empty destination palette", and `SDL_BlitSurface`
-between two 8-bit surfaces goes through palette matching. Copy screen-sized
-surfaces row by row instead, as the `memcpy` pairs around `VGAScreen2` already
-do. The on-screen keyboard learned this the hard way: its backdrop copy was
-always NULL, so the panel was never restored, and `JE_barShade` halves the shade
-of what is already there rather than filling, which turned deleted text into
-darkening ghosts.
+### Touch and mobile UI
 
-A touch overlay layout is a request with a lifetime, not state a screen owns:
-`touch_ui_set_layout` is called from inside a screen's loop and goes stale by
-itself, so no screen has to clean up after the one before it. Two rules keep the
-buttons on the same schedule as the screen they belong to:
+SDL surface palettes are empty; `scale_and_flip()` maps indices itself.
+`SDL_ConvertSurface()` and `SDL_DuplicateSurface()` therefore fail on
+`VGAScreen`, while `SDL_BlitSurface()` performs unwanted palette matching.
+Copy screen-sized 8-bit surfaces row by row. The software keyboard uses this for
+its backdrop because `JE_barShade()` darkens existing pixels instead of erasing
+them.
 
-- A live request is cleared while the palette is dark and not rising. Clearing on
-  every dark frame would erase the arriving screen's request, which is made while
-  the display is still black. Clearing only on the falling edge misses a screen
-  that steps its own palette inside the loop that asserts, as the jukebox does:
-  it re-asserts on every frame of its own fade-out and one clear is undone.
-- A live request is renewed for as long as `palette_fading()` holds. `fade_black`
-  and `fade_palette` block for longer than the request's own lifetime, so ask
-  before starting the fade or the buttons only arrive once it has finished. Ask
-  with no present in between, or that frame is dark and not rising and drops it.
-  `DE_RunTick` re-asserts beside its fade for exactly this reason.
+Touch layouts are expiring requests. Keep these rules together:
 
-`outpostListScrolls()` and `outpostRearModeCyclable()` are the single tests for
-"this outpost screen needs those buttons". Every scrolling list has to be in the
-first: today the buy/sell sub-list and the read-only endless perk list. The
-E-Shop looks like a third and is not, being a fixed thirteen rows.
+- Reassert a layout or extra button while its screen needs it. Clear it
+  immediately when a no-fade screen exits or a per-frame condition becomes
+  false; let transition fades carry it out otherwise.
+- While `palette_fading()` is true, renew fresh requests. When the palette is
+  below the visibility floor and still falling, clear them. Both fade paths must
+  update `palette_fading()`.
+- Request buttons before a blocking fade. `DE_RunTick()` reasserts its layout
+  beside the fade for this reason.
+- Idle screens re-present the last output texture when the layout signature
+  changes. Levels present every frame themselves; never repeat a frame during a
+  transition.
+- Check `outpostListScrolls()` and `outpostRearModeCyclable()` at the top of the
+  outpost frame, before `JE_showVGA()`. Keep every scrolling outpost list in the
+  first helper.
 
-Both are asked at the top of the outpost's frame loop, and both parts of that
-placement were paid for:
+Relative mouse mode is active only in a level. There a finger sets
+`mouse_pressed[0]`, so input waits after death must test that latch. Menus disable
+relative mode, allowing taps to satisfy ordinary mouse input.
 
-- Not from the code that draws what they belong to. **A condition tested only
-  where it holds can never report that it has stopped holding.** The rear-mode
-  button was decided inside `JE_weaponSimUpdate`, which only runs while that very
-  row is selected, so selecting a dual-mode gun and leaving the menu never
-  reached the else at all.
-- Ahead of the loop's `JE_showVGA`, not after it. Deciding afterwards leaves the
-  frame that moves the highlight carrying the previous frame's buttons, and one
-  frame here is however long the weapon sim's `setDelay(3)` runs, which reads as
-  the buttons lagging the cursor.
+Queue touch-button keys until `push_joysticks_as_keyboard()`. Injecting a key
+inside the event pump loses it on screens that pump twice. One-shot actions use
+a release latch instead of `wait_noinput()`, which blocks presentation while a
+finger remains down.
 
-What a finger can answer at all depends on `mouseGetRelative()`, and that is on
-only inside the level loop: `JE_main` turns it off before every between-level
-screen and back on after `JE_loadMap`, and each screen that needs taps
-(`JE_debugMenu`, `JE_operation`, high-score entry, the in-game menu, the swkbd,
-the network halt) turns it off and restores it. In a menu a tap sets `mousedown`,
-so `JE_anyButton` and `wait_input` are satisfied by touching the screen and need
-no button. Inside the level loop a finger sets only `mouse_pressed[0]`, which is
-why the wreck-animation skip and GAME OVER have to test that latch by hand.
-Anything new that waits for input inside the level loop needs the same.
+Composite each button into a texture before applying opacity; drawing
+overlapping glyph primitives directly would blend some pixels more than once.
+Palette brightness uses `SDL_SetTextureColorMod()`, and the cache key covers size,
+glyph, held state, plate alpha, and opacity. `touch_ui_renderer_lost()` drops
+textures with their renderer. Opacity zero also removes buttons from hit-testing.
 
-Going stale is the backstop, not the way a screen should end. A quarter of a
-second of buttons that no longer belong is long enough to see, so say so outright
-wherever the moment of dismissal is known: `touch_ui_clear_layout` on the way out
-of a screen that has no fade to dim through (the debug screens, the level select,
-the Weapon Creator), and both it and `touch_ui_clear_extra` on the else branch of
-a per-frame condition (the shop's overflowing buy list, its dual-mode rear gun).
-Not before a fade, which the buttons are supposed to leave with.
-
-`palette_fading()` therefore has to be stamped on both fade paths.
-`smooth_fade_to` replaces `step_fade_palette` whenever Smooth Motion is on,
-which is most of the time.
-
-Each button is composited into its own texture before it reaches the screen, so
-that `touchButtonOpacity` has a single alpha to act on. Drawing the primitives
-straight to the screen cannot carry an opacity setting: a glyph overlaps itself,
-and the cycle arrow is a run of deliberately overlapping dots, so anything below
-full alpha blends each overlap twice and the glyph beads. Inside the texture
-blending is off and every primitive writes its pixels instead.
-
-- Palette brightness is applied with `SDL_SetTextureColorMod`, which is the same
-  arithmetic `dim()` does, so a fade rebuilds nothing.
-- The cache key is deliberately narrow: size, glyph, held, plate alpha, opacity.
-- `touch_ui_renderer_lost()` drops the handles when the renderer that owned them
-  goes away. A resolution change destroys the renderer.
-- Opacity zero clears `layout_valid`, so the buttons leave the hit test with the
-  screen. That does mean no on-screen pause exists at zero.
+Android fullscreen uses `WindowInsetsController` from API 30 onward and legacy
+immersive flags below that. Reassert it after focus returns because the software
+keyboard, notifications, and task switching restore the system bars.
 
 Clip the weapon simulator's starfield to its preview box with
 `starfield_set_clip`; it treats any black surface pixel as drawable.
-
-A press that must act once and then wait for release latches
-(`awaitClickRelease` in `JE_itemScreen`) instead of calling `wait_noinput`.
-`wait_noinput` spins without presenting, so the outpost stopped animating for as
-long as the button was held. A mouse click is over too quickly to notice; a tap
-is held for a moment and read as a hang. The latch is cleared and tested beside
-`inputDetected`, which keeps the wait inside the loop that already draws.
 
 Custom preset state is a positional list guarded by `enhancementTableShape`.
 Reordering or retuning the table invalidates the stored list. Capture Custom
@@ -781,12 +737,14 @@ sidekicks; shot styles never take the ship dye. Offline styles are always plain.
 Alpha blits mix brightness in sixteenths and keep one palette bank. Full opacity
 uses the original blit path. Faded bodies and shots omit their shadows.
 
-Partner HP bars reuse `enemy_bar_place()` and its layout settings, but not the
+Partner HP bars reuse `enemy_bar_place()` and its layout settings, but ignore the
 enemy-bar on/off switch. Their opacity starts with `enemyBarOpacity` and follows
-the partner fade when **Apply to Ship** is on. Shield and armor use that ship's
-own ceilings, `shield_max` and `initial_armor`, so Life Boost and Endless upgrades
-stay proportional. Armor rollover draws the current layer over the previous one;
-only the ceiling's last layer may be shorter than 28 units.
+the partner fade when **Apply to Ship** is on.
+
+Shield and armor use that ship's own ceilings, `shield_max` and `initial_armor`,
+so Life Boost and Endless upgrades stay proportional. Armor rollover draws the
+current layer over the previous one; only the ceiling's last layer may be
+shorter than 28 units.
 
 `JE_updateGaugeFlash()` advances the On Hit timer only on live ticks, keeping it
 outside rollback. Linked Arcade omits the bars because its shared HUD already
@@ -1104,8 +1062,8 @@ background choices, effects, and sounds. It does not reorder authored pickups.
 
 ## Data dump
 
-`tools/dump/dump_data.py` mirrors loaders in `src/` and writes the tracked
-`dump/` tree. Update a reader when its loader changes.
+`tools/dump/dump_data.py` mirrors loaders in `src/` and writes the tracked trees
+under `dumps/`. Update a reader when its loader changes.
 
 The dumper reads Tyrian 1.1, Tyrian 2.1 and Tyrian 2000. It identifies a data
 directory from the item counts stored in front of its tables and binds the
@@ -1140,8 +1098,8 @@ Format traps:
 - Data files are matched and dumped in lower case. Tyrian 1.1 names them in
   upper case, and the same release dumps to the same tree either way.
 
-Use `dump/index.csv` to find a data file's decoder, engine loader, references,
-and outputs.
+Use each tree's `index.csv` to find a data file's decoder, engine loader,
+references, and outputs.
 
 ## Tests
 

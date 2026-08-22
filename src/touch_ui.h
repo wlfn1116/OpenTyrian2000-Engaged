@@ -6,10 +6,7 @@
 
 #include <stdbool.h>
 
-/* Android and iOS have no buttons of their own, so anything a finger cannot express gets
- * an on-screen button. Steering and firing in a level stay gestures: a drag anywhere moves
- * the ship and holding a finger down fires. Handhelds with physical controls (Switch,
- * Vita) never draw any of this. */
+/* Android and iOS use gestures for flight and on-screen buttons for other actions. */
 #if defined(__ANDROID__) || defined(TARGET_IOS)
 #define TOUCH_UI_BUTTONS 1
 #endif
@@ -48,29 +45,17 @@ typedef enum
 	TOUCH_LAYOUT_DESTRUCT
 } TouchLayout;
 
-/* Ask for a layout other than the automatic one. Screens re-assert this every frame or
- * tick; the request goes stale in a fraction of a second, so a screen that exits without
- * clearing it -- including the longjmp out of an online Destruct teardown -- cannot strand
- * the wrong buttons on a later screen. */
+// Request a nonautomatic layout. Reassert while active; requests expire quickly.
 void touch_ui_set_layout(TouchLayout layout);
 
-/* Ask for one extra button on top of the current layout, for a screen that reads a key the
- * menu set does not cover. Re-asserted every frame and stale-checked like a layout request,
- * so a screen only has to call it while the key is live. */
+// Add one temporary button to the current layout. Reassert while its key is live.
 void touch_ui_set_extra(TouchButton button);
 
-/* Drop a request now instead of letting it go stale. Simply stopping is enough to make the
- * buttons go away, but not for a quarter of a second, which is long enough to see. Say so
- * outright wherever the moment of dismissal is known: leaving a screen that asked for a
- * layout, or a per-frame condition that has just turned false. Not before a fade, which the
- * buttons are supposed to dim out with. */
+// Clear requests immediately when their screen or condition ends without a fade.
 void touch_ui_clear_layout(void);
 void touch_ui_clear_extra(void);
 
-/* Push the keys the on-screen buttons have queued. Called from push_joysticks_as_keyboard,
- * which every navigable screen runs immediately before the pump it reads: a key pushed from
- * inside the pump itself lands in whichever pump happened to receive the touch, and screens
- * that pump twice per iteration (JE_mouseStart does) then clear it before reading. */
+// Deliver queued keys beside controller synthesis, just before the screen's event pump.
 void touch_ui_flush_keys(void);
 
 // True while a finger is on the button. Destruct reads its held actions this way.
@@ -79,9 +64,8 @@ bool touch_ui_held(TouchButton button);
 // Consume one press edge, for actions that must not repeat while held.
 bool touch_ui_take_tap(TouchButton button);
 
-// Claim a finger that landed on a button and fire its action. Coordinates are
-// window-normalized, as SDL reports them. A true result keeps the touch out of ship
-// steering, so the buttons can be used while the other thumb is flying.
+// Claim a button press using SDL's normalized window coordinates.
+// A claimed finger is kept out of ship steering.
 bool touch_ui_finger_down(SDL_FingerID finger, float nx, float ny);
 
 // Release a claimed finger. True when this finger was holding a button.
@@ -94,27 +78,19 @@ void touch_ui_release_all(void);
 // True while this finger is held on a button; its drag must not steer the ship.
 bool touch_ui_owns_finger(SDL_FingerID finger);
 
-// Draw the buttons over the presented frame. `frame` is the on-screen rectangle the
-// game's output occupies; the buttons sit in the pillarbox beside it wherever the device
-// is wider than 16:9. Call after the frame copy and before SDL_RenderPresent.
+// Draw over `frame`, using its pillarbox when available. Call before SDL_RenderPresent.
 void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame);
 
-// Called when the renderer is torn down. Each button is cached as a texture that renderer
-// owned, so the handles have to be dropped without being freed a second time.
+// Drop cached texture handles after their renderer is destroyed.
 void touch_ui_renderer_lost(void);
 
-/* Re-present the finished frame from inside a wait loop when the buttons would now be
- * drawn differently. Screens that draw once and then spin on the event pump never present
- * again on their own, so without this their buttons are simply absent -- and a button that
- * was never drawn is one nothing can press, because the press test runs against the last
- * drawn layout. Only presents when something actually changed. */
+// Re-present a finished frame when an idle screen's buttons change.
+// Does nothing unless the layout changed.
 void touch_ui_idle_repaint(void);
 
 #else
 
-/* Callers are ordinary cross-platform code, so everything it uses collapses to nothing off
- * the touch ports. Each unused macro argument disappears with the expansion, which is why
- * the button and layout names need no definition here. */
+/* Keep touch calls inert on platforms without the touch UI. */
 #define touch_ui_render(renderer, frame)  ((void)0)
 #define touch_ui_renderer_lost()          ((void)0)
 #define touch_ui_flush_keys()             ((void)0)

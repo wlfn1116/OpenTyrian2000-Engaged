@@ -1,9 +1,7 @@
-"""Readers for the container formats shipped in the Tyrian data directory.
+"""Readers for Tyrian's shipped data containers.
 
-Every reader mirrors the loader the game uses at runtime. The docstring on each
-one names that loader so the two can be compared when a format question comes
-up. All multi-byte fields are little-endian on disk unless a reader says
-otherwise.
+Readers mirror the runtime loaders named in their docstrings. Multi-byte fields
+are little-endian unless stated otherwise.
 """
 
 import os
@@ -25,13 +23,7 @@ SAMPLE_RATE = 11025  # signed 8-bit mono (src/nortsong.c builds the converter fr
 # Layout of the map layers inside a level record (src/tyrian2.c, JE_loadMap).
 MAP_LAYERS = ((14, 300), (14, 600), (15, 600))
 
-# Three releases ship the same containers with different contents: Tyrian 1.1
-# (1995), Tyrian 2.1 (1996) and Tyrian 2000 (1999). Each one grew the item
-# tables, the sprite banks and the interface text, and 2.1 moved the episode 1-3
-# item tables out of the level files into tyrian.hdt. Every table that differs is
-# defined below and collected in VERSIONS at the end of this file. `use_version`
-# binds one release to the names the readers use, so call it once before
-# decoding. The module starts on Tyrian 2000.
+# use_version binds release-specific tables before decoding. Tyrian 2000 is the default.
 
 VERSION_2000 = "tyrian2000"
 VERSION_2_1 = "tyrian2.1"
@@ -103,12 +95,7 @@ def read_file(path):
 
 
 def data_index(data_dir):
-    """Lower-case file name to the name on disk.
-
-    Tyrian 1.1 ships upper-case names and Tyrian 2000 lower-case ones. Callers
-    ask for the lower-case name and look the real one up here, so a dump reads
-    the same either way and its output does not inherit the source's case.
-    """
+    """Map normalized lower-case names to their on-disk spelling."""
     return {name.lower(): name for name in sorted(os.listdir(data_dir))
             if os.path.isfile(os.path.join(data_dir, name))}
 
@@ -253,15 +240,9 @@ def sprite2_offsets(data):
 def decode_sprite2(data, offset, end=None):
     """One compiled frame. Returns (height, list of 12 * height indices or None).
 
-    The engine walks a single cursor over a 12-pixel raster (src/sprite.c,
-    blit_sprite2 and sprite2_ink_bounds): the low nibble of a control byte skips
-    that many pixels and the high nibble paints that many literal ones. Nothing
-    marks the end of a row. Tyrian 2000 always skips a whole row at a time, but
-    Tyrian 1.1 pads its streams with zero bytes that skip nothing at all.
-
-    A frame stops at 0x0f or at `end`, where the next one starts. Tyrian 2000
-    always reaches the terminator first; Tyrian 1.1 writes no terminator and
-    relies on the offset table alone.
+    The low control nibble skips pixels and the high nibble copies literals along
+    one 12-pixel raster. Stop at 0x0f or `end`; Tyrian 1.1 omits the terminator
+    and relies on the next frame offset.
     """
     pixels = {}
     stop = len(data) if end is None else min(end, len(data))
@@ -591,11 +572,7 @@ def anm_page_records(anm, page_index):
 
 
 def anm_apply_frame(screen, record):
-    """Apply one RunSkipDump record to the 320x200 frame buffer, in place.
-
-    Frames are deltas: a skip leaves the previous frame's pixels alone. Mirrors
-    JE_playRunSkipDump, including its 4-byte record prefix.
-    """
+    """Apply a delta RunSkipDump record, including its four-byte prefix, in place."""
     data = record[4:]
     i, cursor = 0, 0
     limit = len(screen)
@@ -953,9 +930,8 @@ HDT_GROUPS_1_1 = [
 def load_hdt_text(path):
     """Every text group in tyrian.hdt.
 
-    Tyrian 2000 prefixes the file with the offset of the item tables it also
-    holds; Tyrian 1.1 keeps its tables in the level files and starts straight at
-    the text, so `itemDataOffset` is None there.
+    Tyrian 2000 starts with an item-table offset. Tyrian 1.1 starts with text and
+    returns no `itemDataOffset`.
     """
     data = read_file(path)
     r = Reader(data)
@@ -1214,18 +1190,12 @@ VERSIONS = {
 
 
 def use_version(name):
-    """Bind one release's tables to the names the readers above read.
-
-    The readers look these up when they run, so one call before decoding decides
-    the whole run. Rebinding mid-run would leave earlier output on the old sizes.
-    """
+    """Bind one release's tables before decoding begins."""
     if name not in VERSIONS:
         raise ValueError("unknown data version: %s" % name)
     globals().update(VERSIONS[name], VERSION=name)
 
-    # STORED_COUNTS is what the file writes in front of its tables, and it says
-    # the same thing as the sizes above. Disagreeing here would desynchronise
-    # every read after the first table, so say so now instead.
+    # Stored counts must agree with the bound table sizes before any read begins.
     sizes = (WEAPON_BANKS[0][1], PORT_NUM, POWER_NUM, SHIP_NUM,
              OPTION_NUM, SHIELD_NUM, ENEMY_BANKS[0][1])
     if STORED_COUNTS != sizes:
@@ -1236,9 +1206,8 @@ def use_version(name):
 def item_table_header(data_dir):
     """The seven counts stored in front of the item tables, or None.
 
-    Tyrian 2.1 and 2000 keep the episode 1-3 tables behind the text in
-    tyrian.hdt, which starts with their offset. Tyrian 1.1 writes no such offset
-    and keeps a set at the end of every level file instead.
+    Read the tyrian.hdt offset in 2.1/2000 or the first level's trailing tables
+    in 1.1.
     """
     names = data_index(data_dir)
     if "tyrian.hdt" in names:
@@ -1254,12 +1223,7 @@ def item_table_header(data_dir):
 
 
 def sniff_version(data_dir):
-    """Which release a data directory holds.
-
-    The stored item counts name it: they grew at every step and no two releases
-    share a set. A directory that matches none of them falls back to the episodes
-    it ships, and the dumper reports the mismatch.
-    """
+    """Identify a release by stored item counts, falling back to shipped episodes."""
     header = item_table_header(data_dir)
     for name, tables in VERSIONS.items():
         if header == tables["STORED_COUNTS"]:

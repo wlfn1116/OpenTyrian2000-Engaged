@@ -102,8 +102,7 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 
 	for (; ; )
 	{
-		// Track stepping is the whole interface here, so the touch ports get it as a
-		// prev/next pair rather than the generic menu arrows.
+		// Give touch users dedicated previous and next track buttons.
 		touch_ui_set_layout(TOUCH_LAYOUT_JUKEBOX);
 
 		Uint64 now = SDL_GetPerformanceCounter();

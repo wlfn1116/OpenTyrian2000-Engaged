@@ -16,32 +16,24 @@
 
 #include <math.h>
 
-/* Sizes are window points, which measure() scales to the output pixels a layout is built
- * in; a high-DPI drawable makes the two differ. The size normally comes from the screen
- * height; the floor only decides whether a pillarbox bar is worth using at all, and the
- * ceiling stops a tablet getting a button the size of a fist. */
+/* Point sizes are scaled to output pixels, then clamped for phones and tablets. */
 #define TOUCH_BTN_MIN_PT  44
 #define TOUCH_BTN_MAX_PT  140
 
-// Opacity of the button plate: solid where it sits in the pillarbox, faint where the
-// device is 16:9 or narrower and it has to float over the playfield instead.
+// Plates are fainter when they overlap the playfield.
 #define TOUCH_BTN_ALPHA_CLEAR    195
 #define TOUCH_BTN_ALPHA_OVERLAP  105
 
-// The outline is this fraction of the button wide, so it thickens with the drawable rather
-// than staying a hairline. Roughly a point and a half at every scale.
+// Scale the outline with the drawable instead of leaving a high-DPI hairline.
 #define TOUCH_BTN_EDGE_DIVISOR   36
 
-// A layout request or a navigable-screen report older than this is ignored, so both
-// decay on their own rather than needing every screen to clean up after itself.
+// Expire stale screen and layout reports automatically.
 #define TOUCH_ASSERT_TTL_MS  250
 
-/* Below this palette brightness the buttons are too dark to make out, so they are not
- * drawn at all and cannot be pressed. Roughly the last sixth of a fade to black. */
+// Hide buttons and their hit targets near the dark end of a fade.
 #define TOUCH_VISIBLE_PEAK_MIN  40
 
-// Key repeat for the menu arrows, matching the feel of a held keyboard key. Without it a
-// 34-row debug menu takes 34 separate taps.
+// Menu-arrow repeat timing.
 #define TOUCH_REPEAT_DELAY_MS   350
 #define TOUCH_REPEAT_PERIOD_MS   90
 
@@ -54,7 +46,6 @@ typedef enum
 	ICON_EXPAND
 } TouchIcon;
 
-// What has to be true for a button to be drawn at all.
 typedef enum
 {
 	GATE_ALWAYS,
@@ -72,14 +63,8 @@ typedef struct
 	Uint8 gate;          // TouchGate
 } TouchButtonDef;
 
-/* Layouts share a skeleton on purpose, and the rows line up across the two bars: row 0
- * holds Esc and any screen-wide extra, rows -3 and -2 hold the direction pairs so left sits
- * level with up and right with down, and row -1 holds whatever that screen's primary action
- * is. The same thumb finds the same control in a menu, in the jukebox, and in Destruct.
- *
- * Every button is a full bar width. Splitting a row to fit a left/right pair side by side
- * looked tidier but produced a target under twenty points wide on a 3x display. */
-
+/* Keep controls in the same rows across layouts. Buttons use the full bar width so their
+ * touch targets stay usable on high-DPI phones. */
 static const TouchButtonDef LAYOUT_GAME[] =
 {
 	{ TOUCH_BTN_PAUSE,         ICON_PAUSE,    -1,  0, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
@@ -89,19 +74,13 @@ static const TouchButtonDef LAYOUT_GAME[] =
 	{ TOUCH_BTN_SIDEKICK_R,    ICON_POD_R,     1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_SIDEKICKS },
 };
 
-/* Back alone. Every ordinary menu hit-tests the pointer -- rows, sliders, pickers -- so a
- * tap is already a click and arrow buttons would only duplicate a finger. Esc is the
- * exception: nothing on screen expresses it, which is what made a screen without it a dead
- * end. */
+/* Ordinary menus accept taps directly; only Back needs a separate button. */
 static const TouchButtonDef LAYOUT_MENU[] =
 {
 	{ TOUCH_BTN_ESC, ICON_CLOSE, -1, 0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
 };
 
-/* The debug screens are scrolling lists, and there a tap only reaches the rows already
- * drawn, so the cursor keys are the only way to the rest. Left and right come too: tapping
- * a row advances its value, and reversing that is a right-click no touchscreen has. Confirm
- * completes the set, so a row can be used without tapping it. */
+/* Debug lists need arrows to reach hidden rows and reverse values, plus Select to confirm. */
 static const TouchButtonDef LAYOUT_LIST[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
@@ -112,9 +91,7 @@ static const TouchButtonDef LAYOUT_LIST[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
-/* A short keyboard-only menu that hit-tests nothing, so a tap cannot move or confirm a
- * row: Destruct's mode select is the one that matters, where without this the minigame
- * cannot be started at all. No left or right, because these screens read neither. */
+/* Short keyboard-only menus need vertical movement and confirmation. */
 static const TouchButtonDef LAYOUT_PICK[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
@@ -123,18 +100,14 @@ static const TouchButtonDef LAYOUT_PICK[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
-/* A screen that waits for any key at all: Destruct's title, help and pause. Confirm is
- * what it wants; Back reaches the same exit, and keeping it means the top left button
- * never disappears from under a thumb that has learned where it is. */
+/* Any-key screens expose Select while keeping Back in its usual position. */
 static const TouchButtonDef LAYOUT_CONFIRM[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
-/* The top right slot takes the text toggle, which is the jukebox's own fullscreen: the
- * starfield is the whole point of the screen and the three lines of help sit over it. The
- * buttons themselves stay up, because one of them is the way back out. */
+/* Jukebox adds a text-overlay toggle in the top-right slot. */
 static const TouchButtonDef LAYOUT_JUKEBOX[] =
 {
 	{ TOUCH_BTN_ESC,        ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
@@ -143,13 +116,10 @@ static const TouchButtonDef LAYOUT_JUKEBOX[] =
 	{ TOUCH_BTN_RIGHT,      ICON_RIGHT,   1, -1, SDL_SCANCODE_RIGHT,  false, GATE_ALWAYS },
 };
 
-/* Destruct wants five held actions and two taps, which is more than a pad's face buttons
- * carry. Aim sits under the left thumb, power and fire under the right, in the places the
- * menu arrows occupy, and the two taps go up top where a mis-hit costs nothing. */
+/* Destruct keeps held actions below the thumbs and one-shot actions along the top. */
 static const TouchButtonDef LAYOUT_DESTRUCT[] =
 {
-	// Esc is query-only here: Destruct reads the tap itself (DE_TouchActions) rather than
-	// taking a pushed key, which its mid-tick event pump could swallow.
+	// Destruct polls Esc directly because its mid-tick pump can swallow a pushed key.
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -3, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,  -1, -2, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
@@ -160,9 +130,7 @@ static const TouchButtonDef LAYOUT_DESTRUCT[] =
 	{ TOUCH_BTN_FIRE,   ICON_FIRE,    1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 };
 
-/* Buttons a single screen adds to whatever layout is up. They take the top right slot,
- * which every layout but Destruct leaves free and which the in-level weapon-mode button
- * already occupies, so a control that cycles something keeps one place. */
+/* Screen-specific extras use the top-right slot. */
 static const TouchButtonDef LAYOUT_EXTRA[] =
 {
 	{ TOUCH_BTN_REAR_MODE, ICON_CYCLE, 1, 0, SDL_SCANCODE_SLASH, false, GATE_ALWAYS },
@@ -184,8 +152,7 @@ static Uint32 extra_at_ms;
 static Uint32 presented_signature;
 static Uint8 last_peak = 255;
 
-// See button_texture(): each shown slot keeps its composited button until one of these
-// changes. Palette brightness is deliberately absent, so a fade rebuilds nothing.
+// Cache each composited button until its shape, size, or alpha changes.
 typedef struct
 {
 	SDL_Texture *tex;
@@ -208,8 +175,7 @@ static int clampi(int v, int lo, int hi)
 	return v < lo ? lo : (v > hi ? hi : v);
 }
 
-// The opacity setting is a percentage of the alpha a button was authored with, so the top of
-// the slider is how it is meant to look and zero takes the buttons off the screen.
+// Apply the opacity setting to each button's authored alpha.
 static Uint8 scaled_alpha(int base)
 {
 	return (Uint8)clampi(base * touchButtonOpacity / TOUCH_OPACITY_MAX, 0, 255);
@@ -220,11 +186,8 @@ static bool fresh(Uint32 stamp_ms, Uint32 now_ms)
 	return stamp_ms != 0 && now_ms - stamp_ms < TOUCH_ASSERT_TTL_MS;
 }
 
-/* Sidekick fire rides the same mouse_pressed slots the mouse buttons use, so it needs no
- * new path through JE_playerMovement. Recomputed from what is held rather than toggled on
- * each press, so letting go of "both" cannot cancel a single sidekick the other thumb is
- * still holding. Only called when a sidekick button itself moved, which keeps it away from
- * a real mouse's buttons on a device that has one. */
+/* Rebuild the sidekick mouse-button state from held touch buttons. This preserves another
+ * finger's hold and leaves a physical mouse alone. */
 static void refresh_sidekick_fire(void)
 {
 	const bool both = btn_held[TOUCH_BTN_SIDEKICK_BOTH];
@@ -238,9 +201,7 @@ static bool is_sidekick(int id)
 	       id == TOUCH_BTN_SIDEKICK_BOTH;
 }
 
-/* Everything that decides what the next present would draw, folded into one value. Built
- * from the inputs rather than from the last drawn layout, so it changes as soon as a
- * screen reports itself navigable -- before any frame has shown its buttons. */
+/* Signature of the next layout, built from live inputs independently of the last frame. */
 static Uint32 desired_signature(Uint32 now_ms)
 {
 	TouchLayout layout = mouseGetRelative() ? TOUCH_LAYOUT_GAME : TOUCH_LAYOUT_MENU;
@@ -260,26 +221,19 @@ static Uint32 desired_signature(Uint32 now_ms)
 
 void touch_ui_idle_repaint(void)
 {
-	// A level presents every frame on its own, and repainting from inside its tick could
-	// put a half-drawn frame on screen. Only idle screens need this.
+	// Active levels present on their own; repainting mid-tick could expose a partial frame.
 	if (mouseGetRelative())
 		return;
 
-	/* Not during a transition. Between two screens the last presented frame belongs to
-	 * whichever one is on its way out, and re-showing it mid-fade is a flash of the wrong
-	 * brightness. Nothing is lost by waiting: the fade presents every step itself, and the
-	 * buttons are below the visibility floor for most of it. */
+	// Fades present every step; replaying their previous frame would flash stale brightness.
 	if (palette_fading() || palette_peak() < TOUCH_VISIBLE_PEAK_MIN)
 		return;
 
 	if (desired_signature(SDL_GetTicks()) == presented_signature)
 		return;
 
-	/* Re-show the last presented frame with the buttons redrawn over it, rather than
-	 * rebuilding one. A screen does not have to compose into VGAScreen: the jukebox builds
-	 * a supersampled starfield and presents it through present_hi, so going back through
-	 * JE_showVGA here put its bare 1x text layer on screen for a frame every time a button
-	 * was pressed. Repeating the last present cannot pick the wrong buffer. */
+	/* Redraw over the last presented texture. Rebuilding from VGAScreen would lose alternate
+	 * presentation paths such as the jukebox's supersampled starfield. */
 	video_repeat_last_present();
 }
 
@@ -305,14 +259,8 @@ void touch_ui_clear_extra(void)
 	extra_at_ms = 0;
 }
 
-/* Where the buttons live, in preference order: the pillarbox bar beside the frame, which
- * is what a phone gives us; the letterbox band above it, which is what a 4:3 tablet gives
- * us; and the frame's own edge when the display is 16:9 and there is no margin to take.
- *
- * In the bar the buttons hug the frame rather than the screen edge, keeping them away from
- * the notch a phone puts on a short edge in landscape. The vertical inset is the larger of
- * the two because the top row also has to clear the display's rounded corner. SDL2 reports
- * no safe area, so both insets are proportions of the screen. */
+/* Prefer pillarbox space, then letterbox space, then the frame edge. Keep bar layouts close
+ * to the frame and use proportional insets because SDL2 exposes no safe area. */
 typedef struct
 {
 	int x_left, x_right;   // left edge of a full-width button in each bar
@@ -323,8 +271,7 @@ static TouchGeometry measure(const SDL_Rect *frame, int out_w, int out_h)
 {
 	TouchGeometry g;
 
-	// Proportions of the screen need no conversion, but every limit written in points does:
-	// on a high-DPI drawable the same button is that many more pixels across.
+	// Convert point limits to drawable pixels on high-DPI screens.
 	float px_per_pt = 1.f;
 	video_output_pixel_scale(NULL, &px_per_pt);
 	const int btn_min_px = (int)(TOUCH_BTN_MIN_PT * px_per_pt);
@@ -421,8 +368,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 		}
 	}
 
-	// A tap on a button that has since left the screen is stale. Dropping it stops, say,
-	// a last-instant Destruct weapon cycle from firing when Destruct is next opened.
+	// Drop taps from buttons that have left the current layout.
 	bool live[TOUCH_BTN_COUNT] = { false };
 	for (int i = 0; i < shown_count; ++i)
 		live[shown[i]->id] = true;
@@ -451,9 +397,7 @@ static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, b
 	                       dim(held ? 88 : 26, peak), alpha);
 	SDL_RenderFillRect(renderer, r);
 
-	/* Drawn as nested rings whose count follows the button, which measure() has already sized in
-	 * points: a fixed two device pixels is a hairline on a 3x drawable, where everything around
-	 * it is three times the size, and the outline all but disappears. */
+	// Scale nested-ring outlines with the button so they remain visible on high-DPI screens.
 	SDL_SetRenderDrawColor(renderer, dim(165, peak), dim(176, peak), dim(205, peak),
 	                       scaled_alpha(235));
 
@@ -465,8 +409,7 @@ static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, b
 	}
 }
 
-// Scanline fill; SDL's renderer has no triangle primitive before 2.0.18, and every icon
-// below is built from triangles, quads, or discs.
+// Scanline fill for SDL versions without a triangle primitive.
 static void fill_triangle(SDL_Renderer *renderer, const float px[3], const float py[3])
 {
 	float y_min = py[0], y_max = py[0];
@@ -534,8 +477,7 @@ static void fill_disc(SDL_Renderer *renderer, float cx, float cy, float radius)
 	}
 }
 
-// One sidekick pod. A firing pod is drawn full size with its shot leaving up the screen;
-// an idle one is a bare dot.
+// One sidekick pod: full size when firing, a dot when idle.
 static void draw_pod(SDL_Renderer *renderer, float cx, float cy, float rad, float thick, bool firing)
 {
 	fill_disc(renderer, cx, cy + rad * 0.4f, rad * (firing ? 0.5f : 0.3f));
@@ -576,8 +518,7 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 
 	case ICON_CYCLE:
 	{
-		// A circular arrow: the mode cycles, and the glyph has to read at thumbnail size
-		// without text, since the button is outside the palettized frame the fonts draw to.
+		// Circular arrow for cycling modes.
 		const float start = 0.55f, sweep = 4.9f;  // radians; the gap holds the arrowhead
 		const int steps = clampi((int)(sweep * rad / thick) * 2, 24, 512);
 		for (int i = 0; i <= steps; ++i)
@@ -605,8 +546,7 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 
 	case ICON_SELECT:
 	{
-		// The two strokes meet at an angle, and fill_bar cuts its ends square, which leaves
-		// a notch on the outside of the corner. A disc at the joint is the round join.
+		// Cover the square-ended stroke join with a disc.
 		const float jx = cx - rad * 0.25f, jy = cy + rad * 0.7f;
 		fill_bar(renderer, cx - rad, cy, jx, jy, thick);
 		fill_bar(renderer, jx, jy, cx + rad, cy - rad * 0.7f, thick);
@@ -623,9 +563,7 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 		fill_disc(renderer, cx, cy, rad);
 		break;
 
-	/* Both sidekick slots, with only the ones this button fires drawn as firing. Showing
-	 * the idle slot as well is what makes left, right, and both tell apart at thumbnail
-	 * size; a single pod nudged off centre did not. */
+	// Show both pod slots so left, right, and both remain distinct at thumbnail size.
 	case ICON_POD_L:
 	case ICON_POD_R:
 	case ICON_POD_BOTH:
@@ -664,13 +602,8 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 	}
 }
 
-/* A press queues its key here rather than pushing it straight into SDL, because a press
- * arrives inside service_SDL_events and several screens pump events more than once per
- * iteration -- JE_mouseStart pumps before the loop's own read. A key pushed during the
- * first pump is registered there and then wiped by the second pump's clear_new, which is
- * why the debug menus ignored the buttons entirely. Holding it until
- * push_joysticks_as_keyboard runs puts it exactly where a controller's synthesized keys
- * land: immediately before the pump whose result the screen reads. */
+/* Queue touch keys until controller synthesis, immediately before the event pump whose
+ * result the screen reads. Earlier pumps may clear keys delivered directly from SDL. */
 #define PENDING_KEY_MAX  4
 static SDL_Scancode pending_key[PENDING_KEY_MAX];
 static int pending_key_count;
@@ -681,8 +614,7 @@ static void queue_key(SDL_Scancode scan)
 		pending_key[pending_key_count++] = scan;
 }
 
-// Re-queue the key of a held repeating button. Menus are the only consumer; Destruct reads
-// held state per tick and needs no repeat.
+// Repeat held menu arrows; Destruct reads held state directly.
 static void service_repeat(Uint32 now_ms)
 {
 	for (int i = 0; i < shown_count; ++i)
@@ -711,11 +643,7 @@ void touch_ui_flush_keys(void)
 	pending_key_count = 0;
 }
 
-/* One button, composited once and kept until something about it changes. Opacity cannot be
- * applied to the drawn primitives directly: a glyph overlaps itself, and the cycle arrow is
- * a run of deliberately overlapping dots, so anything below full alpha blends each overlap
- * twice and the glyph beads. Drawn into a texture with blending off, every primitive writes
- * its pixels instead, and the finished image carries one clean alpha out to the screen. */
+/* Composite each button before applying opacity so overlapping glyph strokes blend once. */
 static SDL_Texture *button_texture(SDL_Renderer *renderer, int slot, const TouchButtonDef *def,
                                    int size, bool held, Uint8 plate_base)
 {
@@ -792,33 +720,15 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 
 	const Uint32 now_ms = SDL_GetTicks();
 
-	/* A screen transition is a palette fade, which the buttons never pass through: they are
-	 * drawn by the renderer, after the palettized frame has been converted. So they follow
-	 * the palette's own brightness instead, which darkens them on exactly the curve the
-	 * frame darkens on, and keeps them hidden through the pause between a transition's
-	 * fade-out and its fade-in, where the screen is black but nothing is stepping.
-	 *
-	 * Scaled towards black rather than towards transparent, because an icon is built from
-	 * overlapping shapes and any alpha below full blends twice where they meet. Below the
-	 * floor they are dark enough to be invisible, so nothing is drawn and nothing can be
-	 * pressed -- a button nobody can see must not be a button anybody can hit. */
+	/* Follow palette brightness because touch controls are rendered after palette conversion.
+	 * Near black, hide both the controls and their hit targets. */
 	const Uint8 peak = palette_peak();
 
-	// Opacity zero is the same bargain as the floor below: the buttons leave the screen and
-	// the hit test together, so nothing is left behind that only an invisible target answers.
+	// Zero opacity also removes hit targets.
 	const bool visible = peak >= TOUCH_VISIBLE_PEAK_MIN && touchButtonOpacity > 0;
 
-	/* Dark and still getting darker: the screen that asked for this layout is leaving, so its
-	 * request goes with it rather than waiting to time out.
-	 *
-	 * All three parts of that test were paid for. Clearing on every dark frame erases the
-	 * request an arriving screen makes while the display is still black, which is the one
-	 * that lets its buttons fade in with it. Clearing on the falling edge alone misses a
-	 * screen that steps its own palette inside the loop that asserts, as the jukebox does:
-	 * it re-asserts on every frame of its own fade-out and one clear is undone by the next.
-	 * And the fall has to be strict, because a fade-in's first frame is still on the palette
-	 * it started from -- smooth_fade_to lands frame one at frac 0 -- so a flat dark frame is
-	 * as likely to be the start of a fade-in as the tail of a fade-out. */
+	/* Clear requests only while brightness is strictly falling near black. This removes the
+	 * departing layout without erasing a layout asserted at the start of a fade-in. */
 	if (!visible && peak < last_peak)
 	{
 		requested_at_ms = 0;
@@ -826,10 +736,7 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	}
 	last_peak = peak;
 
-	/* fade_palette blocks, so a request made either side of one has to outlive it. Renewing
-	 * a live request for as long as the palette keeps stepping is what puts the buttons on
-	 * the screen's own schedule; one cleared above stays cleared, which keeps a transition's
-	 * two halves apart. See "Menus and UI" in doc/notes.md. */
+	// Keep live requests fresh through blocking fades. See "Touch and mobile UI" in doc/notes.md.
 	if (palette_fading())
 	{
 		if (fresh(requested_at_ms, now_ms))
@@ -843,8 +750,7 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	layout_out_h = out_h;
 	layout_valid = visible;
 
-	// This frame is what the buttons now look like, so an idle wait loop has nothing left
-	// to repaint until something changes again.
+	// The idle repaint signature now matches this frame.
 	presented_signature = desired_signature(now_ms);
 
 	if (!layout_valid)
@@ -863,16 +769,13 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 		SDL_Texture *tex = button_texture(renderer, i, shown[i], r->w, held, base);
 		if (tex != NULL)
 		{
-			// The fade rides the colour mod rather than the drawn colours, which is the same
-			// arithmetic dim() does and keeps a transition from rebuilding every button.
+			// Apply fade brightness as a colour mod without rebuilding the texture.
 			SDL_SetTextureColorMod(tex, peak, peak, peak);
 			SDL_RenderCopy(renderer, tex, NULL, r);
 			continue;
 		}
 
-		/* No render target to be had. Drawn straight to the screen the glyph's overlaps
-		 * compound, so it stays opaque and only the plate carries the setting: worse than
-		 * the composited path, but still a usable button. */
+		// Without render targets, keep the glyph opaque so overlapping strokes remain legible.
 		draw_plate(renderer, r, scaled_alpha(base), held, peak);
 		SDL_SetRenderDrawColor(renderer, dim(226, peak), dim(232, peak), dim(248, peak), 255);
 		draw_icon(renderer, (TouchIcon)shown[i]->icon, r);
@@ -909,11 +812,7 @@ bool touch_ui_finger_down(SDL_FingerID finger, float nx, float ny)
 		}
 		else
 		{
-			/* No key to push, so the press is left for the screen to read. The tap flag is
-			 * recorded only here: a button that pushed a key has already delivered its
-			 * press, and a flag left behind would let a later screen sharing the same id
-			 * act on it again -- Esc pushes a key in Destruct's dialogs and is polled
-			 * during its gameplay, so the dialog's tap would quit the match on the spot. */
+			// Record tap flags only for buttons polled directly; pushed keys are already delivered.
 			btn_tapped[def->id] = true;
 
 			if (def->id == TOUCH_BTN_PAUSE)

@@ -148,10 +148,11 @@ Dragon Frost and Dragon Flame gain them at power 9.
 
 Elites and champions are palette-shifted, and their sparks, shots, explosions,
 and bounty line all carry the same tint. Linked parts share one tier and one
-bounty, so a whole hull shifts together. Every enemy takes its tier on the frame
-it appears, so nothing recolours or rearms while you are fighting it. Bosses and
-enemies that start out invulnerable can be promoted; scenery that can never be
-damaged cannot.
+bounty, so a whole hull shifts together.
+
+Enemies take their tier when they appear and do not change during the fight.
+Bosses and temporarily invulnerable enemies can be promoted; permanent scenery
+cannot.
 
 ### Sector modifiers
 
@@ -837,22 +838,14 @@ keyboard for text fields. MIDI is disabled.
 
 ### Touch controls
 
-Every touch build steers the same way: drag anywhere on the screen and the ship
-follows your finger, no matter where the drag started. Holding a finger down
-also holds the main weapon down, so there is no separate fire control. **Setup >
-Sensitivity** scales how far the ship travels per finger movement; the middle of
-the slider tracks your finger one to one.
+Drag anywhere to steer; holding a finger down also fires the main weapon.
+**Setup > Sensitivity** controls how far the ship moves with your finger. The
+middle setting tracks it one to one.
 
-Phones and tablets add on-screen buttons for everything a finger cannot express
-on its own. Which buttons appear depends on the screen, so nothing is on display
-that would do nothing if you pressed it. They ride the screen's own fade, dimming
-away with the screen that is leaving and brightening in with the one arriving.
-
-**Setup > Button Opacity** sets how visible they are, from fully drawn at the
-right end of the slider down to nothing at the left. An empty slider removes them
-completely, and a button that cannot be seen cannot be pressed either, so there
-is no on-screen pause while you are flying at that setting. Setup is still
-reachable by tapping, which is how you turn them back on.
+Phones and tablets show only the buttons needed by the current screen. **Setup >
+Button Opacity** changes their visibility. At zero they disappear from both the
+screen and touch input, including the in-level Pause button. Menus remain
+touchable, so Setup is still available.
 
 | Screen | Left side | Right side |
 | --- | --- | --- |
@@ -866,54 +859,21 @@ reachable by tapping, which is how you turn them back on.
 | Rear Gun in the shop | Back | Rear weapon mode |
 | Destruct | Back, aim left, aim right, change unit | Next weapon, more power, less power, fire |
 
-Back is always the top left button and always does what Esc does on a keyboard,
-so no screen can trap you.
-
-In an ordinary menu that is the only button, because a tap is already a click:
-menu rows, sliders and pickers all follow your finger. Cursor keys only appear
-where tapping cannot do the job. That means a list longer than its frame, where a
-tap only reaches the rows currently drawn: the debug screens, and the shop's buy
-and sell list when the outpost is carrying more than six items, and the endless
-perk list once you have earned more perks than fit on a page. The
-Weapon Creator has them for a related reason: it does hit-test every row, but a
-tap there both moves the cursor and acts on it, so the arrows are the only way to
-line a field up before changing it. Destruct's mode
-select gets up, down and confirm for a different reason. It reads the keyboard
-directly and hit-tests nothing, so a tap there does nothing at all, and its
-title, help and pause screens get confirm for the same reason. Holding an arrow
+Back stays in the top-left corner and acts as Esc. Ordinary menus need no arrow
+buttons because rows and controls already accept taps. Arrows appear for
+scrolling lists, keyboard-only screens, and the Weapon Creator; holding one
 repeats it.
 
-The jukebox's top right button hides its three lines of text, leaving the
-starfield alone on the screen; press it again to bring them back. The buttons
-themselves stay up, since one of them is the way out.
+Sidekick buttons are on by default. Disable them under **Setup > Enhancements >
+Heads-Up Display > Sidekick Buttons**. This control stays outside the
+Enhancements presets.
 
-Destruct holds its aim, power, and fire buttons the way a key would, and steps
-the unit and weapon one press at a time.
+Buttons use the pillarbox beside the playfield on phones, the upper margin on
+4:3 tablets, and the frame edges when no margin is available. They fade with the
+screen. A finger held on a button does not steer or fire the main weapon.
 
-Rows line up across the two sides: left sits level with up, right with down, and
-whatever that screen treats as its main action sits on the bottom row.
-
-The three sidekick buttons are the exception to "only what the screen needs":
-they are the only way to fire a sidekick by hand on a touch device, but nothing
-requires them, so **Setup > Enhancements > Heads-Up Display > Sidekick Buttons**
-turns them off. They are on by default, and the setting is not part of the
-Enhancements presets: a preset describes how the game behaves, not which
-controls you are given. Each icon shows both sidekick slots, with the ones that
-button fires drawn firing.
-
-The buttons sit outside the playfield. A phone is wider than the 16:9 frame the
-game draws, so they take the pillarbox beside it, against the frame edge rather
-than the screen edge; that keeps them clear of a display cutout in landscape. A
-4:3 tablet has no pillarbox but does have a band above the frame, and they use
-that. On a display at exactly 16:9 there is no margin at all, and they fade back
-over the frame edges instead.
-
-On the screens that end a run, the wreck animation and GAME OVER, a tap anywhere
-moves things along. Lift the finger you were flying with first: both wait for a
-fresh press so they cannot dismiss themselves the moment you die.
-
-A finger held on a button never steers and never fires, so the other thumb can
-keep flying.
+The wreck and GAME OVER screens require a fresh tap, so lift the finger used for
+flying before dismissing them.
 
 Switch and Vita have physical buttons and draw none of this.
 

@@ -20,9 +20,10 @@ See the [player guide](GUIDE.md) for menu paths and feature details.
 
 ## Showcase
 
-[Online campaign co-op and online Destruct gameplay (also shows the high-refersh rendering)](https://www.youtube.com/watch?v=6XYol6TJdhE)  
-[Quick Endless mode gameplay](https://www.youtube.com/watch?v=uuwwIsWoOMQ)  
-[Endless mode Zone 100 clear](https://www.youtube.com/watch?v=O9BM6xOAqes)  
+- [Online campaign co-op, Destruct, and high-refresh rendering](https://www.youtube.com/watch?v=6XYol6TJdhE)
+- [Quick Endless mode gameplay](https://www.youtube.com/watch?v=uuwwIsWoOMQ)
+- [Endless Zone 100 clear](https://www.youtube.com/watch?v=O9BM6xOAqes)
+
 ## Game data
 
 Release packages include the freeware Tyrian 2000 data. Source builds need a
@@ -90,9 +91,10 @@ Run `.\build-all.ps1 -Help` for the complete option list.
 `-Platform ARM64` builds for Windows on ARM. SDL ships x86 and x64 import
 libraries only, so `SDL2BaseDir` and `SDL2netBaseDir` in
 `visualc\sdl_paths.props` have to point at SDKs built from source, each holding
-an `include` directory and a `lib\arm64` directory. The `windows-arm` job in
-`.github/workflows/build.yml` is the recipe for building and staging them. MIDI
-is x86-64 only and is left out of ARM64 builds.
+an `include` directory and a `lib\arm64` directory.
+
+The `windows-arm` job in `.github/workflows/build.yml` shows how to build and
+stage them. ARM64 builds omit the x86-64-only MIDI backends.
 
 ### Linux
 

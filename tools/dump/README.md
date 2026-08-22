@@ -26,19 +26,18 @@ release has a data directory and a tree of its own:
 python tools/dump/dump_data.py --data data_21
 ```
 
-Each release grew the item tables, the sprite banks and the interface text, and
-2.1 moved the episode 1 to 3 item tables out of the level files into
-`tyrian.hdt`. `tyrian_formats.py` keeps every table that differs and binds one
-release with `use_version`; `dumps/DIFFERENCES.md` is the readable version of
-the same story. Names are matched and written in lower case, so the upper-case
-names Tyrian 1.1 ships produce the same tree.
+Table sizes and container layouts differ by release. Tyrian 2.1 moved the
+episode 1 to 3 item tables from the level files into `tyrian.hdt`.
+`tyrian_formats.py` binds the matching tables with `use_version`; see
+`dumps/DIFFERENCES.md` for a readable comparison. Source names are normalized to
+lower case, so Tyrian 1.1 produces the same tree with upper- or lower-case files.
 
 ## Options
 
 | Option | Effect |
 | --- | --- |
 | `--data DIR` | Data directory to read (default `<repo>/data`). |
-| `--out DIR` | Output directory (default `<repo>/dump`). |
+| `--out DIR` | Output directory (default `dumps/<release tree>`). |
 | `--only SECTION...` | Dump only these sections. |
 | `--skip SECTION...` | Skip these sections. |
 | `--palette N` | `palette.dat` index for assets that store no palette (default 0, the gameplay palette). |
@@ -91,4 +90,4 @@ To add a format:
 4. Add a `CATALOG` row.
 5. Add verification coverage.
 
-Undecoded files still appear under `dump/raw/`.
+Undecoded files still appear under `dumps/<release tree>/raw/`.

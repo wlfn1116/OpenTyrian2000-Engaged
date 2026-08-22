@@ -14,12 +14,7 @@
 	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
 	<key>CFBundleDisplayName</key>
 	<string>Tyrian 2000 Engaged</string>
-	<!-- The compiled asset catalog, and only that. It is the one place iOS reads
-	     per-appearance artwork from, so the transparent artwork the Liquid Glass treatment
-	     wants can live nowhere else. A CFBundleIconFiles list of flat bundle-root PNGs used
-	     to sit beside this as a fallback, but every OS from the deployment target up reads
-	     the catalog, and those PNGs are opaque: leaving them declared gave iOS a second,
-	     slab-backed answer to the same question. -->
+	<!-- Per-appearance icons come only from the compiled asset catalog. -->
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
@@ -49,9 +44,7 @@
 	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<!-- Present at the display's real refresh rate. Without this an iPhone shows 60 of the
-	     frames the render-rate interpolation draws, whatever the FPS Cap says; iPad needs no
-	     opt-in, and iOS below 15 ignores the key. -->
+	<!-- Allow ProMotion iPhones to present above 60 Hz. iPad needs no opt-in. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UILaunchScreen</key>

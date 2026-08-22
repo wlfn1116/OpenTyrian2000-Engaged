@@ -40,9 +40,7 @@ void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_col
 // True while a screen transition is stepping the palette.
 bool palette_fading(void);
 
-// Brightest component in the live palette: 255 on any real screen, 0 once a fade has
-// reached black. Overlays outside the palettized frame scale themselves by it so they
-// darken exactly as the frame does, including through the pause between two fades.
+// Brightest live palette component, used to fade overlays outside the indexed frame.
 Uint8 palette_peak(void);
 
 void init_step_fade_palette(int diff[256][3], Palette colors, unsigned int first_color, unsigned int last_color);

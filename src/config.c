@@ -1864,9 +1864,8 @@ const char *get_user_directory(void)
 		// an uninstall on either system.
 		snprintf(user_dir, sizeof(user_dir), "%s", mobile_user_dir());
 #elif defined(TARGET_MACOS)
-		// ~/Library/Application Support, where a bundled app is expected to write; a .app
-		// has no directory of its own a user could reach. SDL_GetPrefPath() creates the
-		// directory and returns it with a trailing separator, which dir_fopen() re-adds.
+		// Bundled macOS apps keep writable state under ~/Library/Application Support.
+		// SDL includes a trailing separator, which dir_fopen() adds itself.
 		char *pref = SDL_GetPrefPath("OpenTyrian", "OpenTyrian2000");
 		snprintf(user_dir, sizeof(user_dir), "%s", pref != NULL ? pref : ".");
 		SDL_free(pref);

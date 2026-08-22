@@ -33,9 +33,8 @@
 const char *custom_data_dir = NULL;
 
 #ifdef TARGET_MACOS
-/* The read-only copy inside the .app, where SDL_GetBasePath() resolves to
- * Contents/Resources. A bundle launched from Finder inherits "/" as its working directory,
- * so the relative entries in data_dir() can never reach the game files. */
+/* Read-only data inside the macOS app bundle. Finder launches do not have a useful working
+ * directory for the relative entries in data_dir(). */
 static const char *macos_bundle_data_dir(void)
 {
 	static char path[512] = "";

@@ -3,15 +3,11 @@
 Generate the Android, iOS, and macOS app icons from visualc/tyrian2000.ico.
 
 .DESCRIPTION
-None of the three build systems can derive a bitmap icon from a .ico, so this writes them
-at the fixed sizes each one wants, from the largest frame in the icon file. Scaling is
-nearest-neighbour: the source is pixel art, and a smooth filter turns it to mush.
+Writes each platform's committed icons from the largest frame in the .ico. Pixel art is
+scaled with nearest-neighbour filtering.
 
-Android gets adaptive-icon foregrounds, whose artwork must stay inside the central 72 of
-108 density-independent pixels or a launcher mask will clip it, plus square legacy
-bitmaps. iOS gets opaque icons, because alpha in an iOS app icon renders as black and is
-rejected by the store tooling. macOS gets an .iconset of the rounded square Apple's icon
-grid asks for, which iconutil packs into an .icns during the build.
+Android receives adaptive foregrounds and legacy bitmaps. iOS receives transparent normal,
+dark, and monochrome tinted variants. macOS receives an .iconset for iconutil.
 
 Re-run after changing the source icon. The output is committed, so a build never needs it.
 #>
@@ -25,8 +21,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
-# Matches ic_launcher_background in the Android resources, and is the flat backdrop the
-# iOS icons are composited onto.
+# Android legacy-icon and macOS plate background.
 $BackColor = [System.Drawing.Color]::FromArgb(255, 11, 16, 36)
 
 function Get-LargestFrame([string]$path) {
@@ -62,9 +57,7 @@ function New-IconBitmap($art, [int]$size, [double]$coverage, [bool]$opaque) {
     return $bmp
 }
 
-# Draw $art on the rounded square of Apple's macOS icon grid: an 824-of-1024 plate with a
-# corner radius of 22.5% of its edge, centred on a transparent canvas. Unlike iOS, macOS
-# expects the icon to carry that shape itself rather than filling the whole square.
+# Draw the 824/1024 macOS icon plate with a 22.5% corner radius.
 function New-MacIconBitmap($art, [int]$size) {
     $bmp = New-Object System.Drawing.Bitmap($size, $size)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -124,11 +117,8 @@ foreach ($d in $densities.GetEnumerator()) {
              (Join-Path $androidRes ("mipmap-{0}\ic_launcher_foreground.png" -f $d.Key))
 }
 
-# iOS. One 1024 image per appearance, all with a transparent background so the system
-# draws its own material behind the ship rather than a flat slab of navy; the tinted
-# appearance is monochrome, which is what iOS expects to colourise. The asset catalog is
-# the only icon the bundle carries, because a flat opaque set alongside it would give iOS
-# a second answer to the same question, and the slab-backed one at that.
+# iOS uses transparent normal and dark artwork plus a monochrome tinted variant.
+# The asset catalog is the bundle's only icon source.
 Write-Host 'ios (asset catalog):'
 $appIconSet = Join-Path $Root 'ios\Assets.xcassets\AppIcon.appiconset'
 Save-Png (New-IconBitmap $art 1024 0.80 $false) (Join-Path $appIconSet 'AppIcon-1024.png')

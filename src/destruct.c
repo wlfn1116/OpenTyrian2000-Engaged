@@ -1042,9 +1042,7 @@ static void DE_netIntroBarrier(void)
 
 	while (true)
 	{
-		// Any key readies up and Escape steps back out, neither of which a finger can express.
-		// Ahead of the present, or the first frame of this screen carries whatever buttons the
-		// one before it left behind.
+		// Expose ready and Back before presenting the first frame.
 		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 
 		DE_composeIntro(localReady, peerReady);
@@ -1113,9 +1111,7 @@ static void JE_introScreen(void)
 	DE_composeIntro(false, false);
 	JE_showVGA();
 
-	/* Before the fade, not by the wait below it: a screen that only asks once it is running
-	 * shows nothing until its fade-in is over. The offline wait and the online barrier want
-	 * the same confirm, so one request here covers both. */
+	// Request Select before the fade for both offline and online waits.
 	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 
 	fade_palette(colors, 15, 0, 255);
@@ -1130,7 +1126,6 @@ static void JE_introScreen(void)
 #endif
 	while (!newkey)
 	{
-		// Waiting for any key, which a finger cannot express: offer confirm.
 		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // let a controller dismiss the title (no keyboard on Switch)
 		service_SDL_events(false);
@@ -1173,10 +1168,7 @@ static enum de_mode_t JE_modeSelect(void)
 		newkey = false;
 		do
 		{
-			// Keyboard-only: nothing here hit-tests a tap, so the touch ports need the
-			// cursor keys and confirm to pick a mode at all. Asserted inside this wait,
-			// not around it: the wait is where all the time goes, and a layout request
-			// left unrenewed goes stale in a fraction of a second.
+			// Renew touch controls inside this keyboard-only wait.
 			touch_ui_set_layout(TOUCH_LAYOUT_PICK);
 
 			push_joysticks_as_keyboard();  // controller -> arrows/Return/Escape (no keyboard on Switch)
@@ -1774,7 +1766,6 @@ static void JE_helpScreen(void)
 
 	do  /* wait until user hits a key */
 	{
-		// Waiting for any key, which a finger cannot express: offer confirm.
 		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
@@ -1799,7 +1790,6 @@ static void JE_pauseScreen(void)
 
 	do  /* wait until user hits a key */
 	{
-		// Waiting for any key, which a finger cannot express: offer confirm.
 		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
@@ -2147,10 +2137,8 @@ static void DE_SmoothPresent(int scale)
 	setDelay(1);   /* keep `target` current for other timing readers */
 }
 
-/* Action bits from the on-screen buttons, shaped like DE_NetLocalActions so both the
- * offline and the online gather can fold them in. Holding a direction repeats through the
- * per-tick read, exactly as a held key does; the two cyclers are taps and are consumed
- * here, so this runs once per live tick and never during a re-simulation. */
+/* Touch actions share DE_NetLocalActions with offline and online input. Held controls are
+ * read each live tick; one-shot controls are consumed here, outside re-simulation. */
 static Uint8 DE_TouchActions(void)
 {
 	Uint8 bits = 0;
@@ -2163,11 +2151,7 @@ static Uint8 DE_TouchActions(void)
 	if (touch_ui_take_tap(TOUCH_BTN_CHANGE)) bits |= 1 << KEY_CHANGE;
 	if (touch_ui_take_tap(TOUCH_BTN_CYCLE))  bits |= 1 << KEY_CYUP;
 
-	/* Quit is a control rather than an action, and it is set here the way the pad's pause
-	 * button is, rather than by pushing an Escape key. A pushed key arrives as a down/up
-	 * pair, and DE_SmoothPresent pumps events in the middle of the tick: whenever that pump
-	 * fell between the two, it consumed the release and cleared the flag before the tick
-	 * read it. Writing keysactive directly leaves nothing that a later pump can undo. */
+	// Set quit like controller pause; the mid-tick pump can consume pushed Esc keys.
 	if (touch_ui_take_tap(TOUCH_BTN_ESC))
 		keysactive[SDL_SCANCODE_ESCAPE] = true;
 
@@ -3451,8 +3435,7 @@ static void DE_RunTickGetInput(void)
 	SDL_Scancode key;
 
 	/* Key and action arrays share indices, including alternate binding slots. */
-	// Destruct pumps its own events rather than going through push_joysticks_as_keyboard,
-	// so the on-screen buttons' queued keys have to be pushed here instead.
+	// Destruct owns this event pump, so flush queued touch keys here.
 	touch_ui_flush_keys();
 	service_SDL_events(true);
 

@@ -35,12 +35,10 @@ cd android/app/src/main/assets/data
 ls -1 > ../filelist.tmp && mv ../filelist.tmp filelist.txt
 ```
 
-An APK keeps assets inside the archive, where the C library cannot open them, so
-the first launch unpacks every listed file into app-private storage, under
-`gamedata` rather than `data`. Asset directories cannot be enumerated from C,
-which is why the manifest is required. Regenerate it whenever the data set
-changes. Files whose length no longer matches the asset are unpacked again, so
-an updated data set arrives with the next build.
+The C library cannot open archived APK assets or enumerate their directories.
+On first launch the game uses this manifest to unpack them into app-private
+`gamedata`. Regenerate the manifest whenever the data set changes. A later build
+replaces files whose size changed.
 
 ## Icon and name
 
@@ -58,10 +56,9 @@ From `android`:
 gradle assembleRelease -PopentyrianCommit=$(git rev-parse --short HEAD)
 ```
 
-The APK lands in `app/build/outputs/apk/release/`. Release builds are signed
-with Gradle's debug key: a sideloaded game has no store identity to protect, and
-CI caches that key so a new build installs over the previous one. Replacing the
-key means uninstalling first.
+The APK lands in `app/build/outputs/apk/release/`. Release builds use Gradle's
+debug key. CI caches the key so a new build installs over the previous one;
+changing it requires an uninstall.
 
 Only `arm64-v8a` and `armeabi-v7a` are built. Add `x86_64` to `abiFilters` in
 `app/build.gradle` for an emulator build.

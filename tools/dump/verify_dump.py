@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Verify the data dump against the data directory it came from.
+"""Verify a dump against its source data directory.
 
-Every check either accounts for each byte of a source file or compares a decoder
-against the arithmetic the engine uses. Run it after regenerating `dump/`:
+Checks account for source bytes or compare decoder output with engine arithmetic.
+Run after regenerating ``dumps/<release tree>/``:
 
     python tools/dump/verify_dump.py
 
-Exits 0 when every check passes and 1 otherwise, so it can gate a commit.
-Add --reproducible to also regenerate into a scratch directory and confirm the
-tree hashes match; that roughly doubles the runtime.
+Exit status is 0 on success and 1 on failure. ``--reproducible`` also regenerates
+the tree in a temporary directory and compares hashes.
 """
 
 import argparse
@@ -362,11 +361,7 @@ def _blit_sprite_reference(width, height, data):
 
 
 def _sprite2_reference(blob, offset, end):
-    """The linear cursor src/sprite.c sprite2_ink_bounds() walks: blit_sprite2 at pitch 12.
-
-    Stops at `end` as well as at 0x0f: Tyrian 1.1 leaves the terminator out and
-    bounds a frame with the start of the next one.
-    """
+    """Reference the 12-pixel cursor, stopping at 0x0f or Tyrian 1.1's next offset."""
     painted = {}
     cursor, i = 0, offset
     while i < end and blob[i] != 0x0f:

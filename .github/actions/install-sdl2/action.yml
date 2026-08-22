@@ -9,18 +9,14 @@ runs:
     - name: apt-get libsdl2-dev libsdl2-net-dev
       shell: bash
       env:
-        # No terminal is attached, so nothing can answer a debconf or
-        # needrestart dialog. Both have to stay quiet.
+        # Suppress package-manager prompts on headless runners.
         DEBIAN_FRONTEND: noninteractive
         NEEDRESTART_MODE: a
         NEEDRESTART_SUSPEND: 1
       run: |
         set -eu
 
-        # The runner's sources are a mirrorlist whose priority:1 entry is the
-        # regional Azure mirror. When that host stops answering, apt can stall
-        # in the failover with no output and no internal timeout, so only an
-        # outside bound ends it. Give every call one.
+        # Bound each apt call; a stalled regional mirror has no reliable timeout.
         apt_get()
         {
           timeout -k 10 "$1" sudo -E apt-get -y "${apt_opts[@]}" "${@:2}" < /dev/null
@@ -37,13 +33,10 @@ runs:
           fi
           echo "apt attempt $attempt did not finish"
 
-          # A killed apt can leave dpkg mid-transaction, which the next attempt
-          # refuses to work around on its own.
+          # Repair a transaction interrupted by the timeout.
           timeout -k 10 60 sudo -E dpkg --configure -a || true
 
-          # Retry against the Ubuntu archive directly. Replacing the mirrorlist
-          # URI rather than reordering it is what takes the failover out of the
-          # picture; the archive serves the security suite too.
+          # After the first failure, bypass the regional mirrorlist over IPv4.
           if [ "$attempt" -eq 1 ]; then
             # Everything except amd64 and i386 is served from ports.ubuntu.com.
             case "$(dpkg --print-architecture)" in
