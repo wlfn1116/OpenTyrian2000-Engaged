@@ -72,6 +72,16 @@
 #include <assert.h>
 #include <stdlib.h>
 
+/* Reading the interface list directly, where the platform keeps one. See
+ * network_local_addresses for why SDL_net's own enumeration is not enough. */
+#if defined(WITH_NETWORK) && (defined(__APPLE__) || defined(__linux__)) \
+    && !defined(__SWITCH__) && !defined(__vita__)
+#define NET_HAVE_IFADDRS 1
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#endif
+
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
 #define NET_VERSION       83           /* See doc/notes.md#wire-compatibility. */
@@ -4124,6 +4134,45 @@ int network_local_addresses(IPaddress *out, int max)
 {
 	if (out == NULL || max < 1)
 		return 0;
+
+#ifdef NET_HAVE_IFADDRS
+	/* SDL_net returns loopback along with whatever tunnels and cellular interfaces happen to be
+	 * up, and on Apple platforms it can miss Wi-Fi outright: an iPhone reported 127.0.0.1 and two
+	 * carrier 10.x addresses while the LAN saw it at 192.168.0.225. Both uses here need the
+	 * address another machine can reach, so read the list and drop what cannot carry LAN traffic.
+	 * A point-to-point link is a tunnel or the cellular interface; neither is the local network. */
+	struct ifaddrs *interfaces = NULL;
+	int found = 0;
+
+	if (getifaddrs(&interfaces) == 0)
+	{
+		for (const struct ifaddrs *ifa = interfaces; ifa != NULL && found < max; ifa = ifa->ifa_next)
+		{
+			if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET)
+				continue;
+
+			const unsigned int flags = ifa->ifa_flags;
+			if ((flags & (IFF_UP | IFF_RUNNING | IFF_BROADCAST)) != (IFF_UP | IFF_RUNNING | IFF_BROADCAST))
+				continue;
+			if ((flags & (IFF_LOOPBACK | IFF_POINTOPOINT)) != 0)
+				continue;
+
+			const struct sockaddr_in *const address =
+				(const struct sockaddr_in *)(const void *)ifa->ifa_addr;
+			if (address->sin_addr.s_addr == 0)
+				continue;
+
+			out[found].host = address->sin_addr.s_addr;   // already network byte order
+			out[found].port = 0;
+			++found;
+		}
+
+		freeifaddrs(interfaces);
+	}
+
+	if (found > 0)
+		return found;
+#endif
 
 	const int count = SDLNet_GetLocalAddresses(out, max);
 	if (count > 0)

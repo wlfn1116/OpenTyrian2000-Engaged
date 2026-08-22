@@ -904,11 +904,17 @@ save you pick. It then asks for the slot to keep it in and the name to file it
 under, the same prompt every other save uses. The name starts as whatever the
 sending device called it, so you can rename it or keep it.
 
-The last row of that list is **Enter an address...**, for a network that blocks
-broadcasts or puts the two devices on different subnets. Type the address the
-upload screen shows and the receiving device asks that machine directly. The row
-is there even when the search found nothing. A hostname works in place of an
-address, and the address is remembered until you close the game.
+The last two rows of that list do not depend on the search finding anything, and
+are there even when it found nothing:
+
+- **Enter an address...** asks one machine directly. Type the address the upload
+  screen shows. A hostname works in place of an address.
+- **Wait for a sender** turns the receiving device around: it waits, shows its own
+  address, and the sending device pushes to it. On the upload screen press Enter
+  and type the waiting device's address.
+
+Either direction moves the same save; use whichever one your devices allow. The
+address you type is remembered until you close the game.
 
 Everything inside the save crosses unchanged: progress, both loadouts, cash,
 difficulty, cheat settings, and an Endless run's whole state. The slot number and
@@ -918,10 +924,11 @@ lands on the one-player page, and a two-player save on the two-player page.
 Custom weapons stay where they are. A save that used one plays with whatever
 design the receiving device holds.
 
-On iPhone and iPad, allow the local network prompt the first time you open either
-screen. Searching the network finds nothing there, because iOS reserves broadcast
-for apps carrying an Apple entitlement this build does not have, so use **Enter an
-address...** with the address the upload screen shows.
+iPhone and iPad need the push direction. iOS answers connections other devices
+open but will not open one itself without the local network permission, and it
+reserves broadcast for apps carrying an Apple entitlement this build does not
+have, so searching finds nothing there. Choose **Wait for a sender** on the iOS
+device and send to the address it shows.
 
 ## Files and logs
 

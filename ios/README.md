@@ -102,14 +102,25 @@ is dropped with no error, so the game finds no host and no sender.
 Broadcast is a second, separate gate. Sending or receiving IP broadcast needs
 Apple's `com.apple.developer.networking.multicast` entitlement, which is granted
 on request against a paid developer account, and this build does not carry it.
-So the screens that search the network find nothing here. Reach the other machine
-by address instead:
+So the screens that search the network find nothing here.
 
-- **Online Multiplayer > Join by IP Address** for a game.
-- **Load Game > Download > Enter an address...** for a save transfer.
+What does work in every case is being the machine that gets connected to, which is
+why hosting a game on iOS and joining it from a desktop needs nothing special.
+Prefer that shape:
 
-Both take the address the other machine shows on its own waiting screen. The
-machine being reached still needs its own firewall to allow the inbound port:
+- **Online Multiplayer > Host Game** and join from the other device.
+- **Load Game > Download > Wait for a sender**, then push from the other device
+  with **Upload**, Enter, and the address iOS shows.
+
+Opening the connection from iOS instead (**Join by IP Address**, or
+**Enter an address...**) works only once the local network permission is granted.
+
+An address iOS shows has to be its Wi-Fi one. `network_local_addresses` reads the
+interface list and drops loopback and point-to-point links for that reason: left
+to SDL_net's enumeration an iPhone reports its carrier 10.x addresses, which no
+other machine on the LAN can reach.
+
+The machine being connected to needs its own firewall to allow the inbound port:
 1333 for a game, 1332 for a save transfer.
 
 ## Files

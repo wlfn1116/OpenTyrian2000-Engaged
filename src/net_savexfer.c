@@ -131,6 +131,17 @@ static char save_xfer_address[64];
 
 bool saveXferAvailable(void) { return true; }
 
+/* Transfers happen outside a session, so nothing else is writing the network log while they run.
+ * Every outcome lands here, because a transfer that finds nobody looks identical from the menu
+ * whether the packets were refused, lost, or simply unanswered. */
+static void saveXferLog(const char *what, const char *detail)
+{
+	char line[192];
+	snprintf(line, sizeof(line), "%s%s%s", what, (detail != NULL && *detail != '\0') ? ": " : "",
+	         (detail != NULL) ? detail : "");
+	crashlog_netlog_line("save transfer", line);
+}
+
 /* --- screen furniture ------------------------------------------------------------------- */
 
 /* The saved-games picture, so a transfer screen reads as part of the menu it was opened from.
@@ -332,17 +343,20 @@ static void saveXferFillReply(Uint8 *data, JE_byte slot)
 	SDL_strlcpy((char *)&data[SXR_SENDER], network_player_name, NET_NAME_MAX + 1);
 }
 
-static void saveXferSendTo(UDPsocket sock, UDPpacket *packet, const IPaddress *to, int len)
+/* False means the datagram did not leave this machine. A single loss is normal and the retries
+ * above cover it, but a send that never succeeds is the signature of a platform or firewall
+ * refusing local network access outright, which is worth telling the player apart from silence. */
+static bool saveXferSendTo(UDPsocket sock, UDPpacket *packet, const IPaddress *to, int len)
 {
 	packet->address = *to;
 	packet->len = len;
-	// Best effort throughout: a refused broadcast, a downed interface, and an unroutable
-	// address all look the same here, and the retries above cover a single loss.
-	SDLNet_UDP_Send(sock, -1, packet);
+	return SDLNet_UDP_Send(sock, -1, packet) > 0;
 }
 
-// One round of offer probes: global broadcast plus each interface's directed /24.
-static void saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
+/* One round of offer probes: global broadcast plus each interface's directed /24. False means not
+ * one of them left the machine, which is what iOS looks like: it reserves broadcast for apps
+ * carrying Apple's multicast entitlement. */
+static bool saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
 {
 	IPaddress local[8];
 	const int localCount = network_local_addresses(local, (int)COUNTOF(local));
@@ -351,7 +365,7 @@ static void saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
 	to.port = SDL_SwapBE16(SAVE_XFER_PORT);
 
 	to.host = 0xffffffffu;   // 255.255.255.255
-	saveXferSendTo(sock, probe, &to, len);
+	bool sent = saveXferSendTo(sock, probe, &to, len);
 
 	for (int i = 0; i < localCount; ++i)
 	{
@@ -360,8 +374,10 @@ static void saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
 
 		// Addresses are network byte order, so the host part is the top byte as stored.
 		to.host = local[i].host | SDL_SwapBE32(0x000000ffu);
-		saveXferSendTo(sock, probe, &to, len);
+		sent |= saveXferSendTo(sock, probe, &to, len);
 	}
+
+	return sent;
 }
 
 // True when this packet is one of ours and speaks our version. Every minLen covers the header.
@@ -454,6 +470,56 @@ static bool saveXferSendPayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 	return false;
 }
 
+/* The upload screen, redrawn from scratch: the address field and each new probe land on top of it.
+ * `note` is a transient line under the addresses, or NULL. */
+static void saveXferUploadScreen(const char *saveName, const char *note)
+{
+	saveXferRestore();
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 60, saveName, normal_font, centered, 15, -1, false, 2);
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 82, "Waiting for another device to download...",
+	                    normal_font, centered, 15, -2, false, 2);
+	saveXferDrawLocalAddresses(110);
+	if (note != NULL)
+		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 156, note, normal_font, centered, 15, -3, false, 2);
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 172, "Enter to send to an address, Esc to cancel",
+	                    normal_font, centered, 15, -5, false, 2);
+	saveXferPresent();
+}
+
+/* Push the save at an address the player types, rather than waiting to be asked. This is the way
+ * round that works when the other machine cannot open a local network connection of its own but
+ * can still answer one, which is where iOS sits without Apple's local network permission. */
+static bool saveXferSendToAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+                                  const Uint8 *payload, size_t total, Uint16 gen,
+                                  const char *saveName, bool *cancelled)
+{
+	if (!networkTextEntry("Upload Save", "Send to address:", save_xfer_address,
+	                      sizeof(save_xfer_address), networkFilterAddress, false))
+	{
+		*cancelled = true;
+		return false;
+	}
+
+	// Both machines use the same fixed port, so a pasted ":port" says nothing new.
+	char host[sizeof(save_xfer_address)];
+	SDL_strlcpy(host, save_xfer_address, sizeof(host));
+	char *const colon = strrchr(host, ':');
+	if (colon != NULL)
+		*colon = '\0';
+
+	IPaddress to;
+	if (host[0] == '\0' || SDLNet_ResolveHost(&to, host, SAVE_XFER_PORT) == -1)
+	{
+		saveXferLog("address unusable", host);
+		return false;
+	}
+
+	saveXferBackdrop("Upload Save");
+	saveXferUploadScreen(saveName, "Sending...");
+
+	return saveXferSendPayload(sock, out, in, &to, payload, total, gen, cancelled);
+}
+
 void saveXferUpload(JE_byte slot)
 {
 	Uint8 *const payload = malloc(SX_MAX);
@@ -492,14 +558,7 @@ void saveXferUpload(JE_byte slot)
 	saveXferTrimName(offeredName, sizeof(offeredName), saveFiles[slot - 1].name);
 
 	saveXferBackdrop("Upload Save");
-	saveXferRestore();
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 60, offeredName,
-	                    normal_font, centered, 15, -1, false, 2);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 82, "Waiting for another device to download...",
-	                    normal_font, centered, 15, -2, false, 2);
-	saveXferDrawLocalAddresses(110);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 170, "Esc to cancel", normal_font, centered, 15, -5, false, 2);
-	saveXferPresent();
+	saveXferUploadScreen(offeredName, NULL);
 	fade_palette(colors, 10, 0, 255);
 
 	// Whatever opened this screen is still latched; a fresh press is what cancels it.
@@ -507,7 +566,10 @@ void saveXferUpload(JE_byte slot)
 
 	bool sent = false;
 	bool cancelled = false;
+	bool push = false;
 	Uint16 gen = 0;
+	char asked[64];
+	asked[0] = '\0';
 
 	while (!sent && !cancelled)
 	{
@@ -517,6 +579,14 @@ void saveXferUpload(JE_byte slot)
 			{
 				saveXferFillReply(out->data, slot);
 				saveXferSendTo(sock, out, &in->address, SXR_LEN);
+
+				/* Name whoever asked. Without it a device that cannot be reached back looks
+				 * exactly like one whose packets never arrived, and only this side can tell
+				 * those apart. */
+				const Uint32 host = SDL_SwapBE32(in->address.host);
+				snprintf(asked, sizeof(asked), "Asked by %u.%u.%u.%u", (host >> 24) & 0xff,
+				         (host >> 16) & 0xff, (host >> 8) & 0xff, host & 0xff);
+				saveXferUploadScreen(offeredName, asked);
 			}
 			else if (saveXferIsOurs(in, PACKET_SAVE_PULL, 4))
 			{
@@ -531,9 +601,19 @@ void saveXferUpload(JE_byte slot)
 			cancelled = true;
 		else if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT)
 			cancelled = true;
+		else if (newkey && (lastkey_scan == SDL_SCANCODE_RETURN
+		                    || lastkey_scan == SDL_SCANCODE_KP_ENTER
+		                    || lastkey_scan == SDL_SCANCODE_SPACE))
+		{
+			push = true;
+			break;
+		}
 
 		SDL_Delay(4);
 	}
+
+	if (push)
+		sent = saveXferSendToAddress(sock, out, in, payload, total, ++gen, offeredName, &cancelled);
 
 	SDLNet_FreePacket(in);
 	SDLNet_FreePacket(out);
@@ -684,23 +764,26 @@ static void saveXferOfferLine(char *line, size_t size, const SaveXferOffer *o)
 	         saveName, where);
 }
 
-/* Let the player choose which machine to pull from. `offers` holds `count` machines that answered
- * the broadcast plus one spare row, which the last item fills by asking a typed address directly.
+/* Let the player choose where the save comes from. `offers` holds `count` machines that answered
+ * the broadcast plus one spare row, which the typed-address item fills by asking an address
+ * directly. The last row instead sets *waitForPush and lets the other machine drive, which is the
+ * only route on a platform that will not let this one open a local network connection.
  * Returns NULL if the player backed out. */
 static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UDPpacket *in,
-                                              SaveXferOffer *offers, int count)
+                                              SaveXferOffer *offers, int count, bool *waitForPush)
 {
-	// The typed-address row is always last, so it stays put as machines answer above it.
+	// Both fixed rows sit below whatever answered, so they stay put as machines appear above.
 	const int typedRow = count;
-	const int rows = count + 1;
+	const int waitRow = count + 1;
+	const int rows = count + 2;
 
 	int selectedIndex = 0;
-	int wItem[SX_MAX_OFFERS + 1] = { 0 };
+	int wItem[SX_MAX_OFFERS + 2] = { 0 };
 	char status[64];
 	status[0] = '\0';
 
-	// Nothing answered leaves one row, so lift the list clear of the line that says so.
-	const int yItems = (count > 0) ? 60 : 100;
+	// Nothing answered leaves the two fixed rows, clear of the line that says so.
+	const int yItems = (count > 0) ? 60 : 96;
 	const int dyItems = 18;
 	const int hItem = 13;
 
@@ -717,6 +800,8 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 			char line[96];
 			if (i == typedRow)
 				SDL_strlcpy(line, "Enter an address...", sizeof(line));
+			else if (i == waitRow)
+				SDL_strlcpy(line, "Wait for a sender", sizeof(line));
 			else
 				saveXferOfferLine(line, sizeof(line), &offers[i]);
 
@@ -791,6 +876,13 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 		if (!action)
 			continue;
 
+		if (selectedIndex == waitRow)
+		{
+			JE_playSampleNum(S_SELECT);
+			*waitForPush = true;
+			return NULL;
+		}
+
 		if (selectedIndex != typedRow)
 		{
 			JE_playSampleNum(S_SELECT);
@@ -835,32 +927,48 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 	}
 }
 
-// Ask one machine for its save and assemble the chunks it sends back.
+/* Assemble a payload out of the chunks arriving on `sock`.
+ *
+ * With an `offer`, this machine drives: it asks that address for the save and keeps asking until
+ * the stream starts. With `offer` NULL it is the passive half of a push, waiting for a sender that
+ * a person still has to set going on the other machine, so nothing is sent and the deadline does
+ * not start until the first chunk lands. Either way the acknowledgement goes back to whoever the
+ * chunks actually came from. */
 static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                    const SaveXferOffer *offer, bool *cancelled)
 {
 	IPaddress to;
-	if (SDLNet_ResolveHost(&to, offer->address, offer->port) == -1)
-		return false;
+	const bool asking = offer != NULL;
 
-	SDLNet_Write16(PACKET_SAVE_PULL,  &out->data[0]);
-	SDLNet_Write16(SAVE_XFER_VERSION, &out->data[2]);
+	if (asking)
+	{
+		if (SDLNet_ResolveHost(&to, offer->address, offer->port) == -1)
+			return false;
+
+		SDLNet_Write16(PACKET_SAVE_PULL,  &out->data[0]);
+		SDLNet_Write16(SAVE_XFER_VERSION, &out->data[2]);
+	}
 
 	Uint8 *buf = NULL;
 	Uint8 *seen = NULL;
 	Uint32 gen = 0, count = 0, have = 0;
 	size_t total = 0;
 	bool done = false;
+	bool anySent = false;
 
-	const Uint32 started = SDL_GetTicks();
+	Uint32 started = SDL_GetTicks();
 	Uint32 askedAt = 0;
 	bool asked = false;
 
-	while (!done && SDL_GetTicks() - started < SX_TRANSFER_MS)
+	while (!done)
 	{
-		if (!asked || (have == 0 && SDL_GetTicks() - askedAt >= SX_PULL_MS))
+		// A wait has no deadline of its own; the transfer clock starts with the first chunk.
+		if ((asking || have > 0) && SDL_GetTicks() - started >= SX_TRANSFER_MS)
+			break;
+
+		if (asking && (!asked || (have == 0 && SDL_GetTicks() - askedAt >= SX_PULL_MS)))
 		{
-			saveXferSendTo(sock, out, &to, 4);
+			anySent |= saveXferSendTo(sock, out, &to, 4);
 			askedAt = SDL_GetTicks();
 			asked = true;
 		}
@@ -883,6 +991,10 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 			// A new generation is a fresh stream; whatever was half-assembled is stale.
 			if (buf == NULL || gen != packetGen || count != chunkCount)
 			{
+				// The wait's clock runs from here, and the answer goes where the chunks came from.
+				started = SDL_GetTicks();
+				to = in->address;
+
 				free(buf);
 				free(seen);
 				buf = calloc((size_t)chunkCount, SXC_PAYLOAD);
@@ -935,6 +1047,12 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 
 	free(buf);
 	free(seen);
+
+	// Not one request left the machine: the platform or a firewall refused the socket outright,
+	// which is a different thing from asking and hearing nothing back.
+	if (!done && asking && !anySent)
+		saveXferLog("every request refused", SDLNet_GetError());
+
 	return done;
 }
 
@@ -975,9 +1093,12 @@ bool saveXferDownload(void)
 
 	bool got = false;
 	bool cancelled = false;
+	bool waitForPush = false;
+	bool portBusy = false;
 
-	// The list is shown even when nothing answered, because typing an address is on it.
-	const SaveXferOffer *const pick = saveXferPickOffer(sock, out, in, offers, count);
+	// The list is shown even when nothing answered: both of its fixed rows still apply.
+	const SaveXferOffer *const pick = saveXferPickOffer(sock, out, in, offers, count, &waitForPush);
+
 	if (pick != NULL)
 	{
 		saveXferRestore();
@@ -987,17 +1108,50 @@ bool saveXferDownload(void)
 
 		got = saveXferReceivePayload(sock, out, in, pick, &cancelled);
 	}
+	else if (waitForPush)
+	{
+		/* A push arrives at the well-known port, so trade the ephemeral socket for that one. The
+		 * search is over by now and nothing else needs the old one. */
+		SDLNet_UDP_Close(sock);
+		sock = SDLNet_UDP_Open(SAVE_XFER_PORT);
+		if (sock == NULL)
+		{
+			portBusy = true;
+		}
+		else
+		{
+			saveXferRestore();
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 60, "Waiting for a sender...",
+			                    normal_font, centered, 15, -2, false, 2);
+			saveXferDrawLocalAddresses(90);
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 150, "Send to this address from the other device.",
+			                    normal_font, centered, 15, -4, false, 2);
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 170, "Esc to cancel",
+			                    normal_font, centered, 15, -5, false, 2);
+			saveXferPresent();
+			service_SDL_events(true);
+
+			got = saveXferReceivePayload(sock, out, in, NULL, &cancelled);
+		}
+	}
 
 	fade_black(10);
 
+	saveXferLog(got ? "download finished" : "download did not finish",
+	            waitForPush ? "waiting for a sender" : "asking a sender");
+
 	// Backing out is a decision, not a fault; only a real failure is worth a notice.
-	if (pick != NULL && !got && !cancelled)
+	if (portBusy)
+		saveXferNotice("Download Save", "Could not open the transfer port.",
+		               "Another copy may already be using it.");
+	else if ((pick != NULL || waitForPush) && !got && !cancelled)
 		saveXferNotice("Download Save", "The transfer did not finish.",
 		               "Try again from both devices.");
 
 	SDLNet_FreePacket(in);
 	SDLNet_FreePacket(out);
-	SDLNet_UDP_Close(sock);
+	if (sock != NULL)
+		SDLNet_UDP_Close(sock);
 	SDLNet_Quit();
 
 	return got;

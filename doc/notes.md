@@ -929,13 +929,29 @@ copying the one that arrived. `endlessSlotSerialize` and `endlessSlotAdopt` move
 the Endless half the same way, straight through the slot cache. Only the slot
 number and the name differ from the machine that sent it.
 
-iOS gates this twice. `NSLocalNetworkUsageDescription` in `ios/Info.plist.in` is
-what lets the system ask for local network permission; without the key iOS never
-asks and drops the traffic silently, which reads as a working socket that finds
-nobody. Broadcast needs Apple's `com.apple.developer.networking.multicast`
-entitlement on top, which this build does not carry, so discovery finds nothing
-on iOS and the typed-address row is the route. macOS 15 prompts the same way, so
-`macos/Info.plist.in` carries the key too.
+Transfers work in both directions because one of them is the only route on iOS.
+The receiver drives by default: it asks an address and pulls. **Wait for a sender**
+turns that around, binding the well-known port and letting the sender push, and
+`saveXferReceivePayload` serves both from one loop (a NULL offer means wait, send
+nothing, and start the deadline at the first chunk rather than at entry).
+
+That matters because of how iOS is gated. `NSLocalNetworkUsageDescription` in
+`ios/Info.plist.in` is what lets the system ask for local network permission;
+without the key iOS never asks and drops outbound local traffic silently, which
+reads as a working socket that finds nobody. Broadcast needs Apple's
+`com.apple.developer.networking.multicast` entitlement on top, which this build
+does not carry. What iOS never blocks is answering a connection another machine
+opened, which is why hosting a game there has always worked. Pushing to a waiting
+iOS device therefore works whatever the permission says. macOS 15 prompts the same
+way, so `macos/Info.plist.in` carries the key too.
+
+`network_local_addresses` reads the interface list through `getifaddrs` wherever
+one exists, keeping only IPv4 interfaces that are up, running, and broadcast
+capable, and dropping loopback and point-to-point links. SDL_net's own enumeration
+returns loopback and whatever tunnels and cellular interfaces are up, and on Apple
+platforms it can miss Wi-Fi outright: an iPhone reported 127.0.0.1 plus two
+carrier 10.x addresses while the LAN saw it at 192.168.0.225. Both callers need
+the address another machine can reach, so a wrong list is not cosmetic.
 
 `JE_loadScreen` offers the two rows when `net2p` and `saving` are both false,
 which is the title screen's own page. An online session uses the same screen and
