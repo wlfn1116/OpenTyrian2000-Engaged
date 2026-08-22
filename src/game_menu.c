@@ -322,6 +322,16 @@ static bool outpostListScrolls(void)
 	return false;
 }
 
+/* The rear gun on this row has a second firing mode, which the / key cycles so the change can
+ * be watched in the preview. Asked here rather than beside the preview drawing, because that
+ * only runs while this very row is selected: a condition tested only where it is true can
+ * never report that it has become false, which left the button on screen after leaving. */
+static bool outpostRearModeCyclable(void)
+{
+	return curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4
+		&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2;
+}
+
 static JE_byte planetAni, planetAniWait;
 static JE_byte currentDotNum, currentDotWait;
 static JE_real navX, navY, newNavX, newNavY;
@@ -3423,12 +3433,19 @@ void JE_itemScreen(void)
 					}
 				}
 
-				// Said either way every frame, so leaving a scrolled list takes the cursor keys
-				// with it rather than leaving them up until the request goes stale.
+				/* Both asked either way, and from here rather than from the code that draws the
+				 * thing they belong to: this runs on every frame the outpost does, whatever is
+				 * on screen, so leaving a row or a list takes its buttons with it instead of
+				 * leaving them up until the request goes stale. */
 				if (outpostListScrolls())
 					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 				else
 					touch_ui_clear_layout();
+
+				if (outpostRearModeCyclable())
+					touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
+				else
+					touch_ui_clear_extra();
 
 				menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
 
@@ -11203,19 +11220,9 @@ void JE_weaponSimUpdate(void)
 
 		temp = shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power;
 
-		// A rear gun with a second firing mode, which the / key cycles here so the change can
-		// be watched in the preview. The touch ports get it as a button for as long as that
-		// holds -- outside the weaponSimTime test below, which only makes the caption blink.
-		const bool rearModeCyclable = (curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
-			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2;
-		// Said either way, because this is re-evaluated every frame: moving off the row has to
-		// take the button with it, not leave it up until the request goes stale.
-		if (rearModeCyclable)
-			touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
-		else
-			touch_ui_clear_extra();
-
-		if (rearModeCyclable && (weaponSimTime >= 75))
+		// The blinking caption only; the touch button is asked for from the shop's own frame
+		// path, which still runs once this row is no longer selected (outpostRearModeCyclable).
+		if (outpostRearModeCyclable() && (weaponSimTime >= 75))
 		{
 #if defined(__SWITCH__) || defined(__vita__)
 			// No [/] key on the consoles; the shoulder buttons cycle the mode

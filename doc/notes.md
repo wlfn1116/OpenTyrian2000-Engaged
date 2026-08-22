@@ -587,10 +587,18 @@ buttons on the same schedule as the screen they belong to:
   with no present in between, or that frame is dark and not rising and drops it.
   `DE_RunTick` re-asserts beside its fade for exactly this reason.
 
-`outpostListScrolls()` is the single test for "this outpost list has scrolled out
-of reach, so it needs the cursor keys". Every scrolling list here has to be in
-it: today the buy/sell sub-list and the read-only endless perk list. The E-Shop
-looks like a third and is not, being a fixed thirteen rows.
+`outpostListScrolls()` and `outpostRearModeCyclable()` are the single tests for
+"this outpost screen needs those buttons". Every scrolling list has to be in the
+first: today the buy/sell sub-list and the read-only endless perk list. The
+E-Shop looks like a third and is not, being a fixed thirteen rows.
+
+Both are asked from the outpost's own frame path, not from the code that draws
+what they belong to. **A condition tested only where it holds can never report
+that it has stopped holding.** The rear-mode button was decided inside
+`JE_weaponSimUpdate`, which only runs while that very row is selected, so
+selecting a dual-mode gun and then leaving the menu never reached the else at
+all and the button stayed up. An assert and its clear belong together in a path
+that runs every frame regardless of the answer.
 
 What a finger can answer at all depends on `mouseGetRelative()`, and that is on
 only inside the level loop: `JE_main` turns it off before every between-level
