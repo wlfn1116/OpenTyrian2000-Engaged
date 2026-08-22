@@ -211,9 +211,12 @@ jobs:
 
           # SDL2 asks for compatibility with CMake 3.0, which CMake 4 refuses without this.
           # Quoted whole: PowerShell splits a bare -Dname=3.5 at the decimal point.
+          # SDL_LIBC=ON because SDL2's own libc links /NODEFAULTLIB, which it skips for ARM32
+          # but not ARM64, where MSVC leaves the CRT's _Interlocked helpers unresolved. The
+          # game already imports the same CRT, so this adds nothing to the package.
           cmake -S visualc\external\SDL2 -B visualc\external\SDL2\build -A ARM64 `
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
-            -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF
+            -DSDL_LIBC=ON -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF
           cmake --build visualc\external\SDL2\build --config Release --parallel
           # Absolute prefix: a relative one is resolved against the install script's own
           # directory, not this one.

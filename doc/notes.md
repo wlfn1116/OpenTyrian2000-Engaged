@@ -15,7 +15,10 @@ collected under `build`. `-FailFast` stops after the first failed target.
   conditions are x64-only, so ARM64 excludes FluidSynth and midiproc.
 - SDL's VC packages hold x86 and x64 import libraries only. The ARM64 job builds
   SDL2 and SDL2_net from source, restages them as `include` plus `lib\arm64`, and
-  caches the result. CMake 4 needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` for SDL2.
+  caches the result. That build needs two options: CMake 4 refuses SDL2 without
+  `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, and `-DSDL_LIBC=ON` keeps SDL2 off the
+  `/NODEFAULTLIB` path it takes on ARM64, where the CRT's `_Interlocked` helpers
+  would go unresolved.
 - MSVC has no `-fsigned-char`, so `opentyr.c` asserts the default at compile time.
 - Switch builds use devkitPro bash and an MSYS-style `DEVKITPRO` path.
 - Vita builds use native CMake and Ninja. MSYS paths do not work there.
