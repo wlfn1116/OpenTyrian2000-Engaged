@@ -89,6 +89,7 @@ void qa_test_online_suite(void);
 void qa_test_net_lobby_strings(void);
 
 void qa_test_save_transfer(void);
+void qa_test_save_transfer_preinit(void);
 
 void qa_test_load_screen_help(void);
 // The Relaxed death prompt's rows and widths against the choice enum (mainint.c).

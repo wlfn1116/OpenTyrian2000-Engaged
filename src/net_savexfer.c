@@ -21,6 +21,7 @@
 #include "custom_weapon.h"
 #include "editship.h"
 #include "endless.h"
+#include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
 #include "joystick.h"
@@ -228,6 +229,23 @@ static Uint16 xferTransportVersion(XferKind kind)
 static size_t xferMaxPayload(XferKind kind)
 {
 	return kind == XFER_SAVE ? SX_MAX : kind == XFER_ALL ? AX_MAX : CX_MAX;
+}
+
+static bool xferCarriesWeapons(XferKind kind)
+{
+	return kind == XFER_WEAPONS || kind == XFER_CUSTOM || kind == XFER_ALL;
+}
+
+/* The title screen normally has not loaded item data yet. Weapon initialization also loads the
+ * persistent library, so do it here instead of making the player visit an editor first. */
+static void xferPrepareLocalData(XferKind kind)
+{
+	if (!xferCarriesWeapons(kind) || customWeaponLibCount >= 1)
+		return;
+	if (weaponPort[1].name[0] == '\0')
+		JE_loadItemDat();
+	else
+		customWeaponInit();
 }
 
 static const char *xferNoOfferLine(XferKind kind)
@@ -848,6 +866,7 @@ static bool saveXferSendToAddress(XferKind kind, UDPsocket sock, UDPpacket *out,
 static void xferUpload(XferKind kind, JE_byte slot)
 {
 	const char *const title = xferUploadTitle(kind);
+	xferPrepareLocalData(kind);
 	Uint8 *const payload = malloc(xferMaxPayload(kind));
 	const size_t total = payload != NULL ? xferPack(kind, payload, slot) : 0;
 	if (total == 0)
@@ -1409,6 +1428,7 @@ static bool saveXferReceivePayload(XferKind kind, UDPsocket sock, UDPpacket *out
 static bool xferDownload(XferKind kind)
 {
 	const char *const title = xferDownloadTitle(kind);
+	xferPrepareLocalData(kind);  // the rollback snapshot needs the complete local weapon library
 	if (kind == XFER_SAVE)
 		saveXferPendingClear();
 
@@ -1541,6 +1561,18 @@ bool allXferDownload(void)
 }
 
 /* Tests */
+
+void qa_test_save_transfer_preinit(void)
+{
+	xferPrepareLocalData(XFER_ALL);
+	Uint8 *const payload = malloc(AX_MAX);
+	const size_t total = payload != NULL ? allXferPack(payload) : 0;
+	qa_check(weaponPort[1].name[0] != '\0' && customWeaponLibCount >= 1 && total > AX_DATA,
+	         "Transfer All prepares saves and custom data directly from a fresh title screen");
+	qa_check(total > AX_DATA && allXferUnpack(payload, total),
+	         "Transfer All can adopt data directly on a fresh receiving device");
+	free(payload);
+}
 
 void qa_test_save_transfer(void)
 {
@@ -1771,6 +1803,7 @@ const JE_SaveFileType *saveXferPending(void) { return NULL; }
 bool saveXferPendingTwoPlayer(void) { return false; }
 bool saveXferPendingApply(JE_byte slot, const char *name) { (void)slot; (void)name; return false; }
 void saveXferPendingClear(void) { }
+void qa_test_save_transfer_preinit(void) { }
 void qa_test_save_transfer(void) { }
 
 #endif

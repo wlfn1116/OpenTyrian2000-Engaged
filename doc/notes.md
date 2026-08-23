@@ -928,6 +928,10 @@ The menu belongs under **Extra > Transfer** on the title screen because a live
 session cannot service its keep-alive. Save upload reuses the normal load list
 only as a picker.
 
+The title screen has not normally loaded item data. Every transfer containing
+custom weapons loads it internally before upload or download so the complete
+library exists for serialization or transactional rollback.
+
 Wire rules:
 
 - Single-save and bulk transfers use separate packet families. Each bulk menu

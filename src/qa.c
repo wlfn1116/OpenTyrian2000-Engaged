@@ -8410,6 +8410,9 @@ int qa_run_unit_suite(void)
 	qa_checks = qa_failures = 0;
 	printf("TAP version 13\n");
 
+	// Transfer is reachable from a fresh title screen, before the normal episode setup below.
+	qa_test_save_transfer_preinit();
+
 	/* Mirror normal episode setup before testing item, ship, weapon, and sidekick invariants. */
 	JE_loadItemDat();
 	JE_initPlayerData();
