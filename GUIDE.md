@@ -844,9 +844,13 @@ Weapon Creator is enabled; an existing reference keeps working after it is
 disabled.
 
 **Sprites** edits graphics 8 through 15. Each bank contains five turning poses.
-Choose Paint, Fill, Pick, or Erase from the Tool row. With a mouse, right-click
-erases and middle-click picks a color. Color 0 is transparent. Capture copies a
-built-in hull into the bank; Flip H and Flip V mirror the selected pose.
+Choose Paint, Fill, Pick, or Erase from the Tool row. Select **Col** or **BG**
+beside the palette before choosing a color; **BG** changes only the preview.
+With a mouse, right-click erases and middle-click picks a color. Color 0 is transparent.
+Mirror reflects painting and erasing across the ship's centerline. The arrow
+buttons nudge the current pose by one pixel. Capture copies a built-in hull into
+the bank; Flip H and Flip V mirror the pose. Guides cycles dotted vertical,
+horizontal, or combined centerlines without changing the sprite.
 
 On a controller, Tab moves focus to or from the canvas. Arrows move the cursor
 and Enter uses the selected tool.

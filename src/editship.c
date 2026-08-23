@@ -733,6 +733,21 @@ static void seFlipFrame(int bank, int frame, bool vertical)
 			*seFramePx(bank, frame, x, y) = tmp[y * SE_FRAME_W + x];
 }
 
+static void seNudgeFrame(int bank, int frame, int dx, int dy)
+{
+	JE_byte tmp[SE_FRAME_W * SE_FRAME_H] = { 0 };
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		for (int x = 0; x < SE_FRAME_W; ++x)
+		{
+			const int toX = x + dx, toY = y + dy;
+			if (toX >= 0 && toX < SE_FRAME_W && toY >= 0 && toY < SE_FRAME_H)
+				tmp[toY * SE_FRAME_W + toX] = *seFramePx(bank, frame, x, y);
+		}
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		for (int x = 0; x < SE_FRAME_W; ++x)
+			*seFramePx(bank, frame, x, y) = tmp[y * SE_FRAME_W + x];
+}
+
 static void seDrawFramePx(int x0, int y0, int bank, int frame)
 {
 	for (int y = 0; y < SE_FRAME_H; ++y)
@@ -747,25 +762,58 @@ static void seDrawFramePx(int x0, int y0, int bank, int frame)
 	}
 }
 
+static void seDrawArrow(int x0, int y0, int direction, JE_byte color)
+{
+	static const Uint8 pixels[4][7] = {
+		{ 0x08, 0x0C, 0x0E, 0x7F, 0x0E, 0x0C, 0x08 },  // left
+		{ 0x08, 0x1C, 0x3E, 0x7F, 0x08, 0x08, 0x08 },  // up
+		{ 0x08, 0x08, 0x08, 0x7F, 0x3E, 0x1C, 0x08 },  // down
+		{ 0x08, 0x18, 0x38, 0x7F, 0x38, 0x18, 0x08 },  // right
+	};
+	Uint8 *const dst = VGAScreen->pixels;
+	for (int y = 0; y < 7; ++y)
+		for (int x = 0; x < 7; ++x)
+			if ((pixels[direction][y] & (1u << x)) != 0)
+				dst[(y0 + y) * VGAScreen->pitch + x0 + x] = color;
+}
+
 enum
 {
-	SES_ROW_BANK, SES_ROW_FRAME, SES_ROW_TOOL, SES_ROW_COLOR, SES_ROW_SOURCE, SES_ROW_COUNT,
-	SES_ACT_CAPTURE = SES_ROW_COUNT,
+	SES_ROW_BANK, SES_ROW_FRAME, SES_ROW_TOOL, SES_ROW_MIRROR, SES_ROW_GUIDES, SES_ROW_SOURCE,
+	SES_ROW_COUNT,
+	SES_PAL_COLOR = SES_ROW_COUNT, SES_PAL_BACKGROUND,
+	SES_NUDGE_LEFT, SES_NUDGE_UP, SES_NUDGE_DOWN, SES_NUDGE_RIGHT,
+	SES_ACT_CAPTURE,
 	SES_ACT_COPY, SES_ACT_FLIP_H, SES_ACT_FLIP_V, SES_ACT_CLEAR, SES_ACT_REVERT, SES_ACT_DONE,
 	SES_NAV_COUNT,
-	SES_ACT_COUNT = SES_NAV_COUNT - SES_ROW_COUNT,
+	SES_ACT_COUNT = SES_NAV_COUNT - SES_ACT_CAPTURE,
 };
 
 enum { SES_TOOL_PAINT, SES_TOOL_FILL, SES_TOOL_PICK, SES_TOOL_ERASE, SES_TOOL_COUNT };
+enum { SES_GUIDES_OFF, SES_GUIDES_VERTICAL, SES_GUIDES_HORIZONTAL, SES_GUIDES_BOTH, SES_GUIDES_COUNT };
 
 static const char *const sesToolName[SES_TOOL_COUNT] = { "Paint", "Fill", "Pick", "Erase" };
+static const char *const sesGuidesName[SES_GUIDES_COUNT] = { "Off", "Vertical", "Horizontal", "Both" };
 
 static const struct { const char *label, *help; } sesRows[SES_ROW_COUNT] = {
 	{ "Bank",      "One of the eight custom banks, graphics 8 to 15." },
 	{ "Pose",      "The five turning poses, hard left to hard right." },
 	{ "Tool",      "What a canvas press does; Pick reads a color back." },
-	{ "Color",     "Paint color. Click the palette below; 0 is transparent." },
+	{ "Mirror",    "Reflect Paint, Fill, and Erase across the centerline." },
+	{ "Guides",    "Dotted centerlines shown only on the enlarged preview." },
 	{ "From Hull", "The built-in hull that Capture copies from." },
+};
+
+static const char *const sesPaletteHelp[] = {
+	"Palette changes the paint color; 0 is transparent.",
+	"Palette changes the preview background; never saved.",
+};
+
+static const char *const sesNudgeHelp[] = {
+	"Move this pose left by one pixel.",
+	"Move this pose up by one pixel.",
+	"Move this pose down by one pixel.",
+	"Move this pose right by one pixel.",
 };
 
 static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
@@ -835,12 +883,15 @@ static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_b
 }
 
 // Pick selects the color and returns to Paint.
-static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool)
+static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool, bool mirror)
 {
+	const int mirrorX = SE_FRAME_W - 1 - x;
 	switch (*tool)
 	{
 	case SES_TOOL_FILL:
 		seFloodFill(bank, frame, x, y, (JE_byte)*color);
+		if (mirror)
+			seFloodFill(bank, frame, mirrorX, y, (JE_byte)*color);
 		break;
 	case SES_TOOL_PICK:
 		*color = *seFramePx(bank, frame, x, y);
@@ -848,9 +899,13 @@ static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool
 		break;
 	case SES_TOOL_ERASE:
 		*seFramePx(bank, frame, x, y) = 0;
+		if (mirror)
+			*seFramePx(bank, frame, mirrorX, y) = 0;
 		break;
 	default:
 		*seFramePx(bank, frame, x, y) = (JE_byte)*color;
+		if (mirror)
+			*seFramePx(bank, frame, mirrorX, y) = (JE_byte)*color;
 		break;
 	}
 }
@@ -859,19 +914,28 @@ static void seSpriteEditor(int bank)
 {
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
 	enum { CANV_X = 28, CANV_Y = 22, CANV_SCALE = 4 };
-	enum { STRIP_X = 10, STRIP_Y = 147 };
+	enum { STRIP_X = 12, STRIP_Y = 147 };
 	enum { PAL_X = 199, PAL_Y = 84, PAL_CELL = 4 };
+	enum { PAL_BTN_Y = 99, PAL_BTN_SIZE = 32, PAL_COL_X = 160, PAL_BG_X = 272 };
+	enum { NUDGE_BTN_Y = 133, NUDGE_BTN_SIZE = 15 };
 	const int panX0 = 150, panX1 = 313, panY0 = 7, panY1 = 183;
 	const int fieldsTop = panY0 + 16;
-	const int row_h = 12;
+	const int row_h = 10;
 	const int actionsTop = 152;
 	const int act_h = 8;
 	const int panMidX = (panX0 + panX1) / 2;
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
-	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_HI = 0xFB, C_SEL = 0xF5 };
+	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_GUIDE = 0xF8, C_HI = 0xFB, C_SEL = 0xF5 };
 
 	int frame = 3, color = 15, source = 1, tool = SES_TOOL_PAINT;
+	static int background = C_PANEL;
+	static int guides = SES_GUIDES_OFF;
+	bool mirror = false;
 	int selected = SES_ROW_BANK;
+	int paletteTarget = SES_PAL_COLOR;
+	const int nudgeX[] = { PAL_COL_X, PAL_COL_X + 17, PAL_BG_X, PAL_BG_X + 17 };
+	const int nudgeDx[] = { -1, 0, 0, 1 };
+	const int nudgeDy[] = { 0, -1, 1, 0 };
 	bool canvasFocus = false;
 	int curX = SE_FRAME_W / 2, curY = SE_FRAME_H / 2;
 	JE_byte heldColor = 0;  // the color the pressed mouse button paints while dragging
@@ -896,6 +960,8 @@ static void seSpriteEditor(int bank)
 		snprintf(caption, sizeof(caption), "Bank %d = Graphic %d", bank, bank + 7);
 		draw_font_hv_shadow(VGAScreen, (BOX_X0 + BOX_X1) / 2, BOX_Y0 + 4, caption, small_font, centered, 15, 4, false, 1);
 
+		fill_rectangle_wh(VGAScreen, CANV_X, CANV_Y, SE_FRAME_W * CANV_SCALE,
+		                  SE_FRAME_H * CANV_SCALE, (Uint8)background);
 		for (int y = 0; y < SE_FRAME_H; ++y)
 			for (int x = 0; x < SE_FRAME_W; ++x)
 			{
@@ -904,6 +970,22 @@ static void seSpriteEditor(int bank)
 					fill_rectangle_wh(VGAScreen, CANV_X + x * CANV_SCALE, CANV_Y + y * CANV_SCALE,
 					                  CANV_SCALE, CANV_SCALE, c);
 			}
+		const int centerX = CANV_X + SE_FRAME_W * CANV_SCALE / 2;
+		const int centerY = CANV_Y + SE_FRAME_H * CANV_SCALE / 2;
+		if (guides == SES_GUIDES_VERTICAL || guides == SES_GUIDES_BOTH)
+		{
+			for (int y = centerY - 1; y >= CANV_Y - 1; y -= CANV_SCALE)
+				fill_rectangle_wh(VGAScreen, centerX - 1, y, 2, 2, C_GUIDE);
+			for (int y = centerY - 1 + CANV_SCALE; y < CANV_Y + SE_FRAME_H * CANV_SCALE; y += CANV_SCALE)
+				fill_rectangle_wh(VGAScreen, centerX - 1, y, 2, 2, C_GUIDE);
+		}
+		if (guides == SES_GUIDES_HORIZONTAL || guides == SES_GUIDES_BOTH)
+		{
+			for (int x = centerX - 1; x >= CANV_X - 1; x -= CANV_SCALE)
+				fill_rectangle_wh(VGAScreen, x, centerY - 1, 2, 2, C_GUIDE);
+			for (int x = centerX - 1 + CANV_SCALE; x < CANV_X + SE_FRAME_W * CANV_SCALE; x += CANV_SCALE)
+				fill_rectangle_wh(VGAScreen, x, centerY - 1, 2, 2, C_GUIDE);
+		}
 		JE_rectangle(VGAScreen, CANV_X - 1, CANV_Y - 1,
 		             CANV_X + SE_FRAME_W * CANV_SCALE, CANV_Y + SE_FRAME_H * CANV_SCALE, C_DIV);
 		if (canvasFocus)
@@ -912,6 +994,8 @@ static void seSpriteEditor(int bank)
 
 		for (int f = 0; f < SE_FRAMES; ++f)
 		{
+			fill_rectangle_wh(VGAScreen, STRIP_X + f * 26, STRIP_Y,
+			                  SE_FRAME_W, SE_FRAME_H, (Uint8)background);
 			seDrawFramePx(STRIP_X + f * 26, STRIP_Y, bank, f + 1);
 			if (f + 1 == frame)
 				JE_rectangle(VGAScreen, STRIP_X + f * 26 - 1, STRIP_Y - 1,
@@ -937,7 +1021,8 @@ static void seSpriteEditor(int bank)
 			case SES_ROW_BANK:   snprintf(raw, sizeof(raw), "%d of 8", bank); break;
 			case SES_ROW_FRAME:  snprintf(raw, sizeof(raw), "%s", sesPoseName[frame - 1]); break;
 			case SES_ROW_TOOL:   snprintf(raw, sizeof(raw), "%s", sesToolName[tool]); break;
-			case SES_ROW_COLOR:  snprintf(raw, sizeof(raw), "%d", color); break;
+			case SES_ROW_MIRROR: snprintf(raw, sizeof(raw), "%s", mirror ? "On" : "Off"); break;
+			case SES_ROW_GUIDES: snprintf(raw, sizeof(raw), "%s", sesGuidesName[guides]); break;
 			default:             snprintf(raw, sizeof(raw), "%d of 6", source); break;
 			}
 			if (sel)
@@ -946,20 +1031,46 @@ static void seSpriteEditor(int bank)
 				SDL_strlcpy(val, raw, sizeof(val));
 			draw_font_hv_shadow(VGAScreen, labelX, ry, sesRows[r].label, small_font, left_aligned, 15, sel ? 5 : 3, false, 1);
 			draw_font_hv_shadow(VGAScreen, valueX, ry, val, small_font, right_aligned, 15, sel ? 6 : 5, false, 1);
-			if (r == SES_ROW_COLOR)
-			{
-				const int sw = valueX - 12 - JE_textWidth(val, small_font);
-				fill_rectangle_xy(VGAScreen, sw - 8, ry, sw, ry + 6, (Uint8)color);
-				JE_rectangle(VGAScreen, sw - 9, ry - 1, sw + 1, ry + 7, C_DIV);
-			}
 		}
 
 		for (int c = 0; c < 256; ++c)
 			fill_rectangle_wh(VGAScreen, PAL_X + (c % 16) * PAL_CELL, PAL_Y + (c / 16) * PAL_CELL,
 			                  PAL_CELL, PAL_CELL, (Uint8)c);
 		JE_rectangle(VGAScreen, PAL_X - 1, PAL_Y - 1, PAL_X + 16 * PAL_CELL, PAL_Y + 16 * PAL_CELL, C_DIV);
-		JE_rectangle(VGAScreen, PAL_X + (color % 16) * PAL_CELL - 1, PAL_Y + (color / 16) * PAL_CELL - 1,
-		             PAL_X + (color % 16) * PAL_CELL + PAL_CELL, PAL_Y + (color / 16) * PAL_CELL + PAL_CELL, C_HI);
+
+		const int paletteButtons[] = { PAL_COL_X, PAL_BG_X };
+		const int paletteColors[] = { color, background };
+		const char *const paletteLabels[] = { "Col", "BG" };
+		for (int b = 0; b < 2; ++b)
+		{
+			const bool sel = (selected == SES_PAL_COLOR + b && !canvasFocus);
+			const int bx = paletteButtons[b];
+			fill_rectangle_wh(VGAScreen, bx, PAL_BTN_Y, PAL_BTN_SIZE, PAL_BTN_SIZE, sel ? C_SEL : C_PANEL);
+			JE_rectangle(VGAScreen, bx - 1, PAL_BTN_Y - 1,
+			             bx + PAL_BTN_SIZE, PAL_BTN_Y + PAL_BTN_SIZE, sel ? C_HI : C_DIV);
+			draw_font_hv_shadow(VGAScreen, bx + PAL_BTN_SIZE / 2, PAL_BTN_Y + 4,
+			                    paletteLabels[b], small_font, centered, 15, sel ? 6 : 4, false, 1);
+			fill_rectangle_xy(VGAScreen, bx + 6, PAL_BTN_Y + 17,
+			                  bx + PAL_BTN_SIZE - 7, PAL_BTN_Y + PAL_BTN_SIZE - 6, (Uint8)paletteColors[b]);
+			JE_rectangle(VGAScreen, bx + 5, PAL_BTN_Y + 16,
+			             bx + PAL_BTN_SIZE - 6, PAL_BTN_Y + PAL_BTN_SIZE - 5, C_DIV);
+		}
+		for (int n = 0; n < 4; ++n)
+		{
+			const bool sel = (selected == SES_NUDGE_LEFT + n && !canvasFocus);
+			fill_rectangle_wh(VGAScreen, nudgeX[n], NUDGE_BTN_Y,
+			                  NUDGE_BTN_SIZE, NUDGE_BTN_SIZE, sel ? C_SEL : C_PANEL);
+			JE_rectangle(VGAScreen, nudgeX[n] - 1, NUDGE_BTN_Y - 1,
+			             nudgeX[n] + NUDGE_BTN_SIZE, NUDGE_BTN_Y + NUDGE_BTN_SIZE,
+			             sel ? C_HI : C_DIV);
+			seDrawArrow(nudgeX[n] + 4, NUDGE_BTN_Y + 4, n, C_HI);
+		}
+
+		const int paletteSelection = (paletteTarget == SES_PAL_BACKGROUND) ? background : color;
+		JE_rectangle(VGAScreen, PAL_X + (paletteSelection % 16) * PAL_CELL - 1,
+		             PAL_Y + (paletteSelection / 16) * PAL_CELL - 1,
+		             PAL_X + (paletteSelection % 16) * PAL_CELL + PAL_CELL,
+		             PAL_Y + (paletteSelection / 16) * PAL_CELL + PAL_CELL, C_HI);
 
 		fill_rectangle_xy(VGAScreen, panX0 + 2, actionsTop - 3, panX1 - 2, actionsTop - 3, C_DIV);
 		for (int a = 0; a < SES_ACT_COUNT; ++a)
@@ -968,17 +1079,19 @@ static void seSpriteEditor(int bank)
 			const int bx0 = (alone || a % 2 == 0) ? panX0 + 2 : panMidX + 1;
 			const int bx1 = (alone || a % 2 == 1) ? panX1 - 2 : panMidX - 1;
 			const int ry = actionsTop + (a / 2) * act_h;
-			const bool sel = (selected == SES_ROW_COUNT + a && !canvasFocus);
+			const bool sel = (selected == SES_ACT_CAPTURE + a && !canvasFocus);
 			fill_rectangle_xy(VGAScreen, bx0, ry - 1, bx1, ry + act_h - 3, sel ? C_SEL : C_DIV);
 			draw_font_hv_shadow(VGAScreen, (bx0 + bx1) / 2, ry, sesActs[a].label, small_font, centered,
 			                    15, sel ? 6 : 4, false, 1);
 		}
 
+		const char *const help = canvasFocus ? "Arrows move, Enter uses the tool, Backspace erases, Tab leaves."
+		                       : selected < SES_ROW_COUNT ? sesRows[selected].help
+		                       : selected < SES_NUDGE_LEFT ? sesPaletteHelp[selected - SES_PAL_COLOR]
+		                       : selected < SES_ACT_CAPTURE ? sesNudgeHelp[selected - SES_NUDGE_LEFT]
+		                       : sesActs[selected - SES_ACT_CAPTURE].help;
 		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
-		                    notice[0] != '\0' ? notice
-		                    : canvasFocus ? "Arrows move, Enter uses the tool, Backspace erases, Tab leaves."
-		                    : selected < SES_ROW_COUNT ? sesRows[selected].help
-		                    : sesActs[selected - SES_ROW_COUNT].help,
+		                    notice[0] != '\0' ? notice : help,
 		                    small_font, centered, 15, 2, false, 1);
 
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
@@ -1000,6 +1113,8 @@ static void seSpriteEditor(int bank)
 		{
 			selected -= mouse_scroll;
 			selected = selected < 0 ? 0 : (selected >= SES_NAV_COUNT ? SES_NAV_COUNT - 1 : selected);
+			if (selected == SES_PAL_COLOR || selected == SES_PAL_BACKGROUND)
+				paletteTarget = selected;
 			canvasFocus = false;
 			mouse_scroll = 0;
 		}
@@ -1012,9 +1127,20 @@ static void seSpriteEditor(int bank)
 			strokeX = strokeY = -1;
 
 		int hover = -1;
-		if (mouse_x >= panX0 && mouse_x <= panX1)
+		for (int n = 0; n < 4; ++n)
+			if (mouse_y >= NUDGE_BTN_Y && mouse_y < NUDGE_BTN_Y + NUDGE_BTN_SIZE &&
+			    mouse_x >= nudgeX[n] && mouse_x < nudgeX[n] + NUDGE_BTN_SIZE)
+				hover = SES_NUDGE_LEFT + n;
+		if (hover < 0 && mouse_y >= PAL_BTN_Y && mouse_y < PAL_BTN_Y + PAL_BTN_SIZE &&
+		    mouse_x >= PAL_COL_X && mouse_x < PAL_COL_X + PAL_BTN_SIZE)
+			hover = SES_PAL_COLOR;
+		else if (hover < 0 && mouse_y >= PAL_BTN_Y && mouse_y < PAL_BTN_Y + PAL_BTN_SIZE &&
+		         mouse_x >= PAL_BG_X && mouse_x < PAL_BG_X + PAL_BTN_SIZE)
+			hover = SES_PAL_BACKGROUND;
+		else if (hover < 0 && mouse_x >= panX0 && mouse_x <= panX1)
 		{
-			if (mouse_y >= fieldsTop - 1 && mouse_y < fieldsTop + SES_ROW_COUNT * row_h)
+			if (mouse_y >= fieldsTop - 1 &&
+			    mouse_y < fieldsTop - 1 + SES_ROW_COUNT * row_h)
 				hover = (mouse_y - (fieldsTop - 1)) / row_h;
 			else if (mouse_y >= actionsTop - 1 && mouse_y < actionsTop + ((SES_ACT_COUNT + 1) / 2) * act_h)
 			{
@@ -1023,13 +1149,15 @@ static void seSpriteEditor(int bank)
 					a += 1;
 				if (a >= SES_ACT_COUNT)
 					a = SES_ACT_COUNT - 1;
-				hover = SES_ROW_COUNT + a;
+				hover = SES_ACT_CAPTURE + a;
 			}
 		}
 		if (hover >= 0 && (mouse_x != prev_mx || mouse_y != prev_my) && hover != selected)
 		{
 			JE_playSampleNum(S_CURSOR);
 			selected = hover;
+			if (selected == SES_PAL_COLOR || selected == SES_PAL_BACKGROUND)
+				paletteTarget = selected;
 		}
 		prev_mx = mouse_x;
 		prev_my = mouse_y;
@@ -1049,15 +1177,28 @@ static void seSpriteEditor(int bank)
 				if (newmouse && lastmouse_but == SDL_BUTTON_MIDDLE)
 					color = *seFramePx(bank, frame, px, py);
 				else if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT)
+				{
 					*seFramePx(bank, frame, px, py) = 0;
+					if (mirror)
+						*seFramePx(bank, frame, SE_FRAME_W - 1 - px, py) = 0;
+				}
 				else if (newmouse)
-					seApplyTool(bank, frame, px, py, &color, &tool);
+					seApplyTool(bank, frame, px, py, &color, &tool, mirror);
 				else if (tool == SES_TOOL_PAINT || tool == SES_TOOL_ERASE)
 				{
 					if (strokeX >= 0)
+					{
 						seStrokeTo(bank, frame, strokeX, strokeY, px, py, heldColor);
+						if (mirror)
+							seStrokeTo(bank, frame, SE_FRAME_W - 1 - strokeX, strokeY,
+							           SE_FRAME_W - 1 - px, py, heldColor);
+					}
 					else
+					{
 						*seFramePx(bank, frame, px, py) = heldColor;
+						if (mirror)
+							*seFramePx(bank, frame, SE_FRAME_W - 1 - px, py) = heldColor;
+					}
 				}
 				strokeX = px;
 				strokeY = py;
@@ -1069,7 +1210,8 @@ static void seSpriteEditor(int bank)
 				else if (mouse_x >= PAL_X && mouse_x < PAL_X + 16 * PAL_CELL &&
 				         mouse_y >= PAL_Y && mouse_y < PAL_Y + 16 * PAL_CELL)
 				{
-					color = (mouse_y - PAL_Y) / PAL_CELL * 16 + (mouse_x - PAL_X) / PAL_CELL;
+					int *const target = (paletteTarget == SES_PAL_BACKGROUND) ? &background : &color;
+					*target = (mouse_y - PAL_Y) / PAL_CELL * 16 + (mouse_x - PAL_X) / PAL_CELL;
 					JE_playSampleNum(S_CURSOR);
 				}
 				else if (mouse_y >= STRIP_Y && mouse_y < STRIP_Y + SE_FRAME_H &&
@@ -1081,6 +1223,8 @@ static void seSpriteEditor(int bank)
 				else if (hover >= 0)
 				{
 					selected = hover;
+					if (selected == SES_PAL_COLOR || selected == SES_PAL_BACKGROUND)
+						paletteTarget = selected;
 					canvasFocus = false;
 					if (hover < SES_ROW_COUNT)
 					{
@@ -1090,11 +1234,14 @@ static void seSpriteEditor(int bank)
 						case SES_ROW_BANK:   bank = (bank + 7 + dir) % 8 + 1; break;
 						case SES_ROW_FRAME:  frame = (frame + 4 + dir) % 5 + 1; break;
 						case SES_ROW_TOOL:   tool = (tool + SES_TOOL_COUNT + dir) % SES_TOOL_COUNT; break;
-						case SES_ROW_COLOR:  color = (color + 256 + dir) % 256; break;
+						case SES_ROW_MIRROR: mirror = !mirror; break;
+						case SES_ROW_GUIDES: guides = (guides + SES_GUIDES_COUNT + dir) % SES_GUIDES_COUNT; break;
 						default:             source = (source + 5 + dir) % 6 + 1; break;
 						}
 						JE_playSampleNum(S_CURSOR);
 					}
+					else if (hover == SES_PAL_COLOR || hover == SES_PAL_BACKGROUND)
+						JE_playSampleNum(S_CURSOR);
 					else
 						act = hover;  // the absolute nav id; the dispatch below matches enum values
 				}
@@ -1118,6 +1265,8 @@ static void seSpriteEditor(int bank)
 					curY = (curY + (lastkey_scan == SDL_SCANCODE_UP ? SE_FRAME_H - 1 : 1)) % SE_FRAME_H;
 				else
 					selected = (selected + (lastkey_scan == SDL_SCANCODE_UP ? SES_NAV_COUNT - 1 : 1)) % SES_NAV_COUNT;
+				if (!canvasFocus && (selected == SES_PAL_COLOR || selected == SES_PAL_BACKGROUND))
+					paletteTarget = selected;
 				JE_playSampleNum(S_CURSOR);
 				break;
 			case SDL_SCANCODE_LEFT:
@@ -1149,15 +1298,23 @@ static void seSpriteEditor(int bank)
 			case SDL_SCANCODE_V:
 				act = SES_ACT_FLIP_V;
 				break;
+			case SDL_SCANCODE_M:
+				mirror = !mirror;
+				JE_playSampleNum(S_CURSOR);
+				break;
 			case SDL_SCANCODE_BACKSPACE:
 				if (canvasFocus)
+				{
 					*seFramePx(bank, frame, curX, curY) = 0;
+					if (mirror)
+						*seFramePx(bank, frame, SE_FRAME_W - 1 - curX, curY) = 0;
+				}
 				break;
 			case SDL_SCANCODE_RETURN:
 			case SDL_SCANCODE_SPACE:
 				if (canvasFocus)
-					seApplyTool(bank, frame, curX, curY, &color, &tool);
-				else if (selected >= SES_ROW_COUNT)
+					seApplyTool(bank, frame, curX, curY, &color, &tool, mirror);
+				else if (selected >= SES_NUDGE_LEFT)
 					act = selected;
 				else
 					dir = 1;
@@ -1176,8 +1333,11 @@ static void seSpriteEditor(int bank)
 				case SES_ROW_BANK:   bank = (bank + 7 + dir) % 8 + 1; break;
 				case SES_ROW_FRAME:  frame = (frame + 4 + dir) % 5 + 1; break;
 				case SES_ROW_TOOL:   tool = (tool + SES_TOOL_COUNT + dir) % SES_TOOL_COUNT; break;
-				case SES_ROW_COLOR:  color = (color + 256 + ((lastkey_mod & KMOD_SHIFT) ? dir * 16 : dir)) % 256; break;
+				case SES_ROW_MIRROR: mirror = !mirror; break;
+				case SES_ROW_GUIDES: guides = (guides + SES_GUIDES_COUNT + dir) % SES_GUIDES_COUNT; break;
 				case SES_ROW_SOURCE: source = (source + 5 + dir) % 6 + 1; break;
+				case SES_PAL_COLOR:  color = (color + 256 + ((lastkey_mod & KMOD_SHIFT) ? dir * 16 : dir)) % 256; break;
+				case SES_PAL_BACKGROUND: background = (background + 256 + ((lastkey_mod & KMOD_SHIFT) ? dir * 16 : dir)) % 256; break;
 				default:             break;
 				}
 				JE_playSampleNum(S_CURSOR);
@@ -1187,6 +1347,16 @@ static void seSpriteEditor(int bank)
 
 		switch (act)
 		{
+		case SES_NUDGE_LEFT:
+		case SES_NUDGE_UP:
+		case SES_NUDGE_DOWN:
+		case SES_NUDGE_RIGHT:
+		{
+			const int n = act - SES_NUDGE_LEFT;
+			seNudgeFrame(bank, frame, nudgeDx[n], nudgeDy[n]);
+			JE_playSampleNum(S_SELECT);
+			break;
+		}
 		case SES_ACT_CAPTURE:
 			seCaptureBank(bank, source);
 			SDL_strlcpy(notice, "Captured", sizeof(notice));
