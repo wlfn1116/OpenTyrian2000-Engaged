@@ -53,6 +53,7 @@ static const JE_byte extraCryptKey[10] = { 58, 23, 16, 192, 254, 82, 113, 147, 6
 JE_boolean extraAvail;
 JE_ShipsType extraShips;
 Sprite2_array extraShapes;
+static bool extraUserAvail;
 
 // Decrypt in place only when all four plaintext checksums match.
 JE_boolean JE_decryptShips(void)
@@ -137,9 +138,11 @@ void JE_encryptShips(JE_ShipsType dst)
 void JE_loadExtraShapes(void)
 {
 	JE_freeExtraShapes();
+	extraUserAvail = false;
 
 	// Prefer the edited file, then the stock Tyrian 2000 copy.
 	FILE *f = dir_fopen(get_user_directory(), "newsh$.shp", "rb");
+	const bool fromUser = f != NULL;
 	if (f == NULL)
 		f = dir_fopen(data_dir(), "newsh$.shp", "rb");
 	if (f == NULL)
@@ -169,6 +172,7 @@ void JE_loadExtraShapes(void)
 		return;
 	}
 	extraAvail = true;
+	extraUserAvail = fromUser;
 }
 
 void JE_freeExtraShapes(void)
@@ -200,6 +204,8 @@ bool extraAvailFor(uint playerIdx)
 
 enum { EXTRA_SHIPS_WIRE_VERSION = 1 };
 
+static bool JE_saveExtraShapes(void);
+
 // Keep the wire big-endian without adding an SDL_net dependency to console builds.
 static Uint32 seRead32(const Uint8 *p)
 {
@@ -214,29 +220,48 @@ static void seWrite32(Uint32 v, Uint8 *p)
 	p[3] = (Uint8)v;
 }
 
-size_t extraShipsSerialize(Uint8 *buf, size_t max)
+static size_t extraShipsSerializeMode(Uint8 *buf, size_t max, bool userOnly)
 {
-	const size_t total = 6 + sizeof(JE_ShipsType) + (extraAvail ? extraShapes.size : 0);
+	const bool available = extraAvail && (!userOnly || extraUserAvail);
+	const size_t total = 6 + sizeof(JE_ShipsType) + (available ? extraShapes.size : 0);
 	if (max < total)
 		return 0;
 
 	buf[0] = EXTRA_SHIPS_WIRE_VERSION;
-	buf[1] = extraAvail ? 1 : 0;
+	buf[1] = available ? 1 : 0;
 	memcpy(&buf[2], extraShips, sizeof(JE_ShipsType));
-	seWrite32((Uint32)(extraAvail ? extraShapes.size : 0), &buf[2 + sizeof(JE_ShipsType)]);
-	if (extraAvail && extraShapes.size > 0)
+	seWrite32((Uint32)(available ? extraShapes.size : 0), &buf[2 + sizeof(JE_ShipsType)]);
+	if (available && extraShapes.size > 0)
 		memcpy(&buf[6 + sizeof(JE_ShipsType)], extraShapes.data, extraShapes.size);
 	return total;
 }
 
+size_t extraShipsSerialize(Uint8 *buf, size_t max)
+{
+	return extraShipsSerializeMode(buf, max, false);
+}
+
+size_t extraShipsSerializeUser(Uint8 *buf, size_t max)
+{
+	return extraShipsSerializeMode(buf, max, true);
+}
+
+bool extraShipsPayloadValid(const Uint8 *buf, size_t len)
+{
+	if (buf == NULL || len < 6 + sizeof(JE_ShipsType) ||
+	    buf[0] != EXTRA_SHIPS_WIRE_VERSION || buf[1] > 1)
+		return false;
+
+	const size_t blobSize = seRead32(&buf[2 + sizeof(JE_ShipsType)]);
+	return blobSize <= UINT16_MAX && len == 6 + sizeof(JE_ShipsType) + blobSize &&
+	       (buf[1] != 0 || blobSize == 0);
+}
+
 bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len)
 {
-	if (seat >= COUNTOF(extraShipsNet) || len < 6 + sizeof(JE_ShipsType) ||
-	    buf[0] != EXTRA_SHIPS_WIRE_VERSION)
+	if (seat >= COUNTOF(extraShipsNet) || !extraShipsPayloadValid(buf, len))
 		return false;
 	const size_t blobSize = seRead32(&buf[2 + sizeof(JE_ShipsType)]);
-	if (blobSize > UINT16_MAX || len < 6 + sizeof(JE_ShipsType) + blobSize)
-		return false;
 
 	memcpy(extraShipsNet[seat], &buf[2], sizeof(JE_ShipsType));
 	free_sprite2s(&extraShapesNet[seat]);
@@ -248,6 +273,42 @@ bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len)
 	}
 	extraNetAvail[seat] = buf[1] != 0;
 	return true;
+}
+
+/* Install a transferred compiled file as this machine's persistent custom ships. Absence clears
+ * a receiver-side compile and reloads the shared stock fallback, mirroring the sender exactly. */
+bool extraShipsAdoptLocal(const Uint8 *buf, size_t len)
+{
+	if (!extraShipsPayloadValid(buf, len))
+		return false;
+	if (buf[1] == 0)
+	{
+		if (!dir_remove_file(get_user_directory(), "newsh$.shp"))
+			return false;
+		JE_loadExtraShapes();
+		extraShipsNetReset();
+		return true;
+	}
+
+	const size_t blobSize = seRead32(&buf[2 + sizeof(JE_ShipsType)]);
+	Uint8 *blob = NULL;
+	if (blobSize > 0)
+	{
+		blob = malloc(blobSize);
+		if (blob == NULL)
+			return false;
+		memcpy(blob, &buf[6 + sizeof(JE_ShipsType)], blobSize);
+	}
+
+	memcpy(extraShips, &buf[2], sizeof(JE_ShipsType));
+	JE_freeExtraShapes();
+	extraShapes.data = blob;
+	extraShapes.size = blobSize;
+	extraAvail = true;
+	extraShipsNetReset();
+	const bool saved = JE_saveExtraShapes();
+	extraUserAvail = saved;
+	return saved;
 }
 
 void extraShipsNetInstallLocal(uint seat)
@@ -289,7 +350,10 @@ static bool JE_saveExtraShapes(void)
 	ok = fwrite(enc, 1, sizeof(enc), f) == sizeof(enc) && ok;
 	ok = fclose(f) == 0 && ok;
 	if (ok)
+	{
 		extraAvail = true;  // a fresh compile arms the in-flight Tab/Caps Lock switch
+		extraUserAvail = true;
+	}
 	return ok;
 }
 
