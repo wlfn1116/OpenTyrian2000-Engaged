@@ -725,6 +725,15 @@ suite round-trips both against the stock Tyrian 2000 file. Online, each seat's
 file crosses once per session via `PACKET_EXTRA_SHIPS`, and every simulation read
 routes through `extraShipsFor(seat)` so both machines derive identical armor.
 
+A weapon byte of `EXTRA_SHIP_CUSTOM_PORT` (255) means "the custom weapon of the
+seat flying this ship", resolved by `extraShipResolvePort(seat, byte)` at equip
+time rather than stored as a live port. The reserved ports differ per seat, so a
+record naming one directly would give the peer the wrong gun. That resolution
+must stay independent of `customWeaponEnabled`: the toggle is local
+configuration, and the two machines have to choose the same port for the same
+seat. A record using the sentinel also forces the design onto the wire even with
+the toggle off, so the peer holds what it resolves to.
+
 ### Online ship styles
 
 `net_style.c` owns cosmetic online styles. Body styles cover hulls, trim, and

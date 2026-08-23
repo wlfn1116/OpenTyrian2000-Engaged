@@ -856,16 +856,18 @@ back), or Erase. With a mouse, right-click erases and middle-click picks. Pick
 colors from the palette grid; color 0 is transparent. Capture copies a built-in
 hull into the bank as a starting point, and Flip H / Flip V mirror a pose. On a
 controller, Tab moves focus onto the canvas; arrows then move the paint cursor
-and Enter applies the tool. Compiled files are interchangeable with the DOS
-tool's in both directions.
+and Enter applies the tool.
+
+Compiled files are interchangeable with the DOS tool's in both directions, as
+long as no ship uses the custom weapon: that setting has no counterpart there.
 
 Online, both machines exchange their ship files and custom weapon designs
 automatically when a session reaches its first level, and each player's extra
-ships and custom weapon come from their own. In Campaign and Endless co-op, switch during a pause with
-**Esc > Extra > Custom Ship**: each player changes their own ship, and the
-change applies to both machines. With Debug Mode on, Edit Player can also set
-either player's ship. The in-flight Tab and Caps Lock switch works offline
-only.
+ships and custom weapon come from their own. In Campaign and Endless co-op,
+switch during a pause with **Esc > Extra > Custom Ship**: each player changes
+their own ship, and the change applies to both machines. With Debug Mode on,
+Edit Player can also set either player's ship. The in-flight Tab and Caps Lock
+switch works offline only.
 
 ## Music
 
