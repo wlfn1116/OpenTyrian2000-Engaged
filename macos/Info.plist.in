@@ -31,7 +31,7 @@
 	<string>public.app-category.arcade-games</string>
 	<!-- Enables the local-network prompt on macOS 15 and later. -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Tyrian 2000 Engaged uses the local network for multiplayer and player-data transfers.</string>
+	<string>Tyrian 2000 Engaged uses your local network for multiplayer and data transfers.</string>
 	<!-- Render into the display's high-resolution backing store. -->
 	<key>NSHighResolutionCapable</key>
 	<true/>

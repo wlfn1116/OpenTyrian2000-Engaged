@@ -65,7 +65,7 @@ Only `arm64-v8a` and `armeabi-v7a` are built. Add `x86_64` to `abiFilters` in
 
 ## Networking
 
-Android needs no separate local-network permission. Online play and player-data
+Android needs no separate local-network permission. Online play and data
 transfers work in either direction. Waiting screens show the device's reachable
 Wi-Fi address and omit loopback, mobile-data, and VPN addresses.
 

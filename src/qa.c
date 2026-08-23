@@ -4704,7 +4704,7 @@ static void qa_test_enhancement_presets(void)
 		qa_check(enhancementPresetState() == presets[p], "an applied preset reads back as itself");
 	}
 
-	// Custom Weapons lives in Extra, so Enhancements presets must not silently change it.
+	// Enhancement presets must not change the Extra menu's Custom Weapons setting.
 	customWeaponEnabled = false;
 	enhancementApplyPreset(ENH_PRESET_ENGAGED);
 	qa_check(!customWeaponEnabled, "the Engaged preset leaves the Extra custom-weapon toggle alone");

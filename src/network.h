@@ -135,9 +135,7 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_SAVE_CHUNK    0x55    // version, generation, chunk idx/count, len, <payload chunk>
 #define PACKET_SAVE_ACK      0x56    // version, generation   whole payload consumed
 
-// Bulk player-data transfers use the same transport shape on the same title-screen-only socket,
-// but a packet family separate from single Save keeps those senders and receivers from pairing.
-// Ships, Weapons, Custom Data, and Transfer All carry distinct transport versions.
+// Bulk transfers use a separate packet family; their versions distinguish each menu choice.
 #define PACKET_CUSTOM_OFFER  0x57
 #define PACKET_CUSTOM_REPLY  0x58
 #define PACKET_CUSTOM_PULL   0x59

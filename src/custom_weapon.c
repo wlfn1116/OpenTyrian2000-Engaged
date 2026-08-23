@@ -1255,8 +1255,7 @@ static bool customWeaponDeserializeSlot(CustomWeaponSlot *design, const Uint8 *b
 
 size_t customWeaponSerializeDesign(Uint8 *buf, size_t cap)
 {
-	// Zeroed first so the unused tail of the fixed-width name is not stack residue: the two
-	// machines have to produce the same bytes for the same design.
+	// Clear fixed-width padding so identical designs produce identical bytes.
 	static CustomWeaponSlot design;
 	memset(&design, 0, sizeof(design));
 	customDesignStore(&design);
@@ -1348,8 +1347,7 @@ bool customWeaponAdoptLibrary(const Uint8 *buf, size_t len)
 	if (count < 1 || count > CUSTOM_WEAPON_LIB_MAX || current < 0 || current >= count)
 		return false;
 
-	// Persistent scratch keeps the full-width weapon arrays off console stacks. Nothing is
-	// committed until every length-delimited slot has decoded successfully.
+	// Static scratch avoids large console stack allocations. Decode fully before committing.
 	static CustomWeaponSlot incoming[CUSTOM_WEAPON_LIB_MAX];
 	for (int i = 0; i < count; ++i)
 	{
@@ -1366,9 +1364,7 @@ bool customWeaponAdoptLibrary(const Uint8 *buf, size_t len)
 	customWeaponLibCount = count;
 	customWeaponCurrentSlot = current;
 	loadFromSlot(current);
-	// A transfer is only offered from the title screen. Clear both per-seat online copies so a
-	// later session cannot inherit a design from the previous peer; materialize below repopulates
-	// the local owner from the newly adopted current slot.
+	// Drop cached peer designs so the next session cannot reuse stale data.
 	memset(customWeaponOwnerDefined, 0, sizeof(customWeaponOwnerDefined));
 	customWeaponMaterialize();
 	return true;

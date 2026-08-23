@@ -2245,9 +2245,7 @@ static void save_defaults(void)
  * is never read again, so deleting a run's section stays deleted. */
 static bool save_legacy_endless_taken = false;
 
-/* Apply an already parsed opentyrian.sav. A slot without a section is empty and a key without a
- * value is its default, so a hand edit that drops or misspells something loses that one value and
- * nothing else. */
+/* Adopt parsed save data. Missing sections create empty slots; missing keys use defaults. */
 static bool save_config_adopt(Config *config)
 {
 	// A file without its header is a broken write or a stray file, so the DOS-era files still stand in.
@@ -2274,7 +2272,6 @@ static bool save_config_adopt(Config *config)
 	return true;
 }
 
-/* Read opentyrian.sav from disk. */
 static bool save_file_load(void)
 {
 	FILE *file = dir_fopen(get_user_directory(), SAVE_FILE_NAME, "r");
@@ -2716,7 +2713,7 @@ static bool save_file_write_current(void)
 
 void JE_saveConfiguration(void)
 {
-	// Existing callers are best-effort, but transfer adoption uses the checked helper directly.
+	// Transfer adoption checks write failures; existing save callers remain best-effort.
 	if (!configuration_loaded)
 		return;
 	(void)save_file_write_current();

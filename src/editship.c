@@ -275,8 +275,7 @@ bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len)
 	return true;
 }
 
-/* Install a transferred compiled file as this machine's persistent custom ships. Absence clears
- * a receiver-side compile and reloads the shared stock fallback, mirroring the sender exactly. */
+/* Install transferred local ships. Absence removes the receiver's copy and reloads stock. */
 bool extraShipsAdoptLocal(const Uint8 *buf, size_t len)
 {
 	if (!extraShipsPayloadValid(buf, len))

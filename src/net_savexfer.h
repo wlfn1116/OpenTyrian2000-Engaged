@@ -39,8 +39,7 @@ bool saveXferPendingApply(JE_byte slot, const char *name);
 
 void saveXferPendingClear(void);
 
-// The individual transfers replace only the named content set. Custom Data combines both; none
-// of them imports unrelated opentyrian.cfg settings.
+// Each transfer replaces only the selected content; none imports unrelated settings.
 void shipsXferUpload(void);
 bool shipsXferDownload(void);
 void weaponsXferUpload(void);

@@ -812,8 +812,7 @@ enum
 static const char loadHelpUpload[] = "Choose a save to send to the other device.";
 static const char loadHelpUploadLine1[] = "Choose a save to send";
 
-// uploadPick uses the original load list as a save-to-send picker without changing the ordinary
-// Load Game screen. net2p pins the two-player page; saving selects the standard save flow.
+// uploadPick reuses the load list as the transfer source picker.
 static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 {
 	set_menu_centered(true);
@@ -1156,8 +1155,7 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 					JE_operation(saveFileIndex + 1);
 					if (xferSaving && saveXferPending() == NULL)
 					{
-						// A downloaded save has exactly one destination. Cancelling the name
-						// dialog leaves it pending and returns to this picker for another try.
+						// Keep the download pending if the name dialog is cancelled.
 						fade_black(15);
 						return 0;
 					}

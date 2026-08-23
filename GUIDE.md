@@ -10,7 +10,7 @@ and controls work as before.
 | Start Endless | Main menu > 1 Player Endless |
 | Play online | Main menu > Online Multiplayer |
 | Change online ship colors, opacity, or HP bars | Online outpost > Customize |
-| Copy a save to another device | Main menu > Load Game > Upload or Download |
+| Copy saves or custom data to another device | Title screen > Extra > Transfer |
 | Enable smooth rendering | Setup > Graphics |
 | Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
@@ -811,8 +811,9 @@ Failures are written to `rollback_selftest.log`.
 
 ## Extra menus
 
-**Title screen > Extra** contains the jukebox, Destruct, SuperTyrian, Super
-Arcade ships, the Ship Editor, command-line cheats, and Christmas Mode.
+**Title screen > Extra** contains data transfer, the Ship Editor, the jukebox,
+Destruct, SuperTyrian, Super Arcade ships, command-line cheats, and Christmas
+Mode.
 
 **Esc > Extra** exposes the old cheat key combinations as menu items, and the
 Custom Ship row for the Ship Editor's ships. The cheat rows work only in a
@@ -922,17 +923,23 @@ flying before dismissing them.
 
 Switch and Vita have physical buttons and draw none of this.
 
-## Transferring saves between devices
+## Transferring data between devices
 
-Use **Load Game > Upload** and **Download** to copy a save between devices on the
-same network. Both devices need this build. Transfers use UDP port 1332, which a
-firewall may ask you to allow.
+Open **Extra > Transfer** on the title screen. Both devices need a compatible
+build and must be on the same network. A firewall may ask you to allow UDP port
+1332.
 
-To send a save:
+| Choice | Data copied |
+| --- | --- |
+| Save | One save; the receiver chooses its slot and name |
+| Custom Ships | Ships compiled by the Ship Editor |
+| Custom Weapons | The Weapon Creator library and its on/off setting |
+| Custom Data | Custom ships and weapons |
+| Transfer All | Every save, high score, custom ship, and custom weapon |
 
-1. Choose **Upload**, then pick the save from the list.
-2. On the other device, choose **Download** and select the offered save.
-3. Choose a destination slot and confirm or change the save name.
+Choose the same category on both devices. Select **Upload** on the sender and
+**Download** on the receiver, then choose the sender from the list. Downloads
+replace the selected data; only a single-save transfer asks for a destination.
 
 If the devices do not find each other:
 
@@ -941,18 +948,13 @@ If the devices do not find each other:
 - **Wait for a sender** shows the receiving device's address. On the Upload
   screen, press Enter and send to that address.
 
-The save contents, including an Endless run, cross unchanged. The receiving
-device chooses only the slot and name. One-player and two-player saves stay on
-their original pages.
-
-Custom weapons stay where they are. A save that used one plays with whatever
-design the receiving device holds.
+Single-save transfers include the saved Endless run. One-player and two-player
+saves stay on their original pages.
 
 iPhone and iPad cannot use network search in this build. Choose **Wait for a
 sender** on the iOS device and send to the address it shows.
 
-Upload and Download appear only on the title screen's Load Game menu, not while
-an online session is running.
+Transfer is available only from the title screen, outside an online session.
 
 ## Files and logs
 
@@ -966,6 +968,7 @@ app-private storage that the system deletes on uninstall.
 | --- | --- |
 | `opentyrian.cfg` | Settings and records |
 | `opentyrian.sav` | Save slots (campaign, two-player and Endless) and high scores |
+| `custom_weapons.cfg` | Weapon Creator library |
 | `newsh$.shp` | Custom ships compiled by the Ship Editor |
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |

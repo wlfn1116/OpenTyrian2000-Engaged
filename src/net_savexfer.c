@@ -47,8 +47,7 @@
 // Separate from the game-session port.
 #define SAVE_XFER_PORT   1332
 
-// Save retains its original transport version. Every bulk choice shares one packet family but
-// has a distinct version, so selecting a different kind on each device can never pair them.
+// Keep single-save transfers on version 1. Each bulk choice uses a distinct version.
 #define SAVE_XFER_VERSION              1
 #define CUSTOM_XFER_TRANSPORT_VERSION  2
 #define ALL_XFER_TRANSPORT_VERSION     3
@@ -69,8 +68,7 @@
 
 static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
-// Custom Data carries only user-created content: the whole weapon library and compiled ships.
-// The one-byte enabled flag is the only setting imported from opentyrian.cfg.
+// Custom Data carries compiled ships, the weapon library, and its enabled flag.
 #define CX_MAGIC          0    /* 4: "OTCD"                                      */
 #define CX_VERSION        4    /* 2: CUSTOM_XFER_VERSION                         */
 #define CX_FLAGS          6    /* 1: bit 0 = custom weapons enabled              */
@@ -88,9 +86,8 @@ static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
 static const Uint8 cx_magic[4] = { 'O', 'T', 'C', 'D' };
 
-// Transfer All wraps the complete opentyrian.sav representation and the Custom Data envelope.
-// One MiB leaves ample room for all 22 saved Endless runs as well as every ordinary slot and
-// high-score board; the current worst case is well below half of that.
+// Transfer All contains the complete save file and the Custom Data envelope.
+// One MiB covers all 22 Endless runs and the remaining save data.
 #define AX_MAGIC          0    /* 4: "OTAL"                         */
 #define AX_VERSION        4    /* 2: ALL_XFER_VERSION               */
 #define AX_RESERVED       6    /* 2                                 */
@@ -505,8 +502,7 @@ static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 	if ((parts & CX_PART_SHIPS) && !extraShipsAdoptLocal(ships, shipsLen))
 		return false;
 
-	// The library owns the designs; opentyrian.cfg keeps only the active working copy and the
-	// feature toggle. A ships-only transfer never writes either configuration file.
+	// Weapon adoption writes its library and the active design and toggle in opentyrian.cfg.
 	return !(parts & CX_PART_WEAPONS) ||
 	       (customWeaponLibrarySave() && save_opentyrian_config());
 }
@@ -572,9 +568,7 @@ static bool allXferUnpack(const Uint8 *buf, size_t len)
 	    savesLen > len - AX_DATA || customLen != len - AX_DATA - savesLen)
 		return false;
 
-	// Keep the local saves so a custom-data or persistence failure cannot intentionally leave a
-	// mixed profile. Custom Data performs its own rollback. A storage device that refuses the
-	// save rollback as well is still reported failed.
+	// Keep a snapshot so Transfer All cannot leave saves and custom data out of sync.
 	Uint8 *const oldSaves = malloc(AX_SAVES_MAX);
 	const size_t oldSavesLen = oldSaves != NULL ? save_file_serialize(oldSaves, AX_SAVES_MAX) : 0;
 	if (oldSavesLen == 0)
@@ -756,9 +750,7 @@ static bool saveXferSendPayload(XferKind kind, UDPsocket sock, UDPpacket *out, U
 
 	while (SDL_GetTicks() - started < SX_TRANSFER_MS)
 	{
-		// A receiver missing one chunk waits for it to come around again. Large custom libraries
-		// can span thousands of datagrams, so send a bounded burst between event/ack polls instead
-		// of flooding the socket and freezing cancellation until a whole pass has queued.
+		// Poll events and acknowledgements between bursts to keep cancellation responsive.
 		if (first || nextChunk != 0 || SDL_GetTicks() - sentAt >= SX_PULL_MS)
 		{
 			for (int burst = 0; burst < 16; ++burst)
@@ -1384,8 +1376,7 @@ static bool saveXferReceivePayload(XferKind kind, UDPsocket sock, UDPpacket *out
 				done = total <= xferMaxPayload(kind) && xferUnpack(kind, buf, total);
 				complete = true;
 
-				// Stop the resend even if payload validation failed; the same completed bytes
-				// cannot become valid on another pass, and the receiver reports failure at once.
+				// Ack a complete invalid payload; resending the same bytes cannot repair it.
 				SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_ACK), &in->data[0]);
 				SDLNet_Write16(xferTransportVersion(kind), &in->data[2]);
 				SDLNet_Write16((Uint16)gen,       &in->data[4]);
@@ -1715,8 +1706,7 @@ void qa_test_save_transfer(void)
 	saveFiles[3 - 1] = saved;
 	save_slot_set_online_player(3, savedSeat);
 
-	// Both the single-slot and bulk forms must carry the device's seat with a disconnected
-	// two-player save. Moving the file from phone to PC must not turn its P2 into P1.
+	// Single-save and bulk transfers must preserve the saved online seat.
 	const JE_byte p2Slot = 12;
 	const JE_SaveFileType savedP2 = saveFiles[p2Slot - 1];
 	const uint savedP2Seat = save_slot_online_player(p2Slot);
