@@ -15,7 +15,8 @@ This fork adds:
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows x86-64;
-- macOS, Nintendo Switch, PlayStation Vita, Android, and iOS ports.
+- macOS, Nintendo Switch, PlayStation Vita, Android, and iOS ports;
+- a data transfer system between all of these platforms.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
