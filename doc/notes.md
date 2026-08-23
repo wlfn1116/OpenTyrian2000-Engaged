@@ -582,9 +582,11 @@ Touch layouts are expiring requests. Keep these rules together:
 - `wait_input(true, true, true)`, custom any-key loops and skippable logos supply
   the Confirm layout before presentation and renew it while blocked. Confirm and
   Back always dismiss them; optional HUD navigation buttons do too when shown.
-- Logo transitions call `touch_ui_suppress()` after accepting input. Suppression
-  disables old hit targets immediately and discards pending keys so a logo tap
-  cannot become an action on the next logo or title menu.
+- The title-logo-to-menu transition calls `touch_ui_suppress()` after accepting
+  input. Suppression disables old hit targets immediately and discards pending
+  keys so a logo tap cannot become an action on the title menu.
+- Startup logo waits use `touch_ui_consume_input()` instead so the accepted press
+  is still discarded while the controls remain attached to the palette fade.
 - Idle screens re-present the last output texture when the layout signature
   changes. Levels present every frame themselves; never repeat a frame during a
   transition.

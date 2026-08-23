@@ -676,19 +676,22 @@ void touch_ui_flush_keys(void)
 	pending_key_count = 0;
 }
 
+void touch_ui_consume_input(void)
+{
+	touch_ui_release_all();
+	pending_key_count = 0;
+	last_flush_ms = 0;
+	memset(btn_tapped, 0, sizeof(btn_tapped));
+}
+
 void touch_ui_suppress(void)
 {
 	// Disable the old frame's hit targets before the first control-free frame is presented.
-	touch_ui_release_all();
+	touch_ui_consume_input();
 	requested_layout = TOUCH_LAYOUT_NONE;
 	requested_at_ms = SDL_GetTicks();
 	extra_at_ms = 0;
 	layout_valid = false;
-
-	// A button pressed on the departing screen must not act on the screen after the animation.
-	pending_key_count = 0;
-	last_flush_ms = 0;
-	memset(btn_tapped, 0, sizeof(btn_tapped));
 }
 
 /* Composite each button before applying opacity so overlapping glyph strokes blend once. */

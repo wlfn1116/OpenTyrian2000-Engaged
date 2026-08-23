@@ -157,15 +157,15 @@ void wait_delayorinput(void)
 		{
 			newkey = false;
 			newmouse = false;
-			// Consume the logo press before the next logo or title menu can see it.
-			touch_ui_suppress();
+			// Consume the press but leave the controls to fade out with the logo.
+			touch_ui_consume_input();
 			return;
 		}
 
 		Sint32 delay = target - SDL_GetTicks();
 		if (delay <= 0)
 		{
-			touch_ui_suppress();
+			touch_ui_consume_input();
 			return;
 		}
 
