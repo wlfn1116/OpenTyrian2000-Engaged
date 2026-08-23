@@ -128,14 +128,15 @@ static const TouchButtonDef LAYOUT_CONFIRM[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
-/* Logos can be skipped without borrowing the confirmation button from prompt screens. */
+/* Logos always expose Back; the HUD option adds the complete navigation cluster. */
 static const TouchButtonDef LAYOUT_SKIP[] =
 {
-	{ TOUCH_BTN_ESC,   ICON_CLOSE, -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
-	{ TOUCH_BTN_LEFT,  ICON_LEFT,  -1, -3, SDL_SCANCODE_LEFT,   false, GATE_NAV },
-	{ TOUCH_BTN_RIGHT, ICON_RIGHT, -1, -2, SDL_SCANCODE_RIGHT,  false, GATE_NAV },
-	{ TOUCH_BTN_UP,    ICON_UP,     1, -3, SDL_SCANCODE_UP,     false, GATE_NAV },
-	{ TOUCH_BTN_DOWN,  ICON_DOWN,   1, -2, SDL_SCANCODE_DOWN,   false, GATE_NAV },
+	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -3, SDL_SCANCODE_LEFT,   false, GATE_NAV },
+	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,  -1, -2, SDL_SCANCODE_RIGHT,  false, GATE_NAV },
+	{ TOUCH_BTN_UP,     ICON_UP,      1, -3, SDL_SCANCODE_UP,     false, GATE_NAV },
+	{ TOUCH_BTN_DOWN,   ICON_DOWN,    1, -2, SDL_SCANCODE_DOWN,   false, GATE_NAV },
+	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_NAV },
 };
 
 /* Jukebox adds a text-overlay toggle in the top-right slot. */
