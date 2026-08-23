@@ -1553,7 +1553,7 @@ static const char *const endlessPageConfirmChoice[] = { "No, Keep It", "Yes, Era
 // columns agree.
 static const char *const endlessPageNote[] =
 {
-	"C = a custom weapon was used during the run.",
+	"C = a custom weapon/ship was used during the run.",
 	"Select a mode to break it down by base level.",
 	"Select a base level to break it down by difficulty.",
 	"Selecting a record erases it, once you confirm.",
@@ -2557,6 +2557,7 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	const int base = (slot - 1) * 15;
 
 	rollback_taint(pnum == 0 ? "edit-ship-1" : "edit-ship-2");
+	endlessNoteCustomShip();  // an Endless record earns its "C" for a custom hull too
 
 	p->items.ship = (JE_byte)(90 + slot);
 	p->items.weapon[FRONT_WEAPON].id = table[base + 1];
@@ -5650,6 +5651,8 @@ void JE_debugMenu(bool center)
 					if (edit->ship > 91) --edit->ship;
 					else if (edit->ship == 91) edit->ship = SHIP_DRAGONWING;
 					else if (edit->ship > 0) --edit->ship;
+					if (edit->ship > 90)
+						endlessNoteCustomShip();
 					break;
 				case DBG_FRONT_WEAPON: if (edit->weapon[FRONT_WEAPON].id > 0) --edit->weapon[FRONT_WEAPON].id; break;
 				case DBG_FRONT_POWER: if (edit->weapon[FRONT_WEAPON].power > 1) --edit->weapon[FRONT_WEAPON].power; break;
@@ -5710,6 +5713,8 @@ void JE_debugMenu(bool center)
 					if (edit->ship < SHIP_DRAGONWING) ++edit->ship;
 					else if (edit->ship == SHIP_DRAGONWING && extraAvailFor((uint)editPlayer)) edit->ship = 91;
 					else if (edit->ship >= 91 && edit->ship < 100) ++edit->ship;
+					if (edit->ship > 90)
+						endlessNoteCustomShip();
 					break;
 				case DBG_FRONT_WEAPON: if (edit->weapon[FRONT_WEAPON].id < PORT_NUM) ++edit->weapon[FRONT_WEAPON].id; break;
 				case DBG_FRONT_POWER: if (edit->weapon[FRONT_WEAPON].power < 11) ++edit->weapon[FRONT_WEAPON].power; break;
@@ -8390,6 +8395,7 @@ void JE_mainKeyboardInput(void)
 				if (keysactive[x])
 				{
 					rollback_taint("edit-ship-1");
+					endlessNoteCustomShip();
 					int z = x - SDL_SCANCODE_1 + 1;
 					player[0].items.ship = 90 + z;                     /*Ships*/
 					z = (z - 1) * 15;
@@ -8434,6 +8440,7 @@ void JE_mainKeyboardInput(void)
 				if (keysactive[x])
 				{
 					rollback_taint("edit-ship-2");
+					endlessNoteCustomShip();
 					int z = x - SDL_SCANCODE_1 + 1;
 					player[1].items.ship = 90 + z;
 					z = (z - 1) * 15;

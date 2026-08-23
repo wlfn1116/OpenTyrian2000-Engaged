@@ -2714,11 +2714,66 @@ static void qa_gamble_matrix(void)
 	}
 }
 
+/* The record's "C" mark covers player-authored equipment: the custom weapon, and either seat
+ * flying a Ship Editor hull. Endless keeps the ship between zones, so a hull equipped before
+ * the zone started has to count as much as one switched to mid-zone. */
+static void qa_custom_mark_matrix(void)
+{
+	const bool savedCustom = endlessRunUsedCustom;
+	const JE_byte savedShips[COUNTOF(player)] = { player[0].items.ship, player[1].items.ship };
+
+	qa_session(0);
+	qa_clear_ships();
+
+	static const struct { JE_byte ship0, ship1; bool want; const char *what; } cases[] = {
+		{ 1,  1,  false, "a zone flown on stock hulls leaves the record unmarked" },
+		{ 91, 1,  true,  "this seat's custom hull marks the record" },
+		{ 1,  95, true,  "the other seat's custom hull marks it too" },
+		{ 91, 100, true, "both seats on custom hulls mark it once" },
+		{ 90, 90, false, "id 90 is the last stock id and marks nothing" },
+	};
+
+	for (uint i = 0; i < COUNTOF(cases); ++i)
+	{
+		endlessRunUsedCustom = false;
+		endlessResetCustomWeaponZone();   // a zone is now running, nothing used yet
+		player[0].items.ship = cases[i].ship0;
+		player[1].items.ship = cases[i].ship1;
+
+		endlessCustomWeaponZoneEnd();
+		qa_check(endlessRunUsedCustom == cases[i].want, cases[i].what);
+	}
+
+	// A hull switched to and away from inside one zone still marks that zone.
+	endlessRunUsedCustom = false;
+	endlessResetCustomWeaponZone();
+	player[0].items.ship = 1;
+	player[1].items.ship = 1;
+	endlessNoteCustomShip();          // the switch happened...
+	player[0].items.ship = 1;         // ...and was undone before the zone ended
+	endlessCustomWeaponZoneEnd();
+	qa_check(endlessRunUsedCustom, "a custom hull flown only mid-zone still marks the record");
+
+	// Outside a running zone nothing arms: the outpost and the editors are not a zone.
+	endlessRunUsedCustom = false;
+	endlessCustomWeaponZoneEnd();     // clears endlessCustomZoneRunning
+	endlessNoteCustomShip();
+	player[0].items.ship = 1;
+	player[1].items.ship = 1;
+	endlessCustomWeaponZoneEnd();
+	qa_check(!endlessRunUsedCustom, "picking a hull outside a zone leaves the record alone");
+
+	player[0].items.ship = savedShips[0];
+	player[1].items.ship = savedShips[1];
+	endlessRunUsedCustom = savedCustom;
+}
+
 void qa_test_endless_suite(void)
 {
 	QaEndlessEnv saved;
 	qa_env_save(&saved);
 
+	qa_custom_mark_matrix();
 	qa_economy_matrix();
 	qa_gamble_matrix();
 	qa_death_prompt_matrix();

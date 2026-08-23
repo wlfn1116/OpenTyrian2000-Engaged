@@ -535,9 +535,10 @@ int endlessDifficultySlot(int difficulty)
 	return -1;
 }
 
-// Custom-weapon usage. A shot out of the custom port arms the zone flag, and the end of that zone
-// promotes it to the run. Only a running zone can arm it, which is what keeps the outpost weapon
-// editor and shop previews out of the record.
+// Player-authored equipment usage: a shot out of the custom weapon port, or either seat flying a
+// Ship Editor hull. Use arms the zone flag, and the end of that zone promotes it to the run. Only
+// a running zone can arm it, which is what keeps the outpost editors and shop previews out of the
+// record.
 bool endlessRunUsedCustom = false;
 static bool endlessCustomFiredZone = false;
 static bool endlessCustomZoneRunning = false;
@@ -548,6 +549,23 @@ void endlessNoteCustomWeaponShot(void)
 	// weapon preview fire through the same path, and neither is a zone.
 	if (endlessMode && endlessCustomZoneRunning)
 		endlessCustomFiredZone = true;
+}
+
+void endlessNoteCustomShip(void)
+{
+	if (endlessMode && endlessCustomZoneRunning)
+		endlessCustomFiredZone = true;
+}
+
+/* Either seat on a Ship Editor hull (id above 90). Endless carries the ship between zones, so
+ * this catches a hull equipped before the zone began as well as one switched to during it, and
+ * it reads the same on both machines because both simulate both ships. */
+static bool endlessFlyingCustomShip(void)
+{
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		if (player[i].items.ship > 90)
+			return true;
+	return false;
 }
 
 void endlessResetCustomWeaponZone(void)
@@ -607,14 +625,14 @@ static void endlessMarkRecordCustom(void)
 	save_opentyrian_config();
 }
 
-// A zone the custom weapon fired in counts once that zone is over, however it ended: cleared, died
+// A zone that used custom equipment counts once that zone is over, however it ended: cleared, died
 // in, or bailed out of. Idempotent, so every path out of a zone can call it.
 void endlessCustomWeaponZoneEnd(void)
 {
 	if (!endlessMode)
 		return;
 
-	if (endlessCustomFiredZone)
+	if (endlessCustomFiredZone || endlessFlyingCustomShip())
 		endlessRunUsedCustom = true;
 	endlessCustomFiredZone = false;
 	endlessCustomZoneRunning = false;

@@ -450,7 +450,8 @@ writes a run save. Quit Level restores the launch snapshot. Such a slot reads
 and **Save Game** list, where a campaign save names its episode.
 
 Records are split by run mode, difficulty, Base Level rule, and crew size. A
-trailing `C` marks a run that used a custom weapon.
+trailing `C` marks a run that used custom equipment: a custom weapon, or a Ship
+Editor ship flown by either player.
 
 The **Endless** high-score page drills down from mode, to Base Level rule, to
 difficulty. Records can be erased from the final list after confirmation.
@@ -833,7 +834,9 @@ what the current hull has left.
 
 **Esc > Extra > Custom Ship** does the same switch from the pause menu, so it
 also works on touch and controllers: a tap or Enter steps to the next of the
-ten ships, Left and Right step both ways. It follows the same armor rule.
+ten ships, Left and Right step both ways. It follows the same armor rule. In
+Endless, flying a custom ship marks the run's record with a `C`, the same as a
+custom weapon.
 
 The Special row offers only specials whose icons exist in the game data; the
 in-flight display draws that icon every frame, so anything else is unsafe to

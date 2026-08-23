@@ -447,6 +447,24 @@ static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr)
 		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr);
 }
 
+/* Present at display rate and wait out the editor's tick, like the shop menus. Both
+ * editor loops run on a fixed tick rather than blocking for input, because the
+ * on-screen touch controls are a per-frame request that expires (TOUCH_ASSERT_TTL_MS);
+ * a loop that stops renewing it drops its own buttons off the screen. */
+static void seWaitTick(void)
+{
+	for (;;)
+	{
+		if (getDelayTicks() == 0)
+			break;
+		JE_mouseStart();   // services SDL events + draws the cursor at its live pos
+		JE_showVGA();
+		JE_mouseReplace(); // restore the pixels under the cursor for the next pass
+		if (!output_vsync)
+			limit_render_fps();
+	}
+}
+
 // A fresh table for when no ship file exists at all: a modest ship in each slot.
 static void seSeedDefaults(void)
 {
@@ -756,6 +774,8 @@ static void seSpriteEditor(int bank)
 
 	while (!done)
 	{
+		setDelay(3);
+
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
 		fill_rectangle_xy(VGAScreen, BOX_X0, BOX_Y0, BOX_X1, BOX_Y1, 0);
@@ -852,28 +872,20 @@ static void seSpriteEditor(int bank)
 		                    : sesActs[selected - SES_ROW_COUNT].help,
 		                    small_font, centered, 15, 2, false, 1);
 
+		// Renewed every tick: the request expires, and so would the buttons.
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+
+		push_joysticks_as_keyboard();
+		service_SDL_events(false);
+
 		mouseCursor = MOUSE_POINTER_NORMAL;
-
-		service_SDL_events(true);
-
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		seWaitTick();
 
-		bool mouseMoved = false;
-		do
-		{
-			SDL_Delay(1);
-
-			Uint16 oldMouseX = mouse_x;
-			Uint16 oldMouseY = mouse_y;
-
-			push_joysticks_as_keyboard();
-			service_SDL_events(false);
-
-			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
-		} while (!(newkey || newmouse || mouseMoved || mouse_scroll != 0));
+		// Movement since the previous tick, which is what a paint drag follows.
+		const bool mouseMoved = (mouse_x != prev_mx || mouse_y != prev_my);
 
 		int act = -1;  // a triggered tool button, performed after input decoding
 
@@ -1165,6 +1177,8 @@ void JE_shipEditor(void)
 
 	while (!done)
 	{
+		setDelay(3);
+
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
 		Sprite2_array *sheet = &spriteSheet9;
@@ -1259,28 +1273,17 @@ void JE_shipEditor(void)
 		                    : (selected < SE_ROW_COUNT ? seRows[selected].help : seActs[selected - SE_ROW_COUNT].help),
 		                    small_font, centered, 15, 2, false, 1);
 
+		// Renewed every tick: the request expires, and so would the buttons.
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+
+		push_joysticks_as_keyboard();
+		service_SDL_events(false);
+
 		mouseCursor = MOUSE_POINTER_NORMAL;
-
-		service_SDL_events(true);
-
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
-
-		bool mouseMoved = false;
-		do
-		{
-			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
-
-			Uint16 oldMouseX = mouse_x;
-			Uint16 oldMouseY = mouse_y;
-
-			push_joysticks_as_keyboard();
-			service_SDL_events(false);
-
-			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
-		} while (!(newkey || newmouse || mouseMoved || mouse_scroll != 0));
+		seWaitTick();
 
 		// Both exits go through the same gate: compile when anything changed, and
 		// only leave once the file is safely on disk (SHIPEDIT compiled on exit too).
