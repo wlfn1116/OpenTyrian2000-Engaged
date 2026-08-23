@@ -28,8 +28,8 @@ See the [player guide](GUIDE.md) for menu paths and feature details.
 
 ## Game data
 
-Release packages include the freeware Tyrian 2000 data. Source builds need
-a copy from [camanis.net](https://www.camanis.net/tyrian/tyrian2000.zip).
+Release packages include the freeware Tyrian 2000 data. Source builds need a
+copy from [camanis.net](https://www.camanis.net/tyrian/tyrian2000.zip).
 
 On Windows and Linux, the executable should be beside the `data` directory.
 The macOS app bundle and the console packages carry the data inside them;
@@ -119,8 +119,8 @@ brew install sdl2 sdl2_net pkg-config
 make
 ```
 
-For the universal `.app` bundle that release packages ship, which carries
-its own static SDL2 and game data, see [macos/README.md](macos/README.md).
+For the universal `.app` bundle that release packages ship, which carries its
+own static SDL2 and game data, see [macos/README.md](macos/README.md).
 
 ### Consoles and mobile
 
