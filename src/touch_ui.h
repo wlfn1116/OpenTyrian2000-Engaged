@@ -57,10 +57,10 @@ void touch_ui_set_extra(TouchButton button);
 void touch_ui_clear_layout(void);
 void touch_ui_clear_extra(void);
 
-// Hide controls immediately and discard their queued input at a screen transition.
+// Hide controls and discard queued input before changing screens.
 void touch_ui_suppress(void);
 
-// Discard the current press without hiding the layout, allowing it to fade with the screen.
+// Discard the current press but keep the layout through a fade.
 void touch_ui_consume_input(void);
 
 // Deliver queued keys beside controller synthesis, just before the screen's event pump.

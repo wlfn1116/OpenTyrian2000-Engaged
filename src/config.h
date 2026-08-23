@@ -247,11 +247,10 @@ extern JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 extern JE_boolean endlessCampaignMods;
 extern JE_byte superArcadeMode;
 
-// Multiplayer modes where each player may fly an exchanged custom ship. Timed Battle and the
-// two super rulesets also use independent ships, but deliberately keep their fixed hulls.
+// Per-seat custom ships are exchanged only in these modes. Fixed-hull modes are excluded.
 static inline bool custom_ships_multiplayer_mode(void)
 {
-	// Zero is SA_NONE; varz.h declares the item-data enum after this shared mode header.
+	// SA_NONE is zero; its enum is declared later in varz.h.
 	return !timedBattleMode && !superTyrian && superArcadeMode == 0 &&
 	       (coop_mode_active() || arcade_separate_mode());
 }
@@ -490,7 +489,7 @@ bool save_opentyrian_config(void);  // write opentyrian.cfg now (settings + cust
 // Serialize or replace every save slot, high-score board, online seat, and Endless run.
 size_t save_file_serialize(Uint8 *buf, size_t cap);
 bool save_file_adopt(const Uint8 *buf, size_t len);
-// Saves-only transfer: all slots, online seats, and Endless runs, without high-score boards.
+// Serialize or replace slots, online seats, and Endless runs without high scores.
 size_t save_slots_serialize(Uint8 *buf, size_t cap);
 bool save_slots_adopt(const Uint8 *buf, size_t len);
 

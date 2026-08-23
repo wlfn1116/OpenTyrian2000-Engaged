@@ -71,7 +71,7 @@
 
 static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
-// All Saves carries the saves-only config: every slot, its online seat, and its Endless half.
+// All Saves carries every slot, online seat, and Endless run. High scores remain local.
 #define SS_MAGIC       0    /* 4: "OTSA"                    */
 #define SS_VERSION     4    /* 2: SAVES_XFER_VERSION         */
 #define SS_RESERVED    6    /* 2                             */
@@ -493,7 +493,7 @@ static bool savesXferUnpack(const Uint8 *buf, size_t len)
 	if (savesLen == 0 || savesLen > SS_SAVES_MAX || savesLen != len - SS_DATA)
 		return false;
 
-	// A failed adoption must not leave only part of the receiving device's slot set behind.
+	// Snapshot the slots so a failed adoption cannot leave a partial replacement.
 	Uint8 *const oldSaves = malloc(SS_SAVES_MAX);
 	const size_t oldSavesLen = oldSaves != NULL
 	                             ? save_slots_serialize(oldSaves, SS_SAVES_MAX) : 0;
@@ -1849,7 +1849,7 @@ void qa_test_save_transfer(void)
 	free(p2Payload);
 	saveXferPendingClear();
 
-	// All Saves replaces the slot set in place, but leaves the receiver's high scores alone.
+	// All Saves replaces slots in place and preserves the receiver's high scores.
 	Uint8 *const originalSlots = malloc(SS_SAVES_MAX);
 	const size_t originalSlotsLen = originalSlots != NULL
 	                              ? save_slots_serialize(originalSlots, SS_SAVES_MAX) : 0;

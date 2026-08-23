@@ -9103,8 +9103,7 @@ void networkStartScreen(void)
 		network_custom_weapon_publish_resume();
 	}
 
-	/* Separate Arcade has no outpost rendezvous, so exchange its per-seat ship files here.
-	 * If a ship references its owner's custom weapon, publish that design first. */
+	/* Separate Arcade has no outpost. Publish any referenced weapon, then exchange ships. */
 	if (custom_ships_multiplayer_mode() && !coop_mode_active())
 	{
 		customWeaponNetPrepare();
@@ -9195,7 +9194,7 @@ bool titleScreen(void)
 	{
 		if (restart)
 		{
-			// Start the logo with clean input, then expose only its skip controls.
+			// Clear stale input before showing logo controls.
 			touch_ui_suppress();
 			touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 			play_song(SONG_TITLE);
@@ -9264,7 +9263,7 @@ bool titleScreen(void)
 					}
 				}
 
-				// A skipped slide still lands on the normal final logo position.
+				// Finish at the normal logo position after a skip.
 				memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
 				blit_sprite(VGAScreenSeg, 11, 4, PLANET_SHAPES, 146); // tyrian logo
 				blit_sprite(VGAScreenSeg, 155, 73, PLANET_SHAPES, 151); // 2000(tm)
@@ -9277,7 +9276,7 @@ bool titleScreen(void)
 				fade_palette(colors, 10, 0, 255 - 16);
 			}
 
-			// Consume the logo press, then restore menu controls with no queued action.
+			// Do not pass skip input to the title menu.
 			touch_ui_suppress();
 			newkey = false;
 			newmouse = false;

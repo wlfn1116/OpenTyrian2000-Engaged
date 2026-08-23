@@ -102,8 +102,7 @@ typedef struct
 }
 ExtraShipReturn;
 
-// The pause-menu cycler can put back the complete non-extra loadout that was replaced.
-// Keep one return point per seat so supported online ships remain independent.
+// Each seat keeps its standard loadout for restoration.
 static ExtraShipReturn extraShipReturn[2];
 
 static void extraShipLoadoutRefresh(uint pnum, bool overHud);
@@ -2579,7 +2578,7 @@ void JE_doInGameSetup(void)
 
 // Pause-menu access to invincibility, cheats, and debug shortcuts.
 // A true result tells the caller to close the pause menu and resume play.
-// Slot zero is the non-extra loadout that was replaced; slots 1 through 10 are extra ships.
+// Slot 0 restores the standard loadout; slots 1 through 10 select custom ships.
 static int extraMenuNextCustomShipSlot(int slot, int dir, bool canReturn)
 {
 	slot = (slot + (dir > 0 ? 1 : 10)) % 11;
@@ -2588,7 +2587,7 @@ static int extraMenuNextCustomShipSlot(int slot, int dir, bool canReturn)
 	return slot;
 }
 
-// Cycle through the saved standard loadout and ten extra ships without healing live gauges.
+// Switch loadouts while preserving the live armor and shield ratios.
 static void extraMenuCycleCustomShip(uint pnum, int dir)
 {
 	Player *const p = &player[pnum];
@@ -2735,7 +2734,6 @@ bool JE_extraMenu(void)
 	// matching the guards on the key handlers in JE_mainKeyboardInput.
 	const bool cheatsAllowed = !isNetworkGame && !twoPlayerMode && !superTyrian && superArcadeMode == SA_NONE;
 
-	// Online modes offer only this machine's seat and its exchanged file.
 	const uint shipSeat = (isNetworkGame && thisPlayerNum >= 1) ? (uint)(thisPlayerNum - 1) : 0;
 	const bool shipRowAllowed = extraShipsAllowedInGame() && extraAvailFor(shipSeat);
 
@@ -5157,8 +5155,7 @@ static bool dbgRowIsLoadout(int id)
 /* True only when the debug menu overlays the gameplay HUD. */
 static bool debugMenuOverHud = false;
 
-/* `pnum` is the player whose loadout was just edited. Debug ship changes take the re-derived full
- * hull; custom-ship changes carry that seat's live gauge ratio across the re-derived maxima. */
+/* Debug ship changes take full armor. Custom-ship changes preserve live gauge ratios. */
 // Refresh the sidebar in menu backdrops captured before a loadout edit.
 static void hud_strip_snapshot(void)
 {

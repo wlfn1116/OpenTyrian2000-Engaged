@@ -34,8 +34,7 @@ JE_boolean inputDetected;
 
 JE_boolean JE_anyButton(void)
 {
-	// Some draw loops pump once between calls. Preserve a press edge that pump already observed;
-	// the clear-new poll below must not erase it before this function can report it.
+	// Preserve input edges seen by an event pump between calls.
 	const bool pressed_before_poll = newkey || newmouse;
 
 	// Touch buttons queue keys before the SDL event pump.

@@ -579,16 +579,13 @@ Touch layouts are expiring requests. Keep these rules together:
   update `palette_fading()`.
 - Request buttons before a blocking fade. `DE_RunTick()` reasserts its layout
   beside the fade for this reason.
-- `wait_input(true, true, true)` and custom any-key loops supply the Confirm
-  layout before presentation and renew it while blocked. Confirm and Back always
-  dismiss them; optional HUD navigation buttons do too when shown.
-- Skippable logos use the Skip layout: Back plus the complete optional HUD
-  navigation cluster, including Confirm. Every visible button skips the logo.
-- The title-logo-to-menu transition calls `touch_ui_suppress()` after accepting
-  input. Suppression disables old hit targets immediately and discards pending
-  keys so a logo tap cannot become an action on the title menu.
-- Startup logo waits use `touch_ui_consume_input()` instead so the accepted press
-  is still discarded while the controls remain attached to the palette fade.
+- Any-key waits use Confirm and renew it while blocked. Back, Confirm, and any
+  visible navigation button dismiss the screen.
+- Logos use Skip: Back plus the optional navigation cluster. Every visible
+  button skips.
+- `touch_ui_suppress()` clears hit targets and queued input before the title
+  menu appears. Startup logos use `touch_ui_consume_input()` so their buttons
+  remain through the fade while the accepted press is discarded.
 - Idle screens re-present the last output texture when the layout signature
   changes. Levels present every frame themselves; never repeat a frame during a
   transition.
@@ -603,13 +600,11 @@ Relative mouse mode is active only in a level. There a finger sets
 `mouse_pressed[0]`, so input waits after death must test that latch. Menus disable
 relative mode, allowing taps to satisfy ordinary mouse input.
 
-Queue touch-button keys until `push_joysticks_as_keyboard()`. Injecting a key
-inside the event pump loses it on screens that pump twice. Drop queued keys after
-a gap in flushing; the next screen must not receive input collected during a
-fade or animation. `JE_anyButton()` flushes that queue and preserves edges
-delivered by an intervening pump before clearing new-input state. One-shot
-actions use a release latch because `wait_noinput()` blocks presentation while a
-finger remains down.
+Queue touch-button keys until `push_joysticks_as_keyboard()`. Injecting them
+inside the event pump loses them on screens that pump twice. Drop queued keys
+after a gap so fades cannot feed the next screen. `JE_anyButton()` keeps edges
+seen by an intervening pump. One-shot actions use a release latch because
+`wait_noinput()` blocks presentation while a finger remains down.
 
 Composite each button into a texture before applying opacity; drawing
 overlapping glyph primitives directly would blend some pixels more than once.
@@ -736,8 +731,17 @@ File layout:
 
 The cipher and cell codec must round-trip the stock Tyrian 2000 file exactly.
 
-Online, each machine sends its file once through `PACKET_EXTRA_SHIPS`. Simulation
-lookups use `extraShipsFor(seat)` so both peers read the same armor and loadout.
+Online Campaign, Endless, and Separate Arcade exchange one file per seat through
+`PACKET_EXTRA_SHIPS`. Simulation lookups use `extraShipsFor(seat)` so both peers
+read the same armor and loadout.
+
+The pause-menu cycler saves one standard loadout per seat. A custom ship must
+not replace that return point. Restoring it keeps weapon power and sidekick
+progress earned after the switch. Armor and shields retain their filled ratio
+when a new loadout changes their maximum.
+
+Separate Arcade has no outpost. It publishes any referenced custom weapon, then
+the ship file, and waits for both queues to settle before gameplay.
 
 Weapon byte 255 (`EXTRA_SHIP_CUSTOM_PORT`) refers to the custom weapon owned by
 the ship's seat. Resolve it at equip time with `extraShipResolvePort`; reserved
@@ -952,6 +956,8 @@ Wire rules:
   chooses the slot and name.
 - Single-save adoption writes the record and Endless cache directly. It must not
   capture live game state, and a save without an Endless run clears the old one.
+- All Saves replaces every slot, Endless run, and online seat in place. It keeps
+  the receiver's high scores and rolls back the full slot set on failure.
 - The custom-data envelope marks ships, weapons, or both. Weapons include the
   full library, active index, and enabled flag. Ships include the compiled
   `newsh$.shp` data.

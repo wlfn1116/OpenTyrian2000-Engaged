@@ -92,7 +92,7 @@ void qa_test_save_transfer(void);
 void qa_test_save_transfer_preinit(void);
 
 void qa_test_load_screen_help(void);
-// The custom-ship cycler restores scaled live gauges and each seat's full loadout (mainint.c).
+// Custom-ship return-point and gauge-scaling checks (mainint.c).
 void qa_test_extra_ship_return(void);
 // The Relaxed death prompt's rows and widths against the choice enum (mainint.c).
 void qa_test_endless_death_menu(void);

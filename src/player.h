@@ -259,7 +259,7 @@ bool arcade_rear_scale_active(void);     // 1P arcade only: lives raise the rear
 uint arcade_weapon_power(const Player *, uint port);  // the level a bay fires at, 1-11
 uint arcade_armor_max(const Player *);   // == hull_armor outside the arcade modes
 uint arcade_shield_max(const Player *);  // == shields[].mpwr * 2 outside the arcade modes
-uint player_carry_gauge(uint current, uint old_max, uint new_max);  // preserve damage across a new ceiling
+uint player_carry_gauge(uint current, uint old_max, uint new_max);  // preserve damage ratio
 void arcade_rescale_to_lives(Player *);  // re-derive both ceilings after a life is gained or lost
 
 void coop_ship_runtime_reset(void);

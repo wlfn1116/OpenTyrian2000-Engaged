@@ -16,7 +16,7 @@ This fork adds:
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows x86-64;
 - macOS, Nintendo Switch, PlayStation Vita, Android, and iOS ports;
-- a data transfer system between all of these platforms.
+- save and custom-data transfers between platforms.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
@@ -37,8 +37,8 @@ the consoles can also use an external copy. See their build guides.
 
 ## Display and controls
 
-The game uses a 356x200 frame: a 299-pixel playfield and the original
-57-pixel HUD. Menus retain their centered 320-pixel layout.
+The game uses a 356x200 frame: a 299-pixel playfield and the
+original 57-pixel HUD. Menus retain their centered 320-pixel layout.
 
 The simulation runs at 35 Hz. Smooth Motion interpolates between ticks,
 while Sub-pixel rendering removes whole-pixel stepping from slow movement
@@ -78,8 +78,8 @@ For lobby settings, co-op rules, saving, and desync reports, see
 
 ### Windows
 
-The Visual Studio project is under `visualc`. The root script can
-build one or more targets and collect their outputs under `build`:
+The Visual Studio project is under `visualc`. The root script can build
+one or more targets and collect their outputs under `build`:
 
 ```powershell
 .\build-all.ps1
@@ -119,8 +119,8 @@ brew install sdl2 sdl2_net pkg-config
 make
 ```
 
-For the universal `.app` bundle that release packages ship, which carries
-its own static SDL2 and game data, see [macos/README.md](macos/README.md).
+For the universal `.app` bundle that release packages ship, which carries its
+own static SDL2 and game data, see [macos/README.md](macos/README.md).
 
 ### Consoles and mobile
 

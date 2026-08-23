@@ -34,8 +34,7 @@ int  customSidekickSlot    = 0;
 int  customWeaponOwnerPort[CUSTOM_WEAPON_OWNERS];
 int  customSidekickOwnerSlot[CUSTOM_WEAPON_OWNERS];
 
-// One published design per owner. Owner 0 is also what the working globals compile into, so
-// the record exists even in a one-player game; supported two-ship online modes fill owner 1.
+// Owner 0 also backs solo play; supported online modes fill both owners.
 static CustomWeaponSlot customWeaponOwnerDesign[CUSTOM_WEAPON_OWNERS];
 static bool             customWeaponOwnerDefined[CUSTOM_WEAPON_OWNERS];
 
@@ -791,7 +790,6 @@ bool customWeaponEquip(void)
 
 	customWeaponMaterialize();
 
-	// A full-ship online mode fits it to the ship this machine flies; solo has only one.
 	Player *const this_player = &player[gameplay_local_player_index()];
 
 	switch (customWeaponEquipSlot)
@@ -1041,10 +1039,7 @@ void customWeaponDeserializeLevel(int mode, int level, const char *str)
 	deserializeRaw(&customWeaponRaw[mode][level], str);
 }
 
-/* Online design exchange.
- * Little-endian, self-delimiting, and only as long as the design needs: each (mode, level)
- * writes its populated bullet slots and a count, so an ordinary weapon is a couple of kilobytes
- * rather than the 45 KB the full-width arrays would take. */
+/* The online design wire format is little-endian and includes only populated bullet slots. */
 typedef struct
 {
 	Uint8       *buf;

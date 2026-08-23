@@ -117,7 +117,7 @@ static const TouchButtonDef LAYOUT_PICK[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
-/* Any-key screens accept every control they show. Navigation follows the HUD setting. */
+/* Any-key screens use Back, Confirm, and the optional navigation buttons. */
 static const TouchButtonDef LAYOUT_CONFIRM[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
@@ -128,7 +128,7 @@ static const TouchButtonDef LAYOUT_CONFIRM[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
-/* Logos always expose Back; the HUD option adds the complete navigation cluster. */
+/* Logos use Back and the optional navigation cluster, including Confirm. */
 static const TouchButtonDef LAYOUT_SKIP[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
@@ -698,7 +698,7 @@ void touch_ui_consume_input(void)
 
 void touch_ui_suppress(void)
 {
-	// Disable the old frame's hit targets before the first control-free frame is presented.
+	// Invalidate hit targets before presenting a control-free frame.
 	touch_ui_consume_input();
 	requested_layout = TOUCH_LAYOUT_NONE;
 	requested_at_ms = SDL_GetTicks();

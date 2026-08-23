@@ -2521,13 +2521,10 @@ static bool network_custom_weapon_receive(void)
 	return true;
 }
 
-/* Publish while the peer drains its inbound queue. Both machines pump during the co-op outpost,
- * Campaign resume, or Separate Arcade launch. force=true covers a custom slot whose editor toggle
- * is currently off. */
+/* Publish while both peers pump incoming packets. `force` includes a referenced design when
+ * Custom Weapons is disabled. */
 static void network_custom_weapon_publish_internal(bool force)
 {
-	// Outside resume, nothing can newly carry the weapon while the feature is off. Turning it on
-	// and equipping goes through the next outpost rendezvous.
 	if (!isNetworkGame || !custom_ships_multiplayer_mode() || (!customWeaponEnabled && !force) ||
 	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
 		return;
@@ -3374,8 +3371,7 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 	}
 }
 
-/* Separate Arcade exchanges custom content without an outpost. Mark the end of that exchange so
- * neither peer can enter the first level while a trailing content packet still heads the queue. */
+// Separate Arcade has no outpost. Settle both custom-content streams before its first level.
 void network_custom_content_rendezvous(void)
 {
 	if (!isNetworkGame || !custom_ships_multiplayer_mode())

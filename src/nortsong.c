@@ -148,7 +148,7 @@ void wait_delayorinput(void)
 {
 	for (; ; )
 	{
-		// Logos expose Back and, when enabled, the complete navigation cluster.
+		// Keep logo skip controls live during the wait.
 		touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
@@ -157,7 +157,7 @@ void wait_delayorinput(void)
 		{
 			newkey = false;
 			newmouse = false;
-			// Consume the press but leave the controls to fade out with the logo.
+			// Discard the press while the controls fade with the logo.
 			touch_ui_consume_input();
 			return;
 		}
