@@ -9182,9 +9182,9 @@ bool titleScreen(void)
 	{
 		if (restart)
 		{
-			// Start the logo with clean input, then expose the same controls as any-key screens.
+			// Start the logo with clean input, then expose only its skip controls.
 			touch_ui_suppress();
-			touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+			touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 			play_song(SONG_TITLE);
 
 			JE_loadPic(VGAScreen, 4, false);
@@ -9211,7 +9211,7 @@ bool titleScreen(void)
 
 					for (;;)
 					{
-						touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+						touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 						float t = (float)(SDL_GetTicks() - slideStart) / (float)slideMs;
 						if (t > 1.0f)
 							t = 1.0f;
@@ -9237,7 +9237,7 @@ bool titleScreen(void)
 				{
 					for (int yLogo = 60, y2K = 45; yLogo >= 4; yLogo -= 2, ++y2K)
 					{
-						touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+						touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 						setDelay(2);
 
 						memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
@@ -9823,7 +9823,7 @@ void intro_logos(void)
 	fade_white(25);
 
 	JE_loadPic(VGAScreen, 10, false);
-	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+	touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 	JE_showVGA();
 
 	fade_palette(colors, 25, 0, 255);
@@ -9834,7 +9834,7 @@ void intro_logos(void)
 	fade_black(10);
 
 	JE_loadPic(VGAScreen, 12, false);
-	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+	touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 	JE_showVGA();
 
 	fade_palette(colors, 10, 0, 255);

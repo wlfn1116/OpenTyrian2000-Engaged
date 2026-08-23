@@ -128,6 +128,16 @@ static const TouchButtonDef LAYOUT_CONFIRM[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
+/* Logos can be skipped without borrowing the confirmation button from prompt screens. */
+static const TouchButtonDef LAYOUT_SKIP[] =
+{
+	{ TOUCH_BTN_ESC,   ICON_CLOSE, -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_LEFT,  ICON_LEFT,  -1, -3, SDL_SCANCODE_LEFT,   false, GATE_NAV },
+	{ TOUCH_BTN_RIGHT, ICON_RIGHT, -1, -2, SDL_SCANCODE_RIGHT,  false, GATE_NAV },
+	{ TOUCH_BTN_UP,    ICON_UP,     1, -3, SDL_SCANCODE_UP,     false, GATE_NAV },
+	{ TOUCH_BTN_DOWN,  ICON_DOWN,   1, -2, SDL_SCANCODE_DOWN,   false, GATE_NAV },
+};
+
 /* Jukebox adds a text-overlay toggle in the top-right slot. */
 static const TouchButtonDef LAYOUT_JUKEBOX[] =
 {
@@ -358,6 +368,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 	case TOUCH_LAYOUT_LIST:     defs = LAYOUT_LIST;     count = (int)COUNTOF(LAYOUT_LIST);     break;
 	case TOUCH_LAYOUT_PICK:     defs = LAYOUT_PICK;     count = (int)COUNTOF(LAYOUT_PICK);     break;
 	case TOUCH_LAYOUT_CONFIRM:  defs = LAYOUT_CONFIRM;  count = (int)COUNTOF(LAYOUT_CONFIRM);  break;
+	case TOUCH_LAYOUT_SKIP:     defs = LAYOUT_SKIP;     count = (int)COUNTOF(LAYOUT_SKIP);     break;
 	case TOUCH_LAYOUT_JUKEBOX:  defs = LAYOUT_JUKEBOX;  count = (int)COUNTOF(LAYOUT_JUKEBOX);  break;
 	case TOUCH_LAYOUT_DESTRUCT: defs = LAYOUT_DESTRUCT; count = (int)COUNTOF(LAYOUT_DESTRUCT); break;
 	case TOUCH_LAYOUT_GAME:     defs = LAYOUT_GAME;     count = (int)COUNTOF(LAYOUT_GAME);     break;

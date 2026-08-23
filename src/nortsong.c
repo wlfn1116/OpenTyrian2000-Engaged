@@ -148,8 +148,8 @@ void wait_delayorinput(void)
 {
 	for (; ; )
 	{
-		// The startup logos are any-key screens, including every on-screen button shown here.
-		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+		// Logos expose Back and optional navigation, without borrowing the prompt-only Confirm.
+		touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
 

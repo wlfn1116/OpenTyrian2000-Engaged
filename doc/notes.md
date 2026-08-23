@@ -579,9 +579,11 @@ Touch layouts are expiring requests. Keep these rules together:
   update `palette_fading()`.
 - Request buttons before a blocking fade. `DE_RunTick()` reasserts its layout
   beside the fade for this reason.
-- `wait_input(true, true, true)`, custom any-key loops and skippable logos supply
-  the Confirm layout before presentation and renew it while blocked. Confirm and
-  Back always dismiss them; optional HUD navigation buttons do too when shown.
+- `wait_input(true, true, true)` and custom any-key loops supply the Confirm
+  layout before presentation and renew it while blocked. Confirm and Back always
+  dismiss them; optional HUD navigation buttons do too when shown.
+- Skippable logos use the Skip layout: Back plus optional HUD navigation. They do
+  not show Confirm, which is reserved for prompts and menus that need it.
 - The title-logo-to-menu transition calls `touch_ui_suppress()` after accepting
   input. Suppression disables old hit targets immediately and discards pending
   keys so a logo tap cannot become an action on the title menu.
