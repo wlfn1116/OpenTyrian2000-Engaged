@@ -237,8 +237,7 @@ static bool xferCarriesWeapons(XferKind kind)
 	return kind == XFER_WEAPONS || kind == XFER_CUSTOM || kind == XFER_ALL;
 }
 
-/* The title screen normally has not loaded item data yet. Weapon initialization also loads the
- * persistent library, so do it here instead of making the player visit an editor first. */
+// Weapon transfers need item data and a loaded library before packing or rollback.
 static void xferPrepareLocalData(XferKind kind)
 {
 	if (!xferCarriesWeapons(kind) || customWeaponLibCount >= 1)
@@ -372,7 +371,7 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 110, line2, normal_font, centered, 15, -4, false, 2);
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, sxAnyButton, normal_font, centered, 15, -5, false, 2);
 
-	// Expose Select and Back before the notice fades in, then keep them live through the idle wait.
+	// Request buttons before the fade and throughout the wait.
 	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
@@ -1436,7 +1435,7 @@ static bool saveXferReceivePayload(XferKind kind, UDPsocket sock, UDPpacket *out
 static bool xferDownload(XferKind kind)
 {
 	const char *const title = xferDownloadTitle(kind);
-	xferPrepareLocalData(kind);  // the rollback snapshot needs the complete local weapon library
+	xferPrepareLocalData(kind);  // Adoption rollback needs the complete local weapon library.
 	if (kind == XFER_SAVE)
 		saveXferPendingClear();
 

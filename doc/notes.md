@@ -579,9 +579,9 @@ Touch layouts are expiring requests. Keep these rules together:
   update `palette_fading()`.
 - Request buttons before a blocking fade. `DE_RunTick()` reasserts its layout
   beside the fade for this reason.
-- `wait_input(true, true, true)` supplies the Confirm layout for ordinary
-  press-any-input screens. Custom wait loops must request it before presentation
-  when possible and reassert it while blocked; animation-skip polls do not.
+- `wait_input(true, true, true)` supplies the Confirm layout. Custom wait loops
+  request it before presentation and renew it while blocked. Animation-skip
+  polls do not.
 - Idle screens re-present the last output texture when the layout signature
   changes. Levels present every frame themselves; never repeat a frame during a
   transition.
@@ -931,9 +931,9 @@ The menu belongs under **Extra > Transfer** on the title screen because a live
 session cannot service its keep-alive. Save upload reuses the normal load list
 only as a picker.
 
-The title screen has not normally loaded item data. Every transfer containing
-custom weapons loads it internally before upload or download so the complete
-library exists for serialization or transactional rollback.
+The title screen normally has no item data loaded. A transfer containing custom
+weapons initializes it before packing or adoption so the full library is
+available, including for rollback.
 
 Wire rules:
 

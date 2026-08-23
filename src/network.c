@@ -1685,8 +1685,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 		if (err)
 		{
-			// Re-present each frame so the cursor stays alive on the "press any
-			// button" screen, like every other menu wait.
+			// Re-present each frame so the cursor and touch layout stay live.
 			while (!JE_anyButton())
 			{
 				touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
