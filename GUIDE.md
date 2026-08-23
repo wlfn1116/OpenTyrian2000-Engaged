@@ -935,7 +935,7 @@ build and must be on the same network. A firewall may ask you to allow UDP port
 | Choice | Data copied |
 | --- | --- |
 | Save | One save; the receiver chooses its slot and name |
-| Save > All Saves | Every save slot and Endless run |
+| All Saves | Every save slot and Endless run |
 | Custom Ships | Ships compiled by the Ship Editor |
 | Custom Weapons | The Weapon Creator library and its on/off setting |
 | Custom Data | Custom ships and weapons |

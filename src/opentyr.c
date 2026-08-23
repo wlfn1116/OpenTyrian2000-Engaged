@@ -395,6 +395,7 @@ typedef enum
 	MENU_SECRET_MODES,
 	MENU_TRANSFER,
 	MENU_TRANSFER_SAVE,
+	MENU_TRANSFER_SAVES,
 	MENU_TRANSFER_SHIPS,
 	MENU_TRANSFER_WEAPONS,
 	MENU_TRANSFER_CUSTOM,
@@ -964,7 +965,8 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_TRANSFER] = {
 			.header = "Transfer",
 			.items = {
-				{ MENU_ITEM_SUBMENU, "Save...", "Copy one save or every save slot to another device.", MENU_TRANSFER_SAVE },
+				{ MENU_ITEM_SUBMENU, "Save...", "Copy one save slot.", MENU_TRANSFER_SAVE },
+				{ MENU_ITEM_SUBMENU, "All Saves...", "Copy every save slot.", MENU_TRANSFER_SAVES },
 				{ MENU_ITEM_SUBMENU, "Custom Ships...", "Replace only the compiled custom ships.", MENU_TRANSFER_SHIPS },
 				{ MENU_ITEM_SUBMENU, "Custom Weapons...", "Replace only the complete custom-weapon library.", MENU_TRANSFER_WEAPONS },
 				{ MENU_ITEM_SUBMENU, "Custom Data...", "Copy custom ships and the complete weapon library.", MENU_TRANSFER_CUSTOM },
@@ -977,8 +979,14 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_TRANSFER_SAVE_UPLOAD, "Upload", "Choose a save slot to send." },
 				{ MENU_ITEM_TRANSFER_SAVE_DOWNLOAD, "Download", "Receive a save, then choose its destination slot." },
-				{ MENU_ITEM_TRANSFER_SAVES_UPLOAD, "Upload All Saves", "Send all save slots without custom data or high scores." },
-				{ MENU_ITEM_TRANSFER_SAVES_DOWNLOAD, "Download All Saves", "Replace all save slots in place; keep custom data and scores." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER_SAVES] = {
+			.header = "All Saves Transfer",
+			.items = {
+				{ MENU_ITEM_TRANSFER_SAVES_UPLOAD, "Upload", "Send every save slot." },
+				{ MENU_ITEM_TRANSFER_SAVES_DOWNLOAD, "Download", "Replace every save slot." },
 				MENU_DONE_ROW
 			},
 		},
