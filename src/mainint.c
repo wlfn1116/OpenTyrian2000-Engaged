@@ -2541,9 +2541,7 @@ void JE_doInGameSetup(void)
 
 // Pause-menu access to invincibility, cheats, and debug shortcuts.
 // A true result tells the caller to close the pause menu and resume play.
-/* Switch player pnum onto the next Ship Editor slot in `dir` (wrapping 1..10), with the
- * Tab handler's rules: the whole slot loadout lands, and only the first switch of a life
- * may raise armor. Online the change rides the debug sync block the caller sends. */
+// Cycle through the ten extra ships using the in-flight armor rule.
 static void extraMenuCycleCustomShip(uint pnum, int dir)
 {
 	Player *const p = &player[pnum];
@@ -2571,8 +2569,7 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 
 	debugLoadoutRefresh(true);  // rebuild every cache off items[]; keeps the current armor
 
-	// The Tab rule: the first switch of a life takes the slot's armor, a repeat keeps
-	// the lower of the two.
+	// Only the first switch in a life may raise armor.
 	const uint slotArmor = table[base + 7];
 	JE_boolean *const used = (pnum == 0) ? &editShip1 : &editShip2;
 	if (!*used)
@@ -2592,8 +2589,7 @@ bool JE_extraMenu(void)
 	// matching the guards on the key handlers in JE_mainKeyboardInput.
 	const bool cheatsAllowed = !isNetworkGame && !twoPlayerMode && !superTyrian && superArcadeMode == SA_NONE;
 
-	// The Ship Editor's custom ships: offline for player 1 (Tab covers player 2), online
-	// for this machine's own seat in a co-op session, from that seat's exchanged file.
+	// Online co-op offers only this machine's seat and its exchanged file.
 	const uint shipSeat = (isNetworkGame && thisPlayerNum >= 1) ? (uint)(thisPlayerNum - 1) : 0;
 	const bool shipRowAllowed = !superTyrian && superArcadeMode == SA_NONE &&
 	                            extraAvailFor(shipSeat) &&
@@ -2648,7 +2644,6 @@ bool JE_extraMenu(void)
 	newkey = newmouse = false;  // don't let the click/key that opened us leak in
 
 #ifdef WITH_NETWORK
-	// Baseline for the change test at close: only a real edit goes on the wire.
 	if (isNetworkGame)
 		network_debug_sync_mark();
 #endif
@@ -3018,8 +3013,7 @@ bool JE_extraMenu(void)
 	}
 
 #ifdef WITH_NETWORK
-	// A custom-ship switch is simulation state; publish it from the same rendezvous that
-	// opened the pause menu, exactly like the debug menu's edits. No-op when nothing moved.
+	// Publish a ship switch through the pause menu's existing simulation-state sync.
 	if (isNetworkGame)
 		network_debug_sync_send();
 #endif
@@ -5021,9 +5015,7 @@ static bool debugMenuOverHud = false;
 
 /* `pnum` is the player whose loadout was just edited; `shipChanged` says their hull actually
  * swapped, which is the one case where the re-derived armor is kept instead of the live value. */
-/* Copy the live HUD strip into the menu backdrop, so a menu that repaints from its own
- * snapshot shows equipment changed while it was open. Only the sidebar column moves; the
- * menu boxes all sit left of PLAYFIELD_WIDTH. */
+// Refresh the sidebar in menu backdrops captured before a loadout edit.
 static void hud_strip_snapshot(void)
 {
 	if (VGAScreenSeg == NULL || VGAScreen2 == NULL || rollback_resim_silent)
@@ -5082,14 +5074,10 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 		JE_drawOptions();   // re-seeds the sidekick pods' ammo, refill cadence and style from options[]
 		JE_drawPortConfigButtons();  // the mode arrows belong to the rear gun that just changed
 
-		// The menus above this one repaint from a background snapshotted when they opened,
-		// which still holds the previous loadout; refresh the HUD strip inside it so the
-		// sidebar is right the moment this menu closes. The strip is the full-height column
-		// from PLAYFIELD_WIDTH rightwards, which no menu box reaches into.
+		// Refresh the captured menu background immediately.
 		hud_strip_snapshot();
 
-		// And once more on the first real gameplay tick, for the paths that repaint the
-		// whole screen on the way out (level fades, a resim pass that drew nothing).
+		// Repaint again after paths that replace the whole screen on exit.
 		hud_sidekicks_dirty = true;
 		hud_bars_dirty = true;
 	}
@@ -5647,7 +5635,7 @@ void JE_debugMenu(bool center)
 				{
 				case DBG_PLAYER: dbgPlayer = (dbgPlayer + (int)COUNTOF(player) - 1) % (int)COUNTOF(player); break;
 				case DBG_SHIP:
-					// 91..100 are the Ship Editor's extra ships, reached past the last real hull.
+					// Extra ships occupy IDs 91 through 100.
 					if (edit->ship > 91) --edit->ship;
 					else if (edit->ship == 91) edit->ship = SHIP_DRAGONWING;
 					else if (edit->ship > 0) --edit->ship;

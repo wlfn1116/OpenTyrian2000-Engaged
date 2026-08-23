@@ -535,10 +535,7 @@ int endlessDifficultySlot(int difficulty)
 	return -1;
 }
 
-// Player-authored equipment usage: a shot out of the custom weapon port, or either seat flying a
-// Ship Editor hull. Use arms the zone flag, and the end of that zone promotes it to the run. Only
-// a running zone can arm it, which is what keeps the outpost editors and shop previews out of the
-// record.
+// Only equipment used during a running zone may mark the run as custom.
 bool endlessRunUsedCustom = false;
 static bool endlessCustomFiredZone = false;
 static bool endlessCustomZoneRunning = false;
@@ -557,9 +554,7 @@ void endlessNoteCustomShip(void)
 		endlessCustomFiredZone = true;
 }
 
-/* Either seat on a Ship Editor hull (id above 90). Endless carries the ship between zones, so
- * this catches a hull equipped before the zone began as well as one switched to during it, and
- * it reads the same on both machines because both simulate both ships. */
+// Check both seats because an extra ship may carry over from the previous zone.
 static bool endlessFlyingCustomShip(void)
 {
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -625,8 +620,7 @@ static void endlessMarkRecordCustom(void)
 	save_opentyrian_config();
 }
 
-// A zone that used custom equipment counts once that zone is over, however it ended: cleared, died
-// in, or bailed out of. Idempotent, so every path out of a zone can call it.
+// Promote zone usage on every exit path. This is idempotent.
 void endlessCustomWeaponZoneEnd(void)
 {
 	if (!endlessMode)

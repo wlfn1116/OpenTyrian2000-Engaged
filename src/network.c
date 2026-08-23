@@ -663,7 +663,6 @@ static int network_recv_one(void)
 					case PACKET_DEBUG_SYNC:
 					case PACKET_SHOP_SYNC:
 					case PACKET_CUSTOM_WEAPON:
-					// The extra-ship file transfer rides the same rendezvous windows.
 					case PACKET_EXTRA_SHIPS:
 					// Every packet the Endless co-op channel carries: the run transfer on resume,
 					// the death-prompt choice, and the "I have left the level" notice. Missing from
@@ -2645,9 +2644,7 @@ void network_custom_weapon_publish_resume(void)
 	network_custom_weapon_publish_internal(true);
 }
 
-/* Extra-ship file exchange. Same chunked shape as the custom weapon transfer above: each
- * machine publishes its compiled newsh$.shp once per session and adopts the peer's, so both
- * hold identical per-seat tables and blobs before any extra ship can be flown or drawn. */
+/* Chunked per-seat extra-ship file exchange. See doc/notes.md. */
 
 static Uint16 network_ships_gen;
 static Uint32 network_ships_out_hash;
@@ -2765,7 +2762,7 @@ static bool network_extra_ships_receive(void)
 		}
 		network_ships_in_reset();
 
-		// Answer whether or not the file decoded: resending would produce the same bytes.
+		// A decode failure will not improve by resending identical bytes.
 		network_ships_send_ack(gen);
 	}
 
@@ -2773,15 +2770,13 @@ static bool network_extra_ships_receive(void)
 	return true;
 }
 
-/* Publish while the peer drains its inbound queue, from the same rendezvous windows as the
- * custom weapon. The file is static for the whole session, so the hash gate sends it once. */
+// The session hash gate suppresses unchanged files.
 void network_extra_ships_publish(void)
 {
 	if (!isNetworkGame || !coop_mode_active() ||
 	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
 		return;
 
-	// This machine's own seat holds the same bytes it publishes.
 	extraShipsNetInstallLocal((uint)(thisPlayerNum - 1));
 
 	Uint8 *const stream = malloc(EXTRA_SHIPS_WIRE_MAX);
@@ -2821,7 +2816,7 @@ void network_extra_ships_publish(void)
 
 		while (!network_ships_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
 		{
-			// Keep half the reliable queue free, exactly like the custom weapon send.
+			// Reserve half the reliable queue for other traffic.
 			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
 			{
 				const size_t from = (size_t)sent * NCW_PAYLOAD;

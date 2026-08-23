@@ -35,22 +35,16 @@ void JE_freeExtraShapes(void);
 void JE_shipEditor(void);
 bool JE_shapeCodecSelfTest(void);
 
-/* Online, each seat flies the ships of its own compiled file; the files are exchanged
- * at the session rendezvous so both machines hold identical seat slots. Offline both
- * seats read the local file. playerIdx is the player array index, 0 or 1. */
+// Online, each player reads that seat's exchanged file. Offline, both read the local file.
 JE_byte *extraShipsFor(uint playerIdx);
 Sprite2_array *extraShapesFor(uint playerIdx);
 bool extraAvailFor(uint playerIdx);
 
-/* A weapon byte of 255 means "the custom weapon of whichever seat flies this ship". The
- * reserved port differs per seat and per machine, so a record stores this sentinel and the
- * live port is resolved when the ship is equipped. Resolves to None when that seat has no
- * custom weapon (the feature is off, or no port was free). */
+// Byte 255 names the custom weapon owned by the ship's seat. Resolution returns 0 without a port.
 #define EXTRA_SHIP_CUSTOM_PORT 255
 JE_byte extraShipResolvePort(uint seat, JE_byte port);
 
-// Whether any local record equips the custom weapon, and so needs the design on the wire
-// even when this machine's own Weapon Creator toggle is off.
+// True when a local ship record requires the custom weapon design on the wire.
 bool extraShipsUseCustomWeapon(void);
 
 /* Wire form: version, availability, the plaintext table, then the sprite blob. */

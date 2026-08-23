@@ -358,7 +358,6 @@ int endlessDifficultySlot(int difficulty);
 // A custom weapon only counts once the run has fought with it: a shot has to leave the custom port
 // inside a running zone (shots.c calls this for every one), and that zone has to end.
 void endlessNoteCustomWeaponShot(void);
-// Switching onto a Ship Editor hull marks the zone, the same as firing the custom weapon.
 void endlessNoteCustomShip(void);
 void endlessCustomWeaponZoneEnd(void);
 extern bool endlessRunUsedCustom;

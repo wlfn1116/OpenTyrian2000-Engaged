@@ -2714,9 +2714,7 @@ static void qa_gamble_matrix(void)
 	}
 }
 
-/* The record's "C" mark covers player-authored equipment: the custom weapon, and either seat
- * flying a Ship Editor hull. Endless keeps the ship between zones, so a hull equipped before
- * the zone started has to count as much as one switched to mid-zone. */
+// Cover the custom-record mark across zone boundaries and both player seats.
 static void qa_custom_mark_matrix(void)
 {
 	const bool savedCustom = endlessRunUsedCustom;
@@ -2744,7 +2742,7 @@ static void qa_custom_mark_matrix(void)
 		qa_check(endlessRunUsedCustom == cases[i].want, cases[i].what);
 	}
 
-	// A hull switched to and away from inside one zone still marks that zone.
+	// Mid-zone use still counts when the player switches back before exit.
 	endlessRunUsedCustom = false;
 	endlessResetCustomWeaponZone();
 	player[0].items.ship = 1;
@@ -2754,7 +2752,7 @@ static void qa_custom_mark_matrix(void)
 	endlessCustomWeaponZoneEnd();
 	qa_check(endlessRunUsedCustom, "a custom hull flown only mid-zone still marks the record");
 
-	// Outside a running zone nothing arms: the outpost and the editors are not a zone.
+	// Outpost and editor changes happen outside a running zone.
 	endlessRunUsedCustom = false;
 	endlessCustomWeaponZoneEnd();     // clears endlessCustomZoneRunning
 	endlessNoteCustomShip();

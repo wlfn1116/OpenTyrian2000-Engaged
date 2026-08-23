@@ -717,22 +717,22 @@ that still constrain current code.
 
 ### Extra ships (newsh$.shp)
 
-The compiled ShipEdit file is a Sprite2 bank blob (16-bit offset table, nibble-RLE
-cells) followed by a 154-byte ship table: ten 15-byte records, then four plaintext
-checksums; the record bytes are XOR-chain encrypted (editship.c, `extraCryptKey`).
-`JE_encryptShips`/`JE_decryptShips` and the cell codec are exact inverses; the QA
-suite round-trips both against the stock Tyrian 2000 file. Online, each seat's
-file crosses once per session via `PACKET_EXTRA_SHIPS`, and every simulation read
-routes through `extraShipsFor(seat)` so both machines derive identical armor.
+File layout:
 
-A weapon byte of `EXTRA_SHIP_CUSTOM_PORT` (255) means "the custom weapon of the
-seat flying this ship", resolved by `extraShipResolvePort(seat, byte)` at equip
-time rather than stored as a live port. The reserved ports differ per seat, so a
-record naming one directly would give the peer the wrong gun. That resolution
-must stay independent of `customWeaponEnabled`: the toggle is local
-configuration, and the two machines have to choose the same port for the same
-seat. A record using the sentinel also forces the design onto the wire even with
-the toggle off, so the peer holds what it resolves to.
+- a Sprite2 blob with a 16-bit offset table and nibble-RLE cells;
+- ten 15-byte ship records, XOR-chain encrypted with `extraCryptKey`;
+- four plaintext checksums;
+
+The cipher and cell codec must round-trip the stock Tyrian 2000 file exactly.
+
+Online, each machine sends its file once through `PACKET_EXTRA_SHIPS`. Simulation
+lookups use `extraShipsFor(seat)` so both peers read the same armor and loadout.
+
+Weapon byte 255 (`EXTRA_SHIP_CUSTOM_PORT`) refers to the custom weapon owned by
+the ship's seat. Resolve it at equip time with `extraShipResolvePort`; reserved
+ports differ by seat. Resolution must ignore `customWeaponEnabled` because that
+setting is local. A ship using the sentinel also forces its weapon design onto
+the wire.
 
 ### Online ship styles
 

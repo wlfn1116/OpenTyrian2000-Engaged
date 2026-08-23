@@ -455,8 +455,7 @@ void network_custom_weapon_publish(void);
 void network_custom_weapon_publish_resume(void);
 void network_custom_weapon_reset(void);
 
-/* Publish this machine's compiled extra-ship file over the same reliable channel; both
- * peers need both files before an Edit Player row can offer an extra ship. */
+// Publish this machine's extra-ship file through the reliable session channel.
 void network_extra_ships_publish(void);
 void network_extra_ships_reset(void);
 // Take the level the host left the outpost for. Call once both players are done, never before:

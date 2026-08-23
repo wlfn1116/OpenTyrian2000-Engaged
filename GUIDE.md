@@ -20,7 +20,7 @@ and controls work as before.
 | Choose a music backend | Setup > Sound > Music Synth |
 | Turn on Debug Mode or network logs | Setup > Diagnostics |
 | Open Destruct or SuperTyrian | Title screen > Extra |
-| Edit the Tab+Number custom ships | Title screen > Extra > Ship Editor |
+| Edit custom ships | Title screen > Extra > Ship Editor |
 | Use in-game cheats | Esc > Extra |
 
 ## Graphics
@@ -820,54 +820,40 @@ normal solo game; Custom Ship also works in two-player and online co-op games.
 
 ### Ship Editor
 
-The original SHIPEDIT.EXE, rebuilt in the game. It edits the ten custom ships
-stored in `newsh$.shp`: hull graphic, front and rear weapons, special,
-sidekicks, generator, armor, and shield. Tyrian 2000 shipped a stock
-`newsh$.shp` with ten bonus ships, which the game now loads out of the box; the
-editor starts from whichever file is found and compiles your changes on exit.
-Slot 10 answers the 0 key.
+**Title screen > Extra > Ship Editor** edits the ten ships in `newsh$.shp`.
+Each slot stores a hull, weapons, special, sidekicks, generator, armor, and
+shield. Slot 10 uses the 0 key. The stock Tyrian 2000 file supplies the initial
+ten ships when no edited copy exists.
 
-In flight, hold **Tab** and press a number key to switch player 1 onto that
-ship; **Caps Lock** plus a number switches player 2. As in the original, this
-works only offline, outside SuperTyrian, and the switch never raises armor above
-what the current hull has left.
+To switch ships:
 
-**Esc > Extra > Custom Ship** does the same switch from the pause menu, so it
-also works on touch and controllers: a tap or Enter steps to the next of the
-ten ships, Left and Right step both ways. It follows the same armor rule. In
-Endless, flying a custom ship marks the run's record with a `C`, the same as a
-custom weapon.
+- Offline, hold **Tab** and press a number for player 1. Use **Caps Lock** and a
+  number for player 2. This is unavailable in SuperTyrian.
+- **Esc > Extra > Custom Ship** works with keyboards, controllers, and touch.
+  Enter steps forward; Left and Right move either way.
+- A switch never restores armor already lost from the current life.
 
-The Special row offers only specials whose icons exist in the game data; the
-in-flight display draws that icon every frame, so anything else is unsafe to
-equip.
+The loadout editor lists only supported specials. Front and rear bays may use
+the current Weapon Creator design. The ship stores a reference to that design,
+so later edits to the weapon also change the ship. The choice appears while the
+Weapon Creator is enabled; an existing reference keeps working after it is
+disabled.
 
-The Front and Rear Weapon rows also offer your **Custom Weapon**, listed by the
-name you gave it in the Weapon Creator. A ship saved this way stores "the custom
-weapon", not a copy of the design, so it always flies your current one; online it
-gives each player their own design, so host and guest can fly different custom
-ships with different custom weapons at the same time. The row appears only while
-the Weapon Creator is enabled, but a ship that already uses it keeps working.
+**Sprites** edits graphics 8 through 15. Each bank contains five turning poses.
+Choose Paint, Fill, Pick, or Erase from the Tool row. With a mouse, right-click
+erases and middle-click picks a color. Color 0 is transparent. Capture copies a
+built-in hull into the bank; Flip H and Flip V mirror the selected pose.
 
-**Sprites** opens the paint screen for graphics 8 through 15, the eight sprite
-banks stored in the ship file. Each bank holds five turning poses. The Tool row
-switches what a canvas press does: Paint, Fill (flood fill), Pick (read a color
-back), or Erase. With a mouse, right-click erases and middle-click picks. Pick
-colors from the palette grid; color 0 is transparent. Capture copies a built-in
-hull into the bank as a starting point, and Flip H / Flip V mirror a pose. On a
-controller, Tab moves focus onto the canvas; arrows then move the paint cursor
-and Enter applies the tool.
+On a controller, Tab moves focus to or from the canvas. Arrows move the cursor
+and Enter uses the selected tool.
 
-Compiled files are interchangeable with the DOS tool's in both directions, as
-long as no ship uses the custom weapon: that setting has no counterpart there.
+Online Campaign and Endless co-op exchange both players' ship files and custom
+weapon designs automatically. Each player keeps their own ships and may switch
+from the pause menu. Debug Mode's Edit Player menu can change either ship.
 
-Online, both machines exchange their ship files and custom weapon designs
-automatically when a session reaches its first level, and each player's extra
-ships and custom weapon come from their own. In Campaign and Endless co-op,
-switch during a pause with **Esc > Extra > Custom Ship**: each player changes
-their own ship, and the change applies to both machines. With Debug Mode on,
-Edit Player can also set either player's ship. The in-flight Tab and Caps Lock
-switch works offline only.
+Flying an edited ship marks an Endless record with `C`, as does firing a custom
+weapon. Files remain compatible with the DOS editor unless a ship uses a custom
+weapon, which the original format cannot represent.
 
 ## Music
 

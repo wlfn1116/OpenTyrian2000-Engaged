@@ -6486,9 +6486,7 @@ draw_player_shot_loop_end:
 		JE_setupExplosionLarge(false, 20, boom_x, boom_y);
 	}
 
-	// Repaint the sidekick HUD boxes if a silent re-simulation pass wiped them (its box
-	// fill runs but its icon blit is suppressed).  This pass's draws reach the screen.
-	// Loadout edits raise the same flag, so the mode arrows are item state to settle too.
+	// Silent re-simulation and loadout edits both leave the sidekick HUD dirty.
 	if (hud_sidekicks_dirty && !rollback_resim_silent)
 	{
 		hud_sidekicks_dirty = false;

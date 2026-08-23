@@ -1792,12 +1792,10 @@ static bool shopCampaignRendezvous(void)
 		// Both machines are now in this loop draining packets, which is the one window wide
 		// enough for a custom weapon design. It is a no-op unless the design changed.
 		network_custom_weapon_publish();
-		// A ship record can equip the custom weapon whatever the local toggle says, and the
-		// peer resolves that record against this seat's design. Hash-gated, so this is a
-		// no-op when the call above already sent it.
+		// A ship record may require the design while the local Weapon Creator is off.
 		if (extraShipsUseCustomWeapon())
 			network_custom_weapon_publish_resume();
-		network_extra_ships_publish();  // same window; the hash gate makes it once per session
+		network_extra_ships_publish();
 
 		if (qa_net_gameplay_ticks > 0)
 		{

@@ -451,8 +451,7 @@ void JE_getShipInfo(void)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 		player[i].generator_power_add = powerSys[player[i].items.generator].power;
 
-	// A seat can only fly an extra ship the machines have both seen; a slot with no file behind
-	// it would derive zero armor. Both ends agree on this, so the fallback cannot itself desync.
+	// Extra ships require a file known to both peers.
 	for (uint i = 0; i < COUNTOF(player); ++i)
 		if (player[i].items.ship > 90 && !extraAvailFor(i))
 			player[i].items.ship = 1;
@@ -526,7 +525,7 @@ void JE_getShipInfo(void)
 	}
 }
 
-/* seat routes the lookup online: each player's extra ships come from their own file. */
+// Route online extra-ship graphics through the owning seat's file.
 JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr)
 {
 	const JE_word GR[15] /* [1..15] */ = {233, 157, 195, 271, 81, 0, 119, 5, 43, 81, 119, 157, 195, 233, 271};
@@ -535,7 +534,7 @@ JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr)
 	if (tempW > 7)
 		*ptr = extraShapesFor(seat);
 
-	// A slot no file describes (or a garbage graphic byte) draws as the first built-in hull.
+	// Invalid graphics fall back to the first built-in hull.
 	if (tempW < 1 || tempW > 15)
 		return GR[0];
 

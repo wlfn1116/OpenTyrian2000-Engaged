@@ -54,8 +54,7 @@ JE_boolean extraAvail;
 JE_ShipsType extraShips;
 Sprite2_array extraShapes;
 
-/* Decrypt the ten-ship table in place. The four trailing bytes are checksums of the
- * plaintext; on a mismatch the table is left as it was and false comes back. */
+// Decrypt in place only when all four plaintext checksums match.
 JE_boolean JE_decryptShips(void)
 {
 	JE_boolean correct = true;
@@ -102,8 +101,7 @@ JE_boolean JE_decryptShips(void)
 	return correct;
 }
 
-/* The inverse of JE_decryptShips: encrypt the in-memory plaintext into dst,
- * checksums included, ready to be written after the shape blob. */
+// Encrypt the table and append its four checksums.
 void JE_encryptShips(JE_ShipsType dst)
 {
 	JE_byte y;
@@ -140,8 +138,7 @@ void JE_loadExtraShapes(void)
 {
 	JE_freeExtraShapes();
 
-	// The player's own compile takes precedence; Tyrian 2000 also shipped a stock
-	// newsh$.shp with ten bonus ships, so fall back to the game data.
+	// Prefer the edited file, then the stock Tyrian 2000 copy.
 	FILE *f = dir_fopen(get_user_directory(), "newsh$.shp", "rb");
 	if (f == NULL)
 		f = dir_fopen(data_dir(), "newsh$.shp", "rb");
@@ -180,9 +177,7 @@ void JE_freeExtraShapes(void)
 	extraAvail = false;
 }
 
-/* Online seat slots. Seat s holds the file of the player flying seat s+1: the local
- * machine installs its own file, the peer's arrives over the wire, and after the
- * exchange both machines hold the same bytes, so armor lookups stay deterministic. */
+// Both peers keep one identical extra-ship file per player seat.
 
 static JE_ShipsType extraShipsNet[2];
 static Sprite2_array extraShapesNet[2];
@@ -205,8 +200,7 @@ bool extraAvailFor(uint playerIdx)
 
 enum { EXTRA_SHIPS_WIRE_VERSION = 1 };
 
-/* Big-endian on the wire, like the rest of the protocol; hand-rolled so this file
- * does not need SDL_net on the console builds. */
+// Keep the wire big-endian without adding an SDL_net dependency to console builds.
 static Uint32 seRead32(const Uint8 *p)
 {
 	return ((Uint32)p[0] << 24) | ((Uint32)p[1] << 16) | ((Uint32)p[2] << 8) | p[3];
@@ -256,7 +250,6 @@ bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len)
 	return true;
 }
 
-// The publishing machine fills its own seat with the same bytes it sends.
 void extraShipsNetInstallLocal(uint seat)
 {
 	if (seat >= COUNTOF(extraShipsNet))
@@ -282,8 +275,7 @@ void extraShipsNetReset(void)
 	}
 }
 
-/* Write the compiled file the way SHIPEDIT.EXE did on exit: the sprite blob,
- * then the encrypted table. The game reads it back on the next launch too. */
+// Write the SHIPEDIT layout: sprite blob, then encrypted ship table.
 static bool JE_saveExtraShapes(void)
 {
 	JE_ShipsType enc;
@@ -301,8 +293,7 @@ static bool JE_saveExtraShapes(void)
 	return ok;
 }
 
-/* The Ship Editor screen: the loadout half of the original SHIPEDIT.EXE.
- * Ten slots, nine fields each, edited directly in the live extraShips table. */
+/* Ship editor */
 
 enum
 {
@@ -335,16 +326,13 @@ static const struct { const char *label, *help; } seActs[SE_ACT_COUNT] = {
 	{ "Done",    "Compile the ships to newsh$.shp and leave." },
 };
 
-// Field bytes 0..8 of a 15-byte slot record are the rows GRAPHIC..SHIELD, in order.
+// Bytes 0..8 map directly to the Graphic through Shield rows.
 static JE_byte *seField(int slot, int row)
 {
 	return &extraShips[(slot - 1) * 15 + (row - SE_ROW_GRAPHIC)];
 }
 
-/* Deliberately independent of customWeaponEnabled: that toggle is local configuration, and
- * both machines have to land on the same port for the same seat or they simulate different
- * guns. The reserved ports are resolved identically on both, and the peer's design is
- * adopted into its owner's port whatever this machine's own toggle says. */
+// Resolve the sentinel independently of the machine-local Weapon Creator toggle.
 JE_byte extraShipResolvePort(uint seat, JE_byte port)
 {
 	if (port != EXTRA_SHIP_CUSTOM_PORT)
@@ -354,8 +342,6 @@ JE_byte extraShipResolvePort(uint seat, JE_byte port)
 	return (reserved > 0) ? (JE_byte)reserved : 0;
 }
 
-// Whether the custom weapon can be put in a bay here: the editor writes the local file, so
-// it offers the row against this machine's own design.
 static bool seCustomPortAvailable(void)
 {
 	return customWeaponEnabled && customWeaponPort > 0;
@@ -380,17 +366,15 @@ static bool seValueOk(int row, int v)
 	switch (row)
 	{
 	case SE_ROW_GRAPHIC:
-		// 1..7 are built-in sheets; 8..15 the custom banks, drawable in the sprite editor.
 		return v >= 1 && v <= 15;
 	case SE_ROW_FRONT:
-		// The custom weapon fits either bay; it is designed, not drawn from the shop tables.
 		return v == EXTRA_SHIP_CUSTOM_PORT ||
 		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_FRONT);
 	case SE_ROW_REAR:
 		return v == 0 || v == EXTRA_SHIP_CUSTOM_PORT ||
 		       (v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_REAR);
 	case SE_ROW_SPECIAL:
-		// Only crash-safe specials: the in-flight HUD blits the icon every frame.
+		// The HUD needs a valid icon for every equipped special.
 		return v == 0 || debug_special_is_safe(v);
 	case SE_ROW_LEFT:
 	case SE_ROW_RIGHT:
@@ -405,9 +389,7 @@ static bool seValueOk(int row, int v)
 	return false;
 }
 
-/* What the cycler offers, as opposed to what a record may legally hold: a stored custom
- * weapon stays put on a machine that has none, rather than being rewritten away, but it is
- * not something the arrows can land on there. */
+// Preserve a stored custom weapon when the editor cannot offer it for selection.
 static bool seValueOffered(int row, int v)
 {
 	if (v == EXTRA_SHIP_CUSTOM_PORT && !seCustomPortAvailable())
@@ -415,7 +397,6 @@ static bool seValueOffered(int row, int v)
 	return seValueOk(row, v);
 }
 
-// Step a field to its next offered value in `dir`, wrapping past the byte range.
 static void seStepField(int slot, int row, int dir)
 {
 	JE_byte *const p = seField(slot, row);
@@ -435,8 +416,7 @@ static void seStepField(int slot, int row, int dir)
 	}
 }
 
-// Item names sit in fixed-width fields padded with spaces (crashlog_state.c trims
-// the same tables); measured widths and right alignment need the ink alone.
+// Item tables pad names with spaces; layout needs the visible width.
 static const char *seTrimName(const char *name, char *buf, size_t bufSize)
 {
 	size_t n = strlen(name);
@@ -467,7 +447,6 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 	case SE_ROW_REAR:
 		if (v == EXTRA_SHIP_CUSTOM_PORT)
 		{
-			// The design's own name, so the row reads like the Weapon Creator's title.
 			snprintf(buf, bufSize, "%s", customWeaponName[0] != '\0' ? customWeaponName : "Custom Weapon");
 			return buf;
 		}
@@ -488,8 +467,7 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 	return "";
 }
 
-// One hull pose, centered on cx. Graphic byte 6 compiles to the Dragonwing
-// sentinel (0): a two-piece wide hull, drawn like the shop preview draws it.
+// Graphic 6 uses the two-piece Dragonwing sentinel.
 static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr)
 {
 	if (gr <= 1)
@@ -501,14 +479,8 @@ static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr)
 		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr);
 }
 
-/* Present at display rate and wait out the editor's tick, like the shop menus. Both editor
- * loops run on a tick rather than blocking for input, because the on-screen touch controls
- * are a request that expires (TOUCH_ASSERT_TTL_MS); a loop that stops renewing it drops its
- * own buttons off the screen.
- *
- * The wait returns as soon as there is something to act on, so a drag repaints at pointer
- * rate instead of tick rate. An idle screen still comes back once a tick, which is what
- * keeps the controls alive. */
+/* Wake on input or once per tick. Tick wakes renew the touch layout; pointer wakes keep paint
+ * strokes responsive. */
 static void seWaitTick(void)
 {
 	const Uint16 x0 = mouse_x, y0 = mouse_y;
@@ -527,7 +499,6 @@ static void seWaitTick(void)
 	}
 }
 
-// A fresh table for when no ship file exists at all: a modest ship in each slot.
 static void seSeedDefaults(void)
 {
 	memset(extraShips, 0, sizeof(extraShips));
@@ -541,30 +512,26 @@ static void seSeedDefaults(void)
 	}
 }
 
-/* The blob's sprite cells, unpacked to flat pixels for the sprite editor. A hull pose
- * is a 2x2 block of 12x14 cells; a bank is five poses two indices apart. The table is
- * sized like the stock file's, so a rebuilt blob keeps the stock index layout. */
+// The editor expands the stock Sprite2 layout into flat 12x14 cells.
 
 enum { SE_CELL_W = 12, SE_CELL_H = 14, SE_CELL_BYTES = SE_CELL_W * SE_CELL_H };
 enum { SE_FRAME_W = 24, SE_FRAME_H = 28 };
 enum { SE_BANKS = 8, SE_FRAMES = 5 };
 enum { SE_BLOB_SPRITES = 304 };
 
-// Base sprite index of each custom bank; the JE_SGr GR table's entries for graphics 8..15.
+// Sprite2 base indices for graphics 8 through 15.
 static const JE_word seBankBase[SE_BANKS] = { 5, 43, 81, 119, 157, 195, 233, 271 };
 
 static JE_byte seCells[SE_BLOB_SPRITES + 1][SE_CELL_BYTES];       // [1..SE_BLOB_SPRITES]
 static JE_byte seCellsSaved[SE_BLOB_SPRITES + 1][SE_CELL_BYTES];
 
-// Cell index of one quarter of a pose: corner 0/1 = top left/right, 2/3 = bottom.
+// Corners 0/1 are top-left/right; 2/3 are bottom-left/right.
 static unsigned seCellIndex(int bank, int frame, int corner)
 {
 	return seBankBase[bank - 1] + (frame - 3) * 2 + (corner & 1) + (corner >= 2 ? 19 : 0);
 }
 
-// Unpack one cell of a compiled sheet into a flat pixel grid (0 = transparent),
-// walking the stream exactly like blit_sprite2. Rows are padded to full width by
-// their trailing skip, so a row advance moves nothing on a 12-wide surface.
+// Decode the Sprite2 stream into a flat cell; color 0 stays transparent.
 static void seDecodeCell(const Sprite2_array *sheet, unsigned index, JE_byte *out)
 {
 	memset(out, 0, SE_CELL_BYTES);
@@ -586,8 +553,7 @@ static void seDecodeCell(const Sprite2_array *sheet, unsigned index, JE_byte *ou
 	}
 }
 
-// Pack one cell. Every run and skip fits a nibble because the cell is 12 wide; the
-// trailing-skip byte that ends a row can never be the 0x0f cell terminator either.
+// A 12-pixel row keeps every run and skip within one nibble.
 static size_t seEncodeCell(const JE_byte *px, Uint8 *buf)
 {
 	size_t n = 0;
@@ -618,8 +584,7 @@ static size_t seEncodeCell(const JE_byte *px, Uint8 *buf)
 	return n;
 }
 
-// Rebuild the whole blob from the flat cells: the 16-bit offset table, then each
-// cell's stream. Worst-case size (~60K) stays inside the offsets' 64K reach.
+// Rebuild the offset table and cell streams within the format's 16-bit limit.
 static void seRebuildShapes(void)
 {
 	Uint8 *const blob = malloc_die(UINT16_MAX + 1);
@@ -637,8 +602,7 @@ static void seRebuildShapes(void)
 	free(blob);
 }
 
-// Copy a built-in hull's five poses into a bank as a starting point; the modern
-// stand-in for SHIPEDIT's capture-from-PCX. Source 1..6 spans the one-piece hulls.
+// Copy a built-in hull's five poses into a custom bank.
 static void seCaptureBank(int bank, int source)
 {
 	static const JE_word hullGr[6] = { 233, 157, 195, 271, 81, 119 };  // graphics 1..5 and 7
@@ -651,8 +615,7 @@ static void seCaptureBank(int bank, int source)
 		}
 }
 
-// Round-trip the codec so a compile can be trusted: a synthetic worst-case cell,
-// plus every cell of the loaded blob when one is present.
+// Round-trip a worst-case cell and every loaded cell.
 bool JE_shapeCodecSelfTest(void)
 {
 	JE_byte cell[SE_CELL_BYTES], back[SE_CELL_BYTES];
@@ -686,9 +649,7 @@ bool JE_shapeCodecSelfTest(void)
 	return true;
 }
 
-/* The paint half of the editor: SHIPEDIT's graphical screen, arranged like its
- * SHIPEDIT.PCX backdrop. Magnified canvas left, the bank's five poses at natural
- * size below it, palette grid and tools right. Edits land in the flat cells. */
+/* Sprite editor */
 
 static JE_byte *seFramePx(int bank, int frame, int x, int y)  // x 0..23, y 0..27
 {
@@ -709,7 +670,6 @@ static void seFlipFrame(int bank, int frame, bool vertical)
 			*seFramePx(bank, frame, x, y) = tmp[y * SE_FRAME_W + x];
 }
 
-// One pose at natural size, straight from the flat cells; color 0 stays transparent.
 static void seDrawFramePx(int x0, int y0, int bank, int frame)
 {
 	for (int y = 0; y < SE_FRAME_H; ++y)
@@ -757,7 +717,6 @@ static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
 
 static const char *const sesPoseName[SE_FRAMES] = { "Hard Left", "Left", "Center", "Right", "Hard Right" };
 
-// 4-connected flood fill across the pose's four cells.
 static void seFloodFill(int bank, int frame, int sx, int sy, JE_byte to)
 {
 	const JE_byte from = *seFramePx(bank, frame, sx, sy);
@@ -784,8 +743,7 @@ static void seFloodFill(int bank, int frame, int sx, int sy, JE_byte to)
 	}
 }
 
-/* A drag samples the pointer once per repaint, so consecutive samples sit several cells
- * apart on a quick stroke; joining them keeps the stroke a line instead of a dotted trail. */
+// Join pointer samples so fast strokes do not leave gaps.
 static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_byte c)
 {
 	const int dx = (x1 > x0) ? x1 - x0 : x0 - x1;
@@ -813,7 +771,7 @@ static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_b
 	}
 }
 
-// One canvas application of the active tool. Pick loads the color and hands back to Paint.
+// Pick selects the color and returns to Paint.
 static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool)
 {
 	switch (*tool)
@@ -836,8 +794,6 @@ static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool
 
 static void seSpriteEditor(int bank)
 {
-	// Canvas: one pose at x4. Strip: the five poses at natural size. Palette: 16x16
-	// grid of 4px cells. All laid out inside the same box and panel as the loadout view.
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
 	enum { CANV_X = 28, CANV_Y = 22, CANV_SCALE = 4 };
 	enum { STRIP_X = 10, STRIP_Y = 147 };
@@ -877,7 +833,6 @@ static void seSpriteEditor(int bank)
 		snprintf(caption, sizeof(caption), "Bank %d = Graphic %d", bank, bank + 7);
 		draw_font_hv_shadow(VGAScreen, (BOX_X0 + BOX_X1) / 2, BOX_Y0 + 4, caption, small_font, centered, 15, 4, false, 1);
 
-		// Magnified canvas with the pad's paint cursor when it holds focus.
 		for (int y = 0; y < SE_FRAME_H; ++y)
 			for (int x = 0; x < SE_FRAME_W; ++x)
 			{
@@ -900,7 +855,6 @@ static void seSpriteEditor(int bank)
 				             STRIP_X + f * 26 + SE_FRAME_W, STRIP_Y + SE_FRAME_H, C_HI);
 		}
 
-		// Panel: rows, palette grid, tool buttons.
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
 		JE_rectangle(VGAScreen, panX0, panY0, panX1, panY1, C_HI);
 		draw_font_hv_shadow(VGAScreen, panX0 + 5, panY0 + 2, "SPRITE EDITOR", small_font, left_aligned, 15, 3, false, 1);
@@ -964,7 +918,6 @@ static void seSpriteEditor(int bank)
 		                    : sesActs[selected - SES_ROW_COUNT].help,
 		                    small_font, centered, 15, 2, false, 1);
 
-		// Renewed every tick: the request expires, and so would the buttons.
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		push_joysticks_as_keyboard();
@@ -976,7 +929,6 @@ static void seSpriteEditor(int bank)
 		JE_mouseReplace();
 		seWaitTick();
 
-		// Movement since the previous repaint, which is what a paint drag follows.
 		const bool mouseMoved = (mouse_x != prev_mx || mouse_y != prev_my);
 
 		int act = -1;  // a triggered tool button, performed after input decoding
@@ -992,8 +944,7 @@ static void seSpriteEditor(int bank)
 		const bool overCanvas = mouse_x >= CANV_X && mouse_x < CANV_X + SE_FRAME_W * CANV_SCALE &&
 		                        mouse_y >= CANV_Y && mouse_y < CANV_Y + SE_FRAME_H * CANV_SCALE;
 
-		// A released button, or a pointer that left the canvas, ends the stroke: the next
-		// sample starts a fresh one instead of joining across the gap.
+		// Do not join strokes across a release or the canvas edge.
 		if (!mousedown || !overCanvas)
 			strokeX = strokeY = -1;
 
@@ -1040,7 +991,6 @@ static void seSpriteEditor(int bank)
 					seApplyTool(bank, frame, px, py, &color, &tool);
 				else if (tool == SES_TOOL_PAINT || tool == SES_TOOL_ERASE)
 				{
-					// Dragging continues the stroke, joined to where the last sample landed.
 					if (strokeX >= 0)
 						seStrokeTo(bank, frame, strokeX, strokeY, px, py, heldColor);
 					else
@@ -1214,7 +1164,7 @@ static void seSpriteEditor(int bank)
 		}
 	}
 
-	// The loadout previews blit from the compiled blob, so bring it up to date.
+	// Loadout previews read the compiled blob.
 	seRebuildShapes();
 
 	wait_noinput(false, false, true);
@@ -1223,8 +1173,7 @@ static void seSpriteEditor(int bank)
 
 void JE_shipEditor(void)
 {
-	// Opened from the title screen: item names and stats may not be loaded yet,
-	// and the shop sheet (item icons, mouse pointer) loads lazily too.
+	// The title screen has not necessarily loaded item data or shop sprites.
 	if (weaponPort[1].name[0] == '\0')
 		JE_loadItemDat();
 	if (shopSpriteSheet.data == NULL)
@@ -1233,8 +1182,7 @@ void JE_shipEditor(void)
 	if (!extraAvail)
 		seSeedDefaults();
 
-	// A loaded file may hold values the row lists refuse (hand-edited, or from a
-	// data set with different tables); nudge each one to the nearest offered value.
+	// Normalize hand-edited or incompatible fields before cycling them.
 	for (int slot = 1; slot <= 10; ++slot)
 		for (int row = SE_ROW_GRAPHIC; row < SE_ROW_COUNT; ++row)
 			if (!seValueOk(row, *seField(slot, row)))
@@ -1256,8 +1204,7 @@ void JE_shipEditor(void)
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg;
 
-	// The shop's backdrop and palette, so hulls and item icons render in their
-	// true colors. Snapshot to VGAScreen2 for the per-frame restore.
+	// Item icons require the shop palette.
 	JE_loadPic(VGAScreen, 1, true);
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
 
@@ -1289,7 +1236,6 @@ void JE_shipEditor(void)
 		Sprite2_array *sheet = &spriteSheet9;
 		const JE_word gr = JE_SGr(0, slot, &sheet);  // the editor always edits the local file
 
-		// Preview box: activation key, the five banking frames, the loadout, item icons.
 		fill_rectangle_xy(VGAScreen, BOX_X0, BOX_Y0, BOX_X1, BOX_Y1, 0);
 		JE_rectangle(VGAScreen, BOX_X0 - 1, BOX_Y0 - 1, BOX_X1 + 1, BOX_Y1 + 1, C_HI);
 
@@ -1299,7 +1245,6 @@ void JE_shipEditor(void)
 
 		if (gr > 1)
 		{
-			// Hard left to hard right, the way SHIPEDIT's own editor laid them out.
 			for (int b = -2; b <= 2; ++b)
 				blit_sprite2x2(VGAScreen, BOX_X0 + 3 + (b + 2) * 26, BOX_Y0 + 22, *sheet, gr + b * 2);
 		}
@@ -1313,7 +1258,7 @@ void JE_shipEditor(void)
 		draw_font_hv_shadow(VGAScreen, BOX_X1 - 19, BOX_Y0 + 94, "SIDE R", small_font, centered, 15, 1, false, 1);
 
 		{
-			// type 0 marks the special, which draws through its own composer.
+			// Type 0 uses the composed special icon.
 			static const struct { JE_byte type; int row; const char *tag; } icons[5] = {
 				{ 2, SE_ROW_FRONT, "FRONT" }, { 3, SE_ROW_REAR, "REAR" }, { 0, SE_ROW_SPECIAL, "SPEC" },
 				{ 5, SE_ROW_GENERATOR, "POWER" }, { 4, SE_ROW_SHIELD, "SHLD" },
@@ -1329,8 +1274,6 @@ void JE_shipEditor(void)
 				}
 				else
 				{
-					// A stored custom weapon draws through this machine's own reserved port,
-					// which is a real materialized weaponPort entry with an icon.
 					JE_drawItem(icons[i].type,
 					            extraShipResolvePort((uint)customWeaponLocalOwner(), v),
 					            x, BOX_Y0 + 108);
@@ -1339,7 +1282,6 @@ void JE_shipEditor(void)
 			}
 		}
 
-		// Editor panel.
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
 		JE_rectangle(VGAScreen, panX0, panY0, panX1, panY1, C_HI);
 		draw_font_hv_shadow(VGAScreen, panX0 + 5, panY0 + 2, "SHIP EDITOR", small_font, left_aligned, 15, 3, false, 1);
@@ -1378,13 +1320,11 @@ void JE_shipEditor(void)
 			                    15, sel ? 6 : 4, false, 1);
 		}
 
-		// Selected-item help, or the last action's outcome, on the bottom line.
 		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
 		                    notice[0] != '\0' ? notice
 		                    : (selected < SE_ROW_COUNT ? seRows[selected].help : seActs[selected - SE_ROW_COUNT].help),
 		                    small_font, centered, 15, 2, false, 1);
 
-		// Renewed every tick: the request expires, and so would the buttons.
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		push_joysticks_as_keyboard();
@@ -1396,8 +1336,7 @@ void JE_shipEditor(void)
 		JE_mouseReplace();
 		seWaitTick();
 
-		// Both exits go through the same gate: compile when anything changed, and
-		// only leave once the file is safely on disk (SHIPEDIT compiled on exit too).
+		// Do not leave with unsaved changes.
 		bool leave = false;
 		bool revert = false;
 		bool openSprites = false;
@@ -1409,7 +1348,6 @@ void JE_shipEditor(void)
 			mouse_scroll = 0;
 		}
 
-		// Map the mouse onto a nav item: the field rows, then the two buttons.
 		int hover = -1;
 		if (mouse_x >= panX0 && mouse_x <= panX1)
 		{
@@ -1499,7 +1437,6 @@ void JE_shipEditor(void)
 				leave = true;
 				break;
 			default:
-				// The number keys jump straight to that ship slot, as in flight.
 				if (lastkey_scan >= SDL_SCANCODE_1 && lastkey_scan <= SDL_SCANCODE_0)
 				{
 					slot = lastkey_scan - SDL_SCANCODE_1 + 1;
@@ -1514,7 +1451,7 @@ void JE_shipEditor(void)
 					slot += (dir < 0) ? (slot > 1 ? -1 : 9) : (slot < 10 ? 1 : -9);
 				else if (selected < SE_ROW_COUNT)
 				{
-					// Shift takes armor in strides of ten; every list row steps one by one.
+					// Shift steps armor by ten.
 					const int reps = (selected == SE_ROW_ARMOR && (lastkey_mod & KMOD_SHIFT)) ? 10 : 1;
 					for (int i = 0; i < reps; ++i)
 						seStepField(slot, selected, dir);
@@ -1553,7 +1490,7 @@ void JE_shipEditor(void)
 				done = true;
 			else
 			{
-				// A slot on a custom graphic needs a blob in the file, even a blank one.
+				// Custom graphics require a sprite blob, even when blank.
 				if (extraShapes.size == 0)
 					for (int s = 1; s <= 10; ++s)
 						if (*seField(s, SE_ROW_GRAPHIC) > 7)

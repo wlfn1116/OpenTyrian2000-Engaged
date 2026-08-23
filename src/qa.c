@@ -7111,8 +7111,7 @@ static void qa_test_weapon_bay_tags(void)
 	       JE_textWidth(SHOP_FRONT_GUN_TAG, TINY_FONT), JE_textWidth(SHOP_REAR_GUN_TAG, TINY_FONT));
 }
 
-/* The Ship Editor's file cipher, against the stock compiled newsh$.shp that ships
- * with the Tyrian 2000 data (ten bonus ships, all eight custom sprite banks). */
+// Check the editor codec against Tyrian 2000's stock newsh$.shp.
 static void qa_test_ship_editor_file(void)
 {
 	JE_ShipsType backup, enc;
@@ -7124,7 +7123,6 @@ static void qa_test_ship_editor_file(void)
 		qa_check(extraShips[0] == 8 && extraShips[1] == 6 && extraShips[7] == 16 && extraShips[8] == 5,
 		         "slot one decodes to its known loadout");
 
-		// Every stock gun sits in the bay the editor's row cycler offers for it.
 		bool bays = true;
 		for (int slot = 0; slot < 10; ++slot)
 		{
@@ -7149,7 +7147,6 @@ static void qa_test_ship_editor_file(void)
 
 	qa_check(JE_shapeCodecSelfTest(), "the sprite cell codec round-trips every cell");
 
-	// The custom-weapon sentinel: stored per record, resolved per seat at equip time.
 	{
 		const bool savedEnabled = customWeaponEnabled;
 		const int savedPorts[CUSTOM_WEAPON_OWNERS] = { customWeaponOwnerPort[0], customWeaponOwnerPort[1] };
@@ -7163,8 +7160,6 @@ static void qa_test_ship_editor_file(void)
 		         extraShipResolvePort(1, EXTRA_SHIP_CUSTOM_PORT) == 59,
 		         "each seat resolves the sentinel to its own reserved port");
 
-		// Both machines must agree on the port whatever their own toggles say, or the two
-		// seats fire different guns from the same record.
 		customWeaponEnabled = false;
 		qa_check(extraShipResolvePort(0, EXTRA_SHIP_CUSTOM_PORT) == 60 &&
 		         extraShipResolvePort(1, EXTRA_SHIP_CUSTOM_PORT) == 59,
@@ -7180,8 +7175,6 @@ static void qa_test_ship_editor_file(void)
 		customWeaponEnabled = savedEnabled;
 	}
 
-	// The online exchange: serialize the local file, adopt it as the peer seat, and
-	// check the seat accessors route to it only while a network game is on.
 	{
 		Uint8 *const stream = malloc(EXTRA_SHIPS_WIRE_MAX);
 		const size_t total = extraShipsSerialize(stream, EXTRA_SHIPS_WIRE_MAX);
