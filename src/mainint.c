@@ -1365,15 +1365,20 @@ void JE_nextEpisode(void)
 	JE_dString(VGAScreen, JE_fontCenter(episode_name[episodeNum], SMALL_FONT_SHAPES), 130, episode_name[episodeNum], SMALL_FONT_SHAPES);
 	JE_dString(VGAScreen, JE_fontCenter(miscText[5-1], SMALL_FONT_SHAPES), 185, miscText[5-1], SMALL_FONT_SHAPES);
 
+	const bool waitForEpisodeBanner = !constantPlay && qa_net_gameplay_ticks == 0;
+	if (waitForEpisodeBanner)
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 	JE_showVGA();
 	fade_palette(colors, 15, 0, 255);
 
 	JE_wipeKey();
 	// A gameplay wire test has no player to press past the episode banner.
-	if (!constantPlay && qa_net_gameplay_ticks == 0)
+	if (waitForEpisodeBanner)
 	{
 		do
 		{
+			touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+			touch_ui_idle_repaint();
 			NETWORK_KEEP_ALIVE();
 
 			SDL_Delay(16);
@@ -7119,6 +7124,8 @@ void JE_endLevelAni(void)
 	{
 		do
 		{
+			touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+			touch_ui_idle_repaint();
 			setDelay(1);
 
 			NETWORK_KEEP_ALIVE();

@@ -1689,6 +1689,8 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 			// button" screen, like every other menu wait.
 			while (!JE_anyButton())
 			{
+				touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+				touch_ui_idle_repaint();
 				mouseCursor = MOUSE_POINTER_NORMAL;
 				JE_mouseStart();
 				JE_showVGA();

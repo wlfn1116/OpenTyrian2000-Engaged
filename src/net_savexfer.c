@@ -37,6 +37,7 @@
 #include "qa.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "vga256d.h"
 #include "video.h"
 
@@ -371,12 +372,19 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 110, line2, normal_font, centered, 15, -4, false, 2);
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, sxAnyButton, normal_font, centered, 15, -5, false, 2);
 
+	// Expose Select and Back before the notice fades in, then keep them live through the idle wait.
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
 
 	wait_noinput(true, true, true);
-	while (!JE_anyButton())
+	for (;;)
+	{
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+		if (JE_anyButton())
+			break;
 		saveXferPoll();
+	}
 
 	fade_black(10);
 }

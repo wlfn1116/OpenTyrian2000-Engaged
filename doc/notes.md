@@ -579,6 +579,9 @@ Touch layouts are expiring requests. Keep these rules together:
   update `palette_fading()`.
 - Request buttons before a blocking fade. `DE_RunTick()` reasserts its layout
   beside the fade for this reason.
+- `wait_input(true, true, true)` supplies the Confirm layout for ordinary
+  press-any-input screens. Custom wait loops must request it before presentation
+  when possible and reassert it while blocked; animation-skip polls do not.
 - Idle screens re-present the last output texture when the layout signature
   changes. Levels present every frame themselves; never repeat a frame during a
   transition.

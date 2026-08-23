@@ -9889,6 +9889,8 @@ void JE_displayText(void)
 		if (qa_net_gameplay_ticks > 0)
 			break;
 
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+		touch_ui_idle_repaint();
 		if (levelWarningDisplay)
 			JE_updateWarning(VGAScreen);
 

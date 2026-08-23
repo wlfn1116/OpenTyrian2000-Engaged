@@ -69,10 +69,19 @@ static Sint32 mouseWindowYRelative;
 
 void wait_input(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
 {
+	const bool any_input = keyboard && mouse && joystick;
+	if (any_input)
+	{
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+		touch_ui_idle_repaint();
+	}
+
 	service_SDL_events(false);
 	while (!((keyboard && keydown) || (mouse && mousedown) || (joystick && joydown)))
 	{
 		SDL_Delay(SDL_POLL_INTERVAL);
+		if (any_input)
+			touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
 

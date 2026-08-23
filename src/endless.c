@@ -20,6 +20,7 @@
 #include "network.h"
 #include "player.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "video.h"
@@ -1341,6 +1342,8 @@ void endlessOnRunEnd(void)
 
 	do
 	{
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+		touch_ui_idle_repaint();
 		music_fade_out_tick(&songFade);
 		// The tally has no time limit and an online run is still a session while it is read.
 		NETWORK_KEEP_ALIVE();
