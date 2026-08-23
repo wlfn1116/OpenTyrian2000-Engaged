@@ -347,6 +347,8 @@ typedef enum
 	MENU_ITEM_CUSTOM_CREATOR,
 	MENU_ITEM_TRANSFER_SAVE_UPLOAD,
 	MENU_ITEM_TRANSFER_SAVE_DOWNLOAD,
+	MENU_ITEM_TRANSFER_SAVES_UPLOAD,
+	MENU_ITEM_TRANSFER_SAVES_DOWNLOAD,
 	MENU_ITEM_TRANSFER_SHIPS_UPLOAD,
 	MENU_ITEM_TRANSFER_SHIPS_DOWNLOAD,
 	MENU_ITEM_TRANSFER_WEAPONS_UPLOAD,
@@ -962,7 +964,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_TRANSFER] = {
 			.header = "Transfer",
 			.items = {
-				{ MENU_ITEM_SUBMENU, "Save...", "Copy one save slot to or from another device.", MENU_TRANSFER_SAVE },
+				{ MENU_ITEM_SUBMENU, "Save...", "Copy one save or every save slot to another device.", MENU_TRANSFER_SAVE },
 				{ MENU_ITEM_SUBMENU, "Custom Ships...", "Replace only the compiled custom ships.", MENU_TRANSFER_SHIPS },
 				{ MENU_ITEM_SUBMENU, "Custom Weapons...", "Replace only the complete custom-weapon library.", MENU_TRANSFER_WEAPONS },
 				{ MENU_ITEM_SUBMENU, "Custom Data...", "Copy custom ships and the complete weapon library.", MENU_TRANSFER_CUSTOM },
@@ -975,6 +977,8 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_TRANSFER_SAVE_UPLOAD, "Upload", "Choose a save slot to send." },
 				{ MENU_ITEM_TRANSFER_SAVE_DOWNLOAD, "Download", "Receive a save, then choose its destination slot." },
+				{ MENU_ITEM_TRANSFER_SAVES_UPLOAD, "Upload All Saves", "Send all save slots without custom data or high scores." },
+				{ MENU_ITEM_TRANSFER_SAVES_DOWNLOAD, "Download All Saves", "Replace all save slots in place; keep custom data and scores." },
 				MENU_DONE_ROW
 			},
 		},
@@ -1714,6 +1718,24 @@ static bool runOptionsMenu(MenuId startMenu)
 					JE_playSampleNum(S_SELECT);
 					fade_black(10);
 					JE_saveTransferDownload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_SAVES_UPLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					savesXferUpload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_SAVES_DOWNLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					savesXferDownload();
 					set_menu_centered(true);
 					restart = true;
 					break;

@@ -2641,7 +2641,7 @@ void JE_loadConfiguration(void)
 
 /* Build opentyrian.sav: the slots that hold a game, each Endless half beside its slot, and the
  * high-score boards. Everything is a named key in the same format as opentyrian.cfg. */
-static void save_config_build(Config *config)
+static void save_config_build(Config *config, bool includeHighScores)
 {
 	config_init(config);
 
@@ -2663,7 +2663,8 @@ static void save_config_build(Config *config)
 		save_slot_write(section, &saveFiles[z], (JE_byte)(z + 1));
 	}
 	endlessSaveConfigWrite(config);
-	save_highscores_write(config);
+	if (includeHighScores)
+		save_highscores_write(config);
 }
 
 size_t save_file_serialize(Uint8 *buf, size_t cap)
@@ -2672,7 +2673,19 @@ size_t save_file_serialize(Uint8 *buf, size_t cap)
 		return 0;
 
 	Config config;
-	save_config_build(&config);
+	save_config_build(&config, true);
+	const size_t required = config_write_buffer(&config, (char *)buf, cap);
+	config_deinit(&config);
+	return required <= cap ? required : 0;
+}
+
+size_t save_slots_serialize(Uint8 *buf, size_t cap)
+{
+	if (!configuration_loaded)
+		return 0;
+
+	Config config;
+	save_config_build(&config, false);
 	const size_t required = config_write_buffer(&config, (char *)buf, cap);
 	config_deinit(&config);
 	return required <= cap ? required : 0;
@@ -2684,7 +2697,7 @@ static bool save_file_write_current(void)
 		return false;
 
 	Config config;
-	save_config_build(&config);
+	save_config_build(&config, true);
 
 	// Best-effort, as in save_opentyrian_config: dir_fopen_warn is what reports a broken directory.
 #ifndef TARGET_WIN32
@@ -2735,6 +2748,26 @@ bool save_file_adopt(const Uint8 *buf, size_t len)
 	const bool adopted = save_config_adopt(&config);
 	config_deinit(&config);
 	return adopted && save_file_write_current() && save_opentyrian_config();
+}
+
+bool save_slots_adopt(const Uint8 *buf, size_t len)
+{
+	if (buf == NULL || len == 0)
+		return false;
+
+	Config config;
+	if (!config_parse_buffer(&config, (const char *)buf, len))
+	{
+		config_deinit(&config);
+		return false;
+	}
+
+	T2KHighScoreType localHighScores[COUNTOF(t2kHighScores)][COUNTOF(t2kHighScores[0])];
+	memcpy(localHighScores, t2kHighScores, sizeof(localHighScores));
+	const bool adopted = save_config_adopt(&config);
+	memcpy(t2kHighScores, localHighScores, sizeof(localHighScores));
+	config_deinit(&config);
+	return adopted && save_file_write_current();
 }
 
 // Packed save record used to give both peers identical resume state.

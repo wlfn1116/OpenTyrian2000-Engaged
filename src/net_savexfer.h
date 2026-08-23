@@ -30,6 +30,10 @@ void saveXferUpload(JE_byte slot);
 // A successful download remains pending until the caller opens the destination-slot picker.
 bool saveXferDownload(void);
 
+// Replace all save slots in place, including online ownership and Endless records.
+void savesXferUpload(void);
+bool savesXferDownload(void);
+
 const JE_SaveFileType *saveXferPending(void);
 
 bool saveXferPendingTwoPlayer(void);

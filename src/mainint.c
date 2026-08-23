@@ -95,6 +95,69 @@ bool pause_pressed = false, ingamemenu_pressed = false, changefire_pressed = fal
 
 static Uint8 debug_menu_backup[DEBUG_MENU_WIDTH * DEBUG_MENU_HEIGHT];
 
+typedef struct
+{
+	PlayerItems items;
+	bool valid;
+}
+ExtraShipReturn;
+
+// The pause-menu cycler can put back the complete non-extra loadout that was replaced.
+// Keep one return point per seat so supported online ships remain independent.
+static ExtraShipReturn extraShipReturn[2];
+
+static void extraShipLoadoutRefresh(uint pnum, bool overHud);
+
+static bool extraShipsAllowedForMode(bool network, bool twoPlayer, bool coop, bool separate,
+	                                 bool timedBattle, bool superTyrianActive, int superArcade)
+{
+	if (timedBattle || superTyrianActive || superArcade != SA_NONE)
+		return false;
+	return network ? twoPlayer && (coop || separate) : !twoPlayer;
+}
+
+static bool extraShipsAllowedInGame(void)
+{
+	return extraShipsAllowedForMode(isNetworkGame, twoPlayerMode, coop_mode_active(),
+	                                arcade_separate_mode(), timedBattleMode,
+	                                superTyrian, superArcadeMode);
+}
+
+static bool isExtraShipId(JE_byte ship)
+{
+	return ship >= 91 && ship <= 100;
+}
+
+static void extraShipReturnReset(void)
+{
+	memset(extraShipReturn, 0, sizeof(extraShipReturn));
+}
+
+static void extraShipRememberStandard(uint pnum)
+{
+	if (pnum >= COUNTOF(extraShipReturn) || isExtraShipId(player[pnum].items.ship))
+		return;
+
+	extraShipReturn[pnum].items = player[pnum].items;
+	extraShipReturn[pnum].valid = true;
+}
+
+static bool extraShipRestoreStandard(uint pnum)
+{
+	if (pnum >= COUNTOF(extraShipReturn) || !extraShipReturn[pnum].valid)
+		return false;
+
+	PlayerItems *const items = &player[pnum].items;
+	PlayerItems restored = extraShipReturn[pnum].items;
+	for (uint i = 0; i < COUNTOF(restored.weapon); ++i)
+		restored.weapon[i].power = items->weapon[i].power;
+	restored.sidekick_series = items->sidekick_series;
+	restored.sidekick_level = items->sidekick_level;
+	restored.super_arcade_mode = items->super_arcade_mode;
+	*items = restored;
+	return true;
+}
+
 /* Keep the last message so a visible pass can repaint anything dropped by
  * silent rollback re-simulation. See hud_message_dirty. */
 static char text_window_tint[32];  // opening words, drawn in their own bank ahead of the left text
@@ -1391,6 +1454,7 @@ void JE_nextEpisode(void)
 void JE_initPlayerData(void)
 {
 	/* JE: New Game Items/Data */
+	extraShipReturnReset();
 
 	player[0].items.ship = 1;                     // USP Talon
 	player[0].items.weapon[FRONT_WEAPON].id = 1;  // Pulse Cannon
@@ -2515,20 +2579,34 @@ void JE_doInGameSetup(void)
 
 // Pause-menu access to invincibility, cheats, and debug shortcuts.
 // A true result tells the caller to close the pause menu and resume play.
-// Cycle through the ten extra ships using the in-flight armor rule.
+// Slot zero is the non-extra loadout that was replaced; slots 1 through 10 are extra ships.
+static int extraMenuNextCustomShipSlot(int slot, int dir, bool canReturn)
+{
+	slot = (slot + (dir > 0 ? 1 : 10)) % 11;
+	if (slot == 0 && !canReturn)
+		slot = (dir > 0) ? 1 : 10;
+	return slot;
+}
+
+// Cycle through the saved standard loadout and ten extra ships without healing live gauges.
 static void extraMenuCycleCustomShip(uint pnum, int dir)
 {
 	Player *const p = &player[pnum];
 	const JE_byte *const table = extraShipsFor(pnum);
 
-	int slot = (p->items.ship > 90 && p->items.ship <= 100) ? p->items.ship - 90 : 0;
-	if (slot == 0)
-		slot = (dir > 0) ? 1 : 10;
-	else
-		slot = ((slot - 1 + 10 + dir) % 10) + 1;
-	const int base = (slot - 1) * 15;
+	int slot = isExtraShipId(p->items.ship) ? p->items.ship - 90 : 0;
+	extraShipRememberStandard(pnum);
+	slot = extraMenuNextCustomShipSlot(slot, dir, extraShipReturn[pnum].valid);
 
 	rollback_taint(pnum == 0 ? "edit-ship-1" : "edit-ship-2");
+	if (slot == 0)
+	{
+		if (extraShipRestoreStandard(pnum))
+			extraShipLoadoutRefresh(pnum, true);
+		return;
+	}
+
+	const int base = (slot - 1) * 15;
 	endlessNoteCustomShip();  // an Endless record earns its "C" for a custom hull too
 
 	p->items.ship = (JE_byte)(90 + slot);
@@ -2541,18 +2619,112 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	p->items.generator = table[base + 6];
 	p->items.shield = table[base + 8];
 
-	debugLoadoutRefresh(true);  // rebuild every cache off items[]; keeps the current armor
+	extraShipLoadoutRefresh(pnum, true);
+}
 
-	// Only the first switch in a life may raise armor.
-	const uint slotArmor = table[base + 7];
-	JE_boolean *const used = (pnum == 0) ? &editShip1 : &editShip2;
-	if (!*used)
+void qa_test_extra_ship_return(void)
+{
+	Player savedPlayers[COUNTOF(player)];
+	memcpy(savedPlayers, player, sizeof(savedPlayers));
+	ExtraShipReturn savedReturn[COUNTOF(extraShipReturn)];
+	memcpy(savedReturn, extraShipReturn, sizeof(savedReturn));
+
+	extraShipReturnReset();
+	PlayerItems standard = player[0].items;
+	standard.ship = 7;
+	standard.generator = 3;
+	standard.shield = 6;
+	standard.weapon[FRONT_WEAPON].id = 14;
+	standard.weapon[REAR_WEAPON].id = 15;
+	standard.sidekick[LEFT_SIDEKICK] = 16;
+	standard.sidekick[RIGHT_SIDEKICK] = 17;
+	standard.special = 8;
+	player[0].items = standard;
+	extraShipRememberStandard(0);
+
+	player[0].items.ship = 91;
+	player[0].items.generator = 9;
+	player[0].items.shield = 10;
+	player[0].items.weapon[FRONT_WEAPON].id = 11;
+	player[0].items.weapon[REAR_WEAPON].id = 12;
+	player[0].items.weapon[FRONT_WEAPON].power = 9;
+	player[0].items.sidekick[LEFT_SIDEKICK] = 13;
+	player[0].items.sidekick[RIGHT_SIDEKICK] = 14;
+	player[0].items.special = 15;
+	extraShipRememberStandard(0);  // an extra ship must not replace the return point
+	const bool restored = extraShipRestoreStandard(0);
+	PlayerItems expected = standard;
+	expected.weapon[FRONT_WEAPON].power = 9;
+	qa_check(restored && memcmp(&player[0].items, &expected, sizeof(expected)) == 0,
+	         "the extra-ship return point restores every item the custom ship replaced");
+	qa_check(player[0].items.weapon[FRONT_WEAPON].power == 9,
+	         "returning to the standard loadout keeps upgrades earned after the switch");
+
+	PlayerItems standard2 = player[1].items;
+	standard2.ship = 8;
+	standard2.generator = 4;
+	standard2.shield = 7;
+	player[1].items = standard2;
+	extraShipRememberStandard(1);
+	player[0].items.ship = 91;
+	player[1].items.ship = 92;
+	player[1].items.generator = 10;
+	player[1].items.weapon[FRONT_WEAPON].power = 8;
+	const PlayerItems seat0Custom = player[0].items;
+	PlayerItems expected2 = standard2;
+	expected2.weapon[FRONT_WEAPON].power = 8;
+	qa_check(extraShipRestoreStandard(1)
+	         && memcmp(&player[1].items, &expected2, sizeof(expected2)) == 0
+	         && memcmp(&player[0].items, &seat0Custom, sizeof(seat0Custom)) == 0,
+	         "each online seat restores its own standard loadout without changing the other seat");
+
+	qa_check(player_carry_gauge(80, 80, 200) == 200
+	         && player_carry_gauge(40, 80, 200) == 100
+	         && player_carry_gauge(300, 200, 80) == 80
+	         && player_carry_gauge(0, 0, 250) == 250,
+	         "custom-ship gauges preserve full, damaged, clamped, and uninitialized states");
+	qa_check(extraMenuNextCustomShipSlot(0, +1, true) == 1
+	         && extraMenuNextCustomShipSlot(0, -1, true) == 10
+	         && extraMenuNextCustomShipSlot(10, +1, true) == 0
+	         && extraMenuNextCustomShipSlot(1, -1, true) == 0,
+	         "the custom-ship cycler puts the standard loadout before slots 1 through 10");
+	qa_check(extraMenuNextCustomShipSlot(10, +1, false) == 1
+	         && extraMenuNextCustomShipSlot(1, -1, false) == 10,
+	         "a custom loadout with no known predecessor skips the unavailable return point");
+	struct ExtraShipModeCase
 	{
-		p->armor = slotArmor;
-		*used = true;
+		bool network, twoPlayer, coop, separate, timedBattle, superTyrian, allowed;
+		int superArcade;
+		const char *name;
+	};
+	static const struct ExtraShipModeCase modeCases[] = {
+		{ false, false, false, false, false, false, true,  SA_NONE,      "1 Player Campaign" },
+		{ false, false, false, false, false, false, true,  SA_NONE,      "1 Player Endless" },
+		{ false, false, false, false, false, false, true,  SA_NONE,      "1 Player Arcade" },
+		{ true,  true,  true,  false, false, false, true,  SA_NONE,      "Online Campaign" },
+		{ true,  true,  true,  false, false, false, true,  SA_NONE,      "Online Endless" },
+		{ true,  true,  false, true,  false, false, true,  SA_NONE,      "Online Separate Arcade" },
+		{ false, false, false, false, true,  false, false, SA_NONE,      "1 Player Timed Battle" },
+		{ false, true,  false, false, false, false, false, SA_NONE,      "2 Player Arcade" },
+		{ false, false, false, false, false, false, false, SA_NORTSHIPZ, "1 Player Super Arcade" },
+		{ false, false, false, false, false, true,  false, SA_NONE,      "SuperTyrian" },
+		{ true,  true,  false, false, false, false, false, SA_NONE,      "Online Linked Arcade" },
+		{ true,  true,  false, true,  true,  false, false, SA_NONE,      "Online Timed Battle" },
+		{ true,  true,  false, true,  false, true,  false, SA_NONE,      "Online SuperTyrian" },
+		{ true,  true,  false, true,  false, false, false, SA_NORTSHIPZ, "Online Super Arcade" },
+	};
+	for (uint i = 0; i < COUNTOF(modeCases); ++i)
+	{
+		const struct ExtraShipModeCase *const c = &modeCases[i];
+		char label[128];
+		snprintf(label, sizeof(label), "custom-ship availability matches %s", c->name);
+		qa_check(extraShipsAllowedForMode(c->network, c->twoPlayer, c->coop, c->separate,
+		                                      c->timedBattle, c->superTyrian, c->superArcade)
+		         == c->allowed, label);
 	}
-	else if (p->armor > slotArmor)
-		p->armor = slotArmor;
+
+	memcpy(player, savedPlayers, sizeof(savedPlayers));
+	memcpy(extraShipReturn, savedReturn, sizeof(extraShipReturn));
 }
 
 bool JE_extraMenu(void)
@@ -2563,18 +2735,16 @@ bool JE_extraMenu(void)
 	// matching the guards on the key handlers in JE_mainKeyboardInput.
 	const bool cheatsAllowed = !isNetworkGame && !twoPlayerMode && !superTyrian && superArcadeMode == SA_NONE;
 
-	// Online co-op offers only this machine's seat and its exchanged file.
+	// Online modes offer only this machine's seat and its exchanged file.
 	const uint shipSeat = (isNetworkGame && thisPlayerNum >= 1) ? (uint)(thisPlayerNum - 1) : 0;
-	const bool shipRowAllowed = !superTyrian && superArcadeMode == SA_NONE &&
-	                            extraAvailFor(shipSeat) &&
-	                            (!isNetworkGame || coop_mode_active());
+	const bool shipRowAllowed = extraShipsAllowedInGame() && extraAvailFor(shipSeat);
 
 	// Footer help is drawn as two short lines (description + key combo) so long
 	// combos never overflow the panel.
 	static const char *const rootLabels[] = { "Invincibility", "Custom Ship", "Cheat Codes...", "Debug Codes...", "Return" };
 	static const char *const rootDesc[] = {
 		"Don't die when armor runs out.",
-		"Fly a ship from the Ship Editor.",
+		"Cycle editor ships or restore your loadout.",
 		"Trigger the F-key cheat combos.",
 		"The Backspace debug-key combos.",
 		"Return to the pause menu.",
@@ -4987,8 +5157,8 @@ static bool dbgRowIsLoadout(int id)
 /* True only when the debug menu overlays the gameplay HUD. */
 static bool debugMenuOverHud = false;
 
-/* `pnum` is the player whose loadout was just edited; `shipChanged` says their hull actually
- * swapped, which is the one case where the re-derived armor is kept instead of the live value. */
+/* `pnum` is the player whose loadout was just edited. Debug ship changes take the re-derived full
+ * hull; custom-ship changes carry that seat's live gauge ratio across the re-derived maxima. */
 // Refresh the sidebar in menu backdrops captured before a loadout edit.
 static void hud_strip_snapshot(void)
 {
@@ -5007,11 +5177,19 @@ static void hud_strip_snapshot(void)
 	}
 }
 
-static void debug_apply_loadout_change(int pnum, bool shipChanged)
+static void debug_apply_loadout_change(int pnum, bool shipChanged, bool carryGauges)
 {
 	uint keptArmor[COUNTOF(player)];
+	uint keptArmorMax[COUNTOF(player)];
+	uint keptShield[COUNTOF(player)];
+	uint keptShieldMax[COUNTOF(player)];
 	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
 		keptArmor[i] = player[i].armor;
+		keptArmorMax[i] = player[i].initial_armor;
+		keptShield[i] = player[i].shield;
+		keptShieldMax[i] = player[i].shield_max;
+	}
 
 	// A weapon that no longer exists can leave the multi-shot phase pointing at a pattern the new
 	// one doesn't have, and weapon_mode can outrun the new port's configuration count.
@@ -5026,7 +5204,10 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 	{
 		// JE_getShipInfo rewrites BOTH players' armor from their hulls; only the player whose
 		// hull actually changed should take that, so everyone else keeps what they had.
-		if ((int)i != pnum || !shipChanged)
+		if ((int)i == pnum && carryGauges)
+			player[i].armor = player_carry_gauge(keptArmor[i], keptArmorMax[i],
+			                                      player[i].initial_armor);
+		else if ((int)i != pnum || !shipChanged)
 			player[i].armor = keptArmor[i];
 		if (player[i].armor > player[i].initial_armor)
 			player[i].armor = player[i].initial_armor;
@@ -5034,6 +5215,11 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 		// The shield ceiling is set only at level start (tyrian2.c), so without this a shield swap
 		// keeps the old one's maximum and the gauge scale goes with it.
 		player[i].shield_max = arcade_shield_max(&player[i]);
+		if ((int)i == pnum && carryGauges)
+			player[i].shield = player_carry_gauge(keptShield[i], keptShieldMax[i],
+			                                      player[i].shield_max);
+		else
+			player[i].shield = keptShield[i];
 		if (player[i].shield > player[i].shield_max)
 			player[i].shield = player[i].shield_max;
 	}
@@ -5057,6 +5243,18 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 	}
 }
 
+static void extraShipLoadoutRefresh(uint pnum, bool overHud)
+{
+	const bool wasOverHud = debugMenuOverHud;
+	SDL_Surface *const savedScreen = VGAScreen;
+	debugMenuOverHud = overHud;
+	if (overHud)
+		VGAScreen = VGAScreenSeg;
+	debug_apply_loadout_change((int)pnum, false, true);
+	VGAScreen = savedScreen;
+	debugMenuOverHud = wasOverHud;
+}
+
 /* Peer side of a networked debug edit (network.c): the wire block already carried the armor and
  * shield the editing machine ended up with, so nothing is re-derived here; this only rebuilds
  * the caches that hang off items[]. `overHud` says a gameplay HUD is on screen to repaint, which
@@ -5065,7 +5263,7 @@ void debugLoadoutRefresh(bool overHud)
 {
 	const bool wasOverHud = debugMenuOverHud;
 	debugMenuOverHud = overHud;
-	debug_apply_loadout_change(-1, false);
+	debug_apply_loadout_change(-1, false, false);
 	debugMenuOverHud = wasOverHud;
 }
 
@@ -5673,8 +5871,10 @@ void JE_debugMenu(bool center)
 				case DBG_PLAYER: dbgPlayer = (dbgPlayer + 1) % (int)COUNTOF(player); break;
 				case DBG_SHIP:
 					if (edit->ship < SHIP_DRAGONWING) ++edit->ship;
-					else if (edit->ship == SHIP_DRAGONWING && extraAvailFor((uint)editPlayer)) edit->ship = 91;
-					else if (edit->ship >= 91 && edit->ship < 100) ++edit->ship;
+					else if (edit->ship == SHIP_DRAGONWING &&
+					         extraShipsAllowedInGame() && extraAvailFor((uint)editPlayer)) edit->ship = 91;
+					else if (extraShipsAllowedInGame() &&
+					         edit->ship >= 91 && edit->ship < 100) ++edit->ship;
 					if (edit->ship > 90)
 						endlessNoteCustomShip();
 					break;
@@ -5849,7 +6049,7 @@ void JE_debugMenu(bool center)
 			// player's items, and the engine caches far too much off those to leave it until the
 			// next level start.
 			if (editKey && dbgRowIsLoadout(selId))
-				debug_apply_loadout_change(editPlayer, edit->ship != shipBefore);
+				debug_apply_loadout_change(editPlayer, edit->ship != shipBefore, false);
 
 			newkey = false;
 		}
@@ -8352,13 +8552,14 @@ void JE_mainKeyboardInput(void)
 	if (!isNetworkGame)
 	{
 		/* { Edited Ships } for Player 1 */
-		if (extraAvail && keysactive[SDL_SCANCODE_TAB] && !isNetworkGame && !superTyrian)
+		if (extraAvail && extraShipsAllowedInGame() && keysactive[SDL_SCANCODE_TAB])
 		{
 			for (x = SDL_SCANCODE_1; x <= SDL_SCANCODE_0; x++)
 			{
 				if (keysactive[x])
 				{
 					rollback_taint("edit-ship-1");
+					extraShipRememberStandard(0);
 					endlessNoteCustomShip();
 					int z = x - SDL_SCANCODE_1 + 1;
 					player[0].items.ship = 90 + z;                     /*Ships*/
@@ -8371,70 +8572,7 @@ void JE_mainKeyboardInput(void)
 					player[0].items.generator = extraShips[z + 6];
 					/*Armor*/
 					player[0].items.shield = extraShips[z + 8];
-					memset(shotMultiPos, 0, sizeof(shotMultiPos));
-
-					if (player[0].weapon_mode > JE_portConfigs(&player[0]))
-						player[0].weapon_mode = 1;
-
-					tempW = player[0].armor;
-					JE_getShipInfo();
-					if (player[0].armor > tempW && editShip1)
-						player[0].armor = tempW;
-					else
-						editShip1 = true;
-
-					SDL_Surface *temp_surface = VGAScreen;
-					VGAScreen = VGAScreenSeg;
-					JE_wipeShieldArmorBars();
-					JE_drawArmor();
-					JE_drawShield();
-					VGAScreen = temp_surface;
-					JE_drawOptions();
-
-					keysactive[x] = false;
-				}
-			}
-		}
-
-		/* for Player 2 */
-		if (extraAvail && keysactive[SDL_SCANCODE_CAPSLOCK] && !isNetworkGame && !superTyrian)
-		{
-			for (x = SDL_SCANCODE_1; x <= SDL_SCANCODE_0; x++)
-			{
-				if (keysactive[x])
-				{
-					rollback_taint("edit-ship-2");
-					endlessNoteCustomShip();
-					int z = x - SDL_SCANCODE_1 + 1;
-					player[1].items.ship = 90 + z;
-					z = (z - 1) * 15;
-					player[1].items.weapon[FRONT_WEAPON].id = extraShipResolvePort(1, extraShips[z + 1]);
-					player[1].items.weapon[REAR_WEAPON].id = extraShipResolvePort(1, extraShips[z + 2]);
-					player[1].items.special = extraShips[z + 3];
-					player[1].items.sidekick[LEFT_SIDEKICK] = extraShips[z + 4];
-					player[1].items.sidekick[RIGHT_SIDEKICK] = extraShips[z + 5];
-					player[1].items.generator = extraShips[z + 6];
-					/*Armor*/
-					player[1].items.shield = extraShips[z + 8];
-					memset(shotMultiPos, 0, sizeof(shotMultiPos));
-
-					if (player[1].weapon_mode > JE_portConfigs(&player[1]))
-						player[1].weapon_mode = 1;
-
-					tempW = player[1].armor;
-					JE_getShipInfo();
-					if (player[1].armor > tempW && editShip2)
-						player[1].armor = tempW;
-					else
-						editShip2 = true;
-
-					SDL_Surface *temp_surface = VGAScreen;
-					VGAScreen = VGAScreenSeg;
-					JE_wipeShieldArmorBars();
-					JE_drawArmor();
-					JE_drawShield();
-					VGAScreen = temp_surface;
-					JE_drawOptions();
+					extraShipLoadoutRefresh(0, true);
 
 					keysactive[x] = false;
 				}

@@ -454,7 +454,7 @@ int  network_shop_peer_course(void);
 void network_shop_set_locked(bool locked);
 bool network_shop_peer_locked(void);
 
-/* Publish this machine's custom weapon through the reliable outpost channel.
+/* Publish this machine's custom weapon through the reliable session channel.
  * Both peers need both designs to keep simulation deterministic. */
 void network_custom_weapon_publish(void);
 /* A Campaign resume can enter gameplay without an outpost. Publish even when the editor feature is
@@ -465,6 +465,8 @@ void network_custom_weapon_reset(void);
 // Publish this machine's extra-ship file through the reliable session channel.
 void network_extra_ships_publish(void);
 void network_extra_ships_reset(void);
+// Settle the initial custom-content exchange before a mode without an outpost starts gameplay.
+void network_custom_content_rendezvous(void);
 // Take the level the host left the outpost for. Call once both players are done, never before:
 // the joiner has to be allowed to finish shopping first.
 void network_shop_adopt_host_level(void);
@@ -605,6 +607,7 @@ static inline void network_custom_weapon_publish_resume(void) { }
 static inline void network_custom_weapon_reset(void) { }
 static inline void network_extra_ships_publish(void) { }
 static inline void network_extra_ships_reset(void) { }
+static inline void network_custom_content_rendezvous(void) { }
 static inline void network_shop_adopt_host_level(void) { }
 static inline void network_shop_end(void) { }
 static inline bool network_quit_notice_retire(void) { return false; }

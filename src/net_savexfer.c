@@ -55,6 +55,7 @@
 #define ALL_XFER_TRANSPORT_VERSION     3
 #define SHIPS_XFER_TRANSPORT_VERSION   4
 #define WEAPONS_XFER_TRANSPORT_VERSION 5
+#define SAVES_XFER_TRANSPORT_VERSION   6
 
 // Fixed-offset, little-endian header. The save record and Endless text follow it.
 #define SX_MAGIC         0    /* 4: "OTSV"                                              */
@@ -69,6 +70,19 @@
 #define SX_FLAG_TWO_PLAYER  0x01
 
 static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
+
+// All Saves carries the saves-only config: every slot, its online seat, and its Endless half.
+#define SS_MAGIC       0    /* 4: "OTSA"                    */
+#define SS_VERSION     4    /* 2: SAVES_XFER_VERSION         */
+#define SS_RESERVED    6    /* 2                             */
+#define SS_SAVES_LEN   8    /* 4                             */
+#define SS_DATA       12
+#define SS_SAVES_MAX  (1024u * 1024u)
+#define SS_MAX        (SS_DATA + SS_SAVES_MAX)
+
+#define SAVES_XFER_VERSION 1
+
+static const Uint8 ss_magic[4] = { 'O', 'T', 'S', 'A' };
 
 // Custom Data carries compiled ships, the weapon library, and its enabled flag.
 #define CX_MAGIC          0    /* 4: "OTCD"                                      */
@@ -106,6 +120,7 @@ static const Uint8 ax_magic[4] = { 'O', 'T', 'A', 'L' };
 typedef enum
 {
 	XFER_SAVE,
+	XFER_SAVES,
 	XFER_SHIPS,
 	XFER_WEAPONS,
 	XFER_CUSTOM,
@@ -163,6 +178,7 @@ static const char sxSendHere          [] = "Send to this address.";
 static const char sxCancelKey         [] = "Esc to cancel";
 static const char sxAnyButton         [] = "Press any button";
 static const char sxNoSaveThere       [] = "That address is not sharing a save.";
+static const char sxNoSavesThere      [] = "No save slots at that address.";
 static const char sxNoShipsThere      [] = "No custom ships at that address.";
 static const char sxNoWeaponsThere    [] = "No custom weapons at that address.";
 static const char sxNoCustomThere     [] = "No custom data at that address.";
@@ -174,6 +190,7 @@ static const char *xferUploadTitle(XferKind kind)
 	switch (kind)
 	{
 		case XFER_SAVE:    return "Upload Save";
+		case XFER_SAVES:   return "Upload All Saves";
 		case XFER_SHIPS:   return "Upload Custom Ships";
 		case XFER_WEAPONS: return "Upload Custom Weapons";
 		case XFER_CUSTOM:  return "Upload Custom Data";
@@ -187,6 +204,7 @@ static const char *xferDownloadTitle(XferKind kind)
 	switch (kind)
 	{
 		case XFER_SAVE:    return "Download Save";
+		case XFER_SAVES:   return "Download All Saves";
 		case XFER_SHIPS:   return "Download Custom Ships";
 		case XFER_WEAPONS: return "Download Custom Weapons";
 		case XFER_CUSTOM:  return "Download Custom Data";
@@ -200,6 +218,7 @@ static const char *xferOfferedName(XferKind kind)
 	switch (kind)
 	{
 		case XFER_SAVE:    return NULL;
+		case XFER_SAVES:   return "All saves";
 		case XFER_SHIPS:   return "Custom ships";
 		case XFER_WEAPONS: return "Custom weapons";
 		case XFER_CUSTOM:  return "Custom ships and weapons";
@@ -219,6 +238,7 @@ static Uint16 xferTransportVersion(XferKind kind)
 	switch (kind)
 	{
 		case XFER_SAVE:    return SAVE_XFER_VERSION;
+		case XFER_SAVES:   return SAVES_XFER_TRANSPORT_VERSION;
 		case XFER_SHIPS:   return SHIPS_XFER_TRANSPORT_VERSION;
 		case XFER_WEAPONS: return WEAPONS_XFER_TRANSPORT_VERSION;
 		case XFER_CUSTOM:  return CUSTOM_XFER_TRANSPORT_VERSION;
@@ -229,7 +249,8 @@ static Uint16 xferTransportVersion(XferKind kind)
 
 static size_t xferMaxPayload(XferKind kind)
 {
-	return kind == XFER_SAVE ? SX_MAX : kind == XFER_ALL ? AX_MAX : CX_MAX;
+	return kind == XFER_SAVE ? SX_MAX : kind == XFER_SAVES ? SS_MAX
+	       : kind == XFER_ALL ? AX_MAX : CX_MAX;
 }
 
 static bool xferCarriesWeapons(XferKind kind)
@@ -253,6 +274,7 @@ static const char *xferNoOfferLine(XferKind kind)
 	switch (kind)
 	{
 		case XFER_SAVE:    return sxNoSaveThere;
+		case XFER_SAVES:   return sxNoSavesThere;
 		case XFER_SHIPS:   return sxNoShipsThere;
 		case XFER_WEAPONS: return sxNoWeaponsThere;
 		case XFER_CUSTOM:  return sxNoCustomThere;
@@ -443,6 +465,51 @@ static bool saveXferUnpack(const Uint8 *buf, size_t len)
 	return true;
 }
 
+static size_t savesXferPack(Uint8 *out)
+{
+	if (out == NULL)
+		return 0;
+
+	memcpy(&out[SS_MAGIC], ss_magic, sizeof(ss_magic));
+	SDLNet_Write16(SAVES_XFER_VERSION, &out[SS_VERSION]);
+	out[SS_RESERVED] = out[SS_RESERVED + 1] = 0;
+
+	const size_t savesLen = save_slots_serialize(&out[SS_DATA], SS_SAVES_MAX);
+	if (savesLen == 0 || savesLen > UINT32_MAX)
+		return 0;
+
+	SDLNet_Write32((Uint32)savesLen, &out[SS_SAVES_LEN]);
+	return SS_DATA + savesLen;
+}
+
+static bool savesXferUnpack(const Uint8 *buf, size_t len)
+{
+	if (buf == NULL || len < SS_DATA || memcmp(&buf[SS_MAGIC], ss_magic, sizeof(ss_magic)) != 0 ||
+	    SDLNet_Read16(&buf[SS_VERSION]) != SAVES_XFER_VERSION ||
+	    buf[SS_RESERVED] != 0 || buf[SS_RESERVED + 1] != 0)
+		return false;
+
+	const size_t savesLen = SDLNet_Read32(&buf[SS_SAVES_LEN]);
+	if (savesLen == 0 || savesLen > SS_SAVES_MAX || savesLen != len - SS_DATA)
+		return false;
+
+	// A failed adoption must not leave only part of the receiving device's slot set behind.
+	Uint8 *const oldSaves = malloc(SS_SAVES_MAX);
+	const size_t oldSavesLen = oldSaves != NULL
+	                             ? save_slots_serialize(oldSaves, SS_SAVES_MAX) : 0;
+	if (oldSavesLen == 0)
+	{
+		free(oldSaves);
+		return false;
+	}
+
+	const bool adopted = save_slots_adopt(&buf[SS_DATA], savesLen);
+	if (!adopted)
+		(void)save_slots_adopt(oldSaves, oldSavesLen);
+	free(oldSaves);
+	return adopted;
+}
+
 static size_t customXferPackParts(Uint8 *out, Uint8 parts)
 {
 	parts &= CX_PART_MASK;
@@ -616,6 +683,7 @@ static size_t xferPack(XferKind kind, Uint8 *out, JE_byte slot)
 	switch (kind)
 	{
 		case XFER_SAVE:    return saveXferPack(out, slot);
+		case XFER_SAVES:   return savesXferPack(out);
 		case XFER_SHIPS:   return customXferPackParts(out, CX_PART_SHIPS);
 		case XFER_WEAPONS: return customXferPackParts(out, CX_PART_WEAPONS);
 		case XFER_CUSTOM:  return customXferPack(out);
@@ -629,6 +697,7 @@ static bool xferUnpack(XferKind kind, const Uint8 *buf, size_t len)
 	switch (kind)
 	{
 		case XFER_SAVE:    return saveXferUnpack(buf, len);
+		case XFER_SAVES:   return savesXferUnpack(buf, len);
 		case XFER_SHIPS:   return customXferUnpackParts(buf, len, CX_PART_SHIPS);
 		case XFER_WEAPONS: return customXferUnpackParts(buf, len, CX_PART_WEAPONS);
 		case XFER_CUSTOM:  return customXferUnpack(buf, len);
@@ -982,6 +1051,7 @@ static void xferUpload(XferKind kind, JE_byte slot)
 		switch (kind)
 		{
 			case XFER_SAVE:    sentLine = "The save was sent."; break;
+			case XFER_SAVES:   sentLine = "All save slots were sent."; break;
 			case XFER_SHIPS:   sentLine = "The custom ships were sent."; break;
 			case XFER_WEAPONS: sentLine = "The custom weapons were sent."; break;
 			case XFER_CUSTOM:  sentLine = "The custom data was sent."; break;
@@ -999,6 +1069,11 @@ static void xferUpload(XferKind kind, JE_byte slot)
 void saveXferUpload(JE_byte slot)
 {
 	xferUpload(XFER_SAVE, slot);
+}
+
+void savesXferUpload(void)
+{
+	xferUpload(XFER_SAVES, 0);
 }
 
 void shipsXferUpload(void)
@@ -1535,6 +1610,14 @@ bool saveXferDownload(void)
 	return xferDownload(XFER_SAVE);
 }
 
+bool savesXferDownload(void)
+{
+	const bool got = xferDownload(XFER_SAVES);
+	if (got)
+		saveXferNotice("Download All Saves", "All save slots received.", NULL);
+	return got;
+}
+
 bool shipsXferDownload(void)
 {
 	const bool got = xferDownload(XFER_SHIPS);
@@ -1589,7 +1672,8 @@ void qa_test_save_transfer(void)
 		sxNothingAnswered, sxDownloadKeys, sxRowTypedAddress, sxRowWaitForSender,
 		sxAskingAddress, sxDownloading, sxWaitingForSender, sxSendHere, sxCancelKey,
 		sxAnyButton, sxNoSaveThere, sxNoShipsThere, sxNoWeaponsThere, sxNoCustomThere,
-		sxNoAllThere, sxNeedAddress,
+		sxNoSavesThere, sxNoAllThere, sxNeedAddress,
+		"Upload All Saves", "Download All Saves", "All saves",
 		"Upload Custom Ships", "Download Custom Ships", "Custom ships",
 		"Upload Custom Weapons", "Download Custom Weapons", "Custom weapons",
 		"Upload Custom Data", "Download Custom Data", "Custom ships and weapons",
@@ -1624,7 +1708,7 @@ void qa_test_save_transfer(void)
 	         "save-transfer wire offsets retain their protocol widths");
 	qa_check(CX_DATA == 16 && xferPacketType(XFER_CUSTOM, PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK,
 	         "custom-data transfer retains its envelope and distinct packet family");
-	const XferKind bulkKinds[] = { XFER_SHIPS, XFER_WEAPONS, XFER_CUSTOM, XFER_ALL };
+	const XferKind bulkKinds[] = { XFER_SAVES, XFER_SHIPS, XFER_WEAPONS, XFER_CUSTOM, XFER_ALL };
 	bool bulkKindsSeparated = true;
 	for (unsigned i = 0; i < COUNTOF(bulkKinds); ++i)
 	{
@@ -1633,7 +1717,7 @@ void qa_test_save_transfer(void)
 			bulkKindsSeparated &= xferTransportVersion(bulkKinds[i]) != xferTransportVersion(bulkKinds[j]);
 	}
 	qa_check(bulkKindsSeparated,
-	         "Ships, Weapons, Custom Data, and Transfer All cannot negotiate with one another");
+	         "All Saves, Ships, Weapons, Custom Data, and Transfer All cannot negotiate with one another");
 
 	Uint8 *const customPayload = malloc(CX_MAX);
 	Uint8 *const shipsPayload = malloc(CX_MAX);
@@ -1765,6 +1849,53 @@ void qa_test_save_transfer(void)
 	free(p2Payload);
 	saveXferPendingClear();
 
+	// All Saves replaces the slot set in place, but leaves the receiver's high scores alone.
+	Uint8 *const originalSlots = malloc(SS_SAVES_MAX);
+	const size_t originalSlotsLen = originalSlots != NULL
+	                              ? save_slots_serialize(originalSlots, SS_SAVES_MAX) : 0;
+	const JE_byte emptySlot = 4;
+	memset(&saveFiles[emptySlot - 1], 0, sizeof(saveFiles[emptySlot - 1]));
+	endlessSlotClear(emptySlot);
+	save_slot_set_online_player(emptySlot, 1);
+
+	Uint8 *const savesPayload = malloc(SS_MAX);
+	const size_t savesTotal = savesPayload != NULL ? savesXferPack(savesPayload) : 0;
+	qa_check(savesTotal > SS_DATA && SDLNet_Read32(&savesPayload[SS_SAVES_LEN]) == savesTotal - SS_DATA,
+	         "All Saves packs every slot and its Endless data in one bounded envelope");
+
+	memset(&saveFiles[p2Slot - 1], 0, sizeof(saveFiles[p2Slot - 1]));
+	save_slot_set_online_player(p2Slot, 1);
+	memset(&saveFiles[emptySlot - 1], 0, sizeof(saveFiles[emptySlot - 1]));
+	saveFiles[emptySlot - 1].level = 99;
+	strcpy(saveFiles[emptySlot - 1].name, "MUST CLEAR");
+
+	const T2KHighScoreType originalScore = t2kHighScores[0][0];
+	T2KHighScoreType receiverScore = originalScore;
+	receiverScore.score = originalScore.score + 12345;
+	SDL_strlcpy(receiverScore.playerName, "LOCAL SCORE", sizeof(receiverScore.playerName));
+	t2kHighScores[0][0] = receiverScore;
+
+	if (savesTotal > SS_DATA)
+	{
+		savesPayload[SS_MAGIC] ^= 0xff;
+		qa_check(!savesXferUnpack(savesPayload, savesTotal),
+		         "All Saves data without its transfer magic is refused before adoption");
+		savesPayload[SS_MAGIC] ^= 0xff;
+	}
+	qa_check(savesTotal > SS_DATA && savesXferUnpack(savesPayload, savesTotal)
+	         && save_slot_online_player(p2Slot) == 2
+	         && strcmp(saveFiles[p2Slot - 1].name, "PHONE P2") == 0
+	         && saveFiles[emptySlot - 1].level == 0
+	         && memcmp(&t2kHighScores[0][0], &receiverScore, sizeof(receiverScore)) == 0,
+	         "All Saves restores occupied and empty slots in place without replacing high scores");
+
+	free(savesPayload);
+	if (originalSlotsLen > 0)
+		qa_check(save_slots_adopt(originalSlots, originalSlotsLen),
+		         "the All Saves test restores the receiving device's original slot set");
+	free(originalSlots);
+	t2kHighScores[0][0] = originalScore;
+
 	Uint8 *const allPayload = malloc(AX_MAX);
 	const size_t allTotal = allPayload != NULL ? allXferPack(allPayload) : 0;
 	qa_check(allTotal > AX_DATA, "Transfer All packs the complete save file and custom-data envelope");
@@ -1798,6 +1929,8 @@ void qa_test_save_transfer(void)
 bool saveXferAvailable(void) { return false; }
 void saveXferUpload(JE_byte slot) { (void)slot; }
 bool saveXferDownload(void) { return false; }
+void savesXferUpload(void) { }
+bool savesXferDownload(void) { return false; }
 void shipsXferUpload(void) { }
 bool shipsXferDownload(void) { return false; }
 void weaponsXferUpload(void) { }

@@ -35,7 +35,7 @@ int  customWeaponOwnerPort[CUSTOM_WEAPON_OWNERS];
 int  customSidekickOwnerSlot[CUSTOM_WEAPON_OWNERS];
 
 // One published design per owner. Owner 0 is also what the working globals compile into, so
-// the record exists even in a one-player game; only Online Campaign ever fills owner 1.
+// the record exists even in a one-player game; supported two-ship online modes fill owner 1.
 static CustomWeaponSlot customWeaponOwnerDesign[CUSTOM_WEAPON_OWNERS];
 static bool             customWeaponOwnerDefined[CUSTOM_WEAPON_OWNERS];
 
@@ -791,7 +791,7 @@ bool customWeaponEquip(void)
 
 	customWeaponMaterialize();
 
-	// Online Campaign fits it to the ship this machine flies; every other mode has only one.
+	// A full-ship online mode fits it to the ship this machine flies; solo has only one.
 	Player *const this_player = &player[gameplay_local_player_index()];
 
 	switch (customWeaponEquipSlot)
@@ -1041,7 +1041,7 @@ void customWeaponDeserializeLevel(int mode, int level, const char *str)
 	deserializeRaw(&customWeaponRaw[mode][level], str);
 }
 
-/* Online Campaign design exchange.
+/* Online design exchange.
  * Little-endian, self-delimiting, and only as long as the design needs: each (mode, level)
  * writes its populated bullet slots and a count, so an ordinary weapon is a couple of kilobytes
  * rather than the 45 KB the full-width arrays would take. */
@@ -1627,7 +1627,7 @@ static void customWeaponMaterializeAll(void)
 	const int local = customWeaponLocalOwner();
 	customWeaponMaterialize();
 
-	if (!isNetworkGame || !coop_mode_active())
+	if (!isNetworkGame || !custom_ships_multiplayer_mode())
 		return;
 
 	for (int owner = 0; owner < CUSTOM_WEAPON_OWNERS; ++owner)

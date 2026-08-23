@@ -2521,14 +2521,14 @@ static bool network_custom_weapon_receive(void)
 	return true;
 }
 
-/* Publish while the peer drains its inbound queue. Both machines pump during the outpost
- * rendezvous and Campaign resume. force=true covers a loaded custom slot when its editor toggle is
- * currently off. */
+/* Publish while the peer drains its inbound queue. Both machines pump during the co-op outpost,
+ * Campaign resume, or Separate Arcade launch. force=true covers a custom slot whose editor toggle
+ * is currently off. */
 static void network_custom_weapon_publish_internal(bool force)
 {
 	// Outside resume, nothing can newly carry the weapon while the feature is off. Turning it on
 	// and equipping goes through the next outpost rendezvous.
-	if (!isNetworkGame || !coop_mode_active() || (!customWeaponEnabled && !force) ||
+	if (!isNetworkGame || !custom_ships_multiplayer_mode() || (!customWeaponEnabled && !force) ||
 	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
 		return;
 
@@ -2625,7 +2625,7 @@ static void network_custom_weapon_publish_internal(bool force)
 		crashlog_netlog_line("CUSTOM WEAPON NOT DELIVERED",
 		                     "the peer never acknowledged the design; its copy of this ship "
 		                     "keeps the placeholder weapon, which the canary reports as a desync.");
-		network_custom_out_hash = 0;  // start over at the next outpost
+		network_custom_out_hash = 0;  // start over at the next publish window
 	}
 	else
 	{
@@ -2774,7 +2774,7 @@ static bool network_extra_ships_receive(void)
 // The session hash gate suppresses unchanged files.
 void network_extra_ships_publish(void)
 {
-	if (!isNetworkGame || !coop_mode_active() ||
+	if (!isNetworkGame || !custom_ships_multiplayer_mode() ||
 	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
 		return;
 
@@ -3367,9 +3367,21 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 
 	if (!peer_ready || (settle_outbound && !network_is_sync()))
 	{
-		fprintf(stderr, "error: level rendezvous timed out\n");
+		fprintf(stderr, "error: level rendezvous timed out (peer=%d outbound=%s head=%04x depth=%d)\n",
+		        peer_ready ? 1 : 0, network_is_sync() ? "settled" : "pending",
+		        (unsigned)network_inbound_head(), network_inbound_depth());
 		network_tyrian_halt(2, false);
 	}
+}
+
+/* Separate Arcade exchanges custom content without an outpost. Mark the end of that exchange so
+ * neither peer can enter the first level while a trailing content packet still heads the queue. */
+void network_custom_content_rendezvous(void)
+{
+	if (!isNetworkGame || !custom_ships_multiplayer_mode())
+		return;
+
+	network_level_barrier(PACKET_WAITING, true);
 }
 
 /* Run the pre-load ready barrier and reset state queues. Paths that bypass
@@ -3563,23 +3575,27 @@ void network_end_screen_rendezvous(bool local_dismissed)
 
 bool network_shop_pump(void)
 {
-	if (!isNetworkGame || !coop_mode_active() || packet_in[0] == NULL)
+	if (!isNetworkGame || packet_in[0] == NULL)
 		return false;
 
-	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_WEAPON)
+	const Uint16 packetType = SDLNet_Read16(&packet_in[0]->data[0]);
+	if (custom_ships_multiplayer_mode() && packetType == PACKET_CUSTOM_WEAPON)
 		return network_custom_weapon_receive();
 
-	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_EXTRA_SHIPS)
+	if (custom_ships_multiplayer_mode() && packetType == PACKET_EXTRA_SHIPS)
 		return network_extra_ships_receive();
 
+	if (!coop_mode_active())
+		return false;
+
 	// A late duplicate of the resume transfer: the run is already adopted, so drop it.
-	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN)
+	if (packetType == PACKET_ENDLESS_RUN)
 	{
 		network_update();
 		return true;
 	}
 
-	if (SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_SHOP_SYNC)
+	if (packetType != PACKET_SHOP_SYNC)
 		return false;
 
 	if (packet_in[0]->len >= 39)

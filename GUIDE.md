@@ -718,7 +718,8 @@ Levels can be copied, pasted, duplicated across the power curve, or generated as
 a curve. The preview uses the real shot simulation.
 
 Online Campaign and Endless support one design per player. Each design is sent
-to the other machine before launch.
+to the other machine before launch. Separate Arcade also sends a design when
+one of that player's custom ships references it.
 
 ## Enhancements
 
@@ -817,7 +818,9 @@ Mode.
 
 **Esc > Extra** exposes the old cheat key combinations as menu items, and the
 Custom Ship row for the Ship Editor's ships. The cheat rows work only in a
-normal solo game; Custom Ship also works in two-player and online co-op games.
+normal solo game. Custom Ship is available in one-player Campaign, Endless, and
+Arcade, plus online Campaign, Endless, and Separate Arcade. It is disabled in
+Timed Battle, local two-player, Linked Arcade, SuperTyrian, and Super Arcade.
 
 ### Ship Editor
 
@@ -828,11 +831,14 @@ ten ships when no edited copy exists.
 
 To switch ships:
 
-- Offline, hold **Tab** and press a number for player 1. Use **Caps Lock** and a
-  number for player 2. This is unavailable in SuperTyrian.
+- In a solo game, hold **Tab** and press a number. This is unavailable in
+  SuperTyrian.
 - **Esc > Extra > Custom Ship** works with keyboards, controllers, and touch.
-  Enter steps forward; Left and Right move either way.
-- A switch never restores armor already lost from the current life.
+  Enter steps forward; Left and Right move either way. Standard is the first
+  choice and restores the complete non-custom loadout you had before switching.
+  The row is disabled in the modes excluded above.
+- Full armor and shields stay full; damaged gauges keep the same ratio across
+  the old and new scaled maxima.
 
 The loadout editor lists only supported specials. Front and rear bays may use
 the current Weapon Creator design. The ship stores a reference to that design,
@@ -848,8 +854,9 @@ built-in hull into the bank; Flip H and Flip V mirror the selected pose.
 On a controller, Tab moves focus to or from the canvas. Arrows move the cursor
 and Enter uses the selected tool.
 
-Online Campaign and Endless co-op exchange both players' ship files and custom
-weapon designs automatically. Each player keeps their own ships and may switch
+Online Campaign and Endless exchange both players' ship files and custom weapon
+designs automatically. Separate Arcade exchanges both ship files and any custom
+weapon designs they reference. Each player keeps their own ships and may switch
 from the pause menu. Debug Mode's Edit Player menu can change either ship.
 
 Flying an edited ship marks an Endless record with `C`, as does firing a custom
@@ -932,6 +939,7 @@ build and must be on the same network. A firewall may ask you to allow UDP port
 | Choice | Data copied |
 | --- | --- |
 | Save | One save; the receiver chooses its slot and name |
+| Save > All Saves | All 22 save slots, including their Endless runs and online seats |
 | Custom Ships | Ships compiled by the Ship Editor |
 | Custom Weapons | The Weapon Creator library and its on/off setting |
 | Custom Data | Custom ships and weapons |
@@ -940,6 +948,7 @@ build and must be on the same network. A firewall may ask you to allow UDP port
 Choose the same category on both devices. Select **Upload** on the sender and
 **Download** on the receiver, then choose the sender from the list. Downloads
 replace the selected data; only a single-save transfer asks for a destination.
+**All Saves** keeps the receiver's high scores and custom content.
 
 If the devices do not find each other:
 

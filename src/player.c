@@ -128,7 +128,7 @@ uint arcade_shield_max(const Player *this_player)
 }
 
 /* Carry a live gauge across a change of maximum, preserving how damaged it was. */
-static uint arcade_carry_gauge(uint current, uint old_max, uint new_max)
+uint player_carry_gauge(uint current, uint old_max, uint new_max)
 {
 	if (old_max == 0)
 		return new_max;
@@ -147,7 +147,7 @@ void arcade_rescale_to_lives(Player *this_player)
 	if (this_player->initial_armor != armor_max)
 	{
 		// Preserve the damage ratio when the maximum changes.
-		this_player->armor = arcade_carry_gauge(this_player->armor, this_player->initial_armor, armor_max);
+		this_player->armor = player_carry_gauge(this_player->armor, this_player->initial_armor, armor_max);
 		this_player->initial_armor = armor_max;
 		changed = true;
 	}
@@ -155,7 +155,7 @@ void arcade_rescale_to_lives(Player *this_player)
 	const uint shield_max = arcade_shield_max(this_player);
 	if (this_player->shield_max != shield_max)
 	{
-		this_player->shield = arcade_carry_gauge(this_player->shield, this_player->shield_max, shield_max);
+		this_player->shield = player_carry_gauge(this_player->shield, this_player->shield_max, shield_max);
 		this_player->shield_max = shield_max;
 		changed = true;
 	}

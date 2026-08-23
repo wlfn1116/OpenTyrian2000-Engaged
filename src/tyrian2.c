@@ -21,6 +21,8 @@
 #include "backgrnd.h"
 #include "config.h"
 #include "crashlog.h"
+#include "custom_weapon.h"
+#include "editship.h"
 #include "endless.h"
 #include "episodes.h"
 #include "file.h"
@@ -9099,6 +9101,17 @@ void networkStartScreen(void)
 		 * outpost window that normally exchanges custom designs. Publish both players' working
 		 * copies here before item data materializes the loaded custom port/sidekick placeholders. */
 		network_custom_weapon_publish_resume();
+	}
+
+	/* Separate Arcade has no outpost rendezvous, so exchange its per-seat ship files here.
+	 * If a ship references its owner's custom weapon, publish that design first. */
+	if (custom_ships_multiplayer_mode() && !coop_mode_active())
+	{
+		customWeaponNetPrepare();
+		if (extraShipsUseCustomWeapon())
+			network_custom_weapon_publish_resume();
+		network_extra_ships_publish();
+		network_custom_content_rendezvous();
 	}
 
 	while (!network_is_sync())
