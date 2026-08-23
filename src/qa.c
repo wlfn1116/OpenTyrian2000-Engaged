@@ -7149,6 +7149,37 @@ static void qa_test_ship_editor_file(void)
 
 	qa_check(JE_shapeCodecSelfTest(), "the sprite cell codec round-trips every cell");
 
+	// The custom-weapon sentinel: stored per record, resolved per seat at equip time.
+	{
+		const bool savedEnabled = customWeaponEnabled;
+		const int savedPorts[CUSTOM_WEAPON_OWNERS] = { customWeaponOwnerPort[0], customWeaponOwnerPort[1] };
+
+		qa_check(extraShipResolvePort(0, 12) == 12, "an ordinary weapon byte resolves to itself");
+
+		customWeaponEnabled = true;
+		customWeaponOwnerPort[0] = 60;
+		customWeaponOwnerPort[1] = 59;
+		qa_check(extraShipResolvePort(0, EXTRA_SHIP_CUSTOM_PORT) == 60 &&
+		         extraShipResolvePort(1, EXTRA_SHIP_CUSTOM_PORT) == 59,
+		         "each seat resolves the sentinel to its own reserved port");
+
+		// Both machines must agree on the port whatever their own toggles say, or the two
+		// seats fire different guns from the same record.
+		customWeaponEnabled = false;
+		qa_check(extraShipResolvePort(0, EXTRA_SHIP_CUSTOM_PORT) == 60 &&
+		         extraShipResolvePort(1, EXTRA_SHIP_CUSTOM_PORT) == 59,
+		         "the sentinel resolves the same with the local toggle off");
+
+		customWeaponEnabled = true;
+		customWeaponOwnerPort[0] = 0;
+		qa_check(extraShipResolvePort(0, EXTRA_SHIP_CUSTOM_PORT) == 0,
+		         "...and where no port was free for that seat");
+
+		customWeaponOwnerPort[0] = savedPorts[0];
+		customWeaponOwnerPort[1] = savedPorts[1];
+		customWeaponEnabled = savedEnabled;
+	}
+
 	// The online exchange: serialize the local file, adopt it as the peer seat, and
 	// check the seat accessors route to it only while a network game is on.
 	{

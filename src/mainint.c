@@ -2560,8 +2560,8 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	endlessNoteCustomShip();  // an Endless record earns its "C" for a custom hull too
 
 	p->items.ship = (JE_byte)(90 + slot);
-	p->items.weapon[FRONT_WEAPON].id = table[base + 1];
-	p->items.weapon[REAR_WEAPON].id = table[base + 2];
+	p->items.weapon[FRONT_WEAPON].id = extraShipResolvePort(pnum, table[base + 1]);
+	p->items.weapon[REAR_WEAPON].id = extraShipResolvePort(pnum, table[base + 2]);
 	// A file from another machine may name a special whose icon the HUD cannot draw.
 	p->items.special = debug_special_is_safe(table[base + 3]) ? table[base + 3] : 0;
 	p->items.sidekick[LEFT_SIDEKICK] = table[base + 4];
@@ -8399,8 +8399,8 @@ void JE_mainKeyboardInput(void)
 					int z = x - SDL_SCANCODE_1 + 1;
 					player[0].items.ship = 90 + z;                     /*Ships*/
 					z = (z - 1) * 15;
-					player[0].items.weapon[FRONT_WEAPON].id = extraShips[z + 1];
-					player[0].items.weapon[REAR_WEAPON].id = extraShips[z + 2];
+					player[0].items.weapon[FRONT_WEAPON].id = extraShipResolvePort(0, extraShips[z + 1]);
+					player[0].items.weapon[REAR_WEAPON].id = extraShipResolvePort(0, extraShips[z + 2]);
 					player[0].items.special = extraShips[z + 3];
 					player[0].items.sidekick[LEFT_SIDEKICK] = extraShips[z + 4];
 					player[0].items.sidekick[RIGHT_SIDEKICK] = extraShips[z + 5];
@@ -8444,8 +8444,8 @@ void JE_mainKeyboardInput(void)
 					int z = x - SDL_SCANCODE_1 + 1;
 					player[1].items.ship = 90 + z;
 					z = (z - 1) * 15;
-					player[1].items.weapon[FRONT_WEAPON].id = extraShips[z + 1];
-					player[1].items.weapon[REAR_WEAPON].id = extraShips[z + 2];
+					player[1].items.weapon[FRONT_WEAPON].id = extraShipResolvePort(1, extraShips[z + 1]);
+					player[1].items.weapon[REAR_WEAPON].id = extraShipResolvePort(1, extraShips[z + 2]);
 					player[1].items.special = extraShips[z + 3];
 					player[1].items.sidekick[LEFT_SIDEKICK] = extraShips[z + 4];
 					player[1].items.sidekick[RIGHT_SIDEKICK] = extraShips[z + 5];

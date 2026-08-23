@@ -842,6 +842,13 @@ The Special row offers only specials whose icons exist in the game data; the
 in-flight display draws that icon every frame, so anything else is unsafe to
 equip.
 
+The Front and Rear Weapon rows also offer your **Custom Weapon**, listed by the
+name you gave it in the Weapon Creator. A ship saved this way stores "the custom
+weapon", not a copy of the design, so it always flies your current one; online it
+gives each player their own design, so host and guest can fly different custom
+ships with different custom weapons at the same time. The row appears only while
+the Weapon Creator is enabled, but a ship that already uses it keeps working.
+
 **Sprites** opens the paint screen for graphics 8 through 15, the eight sprite
 banks stored in the ship file. Each bank holds five turning poses. The Tool row
 switches what a canvas press does: Paint, Fill (flood fill), Pick (read a color
@@ -852,9 +859,9 @@ controller, Tab moves focus onto the canvas; arrows then move the paint cursor
 and Enter applies the tool. Compiled files are interchangeable with the DOS
 tool's in both directions.
 
-Online, both machines exchange their ship files automatically when a session
-reaches its first level, and each player's extra ships come from their own
-file. In Campaign and Endless co-op, switch during a pause with
+Online, both machines exchange their ship files and custom weapon designs
+automatically when a session reaches its first level, and each player's extra
+ships and custom weapon come from their own. In Campaign and Endless co-op, switch during a pause with
 **Esc > Extra > Custom Ship**: each player changes their own ship, and the
 change applies to both machines. With Debug Mode on, Edit Player can also set
 either player's ship. The in-flight Tab and Caps Lock switch works offline

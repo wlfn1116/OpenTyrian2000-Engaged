@@ -18,6 +18,7 @@
 #include "editship.h"
 
 #include "config.h"
+#include "custom_weapon.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -340,6 +341,40 @@ static JE_byte *seField(int slot, int row)
 	return &extraShips[(slot - 1) * 15 + (row - SE_ROW_GRAPHIC)];
 }
 
+/* Deliberately independent of customWeaponEnabled: that toggle is local configuration, and
+ * both machines have to land on the same port for the same seat or they simulate different
+ * guns. The reserved ports are resolved identically on both, and the peer's design is
+ * adopted into its owner's port whatever this machine's own toggle says. */
+JE_byte extraShipResolvePort(uint seat, JE_byte port)
+{
+	if (port != EXTRA_SHIP_CUSTOM_PORT)
+		return port;
+
+	const int reserved = (seat < CUSTOM_WEAPON_OWNERS) ? customWeaponOwnerPort[seat] : 0;
+	return (reserved > 0) ? (JE_byte)reserved : 0;
+}
+
+// Whether the custom weapon can be put in a bay here: the editor writes the local file, so
+// it offers the row against this machine's own design.
+static bool seCustomPortAvailable(void)
+{
+	return customWeaponEnabled && customWeaponPort > 0;
+}
+
+bool extraShipsUseCustomWeapon(void)
+{
+	if (!extraAvail)
+		return false;
+
+	for (int slot = 0; slot < 10; ++slot)
+	{
+		const JE_byte *const record = &extraShips[slot * 15];
+		if (record[1] == EXTRA_SHIP_CUSTOM_PORT || record[2] == EXTRA_SHIP_CUSTOM_PORT)
+			return true;
+	}
+	return false;
+}
+
 static bool seValueOk(int row, int v)
 {
 	switch (row)
@@ -348,9 +383,12 @@ static bool seValueOk(int row, int v)
 		// 1..7 are built-in sheets; 8..15 the custom banks, drawable in the sprite editor.
 		return v >= 1 && v <= 15;
 	case SE_ROW_FRONT:
-		return v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_FRONT;
+		// The custom weapon fits either bay; it is designed, not drawn from the shop tables.
+		return v == EXTRA_SHIP_CUSTOM_PORT ||
+		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_FRONT);
 	case SE_ROW_REAR:
-		return v == 0 || (v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_REAR);
+		return v == 0 || v == EXTRA_SHIP_CUSTOM_PORT ||
+		       (v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_REAR);
 	case SE_ROW_SPECIAL:
 		// Only crash-safe specials: the in-flight HUD blits the icon every frame.
 		return v == 0 || debug_special_is_safe(v);
@@ -367,7 +405,17 @@ static bool seValueOk(int row, int v)
 	return false;
 }
 
-// Step a field to its next valid value in `dir`, wrapping past the byte range.
+/* What the cycler offers, as opposed to what a record may legally hold: a stored custom
+ * weapon stays put on a machine that has none, rather than being rewritten away, but it is
+ * not something the arrows can land on there. */
+static bool seValueOffered(int row, int v)
+{
+	if (v == EXTRA_SHIP_CUSTOM_PORT && !seCustomPortAvailable())
+		return false;
+	return seValueOk(row, v);
+}
+
+// Step a field to its next offered value in `dir`, wrapping past the byte range.
 static void seStepField(int slot, int row, int dir)
 {
 	JE_byte *const p = seField(slot, row);
@@ -379,7 +427,7 @@ static void seStepField(int slot, int row, int dir)
 			v = 255;
 		else if (v > 255)
 			v = 0;
-		if (seValueOk(row, v))
+		if (seValueOffered(row, v))
 		{
 			*p = (JE_byte)v;
 			return;
@@ -417,6 +465,12 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 		return buf;
 	case SE_ROW_FRONT:
 	case SE_ROW_REAR:
+		if (v == EXTRA_SHIP_CUSTOM_PORT)
+		{
+			// The design's own name, so the row reads like the Weapon Creator's title.
+			snprintf(buf, bufSize, "%s", customWeaponName[0] != '\0' ? customWeaponName : "Custom Weapon");
+			return buf;
+		}
 		return (v == 0 || v > PORT_NUM) ? "None" : seTrimName(weaponPort[v].name, buf, bufSize);
 	case SE_ROW_SPECIAL:
 		return (v == 0 || v > SPECIAL_NUM) ? "None" : seTrimName(special[v].name, buf, bufSize);
@@ -447,12 +501,18 @@ static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr)
 		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr);
 }
 
-/* Present at display rate and wait out the editor's tick, like the shop menus. Both
- * editor loops run on a fixed tick rather than blocking for input, because the
- * on-screen touch controls are a per-frame request that expires (TOUCH_ASSERT_TTL_MS);
- * a loop that stops renewing it drops its own buttons off the screen. */
+/* Present at display rate and wait out the editor's tick, like the shop menus. Both editor
+ * loops run on a tick rather than blocking for input, because the on-screen touch controls
+ * are a request that expires (TOUCH_ASSERT_TTL_MS); a loop that stops renewing it drops its
+ * own buttons off the screen.
+ *
+ * The wait returns as soon as there is something to act on, so a drag repaints at pointer
+ * rate instead of tick rate. An idle screen still comes back once a tick, which is what
+ * keeps the controls alive. */
 static void seWaitTick(void)
 {
+	const Uint16 x0 = mouse_x, y0 = mouse_y;
+
 	for (;;)
 	{
 		if (getDelayTicks() == 0)
@@ -460,6 +520,8 @@ static void seWaitTick(void)
 		JE_mouseStart();   // services SDL events + draws the cursor at its live pos
 		JE_showVGA();
 		JE_mouseReplace(); // restore the pixels under the cursor for the next pass
+		if (newkey || newmouse || mouse_scroll != 0 || mouse_x != x0 || mouse_y != y0)
+			break;
 		if (!output_vsync)
 			limit_render_fps();
 	}
@@ -722,6 +784,35 @@ static void seFloodFill(int bank, int frame, int sx, int sy, JE_byte to)
 	}
 }
 
+/* A drag samples the pointer once per repaint, so consecutive samples sit several cells
+ * apart on a quick stroke; joining them keeps the stroke a line instead of a dotted trail. */
+static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_byte c)
+{
+	const int dx = (x1 > x0) ? x1 - x0 : x0 - x1;
+	const int dy = (y1 > y0) ? y0 - y1 : y1 - y0;  // negative magnitude, per Bresenham
+	const int sx = (x0 < x1) ? 1 : -1;
+	const int sy = (y0 < y1) ? 1 : -1;
+	int err = dx + dy;
+
+	for (;;)
+	{
+		*seFramePx(bank, frame, x0, y0) = c;
+		if (x0 == x1 && y0 == y1)
+			break;
+		const int e2 = 2 * err;
+		if (e2 >= dy)
+		{
+			err += dy;
+			x0 += sx;
+		}
+		if (e2 <= dx)
+		{
+			err += dx;
+			y0 += sy;
+		}
+	}
+}
+
 // One canvas application of the active tool. Pick loads the color and hands back to Paint.
 static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool)
 {
@@ -765,6 +856,7 @@ static void seSpriteEditor(int bank)
 	bool canvasFocus = false;
 	int curX = SE_FRAME_W / 2, curY = SE_FRAME_H / 2;
 	JE_byte heldColor = 0;  // the color the pressed mouse button paints while dragging
+	int strokeX = -1, strokeY = -1;  // last cell this drag painted; -1 = no stroke in progress
 	char notice[40] = "";
 	int prev_mx = mouse_x, prev_my = mouse_y;
 	bool done = false;
@@ -884,7 +976,7 @@ static void seSpriteEditor(int bank)
 		JE_mouseReplace();
 		seWaitTick();
 
-		// Movement since the previous tick, which is what a paint drag follows.
+		// Movement since the previous repaint, which is what a paint drag follows.
 		const bool mouseMoved = (mouse_x != prev_mx || mouse_y != prev_my);
 
 		int act = -1;  // a triggered tool button, performed after input decoding
@@ -899,6 +991,11 @@ static void seSpriteEditor(int bank)
 
 		const bool overCanvas = mouse_x >= CANV_X && mouse_x < CANV_X + SE_FRAME_W * CANV_SCALE &&
 		                        mouse_y >= CANV_Y && mouse_y < CANV_Y + SE_FRAME_H * CANV_SCALE;
+
+		// A released button, or a pointer that left the canvas, ends the stroke: the next
+		// sample starts a fresh one instead of joining across the gap.
+		if (!mousedown || !overCanvas)
+			strokeX = strokeY = -1;
 
 		int hover = -1;
 		if (mouse_x >= panX0 && mouse_x <= panX1)
@@ -942,7 +1039,15 @@ static void seSpriteEditor(int bank)
 				else if (newmouse)
 					seApplyTool(bank, frame, px, py, &color, &tool);
 				else if (tool == SES_TOOL_PAINT || tool == SES_TOOL_ERASE)
-					*seFramePx(bank, frame, px, py) = heldColor;  // dragging continues the stroke
+				{
+					// Dragging continues the stroke, joined to where the last sample landed.
+					if (strokeX >= 0)
+						seStrokeTo(bank, frame, strokeX, strokeY, px, py, heldColor);
+					else
+						*seFramePx(bank, frame, px, py) = heldColor;
+				}
+				strokeX = px;
+				strokeY = py;
 			}
 			else if (newmouse)
 			{
@@ -1223,7 +1328,13 @@ void JE_shipEditor(void)
 						draw_special_icon(VGAScreen, x, BOX_Y0 + 108, v);
 				}
 				else
-					JE_drawItem(icons[i].type, v, x, BOX_Y0 + 108);
+				{
+					// A stored custom weapon draws through this machine's own reserved port,
+					// which is a real materialized weaponPort entry with an icon.
+					JE_drawItem(icons[i].type,
+					            extraShipResolvePort((uint)customWeaponLocalOwner(), v),
+					            x, BOX_Y0 + 108);
+				}
 				draw_font_hv_shadow(VGAScreen, x + 12, BOX_Y0 + 140, icons[i].tag, small_font, centered, 15, 1, false, 1);
 			}
 		}

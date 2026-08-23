@@ -451,6 +451,12 @@ void JE_getShipInfo(void)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 		player[i].generator_power_add = powerSys[player[i].items.generator].power;
 
+	// A seat can only fly an extra ship the machines have both seen; a slot with no file behind
+	// it would derive zero armor. Both ends agree on this, so the fallback cannot itself desync.
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		if (player[i].items.ship > 90 && !extraAvailFor(i))
+			player[i].items.ship = 1;
+
 	extraShip = player[0].items.ship > 90;
 	if (extraShip)
 	{

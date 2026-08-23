@@ -42,6 +42,17 @@ JE_byte *extraShipsFor(uint playerIdx);
 Sprite2_array *extraShapesFor(uint playerIdx);
 bool extraAvailFor(uint playerIdx);
 
+/* A weapon byte of 255 means "the custom weapon of whichever seat flies this ship". The
+ * reserved port differs per seat and per machine, so a record stores this sentinel and the
+ * live port is resolved when the ship is equipped. Resolves to None when that seat has no
+ * custom weapon (the feature is off, or no port was free). */
+#define EXTRA_SHIP_CUSTOM_PORT 255
+JE_byte extraShipResolvePort(uint seat, JE_byte port);
+
+// Whether any local record equips the custom weapon, and so needs the design on the wire
+// even when this machine's own Weapon Creator toggle is off.
+bool extraShipsUseCustomWeapon(void);
+
 /* Wire form: version, availability, the plaintext table, then the sprite blob. */
 #define EXTRA_SHIPS_WIRE_MAX (6 + sizeof(JE_ShipsType) + UINT16_MAX)
 size_t extraShipsSerialize(Uint8 *buf, size_t max);

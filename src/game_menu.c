@@ -22,6 +22,7 @@
 #include "console_platform.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "editship.h"
 #include "endless.h"
 #include "endless_internal.h"  // the QA auto-visit reaches the perk and course internals
 #include "episodes.h"
@@ -1791,6 +1792,11 @@ static bool shopCampaignRendezvous(void)
 		// Both machines are now in this loop draining packets, which is the one window wide
 		// enough for a custom weapon design. It is a no-op unless the design changed.
 		network_custom_weapon_publish();
+		// A ship record can equip the custom weapon whatever the local toggle says, and the
+		// peer resolves that record against this seat's design. Hash-gated, so this is a
+		// no-op when the call above already sent it.
+		if (extraShipsUseCustomWeapon())
+			network_custom_weapon_publish_resume();
 		network_extra_ships_publish();  // same window; the hash gate makes it once per session
 
 		if (qa_net_gameplay_ticks > 0)
