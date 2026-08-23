@@ -921,24 +921,50 @@ Endless resume must also adopt the run record or halt the session.
 completed starting episode, before repeat, outside demos. Do not record a death
 or later episode reached by the same run. Store the Credit rule beside the row.
 
-### LAN save transfer
+### LAN player-data transfer
 
 `net_savexfer.c` uses a blocking socket on UDP port 1332, separate from the game
-session. Offer it only from the title screen's Load Game menu; an active session
-cannot service its keep-alive while the transfer UI waits.
+session. Offer it only from **Extra > Transfer** on the title screen; an active
+session cannot service its keep-alive while the transfer UI waits. The ordinary
+Load Game screen remains the stock 11 slots plus Exit; Save > Upload reuses that
+list only as a picker.
 
 Wire rules:
 
 - Every packet carries `SAVE_XFER_VERSION`. Packet types run from
   `PACKET_SAVE_OFFER` through `PACKET_SAVE_ACK`.
+- Bulk transfers use the parallel `PACKET_CUSTOM_OFFER` through
+  `PACKET_CUSTOM_ACK` family. Separate types prevent a Save sender and a bulk
+  receiver on the same port from pairing accidentally; distinct Custom Ships,
+  Custom Weapons, Custom Data, and Transfer All transport versions prevent any
+  two bulk choices from pairing.
 - The payload contains a 12-byte header, the 97-byte packed save record, and the
   slot's Endless text. The header supplies the save page and `online_seat`.
+- A custom-content envelope marks whether it carries ships, weapons, or both.
+  The weapon part contains the full `custom_weapons.cfg` library wire form, the
+  active library index, and the custom-weapons enabled bit; the ship part contains
+  the compiled `newsh$.shp` data. Adoption changes only the marked content set.
+  No controls, graphics, sound, network preferences, or other `opentyrian.cfg`
+  values are adopted. The transfer serializer distinguishes a
+  user compile from the bundled stock `newsh$.shp`; sender absence removes the
+  receiver's user file and reloads its stock fallback rather than merging data.
+- Transfer All wraps the canonical in-memory `opentyrian.sav` representation and
+  that complete Custom Data envelope. The save half includes all 22 slots,
+  Endless slot sections, high-score boards, and each two-player slot's
+  `online_seat`. Adoption replaces them in place without the single-save name or
+  destination UI and retains backups of both local halves for rollback on a
+  failed adoption.
 - Chunks repeat until the receiver acknowledges the complete generation.
+- Large custom libraries are sent in bounded 16-chunk bursts with an event and
+  acknowledgement poll between them, avoiding a UDP flood and keeping cancel
+  input responsive.
 - A pending download bypasses `JE_saveGame`, which would capture the receiver's
   live globals. It copies the record and Endless slot cache directly. A record
   without an Endless run must clear the target slot's old Endless half.
-- The receiving machine chooses only the destination slot and name. Custom
-  weapon designs stay in `opentyrian.cfg` and are not transferred.
+- For a single save, the receiving machine chooses only the destination slot and
+  name. Custom Ships and Custom Weapons can replace either content set alone;
+  Custom Data replaces both as one explicit step, and Transfer All combines them
+  with the complete save file without prompting.
 
 Discovery sends both global broadcast and directed `/24` probes. The typed
 address row uses the normal offer reply before pulling; strip a pasted `:port`
@@ -958,6 +984,14 @@ point-to-point. This avoids tunnel and carrier addresses and SDL_net omitting
 Wi-Fi on Apple devices. Android supports the call because its minimum API is 26.
 Strict C99 can hide the platform `IFF_*` macros, so the module uses checked
 `NET_IFF_*` values.
+
+Custom-content adoption clears only the corresponding cached per-seat weapon or
+ship copies. At the next co-op rendezvous, each machine republishes its received
+local library's current design and compiled ship file under its own seat. A transferred ship's
+custom-weapon sentinel therefore resolves to that seat's reserved port on both
+peers, including when the local Custom Weapons toggle is off; the existing
+`extraShipsUseCustomWeapon` force-publish path covers that case. Transfers never
+run inside a live session.
 
 ### Destruct and ENGAGE modes
 

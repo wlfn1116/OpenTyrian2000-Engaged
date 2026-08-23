@@ -477,6 +477,11 @@ void JE_loadConfiguration(void);
 void JE_saveConfiguration(void);
 bool save_opentyrian_config(void);  // write opentyrian.cfg now (settings + custom weapon)
 
+// Whole-file player-data transfer. Serialize includes every save slot, high-score board, online
+// seat marker, and saved Endless run; Adopt replaces that complete in-memory set and persists it.
+size_t save_file_serialize(Uint8 *buf, size_t cap);
+bool save_file_adopt(const Uint8 *buf, size_t len);
+
 void JE_saveGame(JE_byte slot, const char *name);
 void JE_loadGame(JE_byte slot);
 

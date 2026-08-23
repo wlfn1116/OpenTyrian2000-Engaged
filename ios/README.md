@@ -92,23 +92,23 @@ how presents are paced here, only whether the FPS Cap is applied on top of them.
 
 ## Networking
 
-iOS asks for local-network access when online play or a save transfer first opens
-a socket. The choice is under **Settings > Privacy & Security > Local Network**.
+iOS asks for local-network access when online play or a player-data transfer
+first opens a socket. The choice is under **Settings > Privacy & Security > Local Network**.
 `Info.plist.in` supplies the text for that prompt.
 
 This build does not carry Apple's multicast entitlement, so broadcast search is
 unavailable. Use one of these paths instead:
 
 - **Online Multiplayer > Host Game** and join from the other device.
-- **Load Game > Download > Wait for a sender**, then push from the other device
-  with **Upload**, Enter, and the address iOS shows.
+- **Extra > Transfer > any category > Download > Wait for a sender**, then
+  push from the other device with **Upload**, Enter, and the address iOS shows.
 
 After granting local-network access, **Join by IP Address** and **Enter an
 address...** also work. Waiting screens show the Wi-Fi address and omit
 loopback, carrier, and tunnel addresses.
 
 The other machine may need firewall access for UDP port 1333 for a game or 1332
-for a save transfer.
+for a player-data transfer.
 
 ## Files
 

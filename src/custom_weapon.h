@@ -215,7 +215,16 @@ int  customWeaponLibraryDelete(void);
 // Load / save the whole library file. Load is called once from customWeaponInit (seeds a
 // single slot from the working copy when no file exists yet, migrating an old single weapon).
 void customWeaponLibraryLoad(void);
-void customWeaponLibrarySave(void);
+bool customWeaponLibrarySave(void);
+
+/* Transfer the complete library without any unrelated opentyrian.cfg settings. The current
+ * working design is captured before serialization and restored after adoption. */
+#define CUSTOM_WEAPON_LIBRARY_WIRE_VERSION 1
+#define CUSTOM_WEAPON_LIBRARY_WIRE_MAX \
+	(4 + CUSTOM_WEAPON_LIB_MAX * (4 + CUSTOM_WEAPON_WIRE_MAX))
+
+size_t customWeaponSerializeLibrary(Uint8 *buf, size_t cap);
+bool customWeaponAdoptLibrary(const Uint8 *buf, size_t len);
 
 /* Online Campaign design exchange. Serialize writes this machine's working copy; Adopt installs
  * a received one into another player's reserved slots without touching the editor. The format is

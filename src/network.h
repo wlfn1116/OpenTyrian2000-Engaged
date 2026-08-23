@@ -135,6 +135,15 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_SAVE_CHUNK    0x55    // version, generation, chunk idx/count, len, <payload chunk>
 #define PACKET_SAVE_ACK      0x56    // version, generation   whole payload consumed
 
+// Bulk player-data transfers use the same transport shape on the same title-screen-only socket,
+// but a packet family separate from single Save keeps those senders and receivers from pairing.
+// Ships, Weapons, Custom Data, and Transfer All carry distinct transport versions.
+#define PACKET_CUSTOM_OFFER  0x57
+#define PACKET_CUSTOM_REPLY  0x58
+#define PACKET_CUSTOM_PULL   0x59
+#define PACKET_CUSTOM_CHUNK  0x5A
+#define PACKET_CUSTOM_ACK    0x5B
+
 #define PACKET_INPUT         0x60    // rollback input stream (never acknowledged; see net_rollback.c)
 #define PACKET_RESYNC        0x61    // gen, chunk idx/count, len, <state chunk>  (acknowledged; see nrb_resync_*)
 #define PACKET_DESTRUCT_INPUT 0x62   // Destruct rollback input stream (never acknowledged; see destruct_rollback.c)

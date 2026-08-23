@@ -18,6 +18,8 @@
 
 #include "config.h"
 #include "crashlog.h"
+#include "custom_weapon.h"
+#include "editship.h"
 #include "endless.h"
 #include "font.h"
 #include "fonthand.h"
@@ -45,8 +47,13 @@
 // Separate from the game-session port.
 #define SAVE_XFER_PORT   1332
 
-// Bump when the payload or packet semantics change.
-#define SAVE_XFER_VERSION 1
+// Save retains its original transport version. Every bulk choice shares one packet family but
+// has a distinct version, so selecting a different kind on each device can never pair them.
+#define SAVE_XFER_VERSION              1
+#define CUSTOM_XFER_TRANSPORT_VERSION  2
+#define ALL_XFER_TRANSPORT_VERSION     3
+#define SHIPS_XFER_TRANSPORT_VERSION   4
+#define WEAPONS_XFER_TRANSPORT_VERSION 5
 
 // Fixed-offset, little-endian header. The save record and Endless text follow it.
 #define SX_MAGIC         0    /* 4: "OTSV"                                              */
@@ -61,6 +68,51 @@
 #define SX_FLAG_TWO_PLAYER  0x01
 
 static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
+
+// Custom Data carries only user-created content: the whole weapon library and compiled ships.
+// The one-byte enabled flag is the only setting imported from opentyrian.cfg.
+#define CX_MAGIC          0    /* 4: "OTCD"                                      */
+#define CX_VERSION        4    /* 2: CUSTOM_XFER_VERSION                         */
+#define CX_FLAGS          6    /* 1: bit 0 = custom weapons enabled              */
+#define CX_RESERVED       7    /* 1                                              */
+#define CX_WEAPONS_LEN    8    /* 4                                              */
+#define CX_SHIPS_LEN     12    /* 4                                              */
+#define CX_DATA          16
+#define CX_MAX           (CX_DATA + CUSTOM_WEAPON_LIBRARY_WIRE_MAX + EXTRA_SHIPS_WIRE_MAX)
+
+#define CUSTOM_XFER_VERSION       2
+#define CX_FLAG_WEAPONS_ENABLED   0x01
+#define CX_PART_WEAPONS           0x02
+#define CX_PART_SHIPS             0x04
+#define CX_PART_MASK              (CX_PART_WEAPONS | CX_PART_SHIPS)
+
+static const Uint8 cx_magic[4] = { 'O', 'T', 'C', 'D' };
+
+// Transfer All wraps the complete opentyrian.sav representation and the Custom Data envelope.
+// One MiB leaves ample room for all 22 saved Endless runs as well as every ordinary slot and
+// high-score board; the current worst case is well below half of that.
+#define AX_MAGIC          0    /* 4: "OTAL"                         */
+#define AX_VERSION        4    /* 2: ALL_XFER_VERSION               */
+#define AX_RESERVED       6    /* 2                                 */
+#define AX_SAVES_LEN      8    /* 4                                 */
+#define AX_CUSTOM_LEN    12    /* 4                                 */
+#define AX_DATA          16
+#define AX_SAVES_MAX     (1024u * 1024u)
+#define AX_MAX           (AX_DATA + AX_SAVES_MAX + CX_MAX)
+
+#define ALL_XFER_VERSION 2
+
+static const Uint8 ax_magic[4] = { 'O', 'T', 'A', 'L' };
+
+typedef enum
+{
+	XFER_SAVE,
+	XFER_SHIPS,
+	XFER_WEAPONS,
+	XFER_CUSTOM,
+	XFER_ALL,
+}
+XferKind;
 
 // A generation separates consecutive transfers from stale chunks.
 #define SXC_TYPE      0    /* 2 */
@@ -112,7 +164,87 @@ static const char sxSendHere          [] = "Send to this address.";
 static const char sxCancelKey         [] = "Esc to cancel";
 static const char sxAnyButton         [] = "Press any button";
 static const char sxNoSaveThere       [] = "That address is not sharing a save.";
+static const char sxNoShipsThere      [] = "No custom ships at that address.";
+static const char sxNoWeaponsThere    [] = "No custom weapons at that address.";
+static const char sxNoCustomThere     [] = "No custom data at that address.";
+static const char sxNoAllThere        [] = "No complete data at that address.";
 static const char sxNeedAddress       [] = "Enter an address.";
+
+static const char *xferUploadTitle(XferKind kind)
+{
+	switch (kind)
+	{
+		case XFER_SAVE:    return "Upload Save";
+		case XFER_SHIPS:   return "Upload Custom Ships";
+		case XFER_WEAPONS: return "Upload Custom Weapons";
+		case XFER_CUSTOM:  return "Upload Custom Data";
+		case XFER_ALL:     return "Upload All Data";
+	}
+	return "Upload";
+}
+
+static const char *xferDownloadTitle(XferKind kind)
+{
+	switch (kind)
+	{
+		case XFER_SAVE:    return "Download Save";
+		case XFER_SHIPS:   return "Download Custom Ships";
+		case XFER_WEAPONS: return "Download Custom Weapons";
+		case XFER_CUSTOM:  return "Download Custom Data";
+		case XFER_ALL:     return "Download All Data";
+	}
+	return "Download";
+}
+
+static const char *xferOfferedName(XferKind kind)
+{
+	switch (kind)
+	{
+		case XFER_SAVE:    return NULL;
+		case XFER_SHIPS:   return "Custom ships";
+		case XFER_WEAPONS: return "Custom weapons";
+		case XFER_CUSTOM:  return "Custom ships and weapons";
+		case XFER_ALL:     return "All saves and custom data";
+	}
+	return "Player data";
+}
+
+static Uint16 xferPacketType(XferKind kind, Uint16 saveType)
+{
+	return kind == XFER_SAVE ? saveType
+	       : (Uint16)(saveType + (PACKET_CUSTOM_OFFER - PACKET_SAVE_OFFER));
+}
+
+static Uint16 xferTransportVersion(XferKind kind)
+{
+	switch (kind)
+	{
+		case XFER_SAVE:    return SAVE_XFER_VERSION;
+		case XFER_SHIPS:   return SHIPS_XFER_TRANSPORT_VERSION;
+		case XFER_WEAPONS: return WEAPONS_XFER_TRANSPORT_VERSION;
+		case XFER_CUSTOM:  return CUSTOM_XFER_TRANSPORT_VERSION;
+		case XFER_ALL:     return ALL_XFER_TRANSPORT_VERSION;
+	}
+	return 0;
+}
+
+static size_t xferMaxPayload(XferKind kind)
+{
+	return kind == XFER_SAVE ? SX_MAX : kind == XFER_ALL ? AX_MAX : CX_MAX;
+}
+
+static const char *xferNoOfferLine(XferKind kind)
+{
+	switch (kind)
+	{
+		case XFER_SAVE:    return sxNoSaveThere;
+		case XFER_SHIPS:   return sxNoShipsThere;
+		case XFER_WEAPONS: return sxNoWeaponsThere;
+		case XFER_CUSTOM:  return sxNoCustomThere;
+		case XFER_ALL:     return sxNoAllThere;
+	}
+	return sxNoCustomThere;
+}
 
 typedef struct
 {
@@ -289,6 +421,203 @@ static bool saveXferUnpack(const Uint8 *buf, size_t len)
 	return true;
 }
 
+static size_t customXferPackParts(Uint8 *out, Uint8 parts)
+{
+	parts &= CX_PART_MASK;
+	if (out == NULL || parts == 0)
+		return 0;
+
+	memcpy(&out[CX_MAGIC], cx_magic, sizeof(cx_magic));
+	SDLNet_Write16(CUSTOM_XFER_VERSION, &out[CX_VERSION]);
+	out[CX_FLAGS] = parts;
+	if ((parts & CX_PART_WEAPONS) && customWeaponEnabled)
+		out[CX_FLAGS] |= CX_FLAG_WEAPONS_ENABLED;
+	out[CX_RESERVED] = 0;
+
+	size_t weaponsLen = 0;
+	if (parts & CX_PART_WEAPONS)
+	{
+		weaponsLen = customWeaponSerializeLibrary(&out[CX_DATA],
+		                                                CUSTOM_WEAPON_LIBRARY_WIRE_MAX);
+		if (weaponsLen == 0 || weaponsLen > UINT32_MAX)
+			return 0;
+	}
+
+	size_t shipsLen = 0;
+	if (parts & CX_PART_SHIPS)
+	{
+		shipsLen = extraShipsSerializeUser(&out[CX_DATA + weaponsLen], EXTRA_SHIPS_WIRE_MAX);
+		if (shipsLen == 0 || shipsLen > UINT32_MAX)
+			return 0;
+	}
+
+	SDLNet_Write32((Uint32)weaponsLen, &out[CX_WEAPONS_LEN]);
+	SDLNet_Write32((Uint32)shipsLen, &out[CX_SHIPS_LEN]);
+	return CX_DATA + weaponsLen + shipsLen;
+}
+
+static size_t customXferPack(Uint8 *out)
+{
+	return customXferPackParts(out, CX_PART_MASK);
+}
+
+static bool customXferParts(const Uint8 *buf, size_t len, Uint8 expectedParts,
+                            const Uint8 **weapons, size_t *weaponsLen,
+                            const Uint8 **ships, size_t *shipsLen)
+{
+	if (buf == NULL || len < CX_DATA || memcmp(&buf[CX_MAGIC], cx_magic, sizeof(cx_magic)) != 0 ||
+	    SDLNet_Read16(&buf[CX_VERSION]) != CUSTOM_XFER_VERSION || buf[CX_RESERVED] != 0)
+		return false;
+
+	const Uint8 flags = buf[CX_FLAGS];
+	const Uint8 parts = flags & CX_PART_MASK;
+	if (parts != expectedParts || (flags & ~(CX_FLAG_WEAPONS_ENABLED | CX_PART_MASK)) != 0 ||
+	    (!(parts & CX_PART_WEAPONS) && (flags & CX_FLAG_WEAPONS_ENABLED)))
+		return false;
+
+	*weaponsLen = SDLNet_Read32(&buf[CX_WEAPONS_LEN]);
+	*shipsLen = SDLNet_Read32(&buf[CX_SHIPS_LEN]);
+	if (((parts & CX_PART_WEAPONS) ? (*weaponsLen == 0 || *weaponsLen > CUSTOM_WEAPON_LIBRARY_WIRE_MAX)
+	                              : *weaponsLen != 0) ||
+	    ((parts & CX_PART_SHIPS) ? (*shipsLen == 0 || *shipsLen > EXTRA_SHIPS_WIRE_MAX)
+	                            : *shipsLen != 0) ||
+	    *weaponsLen > len - CX_DATA || *shipsLen != len - CX_DATA - *weaponsLen)
+		return false;
+
+	*weapons = (parts & CX_PART_WEAPONS) ? &buf[CX_DATA] : NULL;
+	*ships = (parts & CX_PART_SHIPS) ? &buf[CX_DATA + *weaponsLen] : NULL;
+	return !(parts & CX_PART_SHIPS) || extraShipsPayloadValid(*ships, *shipsLen);
+}
+
+static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
+{
+	const Uint8 *weapons, *ships;
+	size_t weaponsLen, shipsLen;
+	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen))
+		return false;
+
+	if (parts & CX_PART_WEAPONS)
+	{
+		if (!customWeaponAdoptLibrary(weapons, weaponsLen))
+			return false;
+		customWeaponEnabled = (buf[CX_FLAGS] & CX_FLAG_WEAPONS_ENABLED) != 0;
+	}
+	if ((parts & CX_PART_SHIPS) && !extraShipsAdoptLocal(ships, shipsLen))
+		return false;
+
+	// The library owns the designs; opentyrian.cfg keeps only the active working copy and the
+	// feature toggle. A ships-only transfer never writes either configuration file.
+	return !(parts & CX_PART_WEAPONS) ||
+	       (customWeaponLibrarySave() && save_opentyrian_config());
+}
+
+static bool customXferUnpackParts(const Uint8 *buf, size_t len, Uint8 parts)
+{
+	const Uint8 *weapons, *ships;
+	size_t weaponsLen, shipsLen;
+	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen))
+		return false;
+
+	Uint8 *const oldCustom = malloc(CX_MAX);
+	const size_t oldCustomLen = oldCustom != NULL ? customXferPackParts(oldCustom, parts) : 0;
+	if (oldCustomLen == 0)
+	{
+		free(oldCustom);
+		return false;
+	}
+
+	const bool adopted = customXferApply(buf, len, parts);
+	if (!adopted)
+		(void)customXferApply(oldCustom, oldCustomLen, parts);
+	free(oldCustom);
+	return adopted;
+}
+
+static bool customXferUnpack(const Uint8 *buf, size_t len)
+{
+	return customXferUnpackParts(buf, len, CX_PART_MASK);
+}
+
+static size_t allXferPack(Uint8 *out)
+{
+	if (out == NULL)
+		return 0;
+
+	memcpy(&out[AX_MAGIC], ax_magic, sizeof(ax_magic));
+	SDLNet_Write16(ALL_XFER_VERSION, &out[AX_VERSION]);
+	out[AX_RESERVED] = out[AX_RESERVED + 1] = 0;
+
+	const size_t savesLen = save_file_serialize(&out[AX_DATA], AX_SAVES_MAX);
+	if (savesLen == 0 || savesLen > UINT32_MAX)
+		return 0;
+
+	const size_t customLen = customXferPack(&out[AX_DATA + savesLen]);
+	if (customLen == 0 || customLen > UINT32_MAX)
+		return 0;
+
+	SDLNet_Write32((Uint32)savesLen, &out[AX_SAVES_LEN]);
+	SDLNet_Write32((Uint32)customLen, &out[AX_CUSTOM_LEN]);
+	return AX_DATA + savesLen + customLen;
+}
+
+static bool allXferUnpack(const Uint8 *buf, size_t len)
+{
+	if (buf == NULL || len < AX_DATA || memcmp(&buf[AX_MAGIC], ax_magic, sizeof(ax_magic)) != 0 ||
+	    SDLNet_Read16(&buf[AX_VERSION]) != ALL_XFER_VERSION)
+		return false;
+
+	const size_t savesLen = SDLNet_Read32(&buf[AX_SAVES_LEN]);
+	const size_t customLen = SDLNet_Read32(&buf[AX_CUSTOM_LEN]);
+	if (savesLen == 0 || savesLen > AX_SAVES_MAX || customLen == 0 || customLen > CX_MAX ||
+	    savesLen > len - AX_DATA || customLen != len - AX_DATA - savesLen)
+		return false;
+
+	// Keep the local saves so a custom-data or persistence failure cannot intentionally leave a
+	// mixed profile. Custom Data performs its own rollback. A storage device that refuses the
+	// save rollback as well is still reported failed.
+	Uint8 *const oldSaves = malloc(AX_SAVES_MAX);
+	const size_t oldSavesLen = oldSaves != NULL ? save_file_serialize(oldSaves, AX_SAVES_MAX) : 0;
+	if (oldSavesLen == 0)
+	{
+		free(oldSaves);
+		return false;
+	}
+
+	const bool savesAdopted = save_file_adopt(&buf[AX_DATA], savesLen);
+	const bool customAdopted = savesAdopted && customXferUnpack(&buf[AX_DATA + savesLen], customLen);
+	if (!customAdopted)
+		(void)save_file_adopt(oldSaves, oldSavesLen);
+
+	free(oldSaves);
+	return customAdopted;
+}
+
+static size_t xferPack(XferKind kind, Uint8 *out, JE_byte slot)
+{
+	switch (kind)
+	{
+		case XFER_SAVE:    return saveXferPack(out, slot);
+		case XFER_SHIPS:   return customXferPackParts(out, CX_PART_SHIPS);
+		case XFER_WEAPONS: return customXferPackParts(out, CX_PART_WEAPONS);
+		case XFER_CUSTOM:  return customXferPack(out);
+		case XFER_ALL:     return allXferPack(out);
+	}
+	return 0;
+}
+
+static bool xferUnpack(XferKind kind, const Uint8 *buf, size_t len)
+{
+	switch (kind)
+	{
+		case XFER_SAVE:    return saveXferUnpack(buf, len);
+		case XFER_SHIPS:   return customXferUnpackParts(buf, len, CX_PART_SHIPS);
+		case XFER_WEAPONS: return customXferUnpackParts(buf, len, CX_PART_WEAPONS);
+		case XFER_CUSTOM:  return customXferUnpack(buf, len);
+		case XFER_ALL:     return allXferUnpack(buf, len);
+	}
+	return false;
+}
+
 const JE_SaveFileType *saveXferPending(void)
 {
 	return save_xfer_pending.valid ? &save_xfer_pending.rec : NULL;
@@ -319,24 +648,31 @@ bool saveXferPendingApply(JE_byte slot, const char *name)
 		endlessSlotClear(slot);
 
 	JE_saveConfiguration();
+	saveXferPendingClear();
 	return true;
 }
 
 /* Socket */
 
-static void saveXferFillReply(Uint8 *data, JE_byte slot)
+static void saveXferFillReply(XferKind kind, Uint8 *data, JE_byte slot)
 {
 	memset(data, 0, SXR_LEN);
-	SDLNet_Write16(PACKET_SAVE_REPLY,  &data[SXR_TYPE]);
-	SDLNet_Write16(SAVE_XFER_VERSION,  &data[SXR_VERSION]);
+	SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_REPLY), &data[SXR_TYPE]);
+	SDLNet_Write16(xferTransportVersion(kind), &data[SXR_VERSION]);
 	SDLNet_Write16(SAVE_XFER_PORT,     &data[SXR_PORT]);
 
-	data[SXR_FLAGS] = (Uint8)((slot > 11 ? SX_FLAG_TWO_PLAYER : 0)
-	                        | (endlessSlotHasRun(slot) ? SXR_FLAG_ENDLESS : 0));
-	data[SXR_EPISODE] = saveFiles[slot - 1].episode;
-
-	SDL_strlcpy((char *)&data[SXR_LEVEL],  saveFiles[slot - 1].levelName, 11);
-	saveXferTrimName((char *)&data[SXR_SAVE], 15, saveFiles[slot - 1].name);
+	if (kind == XFER_SAVE)
+	{
+		data[SXR_FLAGS] = (Uint8)((slot > 11 ? SX_FLAG_TWO_PLAYER : 0)
+		                        | (endlessSlotHasRun(slot) ? SXR_FLAG_ENDLESS : 0));
+		data[SXR_EPISODE] = saveFiles[slot - 1].episode;
+		SDL_strlcpy((char *)&data[SXR_LEVEL], saveFiles[slot - 1].levelName, 11);
+		saveXferTrimName((char *)&data[SXR_SAVE], 15, saveFiles[slot - 1].name);
+	}
+	else
+	{
+		SDL_strlcpy((char *)&data[SXR_SAVE], xferOfferedName(kind), 15);
+	}
 	SDL_strlcpy((char *)&data[SXR_SENDER], network_player_name, NET_NAME_MAX + 1);
 }
 
@@ -373,11 +709,11 @@ static bool saveXferProbeVolley(UDPsocket sock, UDPpacket *probe, int len)
 	return sent;
 }
 
-static bool saveXferIsOurs(const UDPpacket *packet, Uint16 type, int minLen)
+static bool saveXferIsOurs(const UDPpacket *packet, XferKind kind, Uint16 type, int minLen)
 {
 	return packet->len >= minLen
 	    && SDLNet_Read16(&packet->data[0]) == type
-	    && SDLNet_Read16(&packet->data[2]) == SAVE_XFER_VERSION;
+	    && SDLNet_Read16(&packet->data[2]) == xferTransportVersion(kind);
 }
 
 /* Upload */
@@ -408,41 +744,52 @@ static void saveXferDrawLocalAddresses(int y)
 }
 
 // Repeat the stream until the receiver acknowledges the complete generation.
-static bool saveXferSendPayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+static bool saveXferSendPayload(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                 const IPaddress *to, const Uint8 *payload, size_t total, Uint16 gen,
                                 bool *cancelled)
 {
 	const Uint32 chunks = (Uint32)((total + SXC_PAYLOAD - 1) / SXC_PAYLOAD);
 	const Uint32 started = SDL_GetTicks();
 	Uint32 sentAt = 0;
+	Uint32 nextChunk = 0;
 	bool first = true;
 
 	while (SDL_GetTicks() - started < SX_TRANSFER_MS)
 	{
-		// A receiver missing one chunk waits for it to come around again.
-		if (first || SDL_GetTicks() - sentAt >= SX_PULL_MS)
+		// A receiver missing one chunk waits for it to come around again. Large custom libraries
+		// can span thousands of datagrams, so send a bounded burst between event/ack polls instead
+		// of flooding the socket and freezing cancellation until a whole pass has queued.
+		if (first || nextChunk != 0 || SDL_GetTicks() - sentAt >= SX_PULL_MS)
 		{
-			for (Uint32 c = 0; c < chunks; ++c)
+			for (int burst = 0; burst < 16; ++burst)
 			{
+				const Uint32 c = nextChunk;
 				const size_t from = (size_t)c * SXC_PAYLOAD;
 				const size_t plen = MIN(total - from, (size_t)SXC_PAYLOAD);
 
-				SDLNet_Write16(PACKET_SAVE_CHUNK, &out->data[SXC_TYPE]);
-				SDLNet_Write16(SAVE_XFER_VERSION, &out->data[SXC_VERSION]);
+				SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_CHUNK), &out->data[SXC_TYPE]);
+				SDLNet_Write16(xferTransportVersion(kind), &out->data[SXC_VERSION]);
 				SDLNet_Write16(gen,               &out->data[SXC_GEN]);
 				SDLNet_Write16((Uint16)c,         &out->data[SXC_CHUNK]);
 				SDLNet_Write16((Uint16)chunks,    &out->data[SXC_COUNT]);
 				SDLNet_Write16((Uint16)plen,      &out->data[SXC_LEN]);
 				memcpy(&out->data[SXC_HDR], payload + from, plen);
 				saveXferSendTo(sock, out, to, SXC_HDR + (int)plen);
+
+				if (++nextChunk >= chunks)
+				{
+					nextChunk = 0;
+					sentAt = SDL_GetTicks();
+					first = false;
+					break;
+				}
 			}
-			sentAt = SDL_GetTicks();
-			first = false;
 		}
 
 		while (SDLNet_UDP_Recv(sock, in) > 0)
 		{
-			if (saveXferIsOurs(in, PACKET_SAVE_ACK, 6) && SDLNet_Read16(&in->data[4]) == gen)
+			if (saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_ACK), 6) &&
+			    SDLNet_Read16(&in->data[4]) == gen)
 				return true;
 		}
 
@@ -475,11 +822,11 @@ static void saveXferUploadScreen(const char *saveName, const char *note)
 }
 
 // Push to a receiver that cannot discover or initiate the transfer itself.
-static bool saveXferSendToAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+static bool saveXferSendToAddress(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                   const Uint8 *payload, size_t total, Uint16 gen,
                                   const char *saveName, bool *cancelled)
 {
-	if (!networkTextEntry("Upload Save", "Send to address:", save_xfer_address,
+	if (!networkTextEntry(xferUploadTitle(kind), "Send to address:", save_xfer_address,
 	                      sizeof(save_xfer_address), networkFilterAddress, false))
 	{
 		*cancelled = true;
@@ -500,27 +847,29 @@ static bool saveXferSendToAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 		return false;
 	}
 
-	saveXferBackdrop("Upload Save");
+	saveXferBackdrop(xferUploadTitle(kind));
 	saveXferUploadScreen(saveName, sxSending);
 
-	return saveXferSendPayload(sock, out, in, &to, payload, total, gen, cancelled);
+	return saveXferSendPayload(kind, sock, out, in, &to, payload, total, gen, cancelled);
 }
 
-void saveXferUpload(JE_byte slot)
+static void xferUpload(XferKind kind, JE_byte slot)
 {
-	Uint8 *const payload = malloc(SX_MAX);
-	const size_t total = payload != NULL ? saveXferPack(payload, slot) : 0;
+	const char *const title = xferUploadTitle(kind);
+	Uint8 *const payload = malloc(xferMaxPayload(kind));
+	const size_t total = payload != NULL ? xferPack(kind, payload, slot) : 0;
 	if (total == 0)
 	{
 		free(payload);
-		saveXferNotice("Upload Save", "That save could not be prepared to send.", NULL);
+		saveXferNotice(title, kind == XFER_SAVE ? "That save could not be prepared to send."
+		                                      : "That data could not be prepared to send.", NULL);
 		return;
 	}
 
 	if (SDLNet_Init() == -1)
 	{
 		free(payload);
-		saveXferNotice("Upload Save", "Networking is unavailable.", NULL);
+		saveXferNotice(title, "Networking is unavailable.", NULL);
 		return;
 	}
 
@@ -533,15 +882,18 @@ void saveXferUpload(JE_byte slot)
 		if (sock) SDLNet_UDP_Close(sock);
 		SDLNet_Quit();
 		free(payload);
-		saveXferNotice("Upload Save", "Could not open the transfer port.",
+		saveXferNotice(title, "Could not open the transfer port.",
 		               "Another copy may already be sharing.");
 		return;
 	}
 
-	char offeredName[sizeof(saveFiles[0].name)];
-	saveXferTrimName(offeredName, sizeof(offeredName), saveFiles[slot - 1].name);
+	char offeredName[40];
+	if (kind == XFER_SAVE)
+		saveXferTrimName(offeredName, sizeof(offeredName), saveFiles[slot - 1].name);
+	else
+		SDL_strlcpy(offeredName, xferOfferedName(kind), sizeof(offeredName));
 
-	saveXferBackdrop("Upload Save");
+	saveXferBackdrop(title);
 	saveXferUploadScreen(offeredName, NULL);
 	fade_palette(colors, 10, 0, 255);
 
@@ -559,9 +911,9 @@ void saveXferUpload(JE_byte slot)
 	{
 		while (SDLNet_UDP_Recv(sock, in) > 0)
 		{
-			if (saveXferIsOurs(in, PACKET_SAVE_OFFER, 4))
+			if (saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_OFFER), 4))
 			{
-				saveXferFillReply(out->data, slot);
+				saveXferFillReply(kind, out->data, slot);
 				saveXferSendTo(sock, out, &in->address, SXR_LEN);
 
 				// Show that the probe arrived even if the reply cannot get back.
@@ -570,10 +922,10 @@ void saveXferUpload(JE_byte slot)
 				         (host >> 16) & 0xff, (host >> 8) & 0xff, host & 0xff);
 				saveXferUploadScreen(offeredName, asked);
 			}
-			else if (saveXferIsOurs(in, PACKET_SAVE_PULL, 4))
+			else if (saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_PULL), 4))
 			{
 				const IPaddress puller = in->address;
-				sent = saveXferSendPayload(sock, out, in, &puller, payload, total, ++gen, &cancelled);
+				sent = saveXferSendPayload(kind, sock, out, in, &puller, payload, total, ++gen, &cancelled);
 				break;
 			}
 		}
@@ -595,7 +947,7 @@ void saveXferUpload(JE_byte slot)
 	}
 
 	if (push)
-		sent = saveXferSendToAddress(sock, out, in, payload, total, ++gen, offeredName, &cancelled);
+		sent = saveXferSendToAddress(kind, sock, out, in, payload, total, ++gen, offeredName, &cancelled);
 
 	SDLNet_FreePacket(in);
 	SDLNet_FreePacket(out);
@@ -608,12 +960,47 @@ void saveXferUpload(JE_byte slot)
 	if (sent)
 	{
 		JE_playSampleNum(S_SELECT);
-		saveXferNotice("Upload Save", "The save was sent.", NULL);
+		const char *sentLine;
+		switch (kind)
+		{
+			case XFER_SAVE:    sentLine = "The save was sent."; break;
+			case XFER_SHIPS:   sentLine = "The custom ships were sent."; break;
+			case XFER_WEAPONS: sentLine = "The custom weapons were sent."; break;
+			case XFER_CUSTOM:  sentLine = "The custom data was sent."; break;
+			case XFER_ALL:     sentLine = "All player data was sent."; break;
+			default:           sentLine = "The data was sent."; break;
+		}
+		saveXferNotice(title, sentLine, NULL);
 	}
 	else if (!cancelled)
 	{
-		saveXferNotice("Upload Save", "The transfer did not finish.", "Try again from both devices.");
+		saveXferNotice(title, "The transfer did not finish.", "Try again from both devices.");
 	}
+}
+
+void saveXferUpload(JE_byte slot)
+{
+	xferUpload(XFER_SAVE, slot);
+}
+
+void shipsXferUpload(void)
+{
+	xferUpload(XFER_SHIPS, 0);
+}
+
+void weaponsXferUpload(void)
+{
+	xferUpload(XFER_WEAPONS, 0);
+}
+
+void customXferUpload(void)
+{
+	xferUpload(XFER_CUSTOM, 0);
+}
+
+void allXferUpload(void)
+{
+	xferUpload(XFER_ALL, 0);
 }
 
 /* Download */
@@ -636,15 +1023,15 @@ static void saveXferReadReply(const UDPpacket *in, SaveXferOffer *o)
 }
 
 // Ask one address directly and collect the same reply used by discovery.
-static bool saveXferProbeAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+static bool saveXferProbeAddress(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                  const char *host, SaveXferOffer *result)
 {
 	IPaddress to;
 	if (SDLNet_ResolveHost(&to, host, SAVE_XFER_PORT) == -1)
 		return false;
 
-	SDLNet_Write16(PACKET_SAVE_OFFER, &out->data[0]);
-	SDLNet_Write16(SAVE_XFER_VERSION, &out->data[2]);
+	SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_OFFER), &out->data[0]);
+	SDLNet_Write16(xferTransportVersion(kind), &out->data[2]);
 
 	const Uint32 started = SDL_GetTicks();
 	Uint32 askedAt = 0;
@@ -661,7 +1048,7 @@ static bool saveXferProbeAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 
 		while (SDLNet_UDP_Recv(sock, in) > 0)
 		{
-			if (!saveXferIsOurs(in, PACKET_SAVE_REPLY, SXR_LEN))
+			if (!saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_REPLY), SXR_LEN))
 				continue;
 
 			saveXferReadReply(in, result);
@@ -675,10 +1062,11 @@ static bool saveXferProbeAddress(UDPsocket sock, UDPpacket *out, UDPpacket *in,
 	return false;
 }
 
-static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, SaveXferOffer *offers)
+static int saveXferFindOffers(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
+                              SaveXferOffer *offers)
 {
-	SDLNet_Write16(PACKET_SAVE_OFFER, &out->data[0]);
-	SDLNet_Write16(SAVE_XFER_VERSION, &out->data[2]);
+	SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_OFFER), &out->data[0]);
+	SDLNet_Write16(xferTransportVersion(kind), &out->data[2]);
 
 	saveXferProbeVolley(sock, out, 4);
 
@@ -697,7 +1085,7 @@ static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, Sav
 
 		while (SDLNet_UDP_Recv(sock, in) > 0 && found < SX_MAX_OFFERS)
 		{
-			if (!saveXferIsOurs(in, PACKET_SAVE_REPLY, SXR_LEN))
+			if (!saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_REPLY), SXR_LEN))
 				continue;
 
 			SaveXferOffer answered;
@@ -725,8 +1113,15 @@ static int saveXferFindOffers(UDPsocket sock, UDPpacket *out, UDPpacket *in, Sav
 	return found;
 }
 
-static void saveXferOfferLine(char *line, size_t size, const SaveXferOffer *o)
+static void saveXferOfferLine(XferKind kind, char *line, size_t size, const SaveXferOffer *o)
 {
+	if (kind != XFER_SAVE)
+	{
+		snprintf(line, size, "%s - %s",
+		         o->sender[0] != '\0' ? o->sender : o->address, xferOfferedName(kind));
+		return;
+	}
+
 	char where[32];
 	if ((o->flags & SXR_FLAG_ENDLESS) != 0)
 		SDL_strlcpy(where, "Endless", sizeof(where));
@@ -742,7 +1137,7 @@ static void saveXferOfferLine(char *line, size_t size, const SaveXferOffer *o)
 
 /* Select a discovered or typed source. The passive row sets `waitForPush`; cancellation and
  * passive mode both return NULL. */
-static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+static const SaveXferOffer *saveXferPickOffer(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                               SaveXferOffer *offers, int count, bool *waitForPush)
 {
 	const int typedRow = count;
@@ -774,7 +1169,7 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 			else if (i == waitRow)
 				SDL_strlcpy(line, sxRowWaitForSender, sizeof(line));
 			else
-				saveXferOfferLine(line, sizeof(line), &offers[i]);
+				saveXferOfferLine(kind, line, sizeof(line), &offers[i]);
 
 			wItem[i] = JE_textWidth(line, normal_font);
 			draw_font_hv_shadow(VGAScreen, SX_XCENTER - wItem[i] / 2, yItems + dyItems * i, line,
@@ -861,7 +1256,7 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 
 		status[0] = '\0';
 
-		if (!networkTextEntry("Download Save", "Sender address:", save_xfer_address,
+		if (!networkTextEntry(xferDownloadTitle(kind), "Sender address:", save_xfer_address,
 		                      sizeof(save_xfer_address), networkFilterAddress, false))
 		{
 			continue;
@@ -885,20 +1280,20 @@ static const SaveXferOffer *saveXferPickOffer(UDPsocket sock, UDPpacket *out, UD
 		                    normal_font, centered, 15, -2, false, 2);
 		saveXferPresent();
 
-		if (saveXferProbeAddress(sock, out, in, host, &offers[typedRow]))
+		if (saveXferProbeAddress(kind, sock, out, in, host, &offers[typedRow]))
 		{
 			JE_playSampleNum(S_SELECT);
 			return &offers[typedRow];
 		}
 
 		JE_playSampleNum(S_CLINK);
-		SDL_strlcpy(status, sxNoSaveThere, sizeof(status));
+		SDL_strlcpy(status, xferNoOfferLine(kind), sizeof(status));
 	}
 }
 
 /* Pull from `offer`, or wait passively when it is NULL. A passive wait starts its deadline with
  * the first chunk. */
-static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in,
+static bool saveXferReceivePayload(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                    const SaveXferOffer *offer, bool *cancelled)
 {
 	IPaddress to;
@@ -909,14 +1304,15 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 		if (SDLNet_ResolveHost(&to, offer->address, offer->port) == -1)
 			return false;
 
-		SDLNet_Write16(PACKET_SAVE_PULL,  &out->data[0]);
-		SDLNet_Write16(SAVE_XFER_VERSION, &out->data[2]);
+		SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_PULL), &out->data[0]);
+		SDLNet_Write16(xferTransportVersion(kind), &out->data[2]);
 	}
 
 	Uint8 *buf = NULL;
 	Uint8 *seen = NULL;
 	Uint32 gen = 0, count = 0, have = 0;
 	size_t total = 0;
+	bool complete = false;
 	bool done = false;
 	bool anySent = false;
 
@@ -924,7 +1320,7 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 	Uint32 askedAt = 0;
 	bool asked = false;
 
-	while (!done)
+	while (!complete)
 	{
 		if ((asking || have > 0) && SDL_GetTicks() - started >= SX_TRANSFER_MS)
 			break;
@@ -938,7 +1334,7 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 
 		while (SDLNet_UDP_Recv(sock, in) > 0)
 		{
-			if (!saveXferIsOurs(in, PACKET_SAVE_CHUNK, SXC_HDR))
+			if (!saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_CHUNK), SXC_HDR))
 				continue;
 
 			const Uint16 packetGen = SDLNet_Read16(&in->data[SXC_GEN]);
@@ -948,7 +1344,7 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 
 			if (chunkCount == 0 || chunk >= chunkCount || plen > SXC_PAYLOAD
 			    || (Uint32)in->len < SXC_HDR + plen
-			    || (size_t)chunkCount * SXC_PAYLOAD > SX_MAX)
+			    || (size_t)chunkCount > (xferMaxPayload(kind) + SXC_PAYLOAD - 1) / SXC_PAYLOAD)
 				continue;
 
 			// A new generation replaces any partial stream.
@@ -985,11 +1381,13 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 
 			if (have >= count && total > 0)
 			{
-				done = saveXferUnpack(buf, total);
+				done = total <= xferMaxPayload(kind) && xferUnpack(kind, buf, total);
+				complete = true;
 
-				// Stop the resend even if payload validation failed.
-				SDLNet_Write16(PACKET_SAVE_ACK,   &in->data[0]);
-				SDLNet_Write16(SAVE_XFER_VERSION, &in->data[2]);
+				// Stop the resend even if payload validation failed; the same completed bytes
+				// cannot become valid on another pass, and the receiver reports failure at once.
+				SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_ACK), &in->data[0]);
+				SDLNet_Write16(xferTransportVersion(kind), &in->data[2]);
 				SDLNet_Write16((Uint16)gen,       &in->data[4]);
 				for (int i = 0; i < 3; ++i)
 					saveXferSendTo(sock, in, &to, 6);
@@ -1017,13 +1415,15 @@ static bool saveXferReceivePayload(UDPsocket sock, UDPpacket *out, UDPpacket *in
 	return done;
 }
 
-bool saveXferDownload(void)
+static bool xferDownload(XferKind kind)
 {
-	saveXferPendingClear();
+	const char *const title = xferDownloadTitle(kind);
+	if (kind == XFER_SAVE)
+		saveXferPendingClear();
 
 	if (SDLNet_Init() == -1)
 	{
-		saveXferNotice("Download Save", "Networking is unavailable.", NULL);
+		saveXferNotice(title, "Networking is unavailable.", NULL);
 		return false;
 	}
 
@@ -1035,11 +1435,11 @@ bool saveXferDownload(void)
 		if (out) SDLNet_FreePacket(out);
 		if (sock) SDLNet_UDP_Close(sock);
 		SDLNet_Quit();
-		saveXferNotice("Download Save", "Could not open a socket.", NULL);
+		saveXferNotice(title, "Could not open a socket.", NULL);
 		return false;
 	}
 
-	saveXferBackdrop("Download Save");
+	saveXferBackdrop(title);
 	saveXferRestore();
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 90, sxSearching,
 	                    normal_font, centered, 15, -2, false, 2);
@@ -1047,14 +1447,14 @@ bool saveXferDownload(void)
 	fade_palette(colors, 10, 0, 255);
 
 	SaveXferOffer offers[SX_MAX_OFFERS + 1];
-	const int count = saveXferFindOffers(sock, out, in, offers);
+	const int count = saveXferFindOffers(kind, sock, out, in, offers);
 
 	bool got = false;
 	bool cancelled = false;
 	bool waitForPush = false;
 	bool portBusy = false;
 
-	const SaveXferOffer *const pick = saveXferPickOffer(sock, out, in, offers, count, &waitForPush);
+	const SaveXferOffer *const pick = saveXferPickOffer(kind, sock, out, in, offers, count, &waitForPush);
 
 	if (pick != NULL)
 	{
@@ -1063,7 +1463,7 @@ bool saveXferDownload(void)
 		                    normal_font, centered, 15, -2, false, 2);
 		saveXferPresent();
 
-		got = saveXferReceivePayload(sock, out, in, pick, &cancelled);
+		got = saveXferReceivePayload(kind, sock, out, in, pick, &cancelled);
 	}
 	else if (waitForPush)
 	{
@@ -1087,7 +1487,7 @@ bool saveXferDownload(void)
 			saveXferPresent();
 			service_SDL_events(true);
 
-			got = saveXferReceivePayload(sock, out, in, NULL, &cancelled);
+			got = saveXferReceivePayload(kind, sock, out, in, NULL, &cancelled);
 		}
 	}
 
@@ -1097,10 +1497,10 @@ bool saveXferDownload(void)
 	            waitForPush ? "waiting for a sender" : "asking a sender");
 
 	if (portBusy)
-		saveXferNotice("Download Save", "Could not open the transfer port.",
+		saveXferNotice(title, "Could not open the transfer port.",
 		               "Another copy may already be using it.");
 	else if ((pick != NULL || waitForPush) && !got && !cancelled)
-		saveXferNotice("Download Save", "The transfer did not finish.",
+		saveXferNotice(title, "The transfer did not finish.",
 		               "Try again from both devices.");
 
 	SDLNet_FreePacket(in);
@@ -1109,6 +1509,43 @@ bool saveXferDownload(void)
 		SDLNet_UDP_Close(sock);
 	SDLNet_Quit();
 
+	return got;
+}
+
+bool saveXferDownload(void)
+{
+	return xferDownload(XFER_SAVE);
+}
+
+bool shipsXferDownload(void)
+{
+	const bool got = xferDownload(XFER_SHIPS);
+	if (got)
+		saveXferNotice("Download Custom Ships", "Custom ships received.", NULL);
+	return got;
+}
+
+bool weaponsXferDownload(void)
+{
+	const bool got = xferDownload(XFER_WEAPONS);
+	if (got)
+		saveXferNotice("Download Custom Weapons", "Custom weapons received.", NULL);
+	return got;
+}
+
+bool customXferDownload(void)
+{
+	const bool got = xferDownload(XFER_CUSTOM);
+	if (got)
+		saveXferNotice("Download Custom Data", "Custom ships and weapons received.", NULL);
+	return got;
+}
+
+bool allXferDownload(void)
+{
+	const bool got = xferDownload(XFER_ALL);
+	if (got)
+		saveXferNotice("Download All Data", "All saves and custom data received.", NULL);
 	return got;
 }
 
@@ -1121,7 +1558,12 @@ void qa_test_save_transfer(void)
 		sxWaitingForDownload, sxUploadKeys, sxSending, sxThisMachine, sxSearching,
 		sxNothingAnswered, sxDownloadKeys, sxRowTypedAddress, sxRowWaitForSender,
 		sxAskingAddress, sxDownloading, sxWaitingForSender, sxSendHere, sxCancelKey,
-		sxAnyButton, sxNoSaveThere, sxNeedAddress,
+		sxAnyButton, sxNoSaveThere, sxNoShipsThere, sxNoWeaponsThere, sxNoCustomThere,
+		sxNoAllThere, sxNeedAddress,
+		"Upload Custom Ships", "Download Custom Ships", "Custom ships",
+		"Upload Custom Weapons", "Download Custom Weapons", "Custom weapons",
+		"Upload Custom Data", "Download Custom Data", "Custom ships and weapons",
+		"Upload All Data", "Download All Data", "All saves and custom data",
 	};
 
 	for (unsigned i = 0; i < COUNTOF(centred); ++i)
@@ -1150,6 +1592,79 @@ void qa_test_save_transfer(void)
 
 	qa_check(SX_ENDLESS == 109 && SXR_LEN == 45 && SXC_HDR == 12,
 	         "save-transfer wire offsets retain their protocol widths");
+	qa_check(CX_DATA == 16 && xferPacketType(XFER_CUSTOM, PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK,
+	         "custom-data transfer retains its envelope and distinct packet family");
+	const XferKind bulkKinds[] = { XFER_SHIPS, XFER_WEAPONS, XFER_CUSTOM, XFER_ALL };
+	bool bulkKindsSeparated = true;
+	for (unsigned i = 0; i < COUNTOF(bulkKinds); ++i)
+	{
+		bulkKindsSeparated &= xferPacketType(bulkKinds[i], PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK;
+		for (unsigned j = i + 1; j < COUNTOF(bulkKinds); ++j)
+			bulkKindsSeparated &= xferTransportVersion(bulkKinds[i]) != xferTransportVersion(bulkKinds[j]);
+	}
+	qa_check(bulkKindsSeparated,
+	         "Ships, Weapons, Custom Data, and Transfer All cannot negotiate with one another");
+
+	Uint8 *const customPayload = malloc(CX_MAX);
+	Uint8 *const shipsPayload = malloc(CX_MAX);
+	Uint8 *const weaponsPayload = malloc(CX_MAX);
+	const size_t customTotal = customPayload != NULL ? customXferPack(customPayload) : 0;
+	const size_t shipsTotal = shipsPayload != NULL
+	                        ? customXferPackParts(shipsPayload, CX_PART_SHIPS) : 0;
+	const size_t weaponsTotal = weaponsPayload != NULL
+	                          ? customXferPackParts(weaponsPayload, CX_PART_WEAPONS) : 0;
+	qa_check(customTotal > CX_DATA, "custom ships and the complete weapon library pack together");
+	qa_check(shipsTotal > CX_DATA && SDLNet_Read32(&shipsPayload[CX_WEAPONS_LEN]) == 0 &&
+	         SDLNet_Read32(&shipsPayload[CX_SHIPS_LEN]) == shipsTotal - CX_DATA,
+	         "Custom Ships carries the ship file without a weapon library");
+	qa_check(weaponsTotal > CX_DATA && SDLNet_Read32(&weaponsPayload[CX_SHIPS_LEN]) == 0 &&
+	         SDLNet_Read32(&weaponsPayload[CX_WEAPONS_LEN]) == weaponsTotal - CX_DATA,
+	         "Custom Weapons carries the complete library without a ship file");
+	if (customTotal > CX_DATA)
+	{
+		const size_t weaponsLen = SDLNet_Read32(&customPayload[CX_WEAPONS_LEN]);
+		const size_t shipsLen = SDLNet_Read32(&customPayload[CX_SHIPS_LEN]);
+		qa_check(weaponsLen > 4 && shipsLen >= 6 + sizeof(JE_ShipsType) &&
+		         CX_DATA + weaponsLen + shipsLen == customTotal,
+		         "the custom-data envelope delimits both content sets exactly");
+		customPayload[CX_MAGIC] ^= 0xff;
+		qa_check(!customXferUnpack(customPayload, customTotal),
+		         "custom data without the transfer magic is refused before adoption");
+		customPayload[CX_MAGIC] ^= 0xff;
+	}
+
+	Uint8 *const before = malloc(CUSTOM_WEAPON_LIBRARY_WIRE_MAX);
+	Uint8 *const after = malloc(CUSTOM_WEAPON_LIBRARY_WIRE_MAX);
+	const size_t beforeLen = before != NULL
+	                       ? customWeaponSerializeLibrary(before, CUSTOM_WEAPON_LIBRARY_WIRE_MAX) : 0;
+	const bool enabledBefore = customWeaponEnabled;
+	const bool shipsAdopted = shipsTotal > CX_DATA &&
+	                          customXferUnpackParts(shipsPayload, shipsTotal, CX_PART_SHIPS);
+	const size_t afterLen = after != NULL
+	                      ? customWeaponSerializeLibrary(after, CUSTOM_WEAPON_LIBRARY_WIRE_MAX) : 0;
+	qa_check(shipsAdopted && beforeLen > 0 && beforeLen == afterLen &&
+	         memcmp(before, after, beforeLen) == 0 && customWeaponEnabled == enabledBefore,
+	         "a Custom Ships transfer leaves custom weapons and their toggle untouched");
+	free(after);
+	free(before);
+
+	Uint8 *const shipsBefore = malloc(EXTRA_SHIPS_WIRE_MAX);
+	Uint8 *const shipsAfter = malloc(EXTRA_SHIPS_WIRE_MAX);
+	const size_t shipsBeforeLen = shipsBefore != NULL
+	                            ? extraShipsSerializeUser(shipsBefore, EXTRA_SHIPS_WIRE_MAX) : 0;
+	const bool weaponsAdopted = weaponsTotal > CX_DATA &&
+	                            customXferUnpackParts(weaponsPayload, weaponsTotal, CX_PART_WEAPONS);
+	const size_t shipsAfterLen = shipsAfter != NULL
+	                           ? extraShipsSerializeUser(shipsAfter, EXTRA_SHIPS_WIRE_MAX) : 0;
+	qa_check(weaponsAdopted && shipsBeforeLen > 0 && shipsBeforeLen == shipsAfterLen &&
+	         memcmp(shipsBefore, shipsAfter, shipsBeforeLen) == 0,
+	         "a Custom Weapons transfer leaves custom ships untouched");
+	free(shipsAfter);
+	free(shipsBefore);
+
+	free(weaponsPayload);
+	free(shipsPayload);
+	free(customPayload);
 
 	JE_SaveFileType saved = saveFiles[3 - 1];
 	const uint savedSeat = save_slot_online_player(3);
@@ -1199,6 +1714,54 @@ void qa_test_save_transfer(void)
 
 	saveFiles[3 - 1] = saved;
 	save_slot_set_online_player(3, savedSeat);
+
+	// Both the single-slot and bulk forms must carry the device's seat with a disconnected
+	// two-player save. Moving the file from phone to PC must not turn its P2 into P1.
+	const JE_byte p2Slot = 12;
+	const JE_SaveFileType savedP2 = saveFiles[p2Slot - 1];
+	const uint savedP2Seat = save_slot_online_player(p2Slot);
+	memset(&saveFiles[p2Slot - 1], 0, sizeof(saveFiles[p2Slot - 1]));
+	saveFiles[p2Slot - 1].level = 3;
+	saveFiles[p2Slot - 1].episode = 1;
+	strcpy(saveFiles[p2Slot - 1].name, "PHONE P2");
+	strcpy(saveFiles[p2Slot - 1].levelName, "TYRIAN");
+	save_slot_set_online_player(p2Slot, 2);
+
+	Uint8 *const p2Payload = malloc(SX_MAX);
+	const size_t p2Total = p2Payload != NULL ? saveXferPack(p2Payload, p2Slot) : 0;
+	saveXferPendingClear();
+	qa_check(p2Total >= SX_ENDLESS && saveXferUnpack(p2Payload, p2Total) &&
+	         save_xfer_pending.twoPlayer && save_xfer_pending.seat == 2,
+	         "a single transferred P2 save remains owned by P2 on the receiving device");
+	free(p2Payload);
+	saveXferPendingClear();
+
+	Uint8 *const allPayload = malloc(AX_MAX);
+	const size_t allTotal = allPayload != NULL ? allXferPack(allPayload) : 0;
+	qa_check(allTotal > AX_DATA, "Transfer All packs the complete save file and custom-data envelope");
+	if (allTotal > AX_DATA)
+	{
+		const size_t savesLen = SDLNet_Read32(&allPayload[AX_SAVES_LEN]);
+		const size_t customLen = SDLNet_Read32(&allPayload[AX_CUSTOM_LEN]);
+		qa_check(savesLen > 0 && savesLen <= AX_SAVES_MAX && customLen > CX_DATA &&
+		         AX_DATA + savesLen + customLen == allTotal,
+		         "the Transfer All envelope delimits saves and custom data exactly");
+
+		save_slot_set_online_player(p2Slot, 1);
+		qa_check(allXferUnpack(allPayload, allTotal) && save_slot_online_player(p2Slot) == 2 &&
+		         strcmp(saveFiles[p2Slot - 1].name, "PHONE P2") == 0,
+		         "Transfer All restores every slot in place, including its P1 or P2 ownership");
+
+		allPayload[AX_MAGIC] ^= 0xff;
+		qa_check(!allXferUnpack(allPayload, allTotal),
+		         "Transfer All data without its transfer magic is refused before adoption");
+		allPayload[AX_MAGIC] ^= 0xff;
+	}
+	free(allPayload);
+
+	saveFiles[p2Slot - 1] = savedP2;
+	save_slot_set_online_player(p2Slot, savedP2Seat);
+	JE_saveConfiguration();
 }
 
 #else  /* !WITH_NETWORK */
@@ -1206,6 +1769,14 @@ void qa_test_save_transfer(void)
 bool saveXferAvailable(void) { return false; }
 void saveXferUpload(JE_byte slot) { (void)slot; }
 bool saveXferDownload(void) { return false; }
+void shipsXferUpload(void) { }
+bool shipsXferDownload(void) { return false; }
+void weaponsXferUpload(void) { }
+bool weaponsXferDownload(void) { return false; }
+void customXferUpload(void) { }
+bool customXferDownload(void) { return false; }
+void allXferUpload(void) { }
+bool allXferDownload(void) { return false; }
 const JE_SaveFileType *saveXferPending(void) { return NULL; }
 bool saveXferPendingTwoPlayer(void) { return false; }
 bool saveXferPendingApply(JE_byte slot, const char *name) { (void)slot; (void)name; return false; }

@@ -65,7 +65,7 @@ Only `arm64-v8a` and `armeabi-v7a` are built. Add `x86_64` to `abiFilters` in
 
 ## Networking
 
-Android needs no separate local-network permission. Online play and save
+Android needs no separate local-network permission. Online play and player-data
 transfers work in either direction. Waiting screens show the device's reachable
 Wi-Fi address and omit loopback, mobile-data, and VPN addresses.
 
@@ -73,7 +73,7 @@ Wi-Fi address and omit loopback, mobile-data, and VPN addresses.
 
 Configuration, saves, logs, and the unpacked data live in app-private storage
 (`/data/data/net.opentyrian.engaged/files`). Android deletes all of it on
-uninstall, so export a save before removing the app.
+uninstall, so transfer saves and custom data before removing the app.
 
 ## Controls
 

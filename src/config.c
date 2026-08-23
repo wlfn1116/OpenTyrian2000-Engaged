@@ -510,7 +510,6 @@ static const EnhancementSetting enhancementSettings[] = {
 	{ .boolSetting = &gaugeFlashArmor,   .vanilla = false,         .engaged = true },
 
 	/* Weapons. */
-	{ .boolSetting = &customWeaponEnabled, .vanilla = false, .engaged = true },
 	{ .boolSetting = &chargeLaserCannon,   .vanilla = false, .engaged = true },
 
 	/* Spark trails, and the Wallop second bolt that goes with them. */
@@ -2246,26 +2245,16 @@ static void save_defaults(void)
  * is never read again, so deleting a run's section stays deleted. */
 static bool save_legacy_endless_taken = false;
 
-/* Read opentyrian.sav. A slot without a section is empty and a key without a value is its default,
- * so a hand edit that drops or misspells something loses that one value and nothing else. */
-static bool save_file_load(void)
+/* Apply an already parsed opentyrian.sav. A slot without a section is empty and a key without a
+ * value is its default, so a hand edit that drops or misspells something loses that one value and
+ * nothing else. */
+static bool save_config_adopt(Config *config)
 {
-	FILE *file = dir_fopen(get_user_directory(), SAVE_FILE_NAME, "r");
-	if (file == NULL)
-		return false;
-
-	Config config;
-	const bool parsed = config_parse(&config, file);
-	fclose(file);
-	if (!parsed)
-		return false;
-
 	// A file without its header is a broken write or a stray file, so the DOS-era files still stand in.
-	const ConfigSection *header = config_find_section(&config, "saves", NULL);
+	const ConfigSection *header = config_find_section(config, "saves", NULL);
 	if (header == NULL)
 	{
 		fprintf(stderr, "warning: %s has no 'saves' section and was not read\n", SAVE_FILE_NAME);
-		config_deinit(&config);
 		return false;
 	}
 	save_legacy_endless_taken = save_get_int(header, "endless_sav_imported", 0) != 0;
@@ -2276,15 +2265,34 @@ static bool save_file_load(void)
 	{
 		char name[8];
 		snprintf(name, sizeof(name), "%d", z + 1);
-		const ConfigSection *section = config_find_section(&config, "save", name);
+		const ConfigSection *section = config_find_section(config, "save", name);
 		if (section != NULL)
 			save_slot_read(&saveFiles[z], section, (JE_byte)(z + 1));
 	}
-	save_highscores_read(&config);
-	endlessSaveConfigRead(&config);
-
-	config_deinit(&config);
+	save_highscores_read(config);
+	endlessSaveConfigRead(config);
 	return true;
+}
+
+/* Read opentyrian.sav from disk. */
+static bool save_file_load(void)
+{
+	FILE *file = dir_fopen(get_user_directory(), SAVE_FILE_NAME, "r");
+	if (file == NULL)
+		return false;
+
+	Config config;
+	const bool parsed = config_parse(&config, file);
+	fclose(file);
+	if (!parsed)
+	{
+		config_deinit(&config);
+		return false;
+	}
+
+	const bool adopted = save_config_adopt(&config);
+	config_deinit(&config);
+	return adopted;
 }
 
 /* The DOS-era tyrian.sav: XOR-chained, checksummed, fixed offsets. Read once when there is no
@@ -2634,18 +2642,13 @@ void JE_loadConfiguration(void)
 		JE_saveConfiguration();
 }
 
-/* Write opentyrian.sav: the slots that hold a game, each Endless half beside its slot, and the
+/* Build opentyrian.sav: the slots that hold a game, each Endless half beside its slot, and the
  * high-score boards. Everything is a named key in the same format as opentyrian.cfg. */
-void JE_saveConfiguration(void)
+static void save_config_build(Config *config)
 {
-	// Don't save nothing
-	if (!configuration_loaded)
-		return;
+	config_init(config);
 
-	Config config;
-	config_init(&config);
-
-	ConfigSection *section = config_add_section(&config, "saves", NULL);
+	ConfigSection *section = config_add_section(config, "saves", NULL);
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
 	config_set_int_option(section, "format", SAVE_FILE_FORMAT);
@@ -2657,13 +2660,34 @@ void JE_saveConfiguration(void)
 			continue;   // an empty slot is a slot with no section
 		char name[8];
 		snprintf(name, sizeof(name), "%d", z + 1);
-		section = config_add_section(&config, "save", name);
+		section = config_add_section(config, "save", name);
 		if (section == NULL)
 			exit(EXIT_FAILURE);  // out of memory
 		save_slot_write(section, &saveFiles[z], (JE_byte)(z + 1));
 	}
-	endlessSaveConfigWrite(&config);
-	save_highscores_write(&config);
+	endlessSaveConfigWrite(config);
+	save_highscores_write(config);
+}
+
+size_t save_file_serialize(Uint8 *buf, size_t cap)
+{
+	if (!configuration_loaded)
+		return 0;
+
+	Config config;
+	save_config_build(&config);
+	const size_t required = config_write_buffer(&config, (char *)buf, cap);
+	config_deinit(&config);
+	return required <= cap ? required : 0;
+}
+
+static bool save_file_write_current(void)
+{
+	if (!configuration_loaded)
+		return false;
+
+	Config config;
+	save_config_build(&config);
 
 	// Best-effort, as in save_opentyrian_config: dir_fopen_warn is what reports a broken directory.
 #ifndef TARGET_WIN32
@@ -2673,18 +2697,47 @@ void JE_saveConfiguration(void)
 #endif
 	(void)mkdir_result;
 
+	bool ok = false;
 	FILE *f = dir_fopen_warn(get_user_directory(), SAVE_FILE_NAME, "w");
 	if (f != NULL)
 	{
 		config_write(&config, f);
+		ok = ferror(f) == 0;
 #if _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _POSIX_SOURCE
-		fsync(fileno(f));
+		if (fsync(fileno(f)) != 0)
+			ok = false;
 #endif
-		fclose(f);
+		if (fclose(f) != 0)
+			ok = false;
 	}
 	config_deinit(&config);
+	return ok;
+}
 
-	save_opentyrian_config();
+void JE_saveConfiguration(void)
+{
+	// Existing callers are best-effort, but transfer adoption uses the checked helper directly.
+	if (!configuration_loaded)
+		return;
+	(void)save_file_write_current();
+	(void)save_opentyrian_config();
+}
+
+bool save_file_adopt(const Uint8 *buf, size_t len)
+{
+	if (buf == NULL || len == 0)
+		return false;
+
+	Config config;
+	if (!config_parse_buffer(&config, (const char *)buf, len))
+	{
+		config_deinit(&config);
+		return false;
+	}
+
+	const bool adopted = save_config_adopt(&config);
+	config_deinit(&config);
+	return adopted && save_file_write_current() && save_opentyrian_config();
 }
 
 // Packed save record used to give both peers identical resume state.

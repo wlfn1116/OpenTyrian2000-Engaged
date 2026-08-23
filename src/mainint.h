@@ -128,6 +128,8 @@ bool str_pop_int(char *str, int *val);
 // net2p pins it to the 2-player page for the online host and returns the loaded slot;
 // saving turns it into a save menu (returns 0; the saving happens inside).
 int JE_loadScreen(bool net2p, bool saving);
+void JE_saveTransferUpload(void);
+void JE_saveTransferDownload(void);
 /* Which sessions may load a given record. The save pages show an incompatible slot dimmed and
  * unselectable rather than hiding it. Public for the unit suite: the rule now separates three
  * arcade lobbies that share one slot page, and loading across them would resume with a loadout

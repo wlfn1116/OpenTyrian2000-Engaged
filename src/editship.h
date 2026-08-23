@@ -50,7 +50,10 @@ bool extraShipsUseCustomWeapon(void);
 /* Wire form: version, availability, the plaintext table, then the sprite blob. */
 #define EXTRA_SHIPS_WIRE_MAX (6 + sizeof(JE_ShipsType) + UINT16_MAX)
 size_t extraShipsSerialize(Uint8 *buf, size_t max);
+size_t extraShipsSerializeUser(Uint8 *buf, size_t max);
 bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len);
+bool extraShipsPayloadValid(const Uint8 *buf, size_t len);
+bool extraShipsAdoptLocal(const Uint8 *buf, size_t len);
 void extraShipsNetInstallLocal(uint seat);
 void extraShipsNetReset(void);
 

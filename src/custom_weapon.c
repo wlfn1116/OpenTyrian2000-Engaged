@@ -1069,6 +1069,12 @@ static void wirePutU16(CustomWireOut *w, int v)
 	wirePutU8(w, (v >> 8) & 0xff);
 }
 
+static void wirePutU32(CustomWireOut *w, Uint32 v)
+{
+	wirePutU16(w, (int)(v & 0xffff));
+	wirePutU16(w, (int)(v >> 16));
+}
+
 typedef struct
 {
 	const Uint8 *buf;
@@ -1096,6 +1102,12 @@ static int wireGetU16(CustomWireIn *r)
 {
 	const int lo = wireGetU8(r);
 	return lo | (wireGetU8(r) << 8);
+}
+
+static Uint32 wireGetU32(CustomWireIn *r)
+{
+	const Uint32 lo = (Uint32)wireGetU16(r);
+	return lo | ((Uint32)wireGetU16(r) << 16);
 }
 
 static void wirePutWeapon(CustomWireOut *w, const JE_WeaponType *weapon)
@@ -1162,43 +1174,42 @@ static void wireGetWeapon(CustomWireIn *r, JE_WeaponType *weapon)
 	sanitizeRawWeapon(weapon);
 }
 
-size_t customWeaponSerializeDesign(Uint8 *buf, size_t cap)
+static size_t customWeaponSerializeSlot(const CustomWeaponSlot *design, Uint8 *buf, size_t cap)
 {
-	// Zeroed first so the unused tail of the fixed-width name is not stack residue: the two
-	// machines have to produce the same bytes for the same design.
-	static CustomWeaponSlot design;
-	memset(&design, 0, sizeof(design));
-	customDesignStore(&design);
-
 	CustomWireOut w = { buf, cap, 0, false };
 
 	wirePutU8(&w, CUSTOM_WEAPON_WIRE_VERSION);
 	wirePutU8(&w, CUSTOM_WEAPON_MODES);
 	wirePutU8(&w, CUSTOM_POWER_LEVELS);
-	for (size_t i = 0; i < sizeof(design.name); ++i)
-		wirePutU8(&w, (Uint8)design.name[i]);
-	wirePutU16(&w, clampi(design.cost, 0, 64000));
-	wirePutU16(&w, clampi(design.powerUse, 0, 255));
-	wirePutU8(&w, clampi(design.equipSlot, 0, CUSTOM_EQUIP_COUNT - 1));
-	wirePutU16(&w, clampi(design.itemGraphic, 1, 237));
-	wirePutU8(&w, clampi(design.chargeStages, 1, CUSTOM_POWER_LEVELS));
-	wirePutU8(&w, clampi(design.modes, 1, CUSTOM_WEAPON_MODES));
-	wirePutU8(&w, clampi(design.sidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1));
-	wirePutU16(&w, clampi(design.sidekickSprite, 1, 65535));
-	wirePutU8(&w, clampi(design.sidekickFrames, 1, 20));
-	wirePutU8(&w, clampi(design.sidekickFrameStep, 0, 40));
-	wirePutU8(&w, clampi(design.sidekickAnimate, 1, 2));
+	bool nameEnded = false;
+	for (size_t i = 0; i < sizeof(design->name); ++i)
+	{
+		const Uint8 c = nameEnded ? 0 : (Uint8)design->name[i];
+		wirePutU8(&w, c);
+		nameEnded |= c == 0;
+	}
+	wirePutU16(&w, clampi(design->cost, 0, 64000));
+	wirePutU16(&w, clampi(design->powerUse, 0, 255));
+	wirePutU8(&w, clampi(design->equipSlot, 0, CUSTOM_EQUIP_COUNT - 1));
+	wirePutU16(&w, clampi(design->itemGraphic, 1, 237));
+	wirePutU8(&w, clampi(design->chargeStages, 1, CUSTOM_POWER_LEVELS));
+	wirePutU8(&w, clampi(design->modes, 1, CUSTOM_WEAPON_MODES));
+	wirePutU8(&w, clampi(design->sidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1));
+	wirePutU16(&w, clampi(design->sidekickSprite, 1, 65535));
+	wirePutU8(&w, clampi(design->sidekickFrames, 1, 20));
+	wirePutU8(&w, clampi(design->sidekickFrameStep, 0, 40));
+	wirePutU8(&w, clampi(design->sidekickAnimate, 1, 2));
 
 	for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
 		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
-			wirePutWeapon(&w, &design.raw[m][p]);
+			wirePutWeapon(&w, &design->raw[m][p]);
 
 	return w.overflow ? 0 : w.pos;
 }
 
-bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len)
+static bool customWeaponDeserializeSlot(CustomWeaponSlot *design, const Uint8 *buf, size_t len)
 {
-	if (owner < 0 || owner >= CUSTOM_WEAPON_OWNERS || len < 4)
+	if (design == NULL || buf == NULL || len < 4)
 		return false;
 
 	CustomWireIn r = { buf, len, 0, false };
@@ -1208,7 +1219,6 @@ bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len)
 	const int modes  = clampi(wireGetU8(&r), 1, CUSTOM_WEAPON_MODES);
 	const int levels = clampi(wireGetU8(&r), 1, CUSTOM_POWER_LEVELS);
 
-	CustomWeaponSlot *const design = &customWeaponOwnerDesign[owner];
 	memset(design, 0, sizeof(*design));
 
 	for (size_t i = 0; i < sizeof(design->name); ++i)
@@ -1234,11 +1244,33 @@ bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len)
 
 	// A short stream reads as zeros from the cut onwards, which is a blank weapon rather than
 	// a wild index, but it is still not the design the peer flies. Refuse it.
-	if (r.truncated)
+	if (r.truncated || r.pos != len)
 	{
 		memset(design, 0, sizeof(*design));
 		return false;
 	}
+
+	return true;
+}
+
+size_t customWeaponSerializeDesign(Uint8 *buf, size_t cap)
+{
+	// Zeroed first so the unused tail of the fixed-width name is not stack residue: the two
+	// machines have to produce the same bytes for the same design.
+	static CustomWeaponSlot design;
+	memset(&design, 0, sizeof(design));
+	customDesignStore(&design);
+	return customWeaponSerializeSlot(&design, buf, cap);
+}
+
+bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len)
+{
+	if (owner < 0 || owner >= CUSTOM_WEAPON_OWNERS)
+		return false;
+
+	CustomWeaponSlot *const design = &customWeaponOwnerDesign[owner];
+	if (!customWeaponDeserializeSlot(design, buf, len))
+		return false;
 
 	customWeaponMaterializeOwner(owner);
 	return true;
@@ -1260,6 +1292,86 @@ static void loadFromSlot(int i)
 	customDesignLoad(&customWeaponLib[i]);
 	customWeaponEditLevel = 0;   // open the switched-to weapon at level 1 / mode 1
 	customWeaponEditMode  = 0;
+}
+
+size_t customWeaponSerializeLibrary(Uint8 *buf, size_t cap)
+{
+	if (buf == NULL || customWeaponLibCount < 1 || customWeaponLibCount > CUSTOM_WEAPON_LIB_MAX)
+		return 0;
+
+	customWeaponCurrentSlot = clampi(customWeaponCurrentSlot, 0, customWeaponLibCount - 1);
+	storeToSlot(customWeaponCurrentSlot);
+
+	CustomWireOut w = { buf, cap, 0, false };
+	wirePutU8(&w, CUSTOM_WEAPON_LIBRARY_WIRE_VERSION);
+	wirePutU8(&w, customWeaponLibCount);
+	wirePutU8(&w, customWeaponCurrentSlot);
+	wirePutU8(&w, 0);
+
+	for (int i = 0; i < customWeaponLibCount && !w.overflow; ++i)
+	{
+		const size_t lengthAt = w.pos;
+		wirePutU32(&w, 0);
+		if (w.overflow)
+			break;
+
+		const size_t designLen = customWeaponSerializeSlot(&customWeaponLib[i],
+		                                                      &w.buf[w.pos], w.cap - w.pos);
+		if (designLen == 0 || designLen > UINT32_MAX)
+		{
+			w.overflow = true;
+			break;
+		}
+
+		w.buf[lengthAt + 0] = (Uint8)(designLen & 0xff);
+		w.buf[lengthAt + 1] = (Uint8)((designLen >> 8) & 0xff);
+		w.buf[lengthAt + 2] = (Uint8)((designLen >> 16) & 0xff);
+		w.buf[lengthAt + 3] = (Uint8)((designLen >> 24) & 0xff);
+		w.pos += designLen;
+	}
+
+	return w.overflow ? 0 : w.pos;
+}
+
+bool customWeaponAdoptLibrary(const Uint8 *buf, size_t len)
+{
+	if (buf == NULL || len < 4)
+		return false;
+
+	CustomWireIn r = { buf, len, 0, false };
+	if (wireGetU8(&r) != CUSTOM_WEAPON_LIBRARY_WIRE_VERSION)
+		return false;
+
+	const int count = wireGetU8(&r);
+	const int current = wireGetU8(&r);
+	(void)wireGetU8(&r);  // reserved
+	if (count < 1 || count > CUSTOM_WEAPON_LIB_MAX || current < 0 || current >= count)
+		return false;
+
+	// Persistent scratch keeps the full-width weapon arrays off console stacks. Nothing is
+	// committed until every length-delimited slot has decoded successfully.
+	static CustomWeaponSlot incoming[CUSTOM_WEAPON_LIB_MAX];
+	for (int i = 0; i < count; ++i)
+	{
+		const Uint32 designLen = wireGetU32(&r);
+		if (r.truncated || designLen > r.len - r.pos ||
+		    !customWeaponDeserializeSlot(&incoming[i], &r.buf[r.pos], designLen))
+			return false;
+		r.pos += designLen;
+	}
+	if (r.truncated || r.pos != r.len)
+		return false;
+
+	memcpy(customWeaponLib, incoming, (size_t)count * sizeof(customWeaponLib[0]));
+	customWeaponLibCount = count;
+	customWeaponCurrentSlot = current;
+	loadFromSlot(current);
+	// A transfer is only offered from the title screen. Clear both per-seat online copies so a
+	// later session cannot inherit a design from the previous peer; materialize below repopulates
+	// the local owner from the newly adopted current slot.
+	memset(customWeaponOwnerDefined, 0, sizeof(customWeaponOwnerDefined));
+	customWeaponMaterialize();
+	return true;
 }
 
 // Fill a slot with the built-in default weapon (used for New and for unwritten slots).
@@ -1341,7 +1453,7 @@ int customWeaponLibraryDelete(void)
 	return customWeaponCurrentSlot;
 }
 
-void customWeaponLibrarySave(void)
+bool customWeaponLibrarySave(void)
 {
 	if (customWeaponLibCount < 1)           // never write an empty library (would lose the weapon)
 	{
@@ -1353,7 +1465,7 @@ void customWeaponLibrarySave(void)
 
 	FILE *f = dir_fopen(get_user_directory(), "custom_weapons.cfg", "w");
 	if (f == NULL)
-		return;
+		return false;
 
 	fprintf(f, "custom_weapons 1\n");
 	fprintf(f, "count %d\n", customWeaponLibCount);
@@ -1378,7 +1490,10 @@ void customWeaponLibrarySave(void)
 			}
 	}
 
-	fclose(f);
+	bool ok = ferror(f) == 0;
+	if (fclose(f) != 0)
+		ok = false;
+	return ok;
 }
 
 void customWeaponLibraryLoad(void)

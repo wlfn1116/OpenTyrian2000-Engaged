@@ -38,6 +38,7 @@
 #include "mtrand.h"
 #include "network.h"
 #include "net_rollback.h"
+#include "net_savexfer.h"
 #include "nortsong.h"
 #include "nortvars.h"
 #include "opentyrian_version.h"
@@ -314,8 +315,6 @@ typedef enum
 	MENU_ITEM_TOUCH_NAV,
 
 	/* Enhancements -> Weapons. */
-	MENU_ITEM_CUSTOM_WEAPONS,
-	MENU_ITEM_CUSTOM_CREATOR,
 	MENU_ITEM_CHARGE_LASER,
 	MENU_ITEM_SIDEKICK_AUTOFIRE,    // charge-sidekick autofire (shares chargeSidekickAutofire with the debug menu)
 	MENU_ITEM_WALLOP_BOLT,          // Wallop Beam only: the ep4/5 second bolt per volley
@@ -344,6 +343,18 @@ typedef enum
 	MENU_ITEM_DESTRUCT,
 	MENU_ITEM_SUPERTYRIAN,
 	MENU_ITEM_SHIP_EDITOR,
+	MENU_ITEM_CUSTOM_WEAPONS,
+	MENU_ITEM_CUSTOM_CREATOR,
+	MENU_ITEM_TRANSFER_SAVE_UPLOAD,
+	MENU_ITEM_TRANSFER_SAVE_DOWNLOAD,
+	MENU_ITEM_TRANSFER_SHIPS_UPLOAD,
+	MENU_ITEM_TRANSFER_SHIPS_DOWNLOAD,
+	MENU_ITEM_TRANSFER_WEAPONS_UPLOAD,
+	MENU_ITEM_TRANSFER_WEAPONS_DOWNLOAD,
+	MENU_ITEM_TRANSFER_CUSTOM_UPLOAD,
+	MENU_ITEM_TRANSFER_CUSTOM_DOWNLOAD,
+	MENU_ITEM_TRANSFER_ALL_UPLOAD,
+	MENU_ITEM_TRANSFER_ALL_DOWNLOAD,
 	MENU_ITEM_XMAS,
 	MENU_ITEM_RICH_MODE,
 	MENU_ITEM_CONSTANT_PLAY,
@@ -379,6 +390,13 @@ typedef enum
 	MENU_SHOP_PICTURES,
 	MENU_DIAGNOSTICS,
 	MENU_EXTRA,
+	MENU_SECRET_MODES,
+	MENU_TRANSFER,
+	MENU_TRANSFER_SAVE,
+	MENU_TRANSFER_SHIPS,
+	MENU_TRANSFER_WEAPONS,
+	MENU_TRANSFER_CUSTOM,
+	MENU_TRANSFER_ALL,
 	MENU_ARCADE,
 	MENU_CMDLINE,
 } MenuId;
@@ -715,7 +733,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				  .getPickerItemsCount = enhPresetCount, .getPickerItem = enhPresetItem },
 				{ MENU_ITEM_SUBMENU, "Visuals...", "Backgrounds, sparks, and screen effects.", MENU_VISUALS },
 				{ MENU_ITEM_SUBMENU, "Heads-Up Display...", "Health bars and the gauges beside your ship.", MENU_HUD },
-				{ MENU_ITEM_SUBMENU, "Weapons...", "Custom weapons, restored gear, spark trails.", MENU_WEAPONS },
+				{ MENU_ITEM_SUBMENU, "Weapons...", "Restored gear, sidekick autofire, and spark trails.", MENU_WEAPONS },
 				{ MENU_ITEM_SUBMENU, "Gameplay...", "Collision, homing, restored enemies, and arcade rules.", MENU_GAMEPLAY },
 				{ MENU_ITEM_SUBMENU, "Episode Versions...", "Items that differ between Ep 1-3 and Ep 4-5.", MENU_EPISODE_VERSIONS },
 				MENU_DONE_ROW
@@ -789,8 +807,6 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_WEAPONS] = {
 			.header = "Weapons",
 			.items = {
-				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable the custom weapon and its buy/sell slot." },
-				{ MENU_ITEM_CUSTOM_CREATOR, "Weapon Creator...", "Design your own weapon with a live preview." },
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
 				{ MENU_ITEM_SUBMENU, "Spark Trails...", "Weapons whose spark trails differ per episode.", MENU_SPARK_TRAILS },
@@ -921,14 +937,77 @@ static bool runOptionsMenu(MenuId startMenu)
 			.header = "Extra",
 			.items = {
 				{ MENU_ITEM_JUKEBOX, "Jukebox", "Listen to the music of Tyrian." },
+				{ MENU_ITEM_SUBMENU, "Secret Modes...", "Play Destruct, SuperTyrian, or Super Arcade.", MENU_SECRET_MODES },
+				{ MENU_ITEM_SHIP_EDITOR, "Ship Editor...", "Design the Tab+Number custom ships." },
+				{ MENU_ITEM_CUSTOM_CREATOR, "Weapon Creator...", "Design your own weapon with a live preview." },
+				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable custom weapons and their buy/sell slot." },
+				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
+#ifdef WITH_NETWORK
+				{ MENU_ITEM_SUBMENU, "Transfer...", "Copy saves or custom creations to another device.", MENU_TRANSFER },
+#endif
+				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
+				{ -1 }
+			},
+		},
+		[MENU_SECRET_MODES] = {
+			.header = "Secret Modes",
+			.items = {
 				{ MENU_ITEM_DESTRUCT, "Destruct", "Play the secret Destruct mini-game." },
 				{ MENU_ITEM_SUPERTYRIAN, "SuperTyrian", "Play the tougher SuperTyrian mode." },
 				{ MENU_ITEM_SUBMENU, "Super Arcade...", "Play as one of the secret Super Arcade ships.", MENU_ARCADE },
-				{ MENU_ITEM_SHIP_EDITOR, "Ship Editor...", "Design the Tab+Number custom ships." },
 				{ MENU_ITEM_SUBMENU, "Command Line...", "Toggle the command-line cheat options.", MENU_CMDLINE },
-				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
-				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
-				{ -1 }
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER] = {
+			.header = "Transfer",
+			.items = {
+				{ MENU_ITEM_SUBMENU, "Save...", "Copy one save slot to or from another device.", MENU_TRANSFER_SAVE },
+				{ MENU_ITEM_SUBMENU, "Custom Ships...", "Replace only the compiled custom ships.", MENU_TRANSFER_SHIPS },
+				{ MENU_ITEM_SUBMENU, "Custom Weapons...", "Replace only the complete custom-weapon library.", MENU_TRANSFER_WEAPONS },
+				{ MENU_ITEM_SUBMENU, "Custom Data...", "Copy custom ships and the complete weapon library.", MENU_TRANSFER_CUSTOM },
+				{ MENU_ITEM_SUBMENU, "Transfer All...", "Replace every save and all custom creations at once.", MENU_TRANSFER_ALL },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER_SAVE] = {
+			.header = "Save Transfer",
+			.items = {
+				{ MENU_ITEM_TRANSFER_SAVE_UPLOAD, "Upload", "Choose a save slot to send." },
+				{ MENU_ITEM_TRANSFER_SAVE_DOWNLOAD, "Download", "Receive a save, then choose its destination slot." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER_SHIPS] = {
+			.header = "Custom Ships Transfer",
+			.items = {
+				{ MENU_ITEM_TRANSFER_SHIPS_UPLOAD, "Upload", "Send only the compiled custom ships." },
+				{ MENU_ITEM_TRANSFER_SHIPS_DOWNLOAD, "Download", "Replace only the receiver's custom ships." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER_WEAPONS] = {
+			.header = "Custom Weapons Transfer",
+			.items = {
+				{ MENU_ITEM_TRANSFER_WEAPONS_UPLOAD, "Upload", "Send only the complete custom-weapon library." },
+				{ MENU_ITEM_TRANSFER_WEAPONS_DOWNLOAD, "Download", "Replace only the receiver's custom weapons." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER_CUSTOM] = {
+			.header = "Custom Data Transfer",
+			.items = {
+				{ MENU_ITEM_TRANSFER_CUSTOM_UPLOAD, "Upload", "Send custom ships and every custom weapon design." },
+				{ MENU_ITEM_TRANSFER_CUSTOM_DOWNLOAD, "Download", "Replace custom ships and weapons with received data." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER_ALL] = {
+			.header = "Transfer All",
+			.items = {
+				{ MENU_ITEM_TRANSFER_ALL_UPLOAD, "Upload", "Send every save slot, custom ship, and custom weapon." },
+				{ MENU_ITEM_TRANSFER_ALL_DOWNLOAD, "Download", "Replace all saves and custom data without prompting." },
+				MENU_DONE_ROW
 			},
 		},
 		[MENU_ARCADE] = {
@@ -1618,6 +1697,96 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					JE_playSampleNum(S_SELECT);
 					JE_shipEditor();
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_SAVE_UPLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					JE_saveTransferUpload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_SAVE_DOWNLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					JE_saveTransferDownload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_SHIPS_UPLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					shipsXferUpload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_SHIPS_DOWNLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					shipsXferDownload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_WEAPONS_UPLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					weaponsXferUpload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_WEAPONS_DOWNLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					weaponsXferDownload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_CUSTOM_UPLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					customXferUpload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_CUSTOM_DOWNLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					customXferDownload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_ALL_UPLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					allXferUpload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_ALL_DOWNLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					allXferDownload();
+					set_menu_centered(true);
 					restart = true;
 					break;
 				}

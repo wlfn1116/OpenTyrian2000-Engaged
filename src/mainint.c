@@ -802,8 +802,6 @@ enum
 {
 	LOAD_SLOT_ROWS = 11,
 	LOAD_ROW_EXIT = LOAD_SLOT_ROWS,
-	LOAD_ROW_DOWNLOAD,
-	LOAD_ROW_UPLOAD,
 	LOAD_ROW_COUNT,
 };
 
@@ -814,8 +812,9 @@ enum
 static const char loadHelpUpload[] = "Choose a save to send to the other device.";
 static const char loadHelpUploadLine1[] = "Choose a save to send";
 
-// net2p pins the two-player page and returns the chosen slot. saving selects the standard save flow.
-int JE_loadScreen(bool net2p, bool saving)
+// uploadPick uses the original load list as a save-to-send picker without changing the ordinary
+// Load Game screen. net2p pins the two-player page; saving selects the standard save flow.
+static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 {
 	set_menu_centered(true);
 
@@ -824,9 +823,6 @@ int JE_loadScreen(bool net2p, bool saving)
 
 	bool restart = true;
 
-	// Transfer screens block, so an active network session cannot open them.
-	const bool xferOffered = !net2p && !saving && saveXferAvailable();
-	bool uploadPick = false;
 	const bool xferSaving = saving && saveXferPending() != NULL;
 	// Downloads stay on their original one-player or two-player page.
 	const bool pinPage = net2p || xferSaving;
@@ -870,11 +866,7 @@ int JE_loadScreen(bool net2p, bool saving)
 
 		// Draw menu items.
 
-		const size_t menuItemsCount = (xferOffered && !uploadPick) ? LOAD_ROW_COUNT : LOAD_ROW_EXIT + 1;
-
-		// Each label on the shared bottom line has its own hit box.
-		int xBottom[LOAD_ROW_COUNT - LOAD_ROW_EXIT] = { 0 };
-		int wBottom[LOAD_ROW_COUNT - LOAD_ROW_EXIT] = { 0 };
+		const size_t menuItemsCount = LOAD_ROW_COUNT;
 
 		for (size_t i = 0; i < menuItemsCount; ++i)
 		{
@@ -882,19 +874,10 @@ int JE_loadScreen(bool net2p, bool saving)
 
 			const bool selected = i == selectedIndex;
 
-			if (i >= LOAD_ROW_EXIT)
+			if (i == LOAD_ROW_EXIT)
 			{
-				const char *const label = (i == LOAD_ROW_EXIT) ? (uploadPick ? "Cancel" : miscText[33])
-				                        : (i == LOAD_ROW_DOWNLOAD) ? "Download" : "Upload";
-				const int w = JE_textWidth(label, TINY_FONT);
-				const int x = (i == LOAD_ROW_EXIT) ? xMenuItemName
-				            : (i == LOAD_ROW_DOWNLOAD) ? xCenter - w / 2
-				            : xMenuItem + wMenuItem - w;
-
-				xBottom[i - LOAD_ROW_EXIT] = x;
-				wBottom[i - LOAD_ROW_EXIT] = w;
-
-				JE_textShade(VGAScreen, x, y, label, 13, selected ? 6 : 2, FULL_SHADE);
+				JE_textShade(VGAScreen, xMenuItemName, y, miscText[33], 13,
+				             selected ? 6 : 2, FULL_SHADE);
 				continue;
 			}
 
@@ -1031,18 +1014,13 @@ int JE_loadScreen(bool net2p, bool saving)
 			}
 			else
 			{
-				// Bottom-line items use their label spans instead of the full row width.
 				if (mouse_x >= xMenuItem && mouse_x < xMenuItem + wMenuItem)
 				{
 					for (size_t i = 0; i < menuItemsCount; ++i)
 					{
-						const bool bottom = i >= LOAD_ROW_EXIT;
-						const int yMenuItem = yMenuItems + dyMenuItems * (bottom ? LOAD_ROW_EXIT : i);
-						const int xItem = bottom ? xBottom[i - LOAD_ROW_EXIT] : xMenuItem;
-						const int wItem = bottom ? wBottom[i - LOAD_ROW_EXIT] : wMenuItem;
+						const int yMenuItem = yMenuItems + dyMenuItems * i;
 
-						if (mouse_x >= xItem && mouse_x < xItem + wItem &&
-						    mouse_y >= yMenuItem && mouse_y < yMenuItem + hMenuItem)
+						if (mouse_y >= yMenuItem && mouse_y < yMenuItem + hMenuItem)
 						{
 							if (selectedIndex != i)
 							{
@@ -1052,7 +1030,7 @@ int JE_loadScreen(bool net2p, bool saving)
 							}
 
 							if (newmouse && lastmouse_but == SDL_BUTTON_LEFT &&
-							    lastmouse_x >= xItem && lastmouse_x < xItem + wItem &&
+							    lastmouse_x >= xMenuItem && lastmouse_x < xMenuItem + wMenuItem &&
 							    lastmouse_y >= yMenuItem && lastmouse_y < yMenuItem + hMenuItem)
 							{
 								action = true;
@@ -1145,28 +1123,6 @@ int JE_loadScreen(bool net2p, bool saving)
 
 				backOut = true;
 			}
-			else if (selectedIndex == LOAD_ROW_DOWNLOAD)
-			{
-				JE_playSampleNum(S_SELECT);
-
-				fade_black(15);
-
-				// Keep the download pending while the recursive call picks its destination.
-				if (saveXferDownload())
-				{
-					JE_loadScreen(saveXferPendingTwoPlayer(), true);
-					saveXferPendingClear();
-				}
-
-				restart = true;
-			}
-			else if (selectedIndex == LOAD_ROW_UPLOAD)
-			{
-				JE_playSampleNum(S_SELECT);
-
-				uploadPick = true;
-				selectedIndex = 0;
-			}
 			else if (uploadPick)
 			{
 				const size_t saveFileIndex = playersIndex * 11 + selectedIndex;
@@ -1178,13 +1134,8 @@ int JE_loadScreen(bool net2p, bool saving)
 				else
 				{
 					JE_playSampleNum(S_SELECT);
-
 					fade_black(15);
-					saveXferUpload((JE_byte)(saveFileIndex + 1));
-
-					uploadPick = false;
-					selectedIndex = LOAD_ROW_UPLOAD;
-					restart = true;
+					return (int)saveFileIndex + 1;
 				}
 			}
 			else if (saving)
@@ -1203,6 +1154,13 @@ int JE_loadScreen(bool net2p, bool saving)
 
 					performSave = true;
 					JE_operation(saveFileIndex + 1);
+					if (xferSaving && saveXferPending() == NULL)
+					{
+						// A downloaded save has exactly one destination. Cancelling the name
+						// dialog leaves it pending and returns to this picker for another try.
+						fade_black(15);
+						return 0;
+					}
 					// Stay on the list (its per-frame backdrop restore erases the dialog), so a
 					// mistyped name can be redone; Exit leaves when the player is satisfied.
 				}
@@ -1234,15 +1192,7 @@ int JE_loadScreen(bool net2p, bool saving)
 		}
 
 		if (backOut)
-		{
-			if (uploadPick)
-			{
-				uploadPick = false;
-				selectedIndex = LOAD_ROW_UPLOAD;
-			}
-			else
-				done = true;
-		}
+			done = true;
 
 		if (done)
 		{
@@ -1250,6 +1200,27 @@ int JE_loadScreen(bool net2p, bool saving)
 
 			return 0;
 		}
+	}
+}
+
+int JE_loadScreen(bool net2p, bool saving)
+{
+	return JE_loadScreenMode(net2p, saving, false);
+}
+
+void JE_saveTransferUpload(void)
+{
+	const int slot = JE_loadScreenMode(false, false, true);
+	if (slot > 0)
+		saveXferUpload((JE_byte)slot);
+}
+
+void JE_saveTransferDownload(void)
+{
+	if (saveXferDownload())
+	{
+		JE_loadScreen(saveXferPendingTwoPlayer(), true);
+		saveXferPendingClear();
 	}
 }
 

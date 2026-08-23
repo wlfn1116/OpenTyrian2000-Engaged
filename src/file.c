@@ -159,6 +159,17 @@ bool dir_file_exists(const char *dir, const char *file)
 	return (f != NULL);
 }
 
+// Remove one explicitly named file below a directory. An absent file already has the requested
+// state and is therefore success.
+bool dir_remove_file(const char *dir, const char *file)
+{
+	char *path = malloc_die(strlen(dir) + 1 + strlen(file) + 1);
+	sprintf(path, "%s/%s", dir, file);
+	const bool removed = remove(path) == 0 || errno == ENOENT;
+	free(path);
+	return removed;
+}
+
 // returns end-of-file position
 long ftell_eof(FILE *f)
 {

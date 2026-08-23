@@ -33,6 +33,7 @@ FILE *dir_fopen_warn(const char *dir, const char *file, const char *mode);
 FILE *dir_fopen_die(const char *dir, const char *file, const char *mode);
 
 bool dir_file_exists(const char *dir, const char *file);
+bool dir_remove_file(const char *dir, const char *file);
 
 long ftell_eof(FILE *f);
 

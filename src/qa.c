@@ -4681,7 +4681,6 @@ static void qa_test_enhancement_presets(void)
 		{ .intSetting = &vulnerableCue, .poke = VULN_CUE_ALL, .name = "Vulnerable Cue" },
 		{ .intSetting = &gaugeGradGenerator, .poke = GAUGE_GRAD_DOWN, .name = "Gauges" },
 		{ .boolSetting = &gaugeFlashArmor, .poke = false, .name = "Gauge flash" },
-		{ .boolSetting = &customWeaponEnabled, .poke = false, .name = "Weapons" },
 		{ .boolSetting = &chargeLaserCannon, .poke = false, .name = "Charge-Laser" },
 		{ .intSetting = &superSparkMode[SSW_ICE], .poke = SUPER_SPARKS_OFF, .name = "Spark Trails" },
 		{ .intSetting = &wallopSecondBolt, .poke = SUPER_SPARKS_OFF, .name = "Wallop 2nd Bolt" },
@@ -4704,6 +4703,14 @@ static void qa_test_enhancement_presets(void)
 		enhancementApplyPreset(presets[p]);
 		qa_check(enhancementPresetState() == presets[p], "an applied preset reads back as itself");
 	}
+
+	// Custom Weapons lives in Extra, so Enhancements presets must not silently change it.
+	customWeaponEnabled = false;
+	enhancementApplyPreset(ENH_PRESET_ENGAGED);
+	qa_check(!customWeaponEnabled, "the Engaged preset leaves the Extra custom-weapon toggle alone");
+	customWeaponEnabled = true;
+	enhancementApplyPreset(ENH_PRESET_VANILLA);
+	qa_check(customWeaponEnabled, "the Vanilla preset leaves the Extra custom-weapon toggle alone");
 
 	for (size_t i = 0; i < COUNTOF(probes); ++i)
 	{
@@ -4747,6 +4754,7 @@ static void qa_test_enhancement_presets(void)
 
 	enhancementApplyPreset(ENH_PRESET_ENGAGED);
 	qa_check(enhancementPresetState() == ENH_PRESET_ENGAGED, "re-applying a preset clears Custom");
+	customWeaponEnabled = true;
 }
 
 /* Online Endless: the block each machine publishes for its own player, the way two players'

@@ -27,7 +27,7 @@
 	<true/>
 	<!-- Enables the local-network prompt. Broadcast discovery also needs Apple's multicast entitlement. -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Tyrian 2000 Engaged uses the local network for multiplayer and save transfers.</string>
+	<string>Tyrian 2000 Engaged uses the local network for multiplayer and player-data transfers.</string>
 	<key>MinimumOSVersion</key>
 	<string>13.0</string>
 	<key>UIDeviceFamily</key>
