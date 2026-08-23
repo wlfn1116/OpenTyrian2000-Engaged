@@ -39,6 +39,6 @@
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>GNU General Public License v2 or later</string>
+	<string>GNU General Public License v3 or later</string>
 </dict>
 </plist>

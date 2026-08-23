@@ -148,7 +148,7 @@ and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/action
 
 ## License
 
-GNU General Public License, version 2 or later.
+GNU General Public License, version 3 or later.
 
 Related projects:
 

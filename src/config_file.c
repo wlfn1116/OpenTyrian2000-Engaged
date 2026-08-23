@@ -2,9 +2,9 @@
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2015  The OpenTyrian Development Team
  *
- * This program is free software; you can redistribute it and/or
+ * This program is free software: you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
+ * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -13,14 +13,13 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 /*!
  * \file config_file.c
  * \author Carl Reinke
  * \date 2015
- * \copyright GNU General Public License v2+ or Mozilla Public License 2.0
+ * \copyright GNU General Public License v3+ or Mozilla Public License 2.0
  */
 #include "config_file.h"
 
