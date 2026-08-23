@@ -119,8 +119,8 @@ brew install sdl2 sdl2_net pkg-config
 make
 ```
 
-For the universal `.app` bundle that release packages ship, which carries its
-own static SDL2 and game data, see [macos/README.md](macos/README.md).
+For the universal `.app` bundle that release packages ship, which carries
+its own static SDL2 and game data, see [macos/README.md](macos/README.md).
 
 ### Consoles and mobile
 
