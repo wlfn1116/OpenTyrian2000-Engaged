@@ -36,6 +36,7 @@
 #include "console_platform.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "editship.h"
 #include "destruct_rollback.h"
 #include "endless.h"
 #include "game_menu.h"
@@ -108,7 +109,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       83           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       84           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -662,6 +663,8 @@ static int network_recv_one(void)
 					case PACKET_DEBUG_SYNC:
 					case PACKET_SHOP_SYNC:
 					case PACKET_CUSTOM_WEAPON:
+					// The extra-ship file transfer rides the same rendezvous windows.
+					case PACKET_EXTRA_SHIPS:
 					// Every packet the Endless co-op channel carries: the run transfer on resume,
 					// the death-prompt choice, and the "I have left the level" notice. Missing from
 					// this list, all three were dropped here unread and unacknowledged, so the whole
@@ -2642,6 +2645,231 @@ void network_custom_weapon_publish_resume(void)
 	network_custom_weapon_publish_internal(true);
 }
 
+/* Extra-ship file exchange. Same chunked shape as the custom weapon transfer above: each
+ * machine publishes its compiled newsh$.shp once per session and adopts the peer's, so both
+ * hold identical per-seat tables and blobs before any extra ship can be flown or drawn. */
+
+static Uint16 network_ships_gen;
+static Uint32 network_ships_out_hash;
+static bool   network_ships_acked;
+
+static int    network_ships_in_owner = -1;
+static Uint16 network_ships_in_gen;
+static Uint32 network_ships_in_count;
+static Uint32 network_ships_in_have;
+static size_t network_ships_in_len;
+static Uint8 *network_ships_in_buf;
+static Uint8 *network_ships_in_seen;
+
+static void network_ships_in_reset(void)
+{
+	network_ships_in_owner = -1;
+	network_ships_in_count = 0;
+	network_ships_in_have = 0;
+	network_ships_in_len = 0;
+	free(network_ships_in_buf);
+	free(network_ships_in_seen);
+	network_ships_in_buf = NULL;
+	network_ships_in_seen = NULL;
+}
+
+void network_extra_ships_reset(void)
+{
+	network_ships_in_reset();
+	network_ships_out_hash = 0;
+	network_ships_acked = false;
+	extraShipsNetReset();
+}
+
+static void network_ships_send_ack(Uint16 gen)
+{
+	network_prepare(PACKET_EXTRA_SHIPS);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = 0;
+	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+	network_send(NCW_HDR);
+}
+
+static bool network_extra_ships_receive(void)
+{
+	const int len = packet_in[0]->len;
+	if (len < NCW_HDR)
+	{
+		network_update();
+		return true;
+	}
+
+	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+	if (sender < 1 || sender > 2 || sender == thisPlayerNum)
+	{
+		network_update();
+		return true;
+	}
+
+	if (count == 0)  // the peer took the generation we are publishing
+	{
+		if (gen == network_ships_gen)
+			network_ships_acked = true;
+		network_update();
+		return true;
+	}
+
+	if (chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
+	    (size_t)count * NCW_PAYLOAD > EXTRA_SHIPS_WIRE_MAX)
+	{
+		network_update();
+		return true;
+	}
+
+	if (network_ships_in_buf == NULL || network_ships_in_gen != gen ||
+	    network_ships_in_count != count || network_ships_in_owner != (int)sender - 1)
+	{
+		network_ships_in_reset();
+		network_ships_in_buf = calloc((size_t)count, NCW_PAYLOAD);
+		network_ships_in_seen = calloc((size_t)count, 1);
+		if (network_ships_in_buf == NULL || network_ships_in_seen == NULL)
+		{
+			network_ships_in_reset();
+			network_update();
+			return true;
+		}
+		network_ships_in_gen = gen;
+		network_ships_in_count = count;
+		network_ships_in_owner = (int)sender - 1;
+	}
+
+	memcpy(network_ships_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	if (chunk == count - 1)
+		network_ships_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
+	if (!network_ships_in_seen[chunk])
+	{
+		network_ships_in_seen[chunk] = 1;
+		++network_ships_in_have;
+	}
+
+	if (network_ships_in_have >= count && network_ships_in_len > 0)
+	{
+		if (!extraShipsAdopt((uint)network_ships_in_owner, network_ships_in_buf, network_ships_in_len))
+		{
+			crashlog_netlog_line("EXTRA SHIPS REFUSED",
+			                     "the peer's ship file did not decode; its extra ships stay "
+			                     "unavailable and neither Edit Player list offers them.");
+		}
+		network_ships_in_reset();
+
+		// Answer whether or not the file decoded: resending would produce the same bytes.
+		network_ships_send_ack(gen);
+	}
+
+	network_update();
+	return true;
+}
+
+/* Publish while the peer drains its inbound queue, from the same rendezvous windows as the
+ * custom weapon. The file is static for the whole session, so the hash gate sends it once. */
+void network_extra_ships_publish(void)
+{
+	if (!isNetworkGame || !coop_mode_active() ||
+	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
+		return;
+
+	// This machine's own seat holds the same bytes it publishes.
+	extraShipsNetInstallLocal((uint)(thisPlayerNum - 1));
+
+	Uint8 *const stream = malloc(EXTRA_SHIPS_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = extraShipsSerialize(stream, EXTRA_SHIPS_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	Uint32 hash = 2166136261u;
+	for (size_t i = 0; i < total; ++i)
+	{
+		hash ^= stream[i];
+		hash *= 16777619u;
+	}
+	if (hash == 0)
+		hash = 1;  // 0 means "nothing published yet"
+	if (hash == network_ships_out_hash)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_ships_gen;
+	network_ships_acked = false;
+	bool peer_left = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_ships_acked && !peer_left; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_ships_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			// Keep half the reliable queue free, exactly like the custom weapon send.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_prepare(PACKET_EXTRA_SHIPS);
+				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+				packet_out_temp->data[NCW_OWNER + 1] = 0;
+				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
+				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
+				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			while (network_shop_pump() || network_debug_sync_pump(false))
+				;
+
+			if (network_inbound_head() == PACKET_CONNECT)
+				network_update();
+			else if (network_inbound_head() == PACKET_GAME_QUIT)
+			{
+				peer_left = true;
+				break;
+			}
+
+			if (!network_peer_alive())
+			{
+				peer_left = true;
+				break;
+			}
+
+			SDL_Delay(1);
+		}
+	}
+
+	if (network_ships_acked)
+		network_ships_out_hash = hash;
+
+	free(stream);
+}
+
 /* Endless run transfer. Same chunked shape as the custom weapon exchange above, and for the same
  * reason: transport delivery alone does not mean the peer has consumed the bytes. */
 static Uint16 network_endless_gen;
@@ -3344,6 +3572,9 @@ bool network_shop_pump(void)
 
 	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_WEAPON)
 		return network_custom_weapon_receive();
+
+	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_EXTRA_SHIPS)
+		return network_extra_ships_receive();
 
 	// A late duplicate of the resume transfer: the run is already adopted, so drop it.
 	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN)
@@ -4097,6 +4328,7 @@ void network_shutdown(void)
 	debug_sync_gen = 0;
 	memset(debug_sync_last, 0, sizeof(debug_sync_last));
 	network_custom_weapon_reset();
+	network_extra_ships_reset();
 	netStyleSessionReset();
 	network_shop_sequence = network_shop_peer_sequence = 0;
 	last_out_sync = queue_in_sync = queue_out_sync = last_ack_sync = 0;

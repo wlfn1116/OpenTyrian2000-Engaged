@@ -6488,10 +6488,12 @@ draw_player_shot_loop_end:
 
 	// Repaint the sidekick HUD boxes if a silent re-simulation pass wiped them (its box
 	// fill runs but its icon blit is suppressed).  This pass's draws reach the screen.
+	// Loadout edits raise the same flag, so the mode arrows are item state to settle too.
 	if (hud_sidekicks_dirty && !rollback_resim_silent)
 	{
 		hud_sidekicks_dirty = false;
 		JE_drawOptionsHUD();
+		JE_drawPortConfigButtons();
 	}
 
 	// Same for the shield/armor gauges: their painters go quiet during silent passes

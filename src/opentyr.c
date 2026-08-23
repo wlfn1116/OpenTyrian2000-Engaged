@@ -343,6 +343,7 @@ typedef enum
 	MENU_ITEM_JUKEBOX,
 	MENU_ITEM_DESTRUCT,
 	MENU_ITEM_SUPERTYRIAN,
+	MENU_ITEM_SHIP_EDITOR,
 	MENU_ITEM_XMAS,
 	MENU_ITEM_RICH_MODE,
 	MENU_ITEM_CONSTANT_PLAY,
@@ -923,6 +924,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_DESTRUCT, "Destruct", "Play the secret Destruct mini-game." },
 				{ MENU_ITEM_SUPERTYRIAN, "SuperTyrian", "Play the tougher SuperTyrian mode." },
 				{ MENU_ITEM_SUBMENU, "Super Arcade...", "Play as one of the secret Super Arcade ships.", MENU_ARCADE },
+				{ MENU_ITEM_SHIP_EDITOR, "Ship Editor...", "Design the Tab+Number custom ships." },
 				{ MENU_ITEM_SUBMENU, "Command Line...", "Toggle the command-line cheat options.", MENU_CMDLINE },
 				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
@@ -1609,6 +1611,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					JE_playSampleNum(S_SELECT);
 					JE_customWeaponCreator(false);  // Setup context: design only (no active ship to equip)
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_SHIP_EDITOR:
+				{
+					JE_playSampleNum(S_SELECT);
+					JE_shipEditor();
 					restart = true;
 					break;
 				}

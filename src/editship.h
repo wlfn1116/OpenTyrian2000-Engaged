@@ -1,4 +1,4 @@
-/* 
+/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2007-2009  The OpenTyrian Development Team
  *
@@ -19,17 +19,34 @@
 #define EDITSHIP_H
 
 #include "opentyr.h"
+#include "sprite.h"
 
 /* Serialized table width; preserve the byte layout. */
 typedef JE_byte JE_ShipsType[154]; /* [1..154] */
 
 extern JE_boolean extraAvail;
 extern JE_ShipsType extraShips;
-extern void *extraShapes;
-extern JE_word extraShapeSize;
+extern Sprite2_array extraShapes;
 
-void JE_decryptShips(void);
+JE_boolean JE_decryptShips(void);
+void JE_encryptShips(JE_ShipsType dst);
 void JE_loadExtraShapes(void);
 void JE_freeExtraShapes(void);
+void JE_shipEditor(void);
+bool JE_shapeCodecSelfTest(void);
+
+/* Online, each seat flies the ships of its own compiled file; the files are exchanged
+ * at the session rendezvous so both machines hold identical seat slots. Offline both
+ * seats read the local file. playerIdx is the player array index, 0 or 1. */
+JE_byte *extraShipsFor(uint playerIdx);
+Sprite2_array *extraShapesFor(uint playerIdx);
+bool extraAvailFor(uint playerIdx);
+
+/* Wire form: version, availability, the plaintext table, then the sprite blob. */
+#define EXTRA_SHIPS_WIRE_MAX (6 + sizeof(JE_ShipsType) + UINT16_MAX)
+size_t extraShipsSerialize(Uint8 *buf, size_t max);
+bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len);
+void extraShipsNetInstallLocal(uint seat);
+void extraShipsNetReset(void);
 
 #endif /* EDITSHIP_H */

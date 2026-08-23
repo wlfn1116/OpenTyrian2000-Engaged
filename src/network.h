@@ -119,6 +119,7 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
 #define PACKET_ENDLESS_JUMP  0x38    // sender, armed, level pick, len, <Endless debug block>
 #define PACKET_PLAYER_LOOK   0x39    // sender, dye, view; repeated and unacknowledged
+#define PACKET_EXTRA_SHIPS   0x3A    // owner, generation, chunk idx/count, len, <ship file chunk>
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -453,6 +454,11 @@ void network_custom_weapon_publish(void);
  * locally disabled, because the loaded record may already have either custom slot equipped. */
 void network_custom_weapon_publish_resume(void);
 void network_custom_weapon_reset(void);
+
+/* Publish this machine's compiled extra-ship file over the same reliable channel; both
+ * peers need both files before an Edit Player row can offer an extra ship. */
+void network_extra_ships_publish(void);
+void network_extra_ships_reset(void);
 // Take the level the host left the outpost for. Call once both players are done, never before:
 // the joiner has to be allowed to finish shopping first.
 void network_shop_adopt_host_level(void);
@@ -591,6 +597,8 @@ static inline int network_endless_death_sync(int hostChoice) { return hostChoice
 static inline void network_custom_weapon_publish(void) { }
 static inline void network_custom_weapon_publish_resume(void) { }
 static inline void network_custom_weapon_reset(void) { }
+static inline void network_extra_ships_publish(void) { }
+static inline void network_extra_ships_reset(void) { }
 static inline void network_shop_adopt_host_level(void) { }
 static inline void network_shop_end(void) { }
 static inline bool network_quit_notice_retire(void) { return false; }

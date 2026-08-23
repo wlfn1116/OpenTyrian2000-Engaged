@@ -1791,6 +1791,7 @@ static bool shopCampaignRendezvous(void)
 		// Both machines are now in this loop draining packets, which is the one window wide
 		// enough for a custom weapon design. It is a no-op unless the design changed.
 		network_custom_weapon_publish();
+		network_extra_ships_publish();  // same window; the hash gate makes it once per session
 
 		if (qa_net_gameplay_ticks > 0)
 		{
@@ -4627,7 +4628,7 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 			if (itemNum > 90)
 			{
 				shipGrPtr = &spriteSheet9;
-				shipGr = JE_SGr(itemNum - 90, &shipGrPtr);
+				shipGr = JE_SGr(shop_draw_seat(), itemNum - 90, &shipGrPtr);
 				blit_preview_ship2x2(VGAScreen, x, y, *shipGrPtr, shipGr);
 			}
 			else if (ships[itemNum].shipgraphic == 0)

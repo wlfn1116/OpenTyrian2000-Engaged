@@ -662,7 +662,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 83. Packet readers check length before
+`NET_VERSION` bump. The current version is 84. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -710,9 +710,20 @@ Recent compatibility points:
 | 81 | The End makes Topsy Turvy rare |
 | 82 | The End rolls Light Homing on a coin flip |
 | 83 | Deflector discounts the shield's share of a shot |
+| 84 | Extra-ship file exchange and per-seat extra ship tables |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.
+
+### Extra ships (newsh$.shp)
+
+The compiled ShipEdit file is a Sprite2 bank blob (16-bit offset table, nibble-RLE
+cells) followed by a 154-byte ship table: ten 15-byte records, then four plaintext
+checksums; the record bytes are XOR-chain encrypted (editship.c, `extraCryptKey`).
+`JE_encryptShips`/`JE_decryptShips` and the cell codec are exact inverses; the QA
+suite round-trips both against the stock Tyrian 2000 file. Online, each seat's
+file crosses once per session via `PACKET_EXTRA_SHIPS`, and every simulation read
+routes through `extraShipsFor(seat)` so both machines derive identical armor.
 
 ### Online ship styles
 

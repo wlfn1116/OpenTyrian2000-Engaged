@@ -6,6 +6,7 @@
 #include "custom_weapon.h"
 #include "destruct.h"
 #include "destruct_rollback.h"
+#include "editship.h"
 #include "endless.h"
 #include "episodes.h"
 #include "endless_internal.h"
@@ -7110,6 +7111,69 @@ static void qa_test_weapon_bay_tags(void)
 	       JE_textWidth(SHOP_FRONT_GUN_TAG, TINY_FONT), JE_textWidth(SHOP_REAR_GUN_TAG, TINY_FONT));
 }
 
+/* The Ship Editor's file cipher, against the stock compiled newsh$.shp that ships
+ * with the Tyrian 2000 data (ten bonus ships, all eight custom sprite banks). */
+static void qa_test_ship_editor_file(void)
+{
+	JE_ShipsType backup, enc;
+	memcpy(backup, extraShips, sizeof(backup));
+
+	qa_check(extraAvail, "the stock compiled ship file loads");
+	if (extraAvail)
+	{
+		qa_check(extraShips[0] == 8 && extraShips[1] == 6 && extraShips[7] == 16 && extraShips[8] == 5,
+		         "slot one decodes to its known loadout");
+
+		// Every stock gun sits in the bay the editor's row cycler offers for it.
+		bool bays = true;
+		for (int slot = 0; slot < 10; ++slot)
+		{
+			const JE_byte *record = &extraShips[slot * 15];
+			bays = bays && shop_weapon_port_bay(record[1]) == SHOP_BAY_FRONT;
+			bays = bays && (record[2] == 0 || shop_weapon_port_bay(record[2]) == SHOP_BAY_REAR);
+		}
+		qa_check(bays, "stock loadouts fit the editor's front/rear bay split");
+	}
+
+	JE_encryptShips(enc);
+	memcpy(extraShips, enc, sizeof(extraShips));
+	qa_check(JE_decryptShips(), "an encrypted table passes its own checksums");
+	qa_check(memcmp(extraShips, backup, sizeof(JE_ShipsType) - 4) == 0,
+	         "encrypt then decrypt returns the original table");
+
+	memcpy(extraShips, enc, sizeof(extraShips));
+	extraShips[5] ^= 0x40;
+	qa_check(!JE_decryptShips(), "a corrupted table is rejected");
+
+	memcpy(extraShips, backup, sizeof(backup));
+
+	qa_check(JE_shapeCodecSelfTest(), "the sprite cell codec round-trips every cell");
+
+	// The online exchange: serialize the local file, adopt it as the peer seat, and
+	// check the seat accessors route to it only while a network game is on.
+	{
+		Uint8 *const stream = malloc(EXTRA_SHIPS_WIRE_MAX);
+		const size_t total = extraShipsSerialize(stream, EXTRA_SHIPS_WIRE_MAX);
+		qa_check(total >= 6 + sizeof(JE_ShipsType), "the ship file serializes for the wire");
+		qa_check(extraShipsAdopt(1, stream, total), "a serialized ship file adopts into a seat");
+		qa_check(!extraShipsAdopt(1, stream, 10), "a truncated ship file is refused");
+
+		const bool savedNet = isNetworkGame;
+		isNetworkGame = true;
+		qa_check(extraShipsFor(1) != extraShips &&
+		         memcmp(extraShipsFor(1), extraShips, sizeof(JE_ShipsType)) == 0 &&
+		         extraAvailFor(1) == extraAvail &&
+		         extraShapesFor(1)->size == extraShapes.size,
+		         "online seat accessors serve the adopted copy");
+		isNetworkGame = false;
+		qa_check(extraShipsFor(1) == extraShips, "offline both seats read the local file");
+		isNetworkGame = savedNet;
+
+		extraShipsNetReset();
+		free(stream);
+	}
+}
+
 /* Shield and armor glows are personal presentation state. They advance once per real tick,
  * outside rollback re-simulation. */
 static void qa_test_gauge_flash_lifetime(void)
@@ -8345,6 +8409,7 @@ int qa_run_unit_suite(void)
 	qa_test_wide_hull_columns();
 	qa_test_dual_mode_tag();
 	qa_test_weapon_bay_tags();
+	qa_test_ship_editor_file();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_twiddle_ships();

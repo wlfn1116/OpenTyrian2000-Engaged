@@ -455,8 +455,8 @@ void JE_getShipInfo(void)
 	if (extraShip)
 	{
 		JE_byte base = (player[0].items.ship - 91) * 15;
-		shipGr = JE_SGr(player[0].items.ship - 90, &shipGrPtr);
-		player[0].armor = extraShips[base + 7];
+		shipGr = JE_SGr(0, player[0].items.ship - 90, &shipGrPtr);
+		player[0].armor = extraShipsFor(0)[base + 7];
 	}
 	else
 	{
@@ -473,8 +473,8 @@ void JE_getShipInfo(void)
 	if (extraShip2)
 	{
 		JE_byte base2 = (player[1].items.ship - 91) * 15;
-		shipGr2 = JE_SGr(player[1].items.ship - 90, &shipGr2ptr);
-		player[1].armor = extraShips[base2 + 7]; /* bug? */
+		shipGr2 = JE_SGr(1, player[1].items.ship - 90, &shipGr2ptr);
+		player[1].armor = extraShipsFor(1)[base2 + 7];
 	}
 	else if (dual_ship_mode())
 	{
@@ -520,13 +520,18 @@ void JE_getShipInfo(void)
 	}
 }
 
-JE_word JE_SGr(JE_word ship, Sprite2_array **ptr)
+/* seat routes the lookup online: each player's extra ships come from their own file. */
+JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr)
 {
 	const JE_word GR[15] /* [1..15] */ = {233, 157, 195, 271, 81, 0, 119, 5, 43, 81, 119, 157, 195, 233, 271};
 
-	JE_word tempW = extraShips[(ship - 1) * 15];
+	JE_word tempW = extraShipsFor(seat)[(ship - 1) * 15];
 	if (tempW > 7)
-		*ptr = extraShapes;
+		*ptr = extraShapesFor(seat);
+
+	// A slot no file describes (or a garbage graphic byte) draws as the first built-in hull.
+	if (tempW < 1 || tempW > 15)
+		return GR[0];
 
 	return GR[tempW-1];
 }

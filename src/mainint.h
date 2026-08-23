@@ -65,6 +65,11 @@ void JE_nextEpisode(void);
 void JE_helpSystem(JE_byte startTopic);
 void JE_doInGameSetup(void);
 JE_boolean JE_inGameSetup(void);
+
+// A special is equippable only when its whole icon set can be drawn: the in-flight
+// HUD blits it every frame. draw_special_icon composes the shared-art tops correctly.
+bool debug_special_is_safe(int id);
+void draw_special_icon(SDL_Surface *surface, int x, int y, JE_byte id);
 // One-line "the other machine is not with us yet" panel over a frozen gameplay frame. Draws into
 // whatever VGAScreen points at, so callers must have pointed it at VGAScreenSeg first.
 void JE_drawNetworkNotice(const char *text);

@@ -1287,7 +1287,9 @@ Sint64 JE_getValue(JE_byte itemType, JE_word itemNum)
 	switch (itemType)
 	{
 	case 2:
-		value = ships[itemNum].cost;
+		// Extra ships (id above 90) have no shop row and sell for nothing.
+		if (itemNum <= SHIP_DRAGONWING)
+			value = ships[itemNum].cost;
 		break;
 	case 3:
 	case 4:;
@@ -2539,6 +2541,48 @@ void JE_doInGameSetup(void)
 
 // Pause-menu access to invincibility, cheats, and debug shortcuts.
 // A true result tells the caller to close the pause menu and resume play.
+/* Switch player pnum onto the next Ship Editor slot in `dir` (wrapping 1..10), with the
+ * Tab handler's rules: the whole slot loadout lands, and only the first switch of a life
+ * may raise armor. Online the change rides the debug sync block the caller sends. */
+static void extraMenuCycleCustomShip(uint pnum, int dir)
+{
+	Player *const p = &player[pnum];
+	const JE_byte *const table = extraShipsFor(pnum);
+
+	int slot = (p->items.ship > 90 && p->items.ship <= 100) ? p->items.ship - 90 : 0;
+	if (slot == 0)
+		slot = (dir > 0) ? 1 : 10;
+	else
+		slot = ((slot - 1 + 10 + dir) % 10) + 1;
+	const int base = (slot - 1) * 15;
+
+	rollback_taint(pnum == 0 ? "edit-ship-1" : "edit-ship-2");
+
+	p->items.ship = (JE_byte)(90 + slot);
+	p->items.weapon[FRONT_WEAPON].id = table[base + 1];
+	p->items.weapon[REAR_WEAPON].id = table[base + 2];
+	// A file from another machine may name a special whose icon the HUD cannot draw.
+	p->items.special = debug_special_is_safe(table[base + 3]) ? table[base + 3] : 0;
+	p->items.sidekick[LEFT_SIDEKICK] = table[base + 4];
+	p->items.sidekick[RIGHT_SIDEKICK] = table[base + 5];
+	p->items.generator = table[base + 6];
+	p->items.shield = table[base + 8];
+
+	debugLoadoutRefresh(true);  // rebuild every cache off items[]; keeps the current armor
+
+	// The Tab rule: the first switch of a life takes the slot's armor, a repeat keeps
+	// the lower of the two.
+	const uint slotArmor = table[base + 7];
+	JE_boolean *const used = (pnum == 0) ? &editShip1 : &editShip2;
+	if (!*used)
+	{
+		p->armor = slotArmor;
+		*used = true;
+	}
+	else if (p->armor > slotArmor)
+		p->armor = slotArmor;
+}
+
 bool JE_extraMenu(void)
 {
 	enum { PAGE_ROOT, PAGE_CHEATS, PAGE_DEBUG };
@@ -2547,16 +2591,24 @@ bool JE_extraMenu(void)
 	// matching the guards on the key handlers in JE_mainKeyboardInput.
 	const bool cheatsAllowed = !isNetworkGame && !twoPlayerMode && !superTyrian && superArcadeMode == SA_NONE;
 
+	// The Ship Editor's custom ships: offline for player 1 (Tab covers player 2), online
+	// for this machine's own seat in a co-op session, from that seat's exchanged file.
+	const uint shipSeat = (isNetworkGame && thisPlayerNum >= 1) ? (uint)(thisPlayerNum - 1) : 0;
+	const bool shipRowAllowed = !superTyrian && superArcadeMode == SA_NONE &&
+	                            extraAvailFor(shipSeat) &&
+	                            (!isNetworkGame || coop_mode_active());
+
 	// Footer help is drawn as two short lines (description + key combo) so long
 	// combos never overflow the panel.
-	static const char *const rootLabels[] = { "Invincibility", "Cheat Codes...", "Debug Codes...", "Return" };
+	static const char *const rootLabels[] = { "Invincibility", "Custom Ship", "Cheat Codes...", "Debug Codes...", "Return" };
 	static const char *const rootDesc[] = {
 		"Don't die when armor runs out.",
+		"Fly a ship from the Ship Editor.",
 		"Trigger the F-key cheat combos.",
 		"The Backspace debug-key combos.",
 		"Return to the pause menu.",
 	};
-	static const char *const rootCombo[] = { "", "", "", "" };
+	static const char *const rootCombo[] = { "", "Tab+Number in flight (offline)", "", "", "" };
 
 	static const char *const cheatLabels[] = { "Nort Ship", "Self-Destruct", "Skip Level", "Return" };
 	static const char *const cheatDesc[] = {
@@ -2593,6 +2645,12 @@ bool JE_extraMenu(void)
 
 	wait_noinput(false, false, true);
 	newkey = newmouse = false;  // don't let the click/key that opened us leak in
+
+#ifdef WITH_NETWORK
+	// Baseline for the change test at close: only a real edit goes on the wire.
+	if (isNetworkGame)
+		network_debug_sync_mark();
+#endif
 
 	// Panel geometry: reuse the debug menu's horizontal span, compact and centered.
 	const int px0 = DEBUG_MENU_X;
@@ -2633,7 +2691,7 @@ bool JE_extraMenu(void)
 		{
 		case PAGE_CHEATS: labels = cheatLabels; descs = cheatDesc; combos = cheatCombo; count = 4; title = "CHEAT  CODES"; break;
 		case PAGE_DEBUG:  labels = debugLabels; descs = debugDesc; combos = debugCombo; count = 6; title = "DEBUG  CODES"; break;
-		default:          labels = rootLabels;  descs = rootDesc;  combos = rootCombo;  count = 4; title = "EXTRA"; break;
+		default:          labels = rootLabels;  descs = rootDesc;  combos = rootCombo;  count = 5; title = "EXTRA"; break;
 		}
 
 		if ((int)selected >= count)
@@ -2656,8 +2714,10 @@ bool JE_extraMenu(void)
 
 			// Grey out cheat rows (and the paths to them) when cheats aren't valid.
 			bool enabled = true;
-			if (page == PAGE_ROOT && (i == 0 || i == 1))
+			if (page == PAGE_ROOT && (i == 0 || i == 2))
 				enabled = cheatsAllowed;
+			else if (page == PAGE_ROOT && i == 1)
+				enabled = shipRowAllowed;
 			else if (page == PAGE_CHEATS && i < 3)
 				enabled = cheatsAllowed;
 
@@ -2672,6 +2732,16 @@ bool JE_extraMenu(void)
 			const char *value = NULL;
 			if (page == PAGE_ROOT && i == 0)
 				value = youAreCheating ? "On" : "Off";
+			else if (page == PAGE_ROOT && i == 1)
+			{
+				if (player[shipSeat].items.ship > 90 && player[shipSeat].items.ship <= 100)
+				{
+					snprintf(valbuf, sizeof(valbuf), "Ship %d", player[shipSeat].items.ship - 90);
+					value = valbuf;
+				}
+				else
+					value = "Standard";
+			}
 			else if (page == PAGE_DEBUG && i == 0)
 				value = debug ? "On" : "Off";
 			else if (page == PAGE_DEBUG && i == 1)
@@ -2792,7 +2862,7 @@ bool JE_extraMenu(void)
 				closeMenu = true;
 			else
 			{
-				selected = (page == PAGE_CHEATS) ? 1 : 2;  // land back on the row that opened it
+				selected = (page == PAGE_CHEATS) ? 2 : 3;  // land back on the row that opened it
 				page = PAGE_ROOT;
 			}
 			continue;
@@ -2804,6 +2874,11 @@ bool JE_extraMenu(void)
 			if (page == PAGE_ROOT && selected == 0 && cheatsAllowed)
 			{
 				youAreCheating = !youAreCheating;
+				JE_playSampleNum(S_CURSOR);
+			}
+			else if (page == PAGE_ROOT && selected == 1 && shipRowAllowed)
+			{
+				extraMenuCycleCustomShip(shipSeat, adjustDir);
 				JE_playSampleNum(S_CURSOR);
 			}
 			else if (page == PAGE_DEBUG && selected == 0)
@@ -2853,11 +2928,15 @@ bool JE_extraMenu(void)
 				if (cheatsAllowed) { youAreCheating = !youAreCheating; JE_playSampleNum(S_SELECT); }
 				else JE_playSampleNum(S_SPRING);
 				break;
-			case 1:  // Cheat Codes...
+			case 1:  // Custom Ship: a tap cycles forward, so it works without arrow keys
+				if (shipRowAllowed) { extraMenuCycleCustomShip(shipSeat, +1); JE_playSampleNum(S_SELECT); }
+				else JE_playSampleNum(S_SPRING);
+				break;
+			case 2:  // Cheat Codes...
 				if (cheatsAllowed) { page = PAGE_CHEATS; selected = 0; JE_playSampleNum(S_SELECT); }
 				else JE_playSampleNum(S_SPRING);
 				break;
-			case 2:  // Debug Codes...
+			case 3:  // Debug Codes...
 				page = PAGE_DEBUG; selected = 0; JE_playSampleNum(S_SELECT);
 				break;
 			default:  // Return
@@ -2871,7 +2950,7 @@ bool JE_extraMenu(void)
 			if (selected == 3)  // Return
 			{
 				JE_playSampleNum(S_SELECT);
-				page = PAGE_ROOT; selected = 1;
+				page = PAGE_ROOT; selected = 2;
 			}
 			else if (!cheatsAllowed)
 			{
@@ -2931,11 +3010,18 @@ bool JE_extraMenu(void)
 				superPause = !superPause;
 				break;
 			default:  // Return
-				page = PAGE_ROOT; selected = 2;
+				page = PAGE_ROOT; selected = 3;
 				break;
 			}
 		}
 	}
+
+#ifdef WITH_NETWORK
+	// A custom-ship switch is simulation state; publish it from the same rendezvous that
+	// opened the pause menu, exactly like the debug menu's edits. No-op when nothing moved.
+	if (isNetworkGame)
+		network_debug_sync_send();
+#endif
 
 	// Restore input/mouse state; the caller repaints the pause menu.
 	newkey = newmouse = false;
@@ -4649,7 +4735,7 @@ static int twiddle_special_id(int row)
 // Is this special safe to equip? The HUD blits special[id].itemgraphic every frame, so an
 // out-of-range icon crashes instantly; guard on a real HUD icon, name, and effect type. Unlike
 // Endless keeps Invulnerability because it is safe and useful for debugging.
-static bool debug_special_is_safe(int id)
+bool debug_special_is_safe(int id)
 {
 	if (id == 0)
 		return true;  // None; clears the equipped special, no icon drawn
@@ -4934,6 +5020,26 @@ static bool debugMenuOverHud = false;
 
 /* `pnum` is the player whose loadout was just edited; `shipChanged` says their hull actually
  * swapped, which is the one case where the re-derived armor is kept instead of the live value. */
+/* Copy the live HUD strip into the menu backdrop, so a menu that repaints from its own
+ * snapshot shows equipment changed while it was open. Only the sidebar column moves; the
+ * menu boxes all sit left of PLAYFIELD_WIDTH. */
+static void hud_strip_snapshot(void)
+{
+	if (VGAScreenSeg == NULL || VGAScreen2 == NULL || rollback_resim_silent)
+		return;
+
+	const int x0 = PLAYFIELD_WIDTH;
+	const int w = vga_width - x0;
+	if (w <= 0)
+		return;
+
+	for (int y = 0; y < vga_height; ++y)
+	{
+		memcpy((Uint8 *)VGAScreen2->pixels + (size_t)y * VGAScreen2->pitch + x0,
+		       (Uint8 *)VGAScreenSeg->pixels + (size_t)y * VGAScreenSeg->pitch + x0, (size_t)w);
+	}
+}
+
 static void debug_apply_loadout_change(int pnum, bool shipChanged)
 {
 	uint keptArmor[COUNTOF(player)];
@@ -4973,6 +5079,18 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 		JE_drawArmor();
 		JE_drawShield();
 		JE_drawOptions();   // re-seeds the sidekick pods' ammo, refill cadence and style from options[]
+		JE_drawPortConfigButtons();  // the mode arrows belong to the rear gun that just changed
+
+		// The menus above this one repaint from a background snapshotted when they opened,
+		// which still holds the previous loadout; refresh the HUD strip inside it so the
+		// sidebar is right the moment this menu closes. The strip is the full-height column
+		// from PLAYFIELD_WIDTH rightwards, which no menu box reaches into.
+		hud_strip_snapshot();
+
+		// And once more on the first real gameplay tick, for the paths that repaint the
+		// whole screen on the way out (level fades, a resim pass that drew nothing).
+		hud_sidekicks_dirty = true;
+		hud_bars_dirty = true;
 	}
 }
 
@@ -5141,6 +5259,8 @@ void JE_debugMenu(bool center)
 			case DBG_SHIP:
 				if (it->ship <= SHIP_DRAGONWING)
 					snprintf(buf, sizeof(buf), "%s", ships[it->ship].name);
+				else if (it->ship >= 91 && it->ship <= 100 && extraAvailFor((uint)dbgPlayer))
+					snprintf(buf, sizeof(buf), "Extra Ship %d", it->ship - 90);
 				else
 				{
 					snprintf(buf, sizeof(buf), "%d", it->ship);
@@ -5525,7 +5645,12 @@ void JE_debugMenu(bool center)
 				switch (selId)
 				{
 				case DBG_PLAYER: dbgPlayer = (dbgPlayer + (int)COUNTOF(player) - 1) % (int)COUNTOF(player); break;
-				case DBG_SHIP: if (edit->ship > 0) --edit->ship; break;
+				case DBG_SHIP:
+					// 91..100 are the Ship Editor's extra ships, reached past the last real hull.
+					if (edit->ship > 91) --edit->ship;
+					else if (edit->ship == 91) edit->ship = SHIP_DRAGONWING;
+					else if (edit->ship > 0) --edit->ship;
+					break;
 				case DBG_FRONT_WEAPON: if (edit->weapon[FRONT_WEAPON].id > 0) --edit->weapon[FRONT_WEAPON].id; break;
 				case DBG_FRONT_POWER: if (edit->weapon[FRONT_WEAPON].power > 1) --edit->weapon[FRONT_WEAPON].power; break;
 				case DBG_REAR_WEAPON: if (edit->weapon[REAR_WEAPON].id > 0) --edit->weapon[REAR_WEAPON].id; break;
@@ -5581,7 +5706,11 @@ void JE_debugMenu(bool center)
 				// out-of-bounds read when the item is first inspected, which is where the
 				// garbage ship graphics came from. Clamp at the top the way Left already does at 0.
 				case DBG_PLAYER: dbgPlayer = (dbgPlayer + 1) % (int)COUNTOF(player); break;
-				case DBG_SHIP: if (edit->ship < SHIP_DRAGONWING) ++edit->ship; break;
+				case DBG_SHIP:
+					if (edit->ship < SHIP_DRAGONWING) ++edit->ship;
+					else if (edit->ship == SHIP_DRAGONWING && extraAvailFor((uint)editPlayer)) edit->ship = 91;
+					else if (edit->ship >= 91 && edit->ship < 100) ++edit->ship;
+					break;
 				case DBG_FRONT_WEAPON: if (edit->weapon[FRONT_WEAPON].id < PORT_NUM) ++edit->weapon[FRONT_WEAPON].id; break;
 				case DBG_FRONT_POWER: if (edit->weapon[FRONT_WEAPON].power < 11) ++edit->weapon[FRONT_WEAPON].power; break;
 				case DBG_REAR_WEAPON: if (edit->weapon[REAR_WEAPON].id < PORT_NUM) ++edit->weapon[REAR_WEAPON].id; break;
@@ -7706,7 +7835,7 @@ static void hud_special_light_step_flash(void)
 // Build the icon of a special that shares one: the bare ship body, then its replacement sprite
 // centred on the upper half (unusedSpecialTops in episodes.c). Drawing the shipped 2x2 for those
 // eleven would show the shared art, including the pixels that reach into its lower half.
-static void draw_special_icon(SDL_Surface *surface, int x, int y, JE_byte id)
+void draw_special_icon(SDL_Surface *surface, int x, int y, JE_byte id)
 {
 	JE_word top = 0;
 	const Sprite2_array *const sheet = JE_specialIconTop(id, &top);
