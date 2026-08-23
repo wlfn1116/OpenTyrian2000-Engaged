@@ -2393,6 +2393,21 @@ void network_shop_send_transaction(void)
 #define NCW_ATTEMPTS   3    /* whole-stream retries before giving up          */
 #define NCW_ATTEMPT_MS 6000 /* ms to get one attempt acknowledged             */
 
+/* A peer can finish publishing first and send the next level marker while this machine is
+ * still publishing. Consume it so acknowledgements behind it remain reachable, then carry
+ * its readiness into the barrier that owns it. */
+static bool network_waiting_pending;
+
+static bool network_waiting_pump(void)
+{
+	if (network_inbound_head() != PACKET_WAITING)
+		return false;
+
+	network_update();
+	network_waiting_pending = true;
+	return true;
+}
+
 static Uint16 network_custom_gen;
 static Uint32 network_custom_out_hash;  // last design the peer took; 0 = nothing published yet
 static bool   network_custom_acked;
@@ -2421,6 +2436,7 @@ void network_custom_weapon_reset(void)
 	network_custom_in_reset();
 	network_custom_out_hash = 0;
 	network_custom_acked = false;
+	network_waiting_pending = false;
 }
 
 static void network_custom_send_ack(Uint16 gen)
@@ -2593,7 +2609,7 @@ static void network_custom_weapon_publish_internal(bool force)
 
 			// Drain our own inbound: the peer publishes from the same rendezvous, and its
 			// acknowledgement is behind whatever it has already sent us.
-			while (network_shop_pump() || network_debug_sync_pump(false))
+			while (network_shop_pump() || network_debug_sync_pump(false) || network_waiting_pump())
 				;
 
 			/* Whatever the pumps left is stale or final: a trailing handshake duplicate would
@@ -2836,7 +2852,7 @@ void network_extra_ships_publish(void)
 			service_SDL_events(false);
 			network_check();
 
-			while (network_shop_pump() || network_debug_sync_pump(false))
+			while (network_shop_pump() || network_debug_sync_pump(false) || network_waiting_pump())
 				;
 
 			if (network_inbound_head() == PACKET_CONNECT)
@@ -3309,7 +3325,9 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 	network_send(4);
 
 	const Uint32 started = SDL_GetTicks();
-	bool peer_ready = false;
+	bool peer_ready = packet_type == PACKET_WAITING && network_waiting_pending;
+	if (peer_ready)
+		network_waiting_pending = false;
 	bool overlay_drawn = false;
 	while (SDL_GetTicks() - started < NET_TIME_OUT && network_peer_alive())
 	{
@@ -3329,15 +3347,23 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 		if (network_shop_pump())
 			continue;
 
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == packet_type)
+		const Uint16 head = network_inbound_head();
+		if (head == packet_type)
 		{
-			peer_ready = true;
-			network_update();
+			/* Reliable retransmits keep their original sequence and never enter this queue twice.
+			 * Once this boundary is ready, another marker of the same type therefore belongs to
+			 * the next boundary and must remain at the head for it. */
+			if (!peer_ready)
+			{
+				peer_ready = true;
+				network_update();
+			}
 		}
-		else
+		else if (!(packet_type == PACKET_WAITING && head == PACKET_LEVEL_READY))
 		{
 			// Every earlier control phase is complete at this boundary. Retire any delayed
-			// packet at the head so it cannot hide the level marker behind it.
+			// packet at the head so it cannot hide the level marker behind it. A loaded marker
+			// is from the next boundary, so a fast peer's one stays queued for that boundary.
 			network_update();
 		}
 
