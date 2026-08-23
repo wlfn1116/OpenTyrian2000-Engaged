@@ -9182,6 +9182,9 @@ bool titleScreen(void)
 	{
 		if (restart)
 		{
+			// Start the logo with clean input, then expose the same controls as any-key screens.
+			touch_ui_suppress();
+			touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 			play_song(SONG_TITLE);
 
 			JE_loadPic(VGAScreen, 4, false);
@@ -9208,6 +9211,7 @@ bool titleScreen(void)
 
 					for (;;)
 					{
+						touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 						float t = (float)(SDL_GetTicks() - slideStart) / (float)slideMs;
 						if (t > 1.0f)
 							t = 1.0f;
@@ -9220,10 +9224,11 @@ bool titleScreen(void)
 						blit_sprite(VGAScreenSeg, 155, y2K, PLANET_SHAPES, 151); // 2000(tm)
 						JE_showVGA();
 
+						if (JE_anyButton())
+							break;
 						if (t >= 1.0f)
 							break;
 
-						service_SDL_events(false);
 						if (!output_vsync)
 							limit_render_fps();
 					}
@@ -9232,6 +9237,7 @@ bool titleScreen(void)
 				{
 					for (int yLogo = 60, y2K = 45; yLogo >= 4; yLogo -= 2, ++y2K)
 					{
+						touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 						setDelay(2);
 
 						memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
@@ -9240,8 +9246,15 @@ bool titleScreen(void)
 						JE_showVGA();
 
 						service_wait_delay();
+						if (JE_anyButton())
+							break;
 					}
 				}
+
+				// A skipped slide still lands on the normal final logo position.
+				memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
+				blit_sprite(VGAScreenSeg, 11, 4, PLANET_SHAPES, 146); // tyrian logo
+				blit_sprite(VGAScreenSeg, 155, 73, PLANET_SHAPES, 151); // 2000(tm)
 				moveTyrianLogoUp = false;
 			}
 			else
@@ -9250,6 +9263,12 @@ bool titleScreen(void)
 				blit_sprite(VGAScreenSeg, 155, 73, PLANET_SHAPES, 151); // 2000(tm)
 				fade_palette(colors, 10, 0, 255 - 16);
 			}
+
+			// Consume the logo press, then restore menu controls with no queued action.
+			touch_ui_suppress();
+			newkey = false;
+			newmouse = false;
+			touch_ui_clear_layout();
 
 			// Draw menu items.
 			for (size_t i = 0; i < COUNTOF(titleLabels); ++i)
@@ -9797,12 +9816,14 @@ bool newEndlessGame(void)
 void intro_logos(void)
 {
 	moveTyrianLogoUp = true;
+	touch_ui_suppress();
 
 	SDL_FillRect(VGAScreen, NULL, 0);
 
 	fade_white(25);
 
 	JE_loadPic(VGAScreen, 10, false);
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 	JE_showVGA();
 
 	fade_palette(colors, 25, 0, 255);
@@ -9813,6 +9834,7 @@ void intro_logos(void)
 	fade_black(10);
 
 	JE_loadPic(VGAScreen, 12, false);
+	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 	JE_showVGA();
 
 	fade_palette(colors, 10, 0, 255);

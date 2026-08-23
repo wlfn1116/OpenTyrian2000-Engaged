@@ -15,6 +15,7 @@
 #include "video.h"
 
 #include <math.h>
+#include <string.h>
 
 /* Point sizes are scaled to output pixels, then clamped for phones and tablets. */
 #define TOUCH_BTN_MIN_PT  44
@@ -116,10 +117,14 @@ static const TouchButtonDef LAYOUT_PICK[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
-/* Any-key screens expose Select while keeping Back in its usual position. */
+/* Any-key screens accept every control they show. Navigation follows the HUD setting. */
 static const TouchButtonDef LAYOUT_CONFIRM[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -3, SDL_SCANCODE_LEFT,   false, GATE_NAV },
+	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,  -1, -2, SDL_SCANCODE_RIGHT,  false, GATE_NAV },
+	{ TOUCH_BTN_UP,     ICON_UP,      1, -3, SDL_SCANCODE_UP,     false, GATE_NAV },
+	{ TOUCH_BTN_DOWN,   ICON_DOWN,    1, -2, SDL_SCANCODE_DOWN,   false, GATE_NAV },
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
@@ -349,6 +354,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 
 	switch (layout)
 	{
+	case TOUCH_LAYOUT_NONE:     defs = NULL;            count = 0;                            break;
 	case TOUCH_LAYOUT_LIST:     defs = LAYOUT_LIST;     count = (int)COUNTOF(LAYOUT_LIST);     break;
 	case TOUCH_LAYOUT_PICK:     defs = LAYOUT_PICK;     count = (int)COUNTOF(LAYOUT_PICK);     break;
 	case TOUCH_LAYOUT_CONFIRM:  defs = LAYOUT_CONFIRM;  count = (int)COUNTOF(LAYOUT_CONFIRM);  break;
@@ -372,7 +378,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 		++shown_count;
 	}
 
-	if (fresh(extra_at_ms, now_ms))
+	if (layout != TOUCH_LAYOUT_NONE && fresh(extra_at_ms, now_ms))
 	{
 		for (size_t i = 0; i < COUNTOF(LAYOUT_EXTRA) && shown_count < LAYOUT_MAX_BUTTONS; ++i)
 		{
@@ -668,6 +674,21 @@ void touch_ui_flush_keys(void)
 		push_key(pending_key[i]);
 
 	pending_key_count = 0;
+}
+
+void touch_ui_suppress(void)
+{
+	// Disable the old frame's hit targets before the first control-free frame is presented.
+	touch_ui_release_all();
+	requested_layout = TOUCH_LAYOUT_NONE;
+	requested_at_ms = SDL_GetTicks();
+	extra_at_ms = 0;
+	layout_valid = false;
+
+	// A button pressed on the departing screen must not act on the screen after the animation.
+	pending_key_count = 0;
+	last_flush_ms = 0;
+	memset(btn_tapped, 0, sizeof(btn_tapped));
 }
 
 /* Composite each button before applying opacity so overlapping glyph strokes blend once. */

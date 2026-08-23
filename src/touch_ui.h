@@ -36,6 +36,7 @@ typedef enum
 
 typedef enum
 {
+	TOUCH_LAYOUT_NONE,      // transition state with no on-screen controls or hit targets
 	TOUCH_LAYOUT_GAME,      // chosen automatically while a level is being flown
 	TOUCH_LAYOUT_MENU,      // the default everywhere else
 	TOUCH_LAYOUT_LIST,      // a scrolling list a tap cannot reach all of: the debug screens
@@ -54,6 +55,9 @@ void touch_ui_set_extra(TouchButton button);
 // Clear requests immediately when their screen or condition ends without a fade.
 void touch_ui_clear_layout(void);
 void touch_ui_clear_extra(void);
+
+// Hide controls immediately and discard their queued input at a screen transition.
+void touch_ui_suppress(void);
 
 // Deliver queued keys beside controller synthesis, just before the screen's event pump.
 void touch_ui_flush_keys(void);
@@ -99,6 +103,7 @@ void touch_ui_idle_repaint(void);
 #define touch_ui_set_extra(button)        ((void)0)
 #define touch_ui_clear_layout()           ((void)0)
 #define touch_ui_clear_extra()            ((void)0)
+#define touch_ui_suppress()               ((void)0)
 #define touch_ui_held(button)             (false)
 #define touch_ui_take_tap(button)         (false)
 

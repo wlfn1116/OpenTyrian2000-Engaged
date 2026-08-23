@@ -25,6 +25,7 @@
 #include "opentyr.h"
 #include "params.h"
 #include "sndmast.h"
+#include "touch_ui.h"
 #include "vga256d.h"
 
 #include "SDL.h"
@@ -147,18 +148,26 @@ void wait_delayorinput(void)
 {
 	for (; ; )
 	{
+		// The startup logos are any-key screens, including every on-screen button shown here.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+		push_joysticks_as_keyboard();
 		service_SDL_events(false);
-		poll_joysticks();
 
-		if (newkey || mousedown || joydown)
+		if (newkey || newmouse || mousedown || joydown)
 		{
 			newkey = false;
+			newmouse = false;
+			// Consume the logo press before the next logo or title menu can see it.
+			touch_ui_suppress();
 			return;
 		}
 
 		Sint32 delay = target - SDL_GetTicks();
 		if (delay <= 0)
+		{
+			touch_ui_suppress();
 			return;
+		}
 
 		SDL_Delay(MIN(delay, SDL_POLL_INTERVAL));
 	}

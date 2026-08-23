@@ -12,6 +12,7 @@
 #include "endless_internal.h"
 #include "fonthand.h"
 #include "game_menu.h"   // JE_getLevelSections
+#include "keyboard.h"
 #include "mainint.h"
 #include "mtrand.h"
 #include "net_rollback.h"
@@ -214,6 +215,21 @@ void qa_check(bool okay, const char *what)
 		++qa_failures;
 		fprintf(stderr, "not ok %u - %s\n", qa_checks, what);
 	}
+}
+
+static void qa_test_any_button_latch(void)
+{
+	newkey = true;
+	newmouse = false;
+	const bool keyEdge = JE_anyButton();
+
+	newkey = false;
+	newmouse = true;
+	const bool mouseEdge = JE_anyButton();
+
+	newkey = newmouse = false;
+	qa_check(keyEdge && mouseEdge,
+	         "an any-button wait preserves key and mouse edges seen by an earlier event pump");
 }
 
 static unsigned qa_popcount64(Uint64 v)
@@ -8412,6 +8428,7 @@ int qa_run_unit_suite(void)
 
 	// Test transfer before normal episode setup, matching a fresh title screen.
 	qa_test_save_transfer_preinit();
+	qa_test_any_button_latch();
 
 	/* Mirror normal episode setup before testing item, ship, weapon, and sidekick invariants. */
 	JE_loadItemDat();

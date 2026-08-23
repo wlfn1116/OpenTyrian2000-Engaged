@@ -34,12 +34,16 @@ JE_boolean inputDetected;
 
 JE_boolean JE_anyButton(void)
 {
+	// Some draw loops pump once between calls. Preserve a press edge that pump already observed;
+	// the clear-new poll below must not erase it before this function can report it.
+	const bool pressed_before_poll = newkey || newmouse;
+
 	// Touch buttons queue keys before the SDL event pump.
 	touch_ui_flush_keys();
 
 	poll_joysticks();
 	service_SDL_events(true);
-	return newkey || mousedown || joydown;
+	return pressed_before_poll || newkey || newmouse || mousedown || joydown;
 }
 
 // Original shade sequence for the vertical 9x2 bands; downward bars mirror it.

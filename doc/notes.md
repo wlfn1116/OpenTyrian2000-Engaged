@@ -579,9 +579,12 @@ Touch layouts are expiring requests. Keep these rules together:
   update `palette_fading()`.
 - Request buttons before a blocking fade. `DE_RunTick()` reasserts its layout
   beside the fade for this reason.
-- `wait_input(true, true, true)` supplies the Confirm layout. Custom wait loops
-  request it before presentation and renew it while blocked. Animation-skip
-  polls do not.
+- `wait_input(true, true, true)`, custom any-key loops and skippable logos supply
+  the Confirm layout before presentation and renew it while blocked. Confirm and
+  Back always dismiss them; optional HUD navigation buttons do too when shown.
+- Logo transitions call `touch_ui_suppress()` after accepting input. Suppression
+  disables old hit targets immediately and discards pending keys so a logo tap
+  cannot become an action on the next logo or title menu.
 - Idle screens re-present the last output texture when the layout signature
   changes. Levels present every frame themselves; never repeat a frame during a
   transition.
@@ -599,9 +602,10 @@ relative mode, allowing taps to satisfy ordinary mouse input.
 Queue touch-button keys until `push_joysticks_as_keyboard()`. Injecting a key
 inside the event pump loses it on screens that pump twice. Drop queued keys after
 a gap in flushing; the next screen must not receive input collected during a
-fade or animation. `JE_anyButton()` also flushes so touch buttons work on
-press-any-key screens. One-shot actions use a release latch because
-`wait_noinput()` blocks presentation while a finger remains down.
+fade or animation. `JE_anyButton()` flushes that queue and preserves edges
+delivered by an intervening pump before clearing new-input state. One-shot
+actions use a release latch because `wait_noinput()` blocks presentation while a
+finger remains down.
 
 Composite each button into a texture before applying opacity; drawing
 overlapping glyph primitives directly would blend some pixels more than once.
