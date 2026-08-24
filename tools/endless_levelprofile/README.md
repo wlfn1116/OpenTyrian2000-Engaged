@@ -1,15 +1,16 @@
-# Endless level-profile generator
+# Endless level profile
 
-`gen_profile.py` generates `src/endless_levelprofile.h`. The table adds a small
-level-specific adjustment to Endless danger and payout.
+`gen_profile.py` turns measured level difficulty into
+`src/endless_levelprofile.h`. Endless uses the result as a small adjustment to
+danger and payout.
 
-The source data comes from
+The measurements come from
 [Tyrian2000Atlas](https://github.com/wlfn1116/Tyrian2000Atlas), which simulates
-each level at every difficulty without player fire.
+every level and difficulty without player fire.
 
 ## Regenerate
 
-Run this only when the data or mapping changes:
+Run the Atlas only when its data or the level mapping changes:
 
 ```sh
 DOTNET_ROLL_FORWARD=Major dotnet \
@@ -19,8 +20,8 @@ DOTNET_ROLL_FORWARD=Major dotnet \
 python gen_profile.py
 ```
 
-`threat.csv` is committed, so regenerating the header does not require the Atlas
-checkout.
+`threat.csv` is committed, so regenerating the header does not otherwise need
+an Atlas checkout.
 
 ## Mapping
 
@@ -28,10 +29,9 @@ checkout.
 baseDanger = clamp(round((Difficulty01 - 1.0) * 4.0), -2, 5)
 ```
 
-`Difficulty01 == 1.0` is neutral. The adjustment remains small so sector
-modifiers dominate the final rank.
+`Difficulty01 == 1.0` is neutral. The range stays small so sector modifiers
+remain the main source of danger.
 
-`lengthClass` is 0 for short, 1 for normal, and 2 for long levels.
-
-The CSV keeps the component measurements for review. The generator mainly uses
+`lengthClass` is 0 for short, 1 for normal, and 2 for long levels. The CSV keeps
+the component measurements for review; the generator mainly reads
 `difficulty01` and measured duration.

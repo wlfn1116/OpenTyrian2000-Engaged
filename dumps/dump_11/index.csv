@@ -83,10 +83,10 @@ shapesz.dat,244384,tiles,Level tileset: 600 slots of 24x28 tiles,"src/tyrian2.c 
 tyrend.anm,3315848,animation,"Episode 3 ending animation, DeluxePaint LPF","src/animlib.c JE_playAnim, from the ']A' episode script command",tyrian2.c,anim/tyrend,1
 tyrian.cdt,1125,text,"Credits roll, one colour-tagged line per record",src/mainint.c JE_playCredits,mainint.c,text/credits.txt,1
 tyrian.exe,4336,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/tyrian.exe|raw/executable/tyrian.exe.strings.txt,1
-tyrian.hdt,11804,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat,config.h|episodes.c|helptext.c,text/hdt_text.json,1
+tyrian.hdt,11804,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat,config.h|episodes.c|game_menu.c|helptext.c,text/hdt_text.json,1
 tyrian.ico,766,graphics,Windows icon for one of the DOS-era launchers,not read at runtime,,images/icons/tyrian.ico|images/icons/tyrian.png,1
 tyrian.pic,344158,graphics,Run-length 320x200 interface backdrops,src/picload.c JE_loadPic,picload.c,images/pic,1
-tyrian.shp,435452,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/sprite.c JE_loadMainShapeTables,episodes.c|mainint.c|opentyr.c|sprite.c,sprites/tyrian_shp,1
+tyrian.shp,435452,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/sprite.c JE_loadMainShapeTables,mainint.c|opentyr.c|sprite.c,sprites/tyrian_shp,1
 tyrian.snd,268494,audio,"Sound effects, signed 8-bit mono at 11025 Hz",src/nortsong.c loadSndFile,nortsong.c,audio/sfx,1
 tyrian1.lvl,535395,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|file.c|lvllib.c,gamedata/episode_1|levels/episode_1,1
 tyrian2.lvl,486134,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|lvllib.c,gamedata/episode_2|levels/episode_2,1

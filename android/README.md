@@ -1,18 +1,22 @@
-# Android build
+# Build for Android
 
-This target produces a sideloadable APK. It is not a Play Store package.
+The Android target produces a sideloadable APK for ARM64 and ARMv7. It is not a
+Play Store package.
 
 ## Requirements
 
 - JDK 17
-- Android SDK, platform 35 and build-tools 35.0.0
-- NDK r27 (`ndk;27.2.12479018`, pinned in `app/build.gradle`)
+- Android SDK platform 35
+- Android build-tools 35.0.0
+- NDK r27 (`ndk;27.2.12479018`)
 - Gradle 8.12 or newer
 
-## SDL sources
+The NDK version is pinned in `app/build.gradle`.
 
-The APK links its own SDL, built from source by `ndk-build`, so unpack the
-release tarballs beside the game before building:
+## Add SDL
+
+Android builds SDL2 and SDL2_net from source with `ndk-build`. Unpack both under
+the app before building:
 
 ```sh
 jni=android/app/src/main/jni
@@ -25,61 +29,63 @@ tar -xzf sdl2net.tar.gz --strip-components=1 -C "$jni/SDL2_net"
 
 Both directories are ignored by Git.
 
-## Game data
+## Add game data
 
-Copy the Tyrian 2000 data files into `app/src/main/assets/data/`, then write the
-manifest the game reads on first run:
+Copy the Tyrian 2000 data files into `app/src/main/assets/data/`, then rebuild
+the asset manifest:
 
 ```sh
 cd android/app/src/main/assets/data
 ls -1 > ../filelist.tmp && mv ../filelist.tmp filelist.txt
 ```
 
-The C library cannot open archived APK assets or enumerate their directories.
-On first launch the game uses this manifest to unpack them into app-private
-`gamedata`. Regenerate the manifest whenever the data set changes. A later build
-replaces files whose size changed.
-
-## Icon and name
-
-The app is named "Tyrian 2000 Engaged". Its launcher icons are generated from
-`visualc/tyrian2000.ico` by `tools/make_app_icons.ps1`, which writes the
-adaptive-icon foregrounds and legacy bitmaps under `app/src/main/res`. The
-output is committed, so a build never runs it; re-run it after changing the
-source icon.
+The game cannot enumerate archived APK assets. On first launch it uses
+`filelist.txt` to unpack them into app-private `gamedata`. Regenerate the list
+whenever the bundled data changes. A later build replaces unpacked files whose
+size changed.
 
 ## Build
 
-From `android`:
+Run from `android`:
 
 ```sh
 gradle assembleRelease -PopentyrianCommit=$(git rev-parse --short HEAD)
 ```
 
-The APK lands in `app/build/outputs/apk/release/`. Release builds use Gradle's
-debug key. CI caches the key so a new build installs over the previous one;
-changing it requires an uninstall.
+The APK lands in `app/build/outputs/apk/release/`.
 
-Only `arm64-v8a` and `armeabi-v7a` are built. Add `x86_64` to `abiFilters` in
-`app/build.gradle` for an emulator build.
+Release builds use Gradle's debug key. CI keeps that key stable so an update can
+install over an older CI build. A different key requires uninstalling the old
+app first.
 
-## Networking
+To build for an x86-64 emulator, add `x86_64` to `abiFilters` in
+`app/build.gradle`.
 
-Android needs no separate local-network permission. Online play and data
-transfers work in either direction. Waiting screens show the device's reachable
-Wi-Fi address and omit loopback, mobile-data, and VPN addresses.
+## App assets
 
-## Files
+The displayed name is **Tyrian 2000 Engaged**. Launcher icons are generated
+from `visualc/tyrian2000.ico` by `tools/make_app_icons.ps1` and committed under
+`app/src/main/res`. The output includes adaptive-icon foregrounds and legacy
+bitmaps. Rerun the generator after changing the source icon.
 
-Configuration, saves, logs, and the unpacked data live in app-private storage
-(`/data/data/net.opentyrian.engaged/files`). Android deletes all of it on
-uninstall, so transfer saves and custom data before removing the app.
+## Files and networking
+
+Configuration, saves, logs, and unpacked game data live under:
+
+```text
+/data/data/net.opentyrian.engaged/files
+```
+
+Android removes this directory on uninstall. Transfer saves and custom data
+before removing the app.
+
+Online play and data transfer work in either direction without a separate
+local-network permission. Address prompts show reachable Wi-Fi addresses and
+omit loopback, mobile-data, and VPN addresses.
 
 ## Controls
 
-Steering is screen-relative: drag anywhere and the ship follows your finger,
-which also holds the main weapon down. On-screen buttons in the pillarbox cover
-everything else, and change with the screen; see
-[Touch controls](../GUIDE.md#touch-controls). Gamepads work through SDL's
-joystick interface. Text fields raise the system keyboard over an in-game
-prompt.
+Drag anywhere to steer and hold the main weapon. The buttons in the pillarbox
+change with the current screen. See [Touch controls](../GUIDE.md#touch-controls).
+
+SDL-compatible gamepads also work. Text fields use the system keyboard.

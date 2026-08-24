@@ -90,10 +90,10 @@ tshp2.pcx,62168,graphics,PCX backdrop for the Super Tyrian ship pick and the End
 tyrend.anm,3315848,animation,"Episode 3 ending animation, DeluxePaint LPF","src/animlib.c JE_playAnim, from the ']A' episode script command",tyrian2.c,anim/tyrend,1
 tyrian.cdt,1125,text,"Credits roll, one colour-tagged line per record",src/mainint.c JE_playCredits,mainint.c,text/credits.txt,1
 tyrian.exe,4336,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/tyrian.exe|raw/executable/tyrian.exe.strings.txt,1
-tyrian.hdt,153657,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat,config.h|episodes.c|helptext.c,gamedata/episodes_1-3|text/hdt_text.json,1
+tyrian.hdt,153657,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat,config.h|episodes.c|game_menu.c|helptext.c,gamedata/episodes_1-3|text/hdt_text.json,1
 tyrian.ico,766,graphics,Windows icon for one of the DOS-era launchers,not read at runtime,,images/icons/tyrian.ico|images/icons/tyrian.png,1
 tyrian.pic,365969,graphics,Run-length 320x200 interface backdrops,src/picload.c JE_loadPic,picload.c,images/pic,1
-tyrian.shp,443871,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/sprite.c JE_loadMainShapeTables,episodes.c|mainint.c|opentyr.c|sprite.c,sprites/tyrian_shp,1
+tyrian.shp,443871,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/sprite.c JE_loadMainShapeTables,mainint.c|opentyr.c|sprite.c,sprites/tyrian_shp,1
 tyrian.snd,264512,audio,"Sound effects, signed 8-bit mono at 11025 Hz",src/nortsong.c loadSndFile,nortsong.c,audio/sfx,1
 tyrian1.lvl,538262,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|file.c|lvllib.c,levels/episode_1,1
 tyrian2.lvl,381242,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|lvllib.c,levels/episode_2,1
@@ -101,7 +101,7 @@ tyrian3.lvl,393398,levels,"Level headers, event scripts and tile maps; some also
 tyrian4.lvl,800006,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|lvllib.c,gamedata/episode_4|levels/episode_4,1
 tyrianc.shp,444862,sprites,Christmas variant of tyrian.shp,"src/sprite.c JE_loadMainShapeTables, when the Christmas theme is on",opentyr.c|sprite.c,sprites/tyrianc_shp,1
 tyrset.pcx,53766,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/tyrset.png,1
-user1.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,mainint.c,sprites/standalone/user1_shp,1
+user1.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,editship.c|mainint.c,sprites/standalone/user1_shp,1
 user2.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,mainint.c,sprites/standalone/user2_shp,1
 voices.snd,132767,audio,Voice samples in the same format,src/nortsong.c loadSndFile,nortsong.c,audio/voices,1
 voicesc.snd,188275,audio,Christmas variant of voices.snd,"src/nortsong.c loadSndFile, when the Christmas theme is on",nortsong.c|opentyr.c,audio/voices_christmas,1

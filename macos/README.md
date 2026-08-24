@@ -1,31 +1,28 @@
-# macOS build
+# Build for macOS
 
-This target produces `OpenTyrian2000.app`, a self-contained universal bundle
-with the game data and a static SDL2 inside it. It needs a Mac with the Xcode
-command line tools.
+The macOS target produces a universal `OpenTyrian2000.app` containing the game
+data and a static SDL2.
 
-If you only want to run the game locally and do not care about a bundle, the
-root `Makefile` works here as it does on Linux:
+For a local command-line build instead, use the root Makefile:
 
 ```sh
 brew install sdl2 sdl2_net pkg-config
 make
 ```
 
-That produces a plain `opentyrian2000` binary that reads `data/` from the
-working directory and keeps its files under `~/.config/opentyrian2000`, the same
-as the Linux build.
+That build reads `data/` from the working directory and stores files under
+`~/.config/opentyrian2000`.
 
 ## Requirements
 
-- Xcode 15 or newer, or the command line tools
+- Xcode 15 or newer, or the Xcode command line tools
 - CMake 3.21 or newer
 - Ninja
 
-## SDL sources
+## Add SDL
 
-SDL2 is compiled into the app as a static library, and SDL2_net's four C files
-are compiled straight into the game target, so unpack both beside the project:
+SDL2 is linked statically. The four SDL2_net C files are compiled into the game
+target.
 
 ```sh
 mkdir -p macos/external/SDL2 macos/external/SDL2_net
@@ -37,22 +34,16 @@ tar -xzf sdl2net.tar.gz --strip-components=1 -C macos/external/SDL2_net
 
 `macos/external` is ignored by Git.
 
-## Game data
+## Add game data
 
 Put the Tyrian 2000 data files in the repository's `data/` directory before
-configuring. CMake reads that directory at configure time and copies it into
-`OpenTyrian2000.app/Contents/Resources/data`, where `SDL_GetBasePath` points.
-Re-run CMake after changing the data set.
+configuring. CMake copies them into:
 
-## Icon and name
+```text
+OpenTyrian2000.app/Contents/Resources/data
+```
 
-The app is named "Tyrian 2000 Engaged". `macos/tyrian2000.iconset` is generated
-from `visualc/tyrian2000.ico` by `tools/make_app_icons.ps1` and committed, so a
-build never runs the generator; re-run it after changing the source icon. The
-build packs the set into `tyrian2000.icns` with `iconutil`.
-
-The artwork includes an 824/1024 rounded-square plate because macOS does not
-apply the iOS or Android icon mask.
+Run CMake again after changing the data set.
 
 ## Build
 
@@ -63,39 +54,47 @@ cmake -S macos -B macos/build -G Ninja \
 cmake --build macos/build --parallel
 ```
 
-The build is universal by default and takes about twice as long for it. For a
-local build you only intend to run yourself, add
-`-DCMAKE_OSX_ARCHITECTURES=arm64`.
+The default build contains x86-64 and ARM64. Add
+`-DCMAKE_OSX_ARCHITECTURES=arm64` for a smaller local build.
 
-Use Ninja. SDL2 runs several hundred feature probes, and the Xcode generator
-starts a separate `xcodebuild` for each one. This project does not require it.
+Use Ninja. The Xcode generator starts a separate `xcodebuild` for each of SDL's
+feature probes and is much slower here.
+
+## Icon
+
+`tools/make_app_icons.ps1` generates the committed
+`macos/tyrian2000.iconset` from `visualc/tyrian2000.ico`. The build converts it
+to `tyrian2000.icns` with `iconutil`.
+
+The artwork uses an 824/1024 rounded-square plate because macOS does not apply
+the iOS or Android mask. Rerun the generator after changing the source icon.
 
 ## Signing and Gatekeeper
 
-Copying data into the bundle invalidates the linker's ad-hoc signature. Re-sign
-the finished bundle so it runs on Apple Silicon:
+Copying data into the bundle invalidates the linker's ad-hoc signature. Sign the
+finished app again for Apple Silicon:
 
 ```sh
 codesign --force --sign - macos/build/OpenTyrian2000.app
 ```
 
-Release bundles are not notarized. If macOS quarantines a download, either
-remove the quarantine flag:
+Release bundles are not notarized. If macOS quarantines a download, open it
+once from Finder's right-click menu, allow it under **System Settings > Privacy
+& Security**, or remove the quarantine attribute:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/OpenTyrian2000.app
 ```
 
-or open it once from Finder's right-click menu, or allow it under **System
-Settings > Privacy & Security** after the first refusal.
+## Files and controls
 
-## Files
+The app bundle stores configuration, saves, and logs under:
 
-Configuration, saves, and logs live in
-`~/Library/Application Support/OpenTyrian/OpenTyrian2000`. The `make` build uses
-the Linux location instead, so the two do not share saves.
+```text
+~/Library/Application Support/OpenTyrian/OpenTyrian2000
+```
 
-## Controls
+The Makefile build uses the Linux location, so the two builds do not share
+saves.
 
-Keyboard, mouse, and any controller SDL recognises, the same as the Windows and
-Linux builds. See [Controls](../GUIDE.md#controls).
+Keyboard, mouse, and SDL-compatible controllers work as on Windows and Linux.

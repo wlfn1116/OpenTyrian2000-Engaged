@@ -1,93 +1,97 @@
-# Data dumper
+# Tyrian data dumper
 
-`dump_data.py` decodes every file in a data directory into a tree under
-`dumps/`. It reads only; the data directory is never modified. The trees are
-tracked, so they carry the same content as the data directories, which are not.
+`dump_data.py` decodes a Tyrian data directory into a tracked tree under
+`dumps/`. It never modifies the source data.
 
 ```sh
 python tools/dump/dump_data.py
 ```
 
-A full run takes about ten seconds and writes roughly 90 MB.
+A complete Tyrian 2000 run takes about ten seconds and writes roughly 90 MB.
 
-## Data versions
+## Supported releases
 
-The dumper reads all three shipped releases. It identifies one from the item
-counts stored in front of its tables, so no option is needed to switch, and each
-release has a data directory and a tree of its own:
+The item-table counts identify the release, so the normal command needs no
+version flag.
 
-| Release | Data | Tree |
+| Release | Source directory | Output tree |
 | --- | --- | --- |
 | Tyrian 1.1 | `data_11/` | `dumps/dump_11/` |
 | Tyrian 2.1 | `data_21/` | `dumps/dump_21/` |
 | Tyrian 2000 | `data/` | `dumps/dump_2000/` |
 
+Example:
+
 ```sh
 python tools/dump/dump_data.py --data data_21
 ```
 
-Table sizes and container layouts differ by release. Tyrian 2.1 moved the
-episode 1 to 3 item tables from the level files into `tyrian.hdt`.
-`tyrian_formats.py` binds the matching tables with `use_version`; see
-`dumps/DIFFERENCES.md` for a readable comparison. Source names are normalized to
-lower case, so Tyrian 1.1 produces the same tree with upper- or lower-case files.
+Tyrian 2.1 moved the episode 1 to 3 item tables from the level files into
+`tyrian.hdt`. `tyrian_formats.py` selects the matching layout with
+`use_version`. See [version differences](../../dumps/DIFFERENCES.md) for the
+full comparison.
 
-## Options
+Source filenames are normalized to lower case, including the upper-case names
+from Tyrian 1.1.
+
+## Output
+
+Start with `index.csv`. It lists every source file, its category and contents,
+the engine loader that reads it, source references, and the output folders it
+produced.
+
+Each tree also contains:
+
+- `README.md`, describing that tree's folders
+- `manifest.json`, recording the release, command, options, and warnings
+- `raw/`, containing files no enabled decoder claimed
+
+A partial run leaves more files under `raw/` than a complete run.
+
+## Sections and options
+
+Sections are `palettes`, `images`, `sprites`, `tiles`, `anim`, `gamedata`,
+`text`, `levels`, `audio`, `demos`, and `raw`.
 
 | Option | Effect |
 | --- | --- |
-| `--data DIR` | Data directory to read (default `<repo>/data`). |
-| `--out DIR` | Output directory (default `dumps/<release tree>`). |
-| `--only SECTION...` | Dump only these sections. |
-| `--skip SECTION...` | Skip these sections. |
-| `--palette N` | `palette.dat` index for assets that store no palette (default 0, the gameplay palette). |
-| `--version V` | Decode as `tyrian2000`, `tyrian2.1` or `tyrian1.1` instead of the sniffed release. |
-| `--no-map-images` | Write level maps as CSV only. |
-| `--no-sprite-files` | Write contact sheets but not one PNG per sprite. |
+| `--data DIR` | Read `DIR` instead of `<repo>/data`. |
+| `--out DIR` | Write to `DIR` instead of the release's tracked tree. |
+| `--only SECTION...` | Dump only the named sections. |
+| `--skip SECTION...` | Omit the named sections. |
+| `--palette N` | Use palette N for assets without their own palette. Default: 0. |
+| `--version V` | Force `tyrian2000`, `tyrian2.1`, or `tyrian1.1`. |
+| `--no-map-images` | Write map CSV files without rendered map PNGs. |
+| `--no-sprite-files` | Write contact sheets without individual sprite PNGs. |
 | `--anim-stride N` | Write every Nth animation frame. |
-| `--list` | Print the section names. |
-| `--quiet` | Report warnings only. |
+| `--list` | Print section names and exit. |
+| `--quiet` | Print warnings only. |
 
-Sections are `palettes`, `images`, `sprites`, `tiles`, `anim`, `gamedata`,
-`text`, `levels`, `audio`, `demos` and `raw`. `raw` copies whatever no other
-enabled section decoded, so a partial run puts more files there than a full one.
+## Verify a tree
 
-## Verify
-
-`verify_dump.py` checks the dump against its source data. Each check accounts for
-every byte or compares a decoder with the engine calculation it mirrors:
+`verify_dump.py` accounts for every source byte or compares a decoder with the
+engine calculation it mirrors.
 
 ```sh
 python tools/dump/verify_dump.py --reproducible
 ```
 
-It prints TAP and exits nonzero on failure. Run it after regeneration or a
-reader change, once per tree; `--data` and `--dump` pick the pair to check.
-Every new decoder needs a corresponding check.
+The verifier prints TAP and returns a nonzero status on failure. Use `--data`
+and `--dump` to select another source/tree pair. Run it once per tree after a
+regeneration or reader change.
 
-## Output
+## Code map
 
-`index.csv` is the entry point of a tree: one row per data file with its
-category, what it holds, the loader that reads it, the source files that mention
-it by name, and the folders this dump wrote from it. The tree's `README.md`
-describes its folder layout and `manifest.json` records the run. `dumps/README.md`
-indexes the trees and is rewritten whenever one of them is.
+- `dump_data.py` owns orchestration, output, and the catalog.
+- `tyrian_formats.py` decodes containers and names the matching engine loader.
+- `pngwrite.py` writes indexed and RGBA PNGs without third-party packages.
 
-## Files
+## Add a decoder
 
-- `dump_data.py` decides what to write and where.
-- `tyrian_formats.py` decodes the containers. Each reader names the loader in
-  `src/` it mirrors; keep the two in step.
-- `pngwrite.py` writes indexed and RGBA PNGs with no third-party dependency.
-
-## Adding a format
-
-To add a format:
-
-1. Add the decoder to `tyrian_formats.py` and name the engine loader it mirrors.
+1. Add the reader to `tyrian_formats.py` and name the engine loader it mirrors.
 2. Add a writer method to `Dumper`.
 3. Call `self.cover(source_file, out_path)` for the master index.
 4. Add a `CATALOG` row.
 5. Add verification coverage.
 
-Undecoded files still appear under `dumps/<release tree>/raw/`.
+Until then, the file remains available under the tree's `raw/` directory.

@@ -1175,6 +1175,7 @@
    "sourceReferences": [
     "config.h",
     "episodes.c",
+    "game_menu.c",
     "helptext.c"
    ],
    "dumpedTo": [
@@ -1216,7 +1217,6 @@
    "contents": "Sprite banks: fonts, planets, faces, menu art, player shots and ships",
    "readBy": "src/sprite.c JE_loadMainShapeTables",
    "sourceReferences": [
-    "episodes.c",
     "mainint.c",
     "opentyr.c",
     "sprite.c"

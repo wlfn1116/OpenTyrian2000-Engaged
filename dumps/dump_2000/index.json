@@ -381,6 +381,7 @@
    "sourceReferences": [
     "editship.c",
     "mainint.c",
+    "qa.c",
     "sprite.c"
    ],
    "dumpedTo": [
@@ -970,6 +971,7 @@
     "endless.h",
     "endless_save.c",
     "game_menu.c",
+    "net_savexfer.c",
     "varz.h"
    ],
    "dumpedTo": [
@@ -1296,6 +1298,7 @@
     "endless.h",
     "endless_save.c",
     "game_menu.c",
+    "net_savexfer.c",
     "switch_platform.h",
     "varz.h",
     "vita_platform.h"
@@ -1314,6 +1317,7 @@
    "sourceReferences": [
     "config.h",
     "episodes.c",
+    "game_menu.c",
     "helptext.c"
    ],
    "dumpedTo": [
@@ -1361,7 +1365,6 @@
    "contents": "Sprite banks: fonts, planets, faces, menu art, player shots and ships",
    "readBy": "src/sprite.c JE_loadMainShapeTables",
    "sourceReferences": [
-    "episodes.c",
     "mainint.c",
     "opentyr.c",
     "sprite.c"
@@ -1575,6 +1578,7 @@
    "contents": "Player ship written by the DOS ship editor",
    "readBy": "not read at runtime; browsable in the debug sprite viewer",
    "sourceReferences": [
+    "editship.c",
     "mainint.c"
    ],
    "dumpedTo": [

@@ -26,7 +26,7 @@ loudness.awe,34382,audio,AWE32 instrument bank from the DOS build,not read at ru
 midiproc_shared.dll,508928,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/midiproc_shared.dll,1
 music.mus,153482,audio,LOUDNESS (LDS) AdLib songs,src/loudness.c load_music; src/lds_play.c lds_load,loudness.c,audio/music,1
 newsh#.shp,17750,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh#,1
-newsh$.shp,18016,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",editship.c|mainint.c|sprite.c,sprites/newsh/newsh$,1
+newsh$.shp,18016,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",editship.c|mainint.c|qa.c|sprite.c,sprites/newsh/newsh$,1
 newsh%.shp,40244,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh%,1
 newsh'.shp,35108,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh',1
 newsh(.shp,32060,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh(,1
@@ -65,7 +65,7 @@ newshu.shp,35657,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosio
 newshv.shp,24103,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshv,1
 newsh~.shp,14929,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh~,1
 ogg-0.dll,60928,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/ogg-0.dll,1
-opentyrian.cfg,540,config,OpenTyrian settings written by this port,"src/config.c; player state, not shipped data",config.c|config.h|custom_weapon.c|endless.c|endless.h|endless_save.c|game_menu.c|varz.h,raw/config/opentyrian.cfg,1
+opentyrian.cfg,540,config,OpenTyrian settings written by this port,"src/config.c; player state, not shipped data",config.c|config.h|custom_weapon.c|endless.c|endless.h|endless_save.c|game_menu.c|net_savexfer.c|varz.h,raw/config/opentyrian.cfg,1
 opentyrian2000.exe,571904,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/opentyrian2000.exe|raw/executable/opentyrian2000.exe.strings.txt,1
 opus-0.dll,553472,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/opus-0.dll,1
 opusfile-0.dll,82944,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/opusfile-0.dll,1
@@ -89,11 +89,11 @@ shipedit.pif,967,misc,Windows program information file for a DOS tool,not read a
 tshp2.pcx,62168,graphics,PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen,src/pcxload.c JE_loadPCX; src/tyrian2.c; src/endless.c ENDLESS_RUNEND_PIC,endless.c|pcxload.c|tyrian2.c,images/pcx/tshp2.png,1
 tyrend.anm,3315848,animation,"Episode 3 ending animation, DeluxePaint LPF","src/animlib.c JE_playAnim, from the ']A' episode script command",tyrian2.c,anim/tyrend,1
 tyrian.cdt,1078,text,"Credits roll, one colour-tagged line per record",src/mainint.c JE_playCredits,mainint.c,text/credits.txt,1
-tyrian.cfg,28,config,Original Tyrian settings block,src/config.c,config.c|config.h|custom_weapon.c|endless.c|endless.h|endless_save.c|game_menu.c|switch_platform.h|varz.h|vita_platform.h,raw/config/tyrian.cfg,1
-tyrian.hdt,295069,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat,config.h|episodes.c|helptext.c,gamedata/episodes_1-3|text/hdt_text.json,1
+tyrian.cfg,28,config,Original Tyrian settings block,src/config.c,config.c|config.h|custom_weapon.c|endless.c|endless.h|endless_save.c|game_menu.c|net_savexfer.c|switch_platform.h|varz.h|vita_platform.h,raw/config/tyrian.cfg,1
+tyrian.hdt,295069,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat,config.h|episodes.c|game_menu.c|helptext.c,gamedata/episodes_1-3|text/hdt_text.json,1
 tyrian.pic,367161,graphics,Run-length 320x200 interface backdrops,src/picload.c JE_loadPic,picload.c,images/pic,1
 tyrian.sav,4722,save,"Save slots, high scores and unlock flags","src/config.c JE_loadConfiguration; player state, not shipped data",config.c|config.h|endless.h|endless_save.c|qa.c,raw/save/tyrian.sav,1
-tyrian.shp,505983,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/sprite.c JE_loadMainShapeTables,episodes.c|mainint.c|opentyr.c|sprite.c,sprites/tyrian_shp,1
+tyrian.shp,505983,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/sprite.c JE_loadMainShapeTables,mainint.c|opentyr.c|sprite.c,sprites/tyrian_shp,1
 tyrian.snd,271689,audio,"Sound effects, signed 8-bit mono at 11025 Hz",src/nortsong.c loadSndFile,nortsong.c,audio/sfx,1
 tyrian1.lvl,538856,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|file.c|lvllib.c,levels/episode_1,1
 tyrian2.exe,84810,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/tyrian2.exe|raw/executable/tyrian2.exe.strings.txt,1
@@ -108,7 +108,7 @@ tyricn2.ico,2238,graphics,Windows icon for one of the DOS-era launchers,not read
 tyricn3.ico,2238,graphics,Windows icon for one of the DOS-era launchers,not read at runtime,,images/icons/tyricn3.ico|images/icons/tyricn3.png,1
 tyricn4.ico,2238,graphics,Windows icon for one of the DOS-era launchers,not read at runtime,,images/icons/tyricn4.ico|images/icons/tyricn4.png,1
 tyricon.ico,2238,graphics,Windows icon for one of the DOS-era launchers,not read at runtime,,images/icons/tyricon.ico|images/icons/tyricon.png,1
-user1.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,mainint.c,sprites/standalone/user1_shp,1
+user1.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,editship.c|mainint.c,sprites/standalone/user1_shp,1
 user2.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,mainint.c,sprites/standalone/user2_shp,1
 voices.snd,132767,audio,Voice samples in the same format,src/nortsong.c loadSndFile,nortsong.c,audio/voices,1
 voicesc.snd,188275,audio,Christmas variant of voices.snd,"src/nortsong.c loadSndFile, when the Christmas theme is on",nortsong.c|opentyr.c,audio/voices_christmas,1

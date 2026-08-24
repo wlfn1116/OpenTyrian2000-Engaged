@@ -1,13 +1,43 @@
-# What changed between Tyrian 1.1, 2.1 and 2000
+# Tyrian version differences
 
-This compares decoded data from Tyrian 1.1, 2.1, and 2000. The matching
-`dump_11/`, `dump_21/`, and `dump_2000/` trees use the same layout and identify
-the source file for every record.
+This compares decoded data from Tyrian 1.1, Tyrian 2.1, and Tyrian 2000.
+The matching `dump_11/`, `dump_21/`, and `dump_2000/` trees use one layout and
+identify the source file behind every decoded record.
 
 Tyrian 2.1 changed almost every asset. Tyrian 2000 added episode 5 and changed
 publisher, while more than half of the 2.1 files remained untouched. Most of its
 data changes are appended records and new banks, with a few reused or inserted
 slots described below.
+
+No difference is discarded for being small. When a table is too large to print
+record by record, this page gives exact changed-record and field counts; the
+JSON and CSV files in the three dump trees hold the individual values.
+
+## Contents
+
+- [Release totals](#the-three-releases)
+- [Episodes and levels](#episodes-and-levels)
+- [Ships](#ships), [guns](#guns), [sidekicks](#sidekicks),
+  [specials](#specials), [shields, and generators](#shields-and-generators)
+- [Weapon and enemy records](#weapon-records)
+- [Differences inside one release](#differences-within-each-release)
+- [Interface text and datacubes](#the-interface)
+- [Graphics](#graphics)
+- [Sound, music, and demos](#sound-and-music)
+- [Added, removed, and renamed files](#the-files-themselves)
+- [Container formats](#container-format-changes)
+- [Curiosities](#curiosities)
+
+## Comparison rules
+
+- Item and record counts in **At a glance** include slot 0.
+- “Byte for byte” means the original source files or decoded record bytes were
+  compared directly.
+- A reachable weapon field is one the matching engine firing path can read.
+  Padding and unused pattern positions are still counted in raw comparisons.
+- Blank cells in an episode table mean that release has no such episode.
+- Filename comparisons ignore case because Tyrian 1.1 uses upper-case data
+  names and later releases use lower case.
 
 ## The three releases
 
@@ -22,9 +52,8 @@ slots described below.
 
 ## At a glance
 
-Counts include slot 0. For 2.1 and 2000 they come from the shared episodes 1-3
-table; for 1.1 they come from episode 1, whose other two sets have the same
-sizes.
+For 2.1 and 2000, the counts come from the shared episodes 1-3 table. The 1.1
+counts come from episode 1; its other two sets have the same sizes.
 
 | | 1.1 | 2.1 | 2000 |
 | --- | --- | --- | --- |
