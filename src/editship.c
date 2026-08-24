@@ -602,6 +602,8 @@ bool JE_shipEditorGraphicCycleSelfTest(void)
 // Item tables pad names with spaces; layout needs the visible width.
 static const char *seTrimName(const char *name, char *buf, size_t bufSize)
 {
+	while (*name == ' ')
+		++name;
 	size_t n = strlen(name);
 	while (n > 0 && name[n - 1] == ' ')
 		--n;
@@ -1003,6 +1005,10 @@ static const char *seCaptureHullName(int ship)
 
 bool JE_captureHullListSelfTest(void)
 {
+	char trimmed[16];
+	if (strcmp(seTrimName("  Rum Bottle   ", trimmed, sizeof(trimmed)), "Rum Bottle") != 0)
+		return false;
+
 	JE_byte list[SHIP_DRAGONWING];
 	const int count = seCaptureHullList(list, COUNTOF(list));
 	if (count <= 0)
@@ -1291,9 +1297,9 @@ static void seSpriteEditor(int bank)
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
 	enum { CANV_X = 28, CANV_Y = 22, CANV_SCALE = 4 };
 	enum { STRIP_X = 12, STRIP_Y = 147 };
-	enum { PAL_X = 199, PAL_Y = 77, PAL_CELL = 4 };
-	enum { PAL_BTN_Y = 91, PAL_BTN_SIZE = 32, PAL_COL_X = 160, PAL_BG_X = 272 };
-	enum { NUDGE_BTN_Y = 125, NUDGE_BTN_SIZE = 15 };
+	enum { PAL_X = 199, PAL_Y = 75, PAL_CELL = 4 };
+	enum { PAL_BTN_Y = 81, PAL_BTN_SIZE = 32, PAL_COL_X = 160, PAL_BG_X = 272 };
+	enum { NUDGE_BTN_Y = 117, NUDGE_BTN_SIZE = 15 };
 	const int panX0 = 150, panX1 = 313, panY0 = 7, panY1 = 183;
 	const int fieldsTop = panY0 + 13;
 	const int row_h = 9;
@@ -1311,7 +1317,7 @@ static void seSpriteEditor(int bank)
 	bool mirror = false;
 	int selected = SES_ROW_BANK;
 	int paletteTarget = SES_PAL_COLOR;
-	const int nudgeX[] = { PAL_COL_X, PAL_COL_X + 17, PAL_BG_X, PAL_BG_X + 17 };
+	const int nudgeX[] = { PAL_COL_X - 1, PAL_COL_X + 18, PAL_BG_X - 1, PAL_BG_X + 18 };
 	const int nudgeDx[] = { -1, 0, 0, 1 };
 	const int nudgeDy[] = { 0, -1, 1, 0 };
 	bool canvasFocus = false;
@@ -1382,9 +1388,8 @@ static void seSpriteEditor(int bank)
 
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
 		JE_rectangle(VGAScreen, panX0, panY0, panX1, panY1, C_HI);
-		draw_font_hv_shadow(VGAScreen, panX0 + 5, panY0 + 2, "SPRITE EDITOR", small_font, left_aligned, 15, 3, false, 1);
-		snprintf(caption, sizeof(caption), "BANK %d", bank);
-		draw_font_hv_shadow(VGAScreen, panX1 - 5, panY0 + 2, caption, small_font, right_aligned, 15, 3, false, 1);
+		draw_font_hv_shadow(VGAScreen, panMidX, panY0 + 2, "SPRITE EDITOR", small_font,
+		                    centered, 15, 3, false, 1);
 		fill_rectangle_xy(VGAScreen, panX0 + 2, panY0 + 10, panX1 - 2, panY0 + 10, C_DIV);
 
 		for (int r = 0; r < SES_ROW_COUNT; ++r)
@@ -1750,7 +1755,9 @@ static void seSpriteEditor(int bank)
 		case SES_ACT_CAPTURE:
 			if (captureHullCount > 0 && seCaptureBank(bank, captureHulls[source]))
 			{
-				snprintf(notice, sizeof(notice), "Captured %.28s", seCaptureHullName(captureHulls[source]));
+				char name[32];
+				seTrimName(seCaptureHullName(captureHulls[source]), name, sizeof(name));
+				snprintf(notice, sizeof(notice), "Captured %.28s", name);
 				JE_playSampleNum(S_SELECT);
 			}
 			else
@@ -1841,11 +1848,13 @@ void JE_shipEditor(void)
 	const int panX0 = 150, panX1 = 313, panY0 = 7, panY1 = 183;
 	const int fieldsTop = panY0 + 13;
 	const int row_h = 12;
-	const int actionsTop = panY1 - 12;
-	const int previewTop = actionsTop - row_h - 3;
+	const int actionsTop = panY1 - 11;
+	const int previewTop = actionsTop - row_h - 2;
 	const int panMidX = (panX0 + panX1) / 2;
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
 	const int boxMid = (BOX_X0 + BOX_X1) / 2;
+	const int posesY = BOX_Y0 + 22, centerY = BOX_Y0 + 70, sideLabelsY = BOX_Y0 + 100;
+	const int itemsY = BOX_Y0 + 119, itemLabelsY = BOX_Y0 + 155;
 	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_HI = 0xFB, C_SEL = 0xF5 };
 
 	int slot = 1;
@@ -1889,17 +1898,17 @@ void JE_shipEditor(void)
 		if (gr > 1)
 		{
 			for (int b = -2; b <= 2; ++b)
-				blit_sprite2x2(VGAScreen, BOX_X0 + 3 + (b + 2) * 26, BOX_Y0 + 22, *sheet, gr + b * 2);
+				blit_sprite2x2(VGAScreen, BOX_X0 + 3 + (b + 2) * 26, posesY, *sheet, gr + b * 2);
 		}
 		else
-			seDrawHull(boxMid, BOX_Y0 + 22, sheet, gr, 0);
+			seDrawHull(boxMid, posesY, sheet, gr, 0);
 
-		JE_drawItem(6, *seField(slot, SE_ROW_LEFT), BOX_X0 + 8, BOX_Y0 + 64);
-		seDrawHull(boxMid, BOX_Y0 + 64, sheet, gr,
+		JE_drawItem(6, *seField(slot, SE_ROW_LEFT), BOX_X0 + 8, centerY);
+		seDrawHull(boxMid, centerY, sheet, gr,
 		           previewOn ? extraShipPreviewBank(SDL_GetTicks() - previewStart) : 0);
-		JE_drawItem(7, *seField(slot, SE_ROW_RIGHT), BOX_X1 - 31, BOX_Y0 + 64);
-		draw_font_hv_shadow(VGAScreen, BOX_X0 + 20, BOX_Y0 + 94, "SIDE L", small_font, centered, 15, 1, false, 1);
-		draw_font_hv_shadow(VGAScreen, BOX_X1 - 19, BOX_Y0 + 94, "SIDE R", small_font, centered, 15, 1, false, 1);
+		JE_drawItem(7, *seField(slot, SE_ROW_RIGHT), BOX_X1 - 31, centerY);
+		draw_font_hv_shadow(VGAScreen, BOX_X0 + 20, sideLabelsY, "SIDE L", small_font, centered, 15, 1, false, 1);
+		draw_font_hv_shadow(VGAScreen, BOX_X1 - 19, sideLabelsY, "SIDE R", small_font, centered, 15, 1, false, 1);
 
 		{
 			// Type 0 uses the composed special icon.
@@ -1914,23 +1923,22 @@ void JE_shipEditor(void)
 				if (icons[i].type == 0)
 				{
 					if (v != 0 && debug_special_is_safe(v))
-						draw_special_icon(VGAScreen, x, BOX_Y0 + 108, v);
+						draw_special_icon(VGAScreen, x, itemsY, v);
 				}
 				else
 				{
 					JE_drawItem(icons[i].type,
 					            extraShipResolvePort((uint)customWeaponLocalOwner(), v),
-					            x, BOX_Y0 + 108);
+					            x, itemsY);
 				}
-				draw_font_hv_shadow(VGAScreen, x + 12, BOX_Y0 + 140, icons[i].tag, small_font, centered, 15, 1, false, 1);
+				draw_font_hv_shadow(VGAScreen, x + 12, itemLabelsY, icons[i].tag, small_font, centered, 15, 1, false, 1);
 			}
 		}
 
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
 		JE_rectangle(VGAScreen, panX0, panY0, panX1, panY1, C_HI);
-		draw_font_hv_shadow(VGAScreen, panX0 + 5, panY0 + 2, "SHIP EDITOR", small_font, left_aligned, 15, 3, false, 1);
-		snprintf(caption, sizeof(caption), "SHIP %d", slot);
-		draw_font_hv_shadow(VGAScreen, panX1 - 5, panY0 + 2, caption, small_font, right_aligned, 15, 3, false, 1);
+		draw_font_hv_shadow(VGAScreen, panMidX, panY0 + 2, "SHIP EDITOR", small_font,
+		                    centered, 15, 3, false, 1);
 		fill_rectangle_xy(VGAScreen, panX0 + 2, panY0 + 10, panX1 - 2, panY0 + 10, C_DIV);
 
 		for (int r = 0; r < SE_ROW_COUNT; ++r)
