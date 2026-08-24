@@ -8824,7 +8824,7 @@ void networkStartScreen(void)
 			// Centre the list, the waiting line and the Esc hint together under the title, which
 			// is large-font and reaches y=40.
 			const int dyRow = guest_wait_row_h(rows);
-			const int blockH = rows * dyRow + GUEST_WAIT_GAP
+			const int blockH = rows * dyRow + guest_wait_gap(rows)
 			                   + GUEST_WAIT_LINE_H + GUEST_WAIT_HINT_H;
 			const int yTop = GUEST_WAIT_TOP + (GUEST_WAIT_BOTTOM - GUEST_WAIT_TOP - blockH) / 2;
 
@@ -8835,10 +8835,10 @@ void networkStartScreen(void)
 				draw_font_hv_shadow(VGAScreen, xValue, y, value[i], small_font, right_aligned, 15, 4, false, 1);
 			}
 
-			const int yWait = yTop + rows * dyRow + GUEST_WAIT_GAP;
+			const int yWait = yTop + rows * dyRow + guest_wait_gap(rows);
 			JE_dString(VGAScreen, JE_fontCenter(networkText[4 - 1], SMALL_FONT_SHAPES),
 			           yWait, networkText[4 - 1], SMALL_FONT_SHAPES);
-			draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, yWait + GUEST_WAIT_LINE_H + 2,
+			draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, yWait + GUEST_WAIT_LINE_H + 8,
 			                    GUEST_WAIT_HINT, small_font, centered, 15, 0, false, 1);
 		}
 

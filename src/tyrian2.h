@@ -144,9 +144,10 @@ void networkSuperTyrianEquip(Player *this_player);
 #define GUEST_WAIT_BOTTOM  196
 #define GUEST_WAIT_GAP      14   // between the last row and the waiting line
 #define GUEST_WAIT_LINE_H   12   // the waiting line (SMALL_FONT_SHAPES)
-#define GUEST_WAIT_HINT_H   10   // the small_font Esc hint under it
+#define GUEST_WAIT_HINT_H   16   // the small_font Esc hint, dropped clear of the waiting line
 #define GUEST_WAIT_HINT "Esc to cancel"
 static inline int guest_wait_row_h(int rows) { return rows >= 12 ? 9 : rows >= 11 ? 10 : 11; }
+static inline int guest_wait_gap(int rows) { return rows >= 13 ? 9 : GUEST_WAIT_GAP; }
 int networkGuestWaitRows(const char **label, const char **value);
 #endif
 bool titleScreen(void);

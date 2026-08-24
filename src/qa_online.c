@@ -2292,7 +2292,7 @@ static int qa_guest_wait_check(const char *shape)
 
 	snprintf(msg, sizeof(msg), "%s: %d rows, the waiting line and the hint fit the screen",
 	         shape, rows);
-	qa_check(rows * guest_wait_row_h(rows) + GUEST_WAIT_GAP + GUEST_WAIT_LINE_H
+	qa_check(rows * guest_wait_row_h(rows) + guest_wait_gap(rows) + GUEST_WAIT_LINE_H
 	         + GUEST_WAIT_HINT_H <= GUEST_WAIT_BOTTOM - GUEST_WAIT_TOP, msg);
 
 	return rows;
