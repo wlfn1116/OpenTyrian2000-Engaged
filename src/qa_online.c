@@ -12,6 +12,7 @@
 #include "helptext.h"  // superShips[]
 #include "lvlmast.h"
 #include "mainint.h"
+#include "net_rollback.h"  // session netcode/recovery flags
 #include "network.h"
 #include "params.h"   // constantPlay, one of the co-op campaign board's conditions
 #include "player.h"
@@ -20,6 +21,7 @@
 #include "varz.h"
 #include "video.h"  // PLAYFIELD_LEFT / PLAYFIELD_RIGHT, for the HUD block geometry check
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -2263,6 +2265,207 @@ static void qa_endless_jump_pick(void)
 	qa_endless_debug_restore(&saved);
 }
 
+#ifdef WITH_NETWORK
+
+/* ---- the joiner's wait-for-details screen -------------------------------------------- */
+
+/* One shape through the row builder, against the drawing site's width and height rules.
+ * Returns the row count. */
+static int qa_guest_wait_check(const char *shape)
+{
+	const char *label[GUEST_WAIT_ROWS_CAP], *value[GUEST_WAIT_ROWS_CAP];
+	const int rows = networkGuestWaitRows(label, value);
+	char msg[224];
+
+	snprintf(msg, sizeof(msg), "%s: %d rows stay within the screen's cap", shape, rows);
+	qa_check(rows > 0 && rows <= GUEST_WAIT_ROWS_CAP, msg);
+
+	for (int i = 0; i < rows && i < GUEST_WAIT_ROWS_CAP; ++i)
+	{
+		snprintf(msg, sizeof(msg), "%s: row '%s' fits its value '%s'", shape,
+		         label[i] ? label[i] : "(null)", value[i] ? value[i] : "(null)");
+		qa_check(label[i] != NULL && value[i] != NULL && value[i][0] != '\0'
+		         && JE_textWidth(label[i], small_font) + 20
+		            + JE_textWidth(value[i], small_font) <= 300,
+		         msg);
+	}
+
+	snprintf(msg, sizeof(msg), "%s: %d rows, the waiting line and the hint fit the screen",
+	         shape, rows);
+	qa_check(rows * guest_wait_row_h(rows) + GUEST_WAIT_GAP + GUEST_WAIT_LINE_H
+	         + GUEST_WAIT_HINT_H <= GUEST_WAIT_BOTTOM - GUEST_WAIT_TOP, msg);
+
+	return rows;
+}
+
+// The widest name or seed the entry filters admit: their widest glyphs are all alphanumeric.
+static void qa_guest_wait_worst(char *out, size_t len)
+{
+	int widest = -1;
+	char pick = 'W';
+	for (unsigned char c = 33; c < 127; ++c)
+	{
+		if (font_ascii[c] < 0 || !isalnum(c))
+			continue;
+
+		const char one[2] = { (char)c, '\0' };
+		const int w = JE_textWidth(one, small_font);
+		if (w > widest)
+		{
+			widest = w;
+			pick = (char)c;
+		}
+	}
+	memset(out, pick, len - 1);
+	out[len - 1] = '\0';
+}
+
+// Every session shape the wait screen can show, each with the widest host name the wire admits.
+static void qa_guest_wait_layout(void)
+{
+	char *const savedName = network_opponent_name;
+	const NetworkGameType savedType = network_game_type;
+	const int savedEpisode = network_host_episode;
+	const int savedDifficulty = network_host_difficulty;
+	const int savedRunMode = network_host_endless_run_mode;
+	const int savedBaseRule = network_host_endless_base_rule;
+	const int savedChooser = network_host_endless_chooser;
+	const bool savedCombo = network_host_endless_combo_shared;
+	const JE_boolean savedTimed = timedBattleMode;
+	const JE_boolean savedSeparate = arcadeSeparateMode;
+	const uint savedSeat = thisPlayerNum;
+	const JE_byte savedBattle = timeBattleSelection;
+	const JE_byte savedSpeed = gameSpeed;
+	const bool savedRollback = nrb_session_mode();
+	const bool savedRecovery = nrb_session_recovery();
+	char savedSeed[NET_ENDLESS_SEED_MAX];
+	memcpy(savedSeed, network_endless_session_seed, sizeof(savedSeed));
+
+	char nameWorst[NET_NAME_MAX + 1];
+	qa_guest_wait_worst(nameWorst, sizeof(nameWorst));
+	network_opponent_name = nameWorst;
+
+	network_host_episode = 1;
+	network_host_difficulty = DIFFICULTY_NORMAL;
+	gameSpeed = 3;
+	network_endless_session_seed[0] = '\0';
+	nrb_set_session_mode(true);
+	nrb_set_session_recovery(true);
+	coop_set_session_shared_credit(true);
+	coop_set_session_double_earnings(false);
+	timedBattleMode = false;
+	arcadeSeparateMode = false;
+	network_game_type = NETWORK_GAME_ARCADE;
+
+	thisPlayerNum = 1;
+	qa_guest_wait_check("linked arcade, seat one");
+	thisPlayerNum = 2;
+	qa_guest_wait_check("linked arcade, seat two");
+	nrb_set_session_mode(false);
+	qa_guest_wait_check("linked arcade, delay-based");
+	nrb_set_session_mode(true);
+
+	for (int d = 1; d <= DIFFICULTY_10; ++d)
+	{
+		network_host_difficulty = d;
+		qa_guest_wait_check("arcade difficulty sweep");
+	}
+	network_host_difficulty = DIFFICULTY_NORMAL;
+
+	arcadeSeparateMode = true;
+	qa_guest_wait_check("separate arcade");
+
+	timedBattleMode = true;
+	for (int b = 1; b <= NET_TIMED_BATTLE_LEVELS; ++b)
+	{
+		timeBattleSelection = (JE_byte)b;
+		qa_guest_wait_check("timed battle");
+	}
+	timedBattleMode = false;
+
+	network_game_type = NETWORK_GAME_SUPERTYRIAN;
+	qa_guest_wait_check("supertyrian, standard");
+	network_host_difficulty = DIFFICULTY_SUICIDE;
+	qa_guest_wait_check("supertyrian, scrollock");
+	network_host_difficulty = DIFFICULTY_NORMAL;
+
+	network_game_type = NETWORK_GAME_SUPERARCADE;
+	qa_guest_wait_check("super arcade");
+
+	arcadeSeparateMode = false;
+	network_game_type = NETWORK_GAME_CAMPAIGN;
+	qa_guest_wait_check("campaign, shared credit");
+	coop_set_session_shared_credit(false);
+	coop_set_session_double_earnings(true);
+	qa_guest_wait_check("campaign, individual doubled");
+	coop_set_session_shared_credit(true);
+	coop_set_session_double_earnings(false);
+
+	network_game_type = NETWORK_GAME_ENDLESS;
+	network_host_endless_run_mode = 0;
+	network_host_endless_base_rule = 0;
+	network_host_endless_chooser = 0;
+	network_host_endless_combo_shared = true;
+	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
+	{
+		network_host_endless_run_mode = m;
+		qa_guest_wait_check("endless run-mode sweep");
+	}
+	network_host_endless_run_mode = 0;
+	for (int r = 0; r < ENDLESS_BASE_RULE_COUNT; ++r)
+	{
+		network_host_endless_base_rule = r;
+		qa_guest_wait_check("endless base-rule sweep");
+	}
+	network_host_endless_base_rule = 0;
+	for (int c = 0; c < ENDLESS_PICK_COUNT; ++c)
+	{
+		network_host_endless_chooser = c;
+		qa_guest_wait_check("endless chooser sweep");
+	}
+	network_host_endless_chooser = 0;
+
+	{
+		char unnamed[1] = { '\0' };
+		network_opponent_name = unnamed;
+		qa_guest_wait_check("endless, unnamed host");
+		network_opponent_name = nameWorst;
+	}
+
+	// Individual credit with doubling, individual combo feed, full-width seed: the deepest shape.
+	qa_guest_wait_worst(network_endless_session_seed, sizeof(network_endless_session_seed));
+	network_host_endless_combo_shared = false;
+	coop_set_session_shared_credit(false);
+	coop_set_session_double_earnings(true);
+	const int deepest = qa_guest_wait_check("endless, deepest shape");
+	qa_check(deepest == 13,
+	         "the deepest wait-screen shape is 13 rows; a new row must re-earn the fit above");
+
+	qa_check(JE_textWidth(GUEST_WAIT_HINT, small_font) <= 300,
+	         "the wait screen's Esc hint fits the field");
+
+	memcpy(network_endless_session_seed, savedSeed, sizeof(savedSeed));
+	nrb_set_session_recovery(savedRecovery);
+	nrb_set_session_mode(savedRollback);
+	gameSpeed = savedSpeed;
+	timeBattleSelection = savedBattle;
+	thisPlayerNum = savedSeat;
+	arcadeSeparateMode = savedSeparate;
+	timedBattleMode = savedTimed;
+	network_host_endless_combo_shared = savedCombo;
+	network_host_endless_chooser = savedChooser;
+	network_host_endless_base_rule = savedBaseRule;
+	network_host_endless_run_mode = savedRunMode;
+	network_host_difficulty = savedDifficulty;
+	network_host_episode = savedEpisode;
+	network_game_type = savedType;
+	network_opponent_name = savedName;
+	coop_set_session_shared_credit(true);
+	coop_set_session_double_earnings(false);
+}
+
+#endif  /* WITH_NETWORK */
+
 /* ---- entry point -------------------------------------------------------------------- */
 
 void qa_test_online_suite(void)
@@ -2293,6 +2496,7 @@ void qa_test_online_suite(void)
 	qa_sa_ship_packet();
 	qa_depart_gate();
 	qa_endless_jump_pick();
+	qa_guest_wait_layout();
 #endif
 
 	qa_online_restore(&saved);

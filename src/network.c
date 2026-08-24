@@ -1591,6 +1591,17 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	{
 		fprintf(stderr, "network test: session halt: %s\n", err_msg[err]);
 		fflush(stderr);
+		/* As the production pump below: a just-queued QUIT needs its retransmits, or one lost
+		 * datagram leaves the partner to the dead-link timeout. */
+		if (attempt_sync)
+		{
+			const Uint32 flushUntil = SDL_GetTicks() + 1500;
+			while (!network_is_sync() && SDL_GetTicks() < flushUntil)
+			{
+				SDL_Delay(4);
+				network_check();
+			}
+		}
 		exit(1);
 	}
 

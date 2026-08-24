@@ -137,6 +137,17 @@ void networkSuperArcadeEquip(Player *this_player, int ship);
 /* Equip one ship for an online SuperTyrian run. Its own function, and public, for the same reason
  * as the one above: the unit suite pins the loadout it issues to both ships. */
 void networkSuperTyrianEquip(Player *this_player);
+
+/* The joiner's wait-for-details screen (networkStartScreen). */
+#define GUEST_WAIT_ROWS_CAP 14
+#define GUEST_WAIT_TOP      42
+#define GUEST_WAIT_BOTTOM  196
+#define GUEST_WAIT_GAP      14   // between the last row and the waiting line
+#define GUEST_WAIT_LINE_H   12   // the waiting line (SMALL_FONT_SHAPES)
+#define GUEST_WAIT_HINT_H   10   // the small_font Esc hint under it
+#define GUEST_WAIT_HINT "Esc to cancel"
+static inline int guest_wait_row_h(int rows) { return rows >= 12 ? 9 : rows >= 11 ? 10 : 11; }
+int networkGuestWaitRows(const char **label, const char **value);
 #endif
 bool titleScreen(void);
 bool newGame(void);

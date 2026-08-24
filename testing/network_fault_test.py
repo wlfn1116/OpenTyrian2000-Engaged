@@ -42,6 +42,7 @@ SCENARIOS = (
     (19, "delay-linked-analog", 0, 90, True),
     (20, "timed-battle-finish", 0, 120, True),
     (21, "endless-resume", 0, 300, True),
+    (22, "guest-esc", 0, 90, True),
 )
 
 
@@ -98,6 +99,8 @@ def run_scenario(
         common += ["--test-net-gameplay-ticks", "700"]
     if scenario == 20:
         common += ["--test-net-gameplay-ticks", "1000000", "--test-net-zones", "1"]
+    if scenario == 22:
+        common += ["--test-net-gameplay-ticks", "700"]
     if extra_common:
         common += extra_common
     host_cmd = [str(executable), *common, "--net", f"127.0.0.1:{proxy_a_addr[1]}",
@@ -106,6 +109,8 @@ def run_scenario(
                 "--net-port", str(join_addr[1]), "--net-player-number", "2"]
     if scenario == 4:
         join_cmd += ["--test-net-version-skew", "1"]
+    if scenario == 22:
+        join_cmd += ["--test-net-guest-esc"]
 
     base_env = os.environ.copy()
     base_env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
@@ -255,6 +260,14 @@ def run_scenario(
         # exit with the message, well before this harness's deadline would have killed it.
         detected = ("Network connection was lost" in host_out and host.returncode != 0)
         return (0 if detected else 1), transcript, injected
+    if scenario == 22:
+        # Success inverts: the joiner walks out of the wait-for-details screen, and both peers
+        # must end the session on their own, each saying why.
+        cancelled = ("net gameplay: joiner escapes the details wait" in join_out
+                     and "network test: session halt: Quitting..." in join_out
+                     and "network test: session halt: Other player quit the game." in host_out
+                     and host.returncode != 0 and join.returncode != 0)
+        return (0 if cancelled else 1), transcript, injected
     if scenario in (0, 15):
         # Soak check: the exchange must not grow the working set. The peers print zero
         # start figures on platforms without the probe, which skips the comparison.

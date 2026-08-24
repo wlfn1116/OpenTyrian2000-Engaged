@@ -64,6 +64,7 @@ int qa_net_zones_cleared = 0;
 bool qa_net_lobby_settings = false;
 bool qa_net_arcade_separate = false;
 bool qa_net_scrollock = false;
+bool qa_net_guest_esc = false;
 
 /* Deterministic modifier slates for the first ten Endless wire-test zones.
  * Later zones fly unmodified. */

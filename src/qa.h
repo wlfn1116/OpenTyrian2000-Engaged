@@ -63,6 +63,8 @@ extern bool qa_net_arcade_separate;
 /* SuperTyrian wire runs: fly the Scrollock variant rather than the standard one. Both peers must
  * be given it, since a test peer has no lobby to publish it from. */
 extern bool qa_net_scrollock;
+// Joiner-only: leave the wait-for-details screen the way Esc does (wire scenario 22).
+extern bool qa_net_guest_esc;
 /* True while a lobby-settings wire run keeps command-line peers under the lobby roles: the
  * main loop must still treat them as command-line (no title screen, no lobby teardown). */
 static inline bool qa_net_lobby_run(void)

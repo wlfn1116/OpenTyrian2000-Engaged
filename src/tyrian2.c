@@ -8571,6 +8571,99 @@ static void networkTimedBattleReady(void)
 	fade_black(10);
 }
 
+/* Build the joiner's wait-screen rows from the adopted session state. Public so the unit suite
+ * can hold every shape to the GUEST_WAIT budget. Returns the row count. */
+int networkGuestWaitRows(const char **label, const char **value)
+{
+	const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
+	const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
+	const bool superTyrianGame = network_game_type == NETWORK_GAME_SUPERTYRIAN;
+
+	int rows = 0;
+
+	label[rows] = "Host";
+	value[rows++] = network_opponent_name[0] ? network_opponent_name : "(unnamed)";
+	label[rows] = "Game Type";
+	switch (network_game_type)
+	{
+	case NETWORK_GAME_ENDLESS:      value[rows++] = "Endless";      break;
+	case NETWORK_GAME_CAMPAIGN:     value[rows++] = "Campaign";     break;
+	case NETWORK_GAME_SUPERTYRIAN:  value[rows++] = "SuperTyrian";  break;
+	case NETWORK_GAME_SUPERARCADE:  value[rows++] = "Super Arcade"; break;
+	// Destruct never reaches this screen, so the remainder is Arcade in one of its three shapes.
+	default:  value[rows++] = timedBattleMode ? "Timed Battle" : "Arcade";  break;
+	}
+	if (timedBattleMode)
+	{
+		// Same rebadge the host's own Mode/Level pair wears in the lobby.
+		label[rows] = "Level";
+		value[rows++] = timed_battle_name[timeBattleSelection];
+	}
+	else if (!endless)
+	{
+		label[rows] = "Episode";
+		value[rows++] = episode_name[network_host_episode];
+	}
+	// SuperTyrian has no ladder; the same field carries which of its two variants this is.
+	label[rows] = superTyrianGame ? "Variant" : "Difficulty";
+	value[rows++] = superTyrianGame
+	              ? (network_host_difficulty == DIFFICULTY_SUICIDE ? "Scrollock" : "Standard")
+	              : difficultyNameB[network_host_difficulty];
+	if (endless)
+	{
+		label[rows] = "Run Mode";
+		value[rows++] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
+		label[rows] = "Base Level";
+		value[rows++] = endlessBaseLevelRuleName(network_host_endless_base_rule);
+		label[rows] = "Charts Course";
+		value[rows++] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
+		label[rows] = "Combo Feed";
+		value[rows++] = network_host_endless_combo_shared ? "Shared" : "Individual";
+		label[rows] = "Seed";
+		value[rows++] = network_endless_session_seed[0] ? network_endless_session_seed : "(random)";
+	}
+	if (coop)
+	{
+		label[rows] = "Credit";
+		value[rows++] = coop_credit_is_shared() ? "Shared" : "Individual";
+		if (!coop_credit_is_shared())
+		{
+			label[rows] = "Double Earnings";
+			value[rows++] = coop_earnings_are_doubled() ? "On" : "Off";
+		}
+	}
+	else if (network_game_type == NETWORK_GAME_SUPERARCADE)
+	{
+		label[rows] = "Ships";
+		value[rows++] = "You choose";   // each player picks their own on the next screen
+	}
+	else if (arcadeSeparateMode)
+	{
+		label[rows] = "Ships";
+		value[rows++] = "Separate";
+	}
+	else
+	{
+		// Campaign gives both slots the same kind of ship, so there is nothing to say.
+		label[rows] = "You Fly";
+		value[rows++] = thisPlayerNum == 2 ? "Dragonwing" : "Silver Ship";
+	}
+	label[rows] = "Game Speed";
+	// Adopted from the host's settings block, which clamps it; belt and braces, since
+	// anything out of range here would index gameSpeedText[] off its ends.
+	value[rows++] = gameSpeedText[MIN(MAX(gameSpeed, 1), 5) - 1];
+	label[rows] = "Netcode";
+	value[rows++] = nrb_session_mode() ? "Rollback" : "Delay-Based";
+	if (nrb_session_mode())
+	{
+		// Lockstep never runs the compare that arms it, so it has no answer to give.
+		label[rows] = "Desync Recovery";
+		value[rows++] = nrb_session_recovery() ? "On" : "Off";
+	}
+
+	return rows;
+}
+
 void networkStartScreen(void)
 {
 	// Lobby games are already connected. Command-line netplay and its lobby-settings
@@ -8711,92 +8804,8 @@ void networkStartScreen(void)
 		// Show the host's settled handshake settings while details arrive. Waiting
 		// for a later confirmation would stall the host in the outpost.
 		{
-			const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
-			const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
-			const bool superTyrianGame = network_game_type == NETWORK_GAME_SUPERTYRIAN;
-
-			const char *label[14], *value[14];
-			int rows = 0;
-
-			label[rows] = "Host";
-			value[rows++] = network_opponent_name[0] ? network_opponent_name : "(unnamed)";
-			label[rows] = "Game Type";
-			switch (network_game_type)
-			{
-			case NETWORK_GAME_ENDLESS:      value[rows++] = "Endless";      break;
-			case NETWORK_GAME_CAMPAIGN:     value[rows++] = "Campaign";     break;
-			case NETWORK_GAME_SUPERTYRIAN:  value[rows++] = "SuperTyrian";  break;
-			case NETWORK_GAME_SUPERARCADE:  value[rows++] = "Super Arcade"; break;
-			// Destruct returned above, so the remainder is Arcade in one of its three shapes.
-			default:  value[rows++] = timedBattleMode ? "Timed Battle" : "Arcade";  break;
-			}
-			if (timedBattleMode)
-			{
-				// Same rebadge the host's own Mode/Level pair wears in the lobby.
-				label[rows] = "Level";
-				value[rows++] = timed_battle_name[timeBattleSelection];
-			}
-			else if (!endless)
-			{
-				label[rows] = "Episode";
-				value[rows++] = episode_name[network_host_episode];
-			}
-			// SuperTyrian has no ladder; the same field carries which of its two variants this is.
-			label[rows] = superTyrianGame ? "Variant" : "Difficulty";
-			value[rows++] = superTyrianGame
-			              ? (network_host_difficulty == DIFFICULTY_SUICIDE ? "Scrollock" : "Standard")
-			              : difficultyNameB[network_host_difficulty];
-			if (endless)
-			{
-				label[rows] = "Run Mode";
-				value[rows++] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
-				label[rows] = "Base Level";
-				value[rows++] = endlessBaseLevelRuleName(network_host_endless_base_rule);
-				label[rows] = "Charts Course";
-				value[rows++] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
-				label[rows] = "Combo Feed";
-				value[rows++] = network_host_endless_combo_shared ? "Shared" : "Individual";
-				label[rows] = "Seed";
-				value[rows++] = network_endless_session_seed[0] ? network_endless_session_seed : "(random)";
-			}
-			if (coop)
-			{
-				label[rows] = "Credit";
-				value[rows++] = coop_credit_is_shared() ? "Shared" : "Individual";
-				if (!coop_credit_is_shared())
-				{
-					label[rows] = "Double Earnings";
-					value[rows++] = coop_earnings_are_doubled() ? "On" : "Off";
-				}
-			}
-			else if (network_game_type == NETWORK_GAME_SUPERARCADE)
-			{
-				label[rows] = "Ships";
-				value[rows++] = "You choose";   // each player picks their own on the next screen
-			}
-			else if (arcadeSeparateMode)
-			{
-				label[rows] = "Ships";
-				value[rows++] = "Separate";
-			}
-			else
-			{
-				// Campaign gives both slots the same kind of ship, so there is nothing to say.
-				label[rows] = "You Fly";
-				value[rows++] = thisPlayerNum == 2 ? "Dragonwing" : "Silver Ship";
-			}
-			label[rows] = "Game Speed";
-			// Adopted from the host's settings block, which clamps it; belt and braces, since
-			// anything out of range here would index gameSpeedText[] off its ends.
-			value[rows++] = gameSpeedText[MIN(MAX(gameSpeed, 1), 5) - 1];
-			label[rows] = "Netcode";
-			value[rows++] = nrb_session_mode() ? "Rollback" : "Delay-Based";
-			if (nrb_session_mode())
-			{
-				// Lockstep never runs the compare that arms it, so it has no answer to give.
-				label[rows] = "Desync Recovery";
-				value[rows++] = nrb_session_recovery() ? "On" : "Off";
-			}
+			const char *label[GUEST_WAIT_ROWS_CAP], *value[GUEST_WAIT_ROWS_CAP];
+			const int rows = networkGuestWaitRows(label, value);
 
 			// Same column rule as the host menu: the block is as wide as its widest row, centred,
 			// with labels on its left edge and values on its right. The floor keeps a screenful of
@@ -8812,11 +8821,12 @@ void networkStartScreen(void)
 			const int xLabel = LEGACY_WIDTH / 2 - blockW / 2;
 			const int xValue = xLabel + blockW;
 
-			// Centre the list and the waiting line together under the title, which is large-font and
-			// reaches y=40.
-			const int dyRow = (rows >= 13) ? 9 : (rows >= 11) ? 10 : 11;
-			const int gapToWait = 14, waitH = 12;
-			const int yTop = 42 + (196 - 42 - (rows * dyRow + gapToWait + waitH)) / 2;
+			// Centre the list, the waiting line and the Esc hint together under the title, which
+			// is large-font and reaches y=40.
+			const int dyRow = guest_wait_row_h(rows);
+			const int blockH = rows * dyRow + GUEST_WAIT_GAP
+			                   + GUEST_WAIT_LINE_H + GUEST_WAIT_HINT_H;
+			const int yTop = GUEST_WAIT_TOP + (GUEST_WAIT_BOTTOM - GUEST_WAIT_TOP - blockH) / 2;
 
 			for (int i = 0; i < rows; ++i)
 			{
@@ -8825,15 +8835,20 @@ void networkStartScreen(void)
 				draw_font_hv_shadow(VGAScreen, xValue, y, value[i], small_font, right_aligned, 15, 4, false, 1);
 			}
 
+			const int yWait = yTop + rows * dyRow + GUEST_WAIT_GAP;
 			JE_dString(VGAScreen, JE_fontCenter(networkText[4 - 1], SMALL_FONT_SHAPES),
-			           yTop + rows * dyRow + gapToWait, networkText[4 - 1], SMALL_FONT_SHAPES);
+			           yWait, networkText[4 - 1], SMALL_FONT_SHAPES);
+			draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, yWait + GUEST_WAIT_LINE_H + 2,
+			                    GUEST_WAIT_HINT, small_font, centered, 15, 0, false, 1);
 		}
 
 		JE_showVGA();
 
 		// until opponent sends details packet
+		newkey = false;  // the press that drove the lobby's join is still latched
 		while (true)
 		{
+			push_joysticks_as_keyboard();
 			service_SDL_events(false);
 
 			// Keep the mouse cursor alive while the host picks episode/difficulty.
@@ -8843,6 +8858,21 @@ void networkStartScreen(void)
 			JE_mouseReplace();
 			if (!output_vsync)
 				limit_render_fps();
+
+			// Leaving must tell the host, which is still in its own menus; checked before the
+			// details packet so a cancel beats a game that is only just starting.
+			if ((newkey && lastkey_scan == SDL_SCANCODE_ESCAPE) || qa_net_guest_esc)
+			{
+				if (qa_net_guest_esc)
+				{
+					fprintf(stderr, "net gameplay: joiner escapes the details wait\n");
+					fflush(stderr);
+				}
+				JE_playSampleNum(S_SPRING);
+				network_prepare(PACKET_QUIT);
+				network_send(4);  // PACKET_QUIT
+				network_tyrian_halt(0, true);   // does not return
+			}
 
 			// The length matters: packet_copy fills only the first `len` bytes of a reused buffer, so a
 			// short packet would set the episode and difficulty from whatever the previous one left

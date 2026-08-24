@@ -88,6 +88,7 @@ run.
 | 19 | delay-linked-analog | Delay-Based linked pair carries movement, analog turret aim, and special-ready flashes |
 | 20 | timed-battle-finish | Guest dismissal retires both result screens before teardown |
 | 21 | endless-resume | The joiner receives a run, both peers resume in the outpost, and player numbers remain stable |
+| 22 | guest-esc | The joiner cancels the pre-game wait screen and both peers end the session cleanly |
 
 Each peer runs in its own temporary directory. The runner drains output while
 the processes run so a full pipe cannot stall network service.
