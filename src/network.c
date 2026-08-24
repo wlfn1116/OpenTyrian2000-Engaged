@@ -3569,9 +3569,14 @@ bool network_shop_pump(void)
 	if (!coop_mode_active())
 		return false;
 
-	// A late duplicate of the resume transfer: the run is already adopted, so drop it.
+	/* PACKET_ENDLESS_RUN also carries live death-menu choices. The death wait owns those;
+	 * only stale resume traffic may be consumed here. */
 	if (packetType == PACKET_ENDLESS_RUN)
 	{
+		if (packet_in[0]->len >= NCW_HDR
+		    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == NET_ENDLESS_DEATH_SENTINEL)
+			return false;
+
 		network_update();
 		return true;
 	}

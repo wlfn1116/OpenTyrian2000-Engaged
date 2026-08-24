@@ -1295,6 +1295,16 @@ static void qa_hostile_packets(void)
 	qa_check(network_shop_pump() && packet_in[0] == NULL,
 	         "an absurd custom-weapon chunk is consumed and refused");
 
+	/* The shop pump must leave a death choice queued for its owner across barrier skew. */
+	memset(raw, 0, sizeof(raw));
+	SDLNet_Write16(PACKET_ENDLESS_RUN, &raw[0]);
+	SDLNet_Write16(2, &raw[8]);        // host chose End Run
+	SDLNet_Write16(0xFFFF, &raw[10]);  // death-choice sentinel
+	qa_inject_packet(raw, 14);
+	qa_check(!network_shop_pump() && packet_in[0] != NULL,
+	         "an Endless death choice is left queued for the death wait");
+	network_update();
+
 	/* A stray Endless run chunk outside the resume wait is a late duplicate; dropped. */
 	memset(raw, 0xDD, sizeof(raw));
 	SDLNet_Write16(PACKET_ENDLESS_RUN, &raw[0]);
