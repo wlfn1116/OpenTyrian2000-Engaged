@@ -38,6 +38,10 @@ bool JE_legacyUserShapeSelfTest(void);
 bool JE_captureHullListSelfTest(void);
 bool JE_shipEditorGraphicCycleSelfTest(void);
 
+enum { EXTRA_SHIP_PREVIEW_BANK_MS = 220 };
+// Return a banking pose from -2 to 2 for menu and editor previews.
+int extraShipPreviewBank(Uint32 elapsed);
+
 // Online, each player reads that seat's exchanged file. Offline, both read the local file.
 JE_byte *extraShipsFor(uint playerIdx);
 Sprite2_array *extraShapesFor(uint playerIdx);

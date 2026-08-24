@@ -2621,22 +2621,44 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	extraShipLoadoutRefresh(pnum, true);
 }
 
-static void extraMenuDrawShipPreview(uint pnum, int cx, int y)
+static void extraMenuDrawShipPreview(uint pnum, int cx, int y, int banking)
 {
 	Sprite2_array *const sheet = pnum == 1 ? shipGr2ptr : shipGrPtr;
 	const JE_word gr = pnum == 1 ? shipGr2 : shipGr;
 	if (sheet == NULL || sheet->data == NULL)
 		return;
+	const NetShipStyle style = netStyleForSeat(pnum);
+	const int pose = banking * 2;
 
-	if (gr <= 1)
+	if (gr == 0)
 	{
-		const JE_word left = gr == 0 ? 13 : 220;
-		const JE_word right = gr == 0 ? 51 : 222;
-		blit_sprite2x2(VGAScreen, cx - 2 * SHOP_WIDE_HULL_HALF, y, *sheet, left);
-		blit_sprite2x2(VGAScreen, cx, y, *sheet, right);
+		blit_sprite2x2_alpha(VGAScreen, cx - 2 * SHOP_WIDE_HULL_HALF, y, *sheet, 13 + pose,
+		                     style.bank, style.opacity);
+		blit_sprite2x2_alpha(VGAScreen, cx, y, *sheet, 51 + pose, style.bank, style.opacity);
+	}
+	else if (gr == 1)
+	{
+		// Nort Ship keeps its center hull and adds an edge sprite for banked poses.
+		blit_sprite2x2_alpha(VGAScreen, cx - 2 * SHOP_WIDE_HULL_HALF, y, *sheet, 220,
+		                     style.bank, style.opacity);
+		blit_sprite2x2_alpha(VGAScreen, cx, y, *sheet, 222, style.bank, style.opacity);
+		unsigned int trim = 0;
+		int trimX = 0;
+		switch (banking)
+		{
+		case -2: trim = 59; trimX = cx + SHOP_WIDE_HULL_HALF; break;
+		case -1: trim = 58; trimX = cx + SHOP_WIDE_HULL_HALF; break;
+		case  1: trim = 39; trimX = cx - 2 * SHOP_WIDE_HULL_HALF; break;
+		case  2: trim = 40; trimX = cx - 2 * SHOP_WIDE_HULL_HALF; break;
+		default: break;
+		}
+		if (trim != 0)
+			blit_sprite2_alpha(VGAScreen, trimX, y + 14, *sheet, trim,
+			                   style.bank, style.opacity);
 	}
 	else
-		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr);
+		blit_sprite2x2_alpha(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr + pose,
+		                     style.bank, style.opacity);
 }
 
 void qa_test_extra_ship_return(void)
@@ -2708,6 +2730,13 @@ void qa_test_extra_ship_return(void)
 	qa_check(extraMenuNextCustomShipSlot(10, +1, false) == 1
 	         && extraMenuNextCustomShipSlot(1, -1, false) == 10,
 	         "a custom loadout with no known predecessor skips the unavailable return point");
+	qa_check(extraShipPreviewBank(0) == 0
+	         && extraShipPreviewBank(EXTRA_SHIP_PREVIEW_BANK_MS) == -1
+	         && extraShipPreviewBank(EXTRA_SHIP_PREVIEW_BANK_MS * 2) == -2
+	         && extraShipPreviewBank(EXTRA_SHIP_PREVIEW_BANK_MS * 4) == 0
+	         && extraShipPreviewBank(EXTRA_SHIP_PREVIEW_BANK_MS * 6) == 2
+	         && extraShipPreviewBank(EXTRA_SHIP_PREVIEW_BANK_MS * 8) == 0,
+		         "the custom-ship preview sweeps from center to both sides and back");
 	struct ExtraShipModeCase
 	{
 		bool network, twoPlayer, coop, separate, timedBattle, superTyrian, allowed;
@@ -2835,6 +2864,8 @@ bool JE_extraMenu(void)
 	int page = PAGE_ROOT;
 	size_t selected = 0;
 	int prev_mx = mouse_x, prev_my = mouse_y;
+	Uint32 shipPreviewStart = SDL_GetTicks();
+	bool shipPreviewWasShown = false;
 
 	bool closeMenu = false;
 	bool returnToGame = false;
@@ -2927,15 +2958,17 @@ bool JE_extraMenu(void)
 		}
 
 		const bool showShipPreview = page == PAGE_ROOT && selected == 1 && shipRowAllowed;
+		if (showShipPreview && !shipPreviewWasShown)
+			shipPreviewStart = SDL_GetTicks();
+		shipPreviewWasShown = showShipPreview;
 		if (showShipPreview)
 		{
 			fill_rectangle_xy(VGAScreen, preview_x0, preview_y0, preview_x1, preview_y1, 0);
 			JE_rectangle(VGAScreen, preview_x0, preview_y0, preview_x1, preview_y1, C_EDGE_HI);
-			draw_font_hv_shadow(VGAScreen, (preview_x0 + preview_x1) / 2, preview_y0 + 4,
-			                    "PREVIEW", small_font, centered, 15, 2, true, 1);
-			fill_rectangle_xy(VGAScreen, preview_x0 + 2, preview_y0 + 14,
-			                  preview_x1 - 2, preview_y0 + 14, C_DIVIDER);
-			extraMenuDrawShipPreview(shipSeat, (preview_x0 + preview_x1) / 2, preview_y0 + 20);
+			// A composed hull is 28 pixels tall; center it in the preview box.
+			extraMenuDrawShipPreview(shipSeat, (preview_x0 + preview_x1) / 2,
+			                         (preview_y0 + preview_y1 - 27) / 2,
+			                         extraShipPreviewBank(SDL_GetTicks() - shipPreviewStart));
 		}
 
 		// Footer (two lines so long key combos don't overflow the panel): the
@@ -3061,6 +3094,7 @@ bool JE_extraMenu(void)
 			else if (page == PAGE_ROOT && selected == 1 && shipRowAllowed)
 			{
 				extraMenuCycleCustomShip(shipSeat, adjustDir);
+				shipPreviewStart = SDL_GetTicks();
 				JE_playSampleNum(S_CURSOR);
 			}
 			else if (page == PAGE_DEBUG && selected == 0)
@@ -3111,7 +3145,12 @@ bool JE_extraMenu(void)
 				else JE_playSampleNum(S_SPRING);
 				break;
 			case 1:  // Custom Ship: a tap cycles forward, so it works without arrow keys
-				if (shipRowAllowed) { extraMenuCycleCustomShip(shipSeat, +1); JE_playSampleNum(S_SELECT); }
+				if (shipRowAllowed)
+				{
+					extraMenuCycleCustomShip(shipSeat, +1);
+					shipPreviewStart = SDL_GetTicks();
+					JE_playSampleNum(S_SELECT);
+				}
 				else JE_playSampleNum(S_SPRING);
 				break;
 			case 2:  // Cheat Codes...

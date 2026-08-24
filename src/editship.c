@@ -436,12 +436,13 @@ enum
 	SE_ROW_SLOT, SE_ROW_GRAPHIC, SE_ROW_FRONT, SE_ROW_REAR, SE_ROW_SPECIAL,
 	SE_ROW_LEFT, SE_ROW_RIGHT, SE_ROW_GENERATOR, SE_ROW_ARMOR, SE_ROW_SHIELD,
 	SE_ROW_COUNT,
-	SE_ACT_SPRITES = SE_ROW_COUNT,
+	SE_TOGGLE_PREVIEW = SE_ROW_COUNT,
+	SE_ACT_SPRITES,
 	SE_ACT_IMPORT,
 	SE_ACT_REVERT,
 	SE_ACT_DONE,
 	SE_NAV_COUNT,
-	SE_ACT_COUNT = SE_NAV_COUNT - SE_ROW_COUNT,
+	SE_ACT_COUNT = SE_NAV_COUNT - SE_ACT_SPRITES,
 };
 
 static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
@@ -456,6 +457,8 @@ static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
 	{ "Armor",          "Hull strength, 1 to 99." },
 	{ "Shield",         "The shield model fitted to this ship." },
 };
+
+static const char *const sePreviewHelp = "Animate the center ship's banking poses.";
 
 static const struct { const char *label, *help; } seActs[SE_ACT_COUNT] = {
 	{ "Sprites", "Draw or copy artwork for your eight custom banks." },
@@ -652,16 +655,41 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 	return "";
 }
 
-// Raw graphics 0 and 1 are the two-piece Dragonwing and Nort Ship sentinels.
-static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr)
+int extraShipPreviewBank(Uint32 elapsed)
 {
-	if (gr <= 1)
+	// Sweep from center to full left, through center to full right, then repeat.
+	static const Sint8 banking[] = { 0, -1, -2, -1, 0, 1, 2, 1 };
+	return banking[(elapsed / EXTRA_SHIP_PREVIEW_BANK_MS) % COUNTOF(banking)];
+}
+
+// Raw graphics 0 and 1 are the two-piece Dragonwing and Nort Ship sentinels.
+static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr, int banking)
+{
+	const int pose = banking * 2;
+	if (gr == 0)
 	{
-		blit_sprite2x2(VGAScreen, cx - 2 * SHOP_WIDE_HULL_HALF, y, *sheet, gr == 0 ? 13 : 220);
-		blit_sprite2x2(VGAScreen, cx, y, *sheet, gr == 0 ? 51 : 222);
+		blit_sprite2x2(VGAScreen, cx - 2 * SHOP_WIDE_HULL_HALF, y, *sheet, 13 + pose);
+		blit_sprite2x2(VGAScreen, cx, y, *sheet, 51 + pose);
+	}
+	else if (gr == 1)
+	{
+		blit_sprite2x2(VGAScreen, cx - 2 * SHOP_WIDE_HULL_HALF, y, *sheet, 220);
+		blit_sprite2x2(VGAScreen, cx, y, *sheet, 222);
+		unsigned int trim = 0;
+		int trimX = 0;
+		switch (banking)
+		{
+		case -2: trim = 59; trimX = cx + SHOP_WIDE_HULL_HALF; break;
+		case -1: trim = 58; trimX = cx + SHOP_WIDE_HULL_HALF; break;
+		case  1: trim = 39; trimX = cx - 2 * SHOP_WIDE_HULL_HALF; break;
+		case  2: trim = 40; trimX = cx - 2 * SHOP_WIDE_HULL_HALF; break;
+		default: break;
+		}
+		if (trim != 0)
+			blit_sprite2(VGAScreen, trimX, y + 14, *sheet, trim);
 	}
 	else
-		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr);
+		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr + pose);
 }
 
 /* Wake on input or once per tick. Tick wakes renew the touch layout; pointer wakes keep paint
@@ -1814,6 +1842,7 @@ void JE_shipEditor(void)
 	const int fieldsTop = panY0 + 13;
 	const int row_h = 12;
 	const int actionsTop = panY1 - 12;
+	const int previewTop = actionsTop - row_h - 3;
 	const int panMidX = (panX0 + panX1) / 2;
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
 	const int boxMid = (BOX_X0 + BOX_X1) / 2;
@@ -1821,6 +1850,10 @@ void JE_shipEditor(void)
 
 	int slot = 1;
 	int selected = 0;
+	bool previewOn = true;
+	Uint32 previewStart = SDL_GetTicks();
+	int previewSlot = slot;
+	JE_byte previewGraphic = *seField(slot, SE_ROW_GRAPHIC);
 	char notice[40] = "";
 	int prev_mx = mouse_x, prev_my = mouse_y;
 	bool legacyAvailable = seLegacyUserShapesAvailable();
@@ -1838,6 +1871,13 @@ void JE_shipEditor(void)
 
 		Sprite2_array *sheet = &spriteSheet9;
 		const JE_word gr = JE_SGr(0, slot, &sheet);  // the editor always edits the local file
+		const JE_byte graphic = *seField(slot, SE_ROW_GRAPHIC);
+		if (slot != previewSlot || graphic != previewGraphic)
+		{
+			previewStart = SDL_GetTicks();
+			previewSlot = slot;
+			previewGraphic = graphic;
+		}
 
 		fill_rectangle_xy(VGAScreen, BOX_X0, BOX_Y0, BOX_X1, BOX_Y1, 0);
 		JE_rectangle(VGAScreen, BOX_X0 - 1, BOX_Y0 - 1, BOX_X1 + 1, BOX_Y1 + 1, C_HI);
@@ -1852,10 +1892,11 @@ void JE_shipEditor(void)
 				blit_sprite2x2(VGAScreen, BOX_X0 + 3 + (b + 2) * 26, BOX_Y0 + 22, *sheet, gr + b * 2);
 		}
 		else
-			seDrawHull(boxMid, BOX_Y0 + 22, sheet, gr);
+			seDrawHull(boxMid, BOX_Y0 + 22, sheet, gr, 0);
 
 		JE_drawItem(6, *seField(slot, SE_ROW_LEFT), BOX_X0 + 8, BOX_Y0 + 64);
-		seDrawHull(boxMid, BOX_Y0 + 64, sheet, gr);
+		seDrawHull(boxMid, BOX_Y0 + 64, sheet, gr,
+		           previewOn ? extraShipPreviewBank(SDL_GetTicks() - previewStart) : 0);
 		JE_drawItem(7, *seField(slot, SE_ROW_RIGHT), BOX_X1 - 31, BOX_Y0 + 64);
 		draw_font_hv_shadow(VGAScreen, BOX_X0 + 20, BOX_Y0 + 94, "SIDE L", small_font, centered, 15, 1, false, 1);
 		draw_font_hv_shadow(VGAScreen, BOX_X1 - 19, BOX_Y0 + 94, "SIDE R", small_font, centered, 15, 1, false, 1);
@@ -1863,7 +1904,7 @@ void JE_shipEditor(void)
 		{
 			// Type 0 uses the composed special icon.
 			static const struct { JE_byte type; int row; const char *tag; } icons[5] = {
-				{ 2, SE_ROW_FRONT, "FRONT" }, { 3, SE_ROW_REAR, "REAR" }, { 0, SE_ROW_SPECIAL, "SPEC" },
+				{ 2, SE_ROW_FRONT, "FRNT" }, { 3, SE_ROW_REAR, "REAR" }, { 0, SE_ROW_SPECIAL, "SPEC" },
 				{ 5, SE_ROW_GENERATOR, "GEN" }, { 4, SE_ROW_SHIELD, "SHLD" },
 			};
 			for (int i = 0; i < 5; ++i)
@@ -1911,22 +1952,39 @@ void JE_shipEditor(void)
 			draw_font_hv_shadow(VGAScreen, valueX, ry, val, small_font, right_aligned, 15, sel ? 6 : 5, false, 1);
 		}
 
+		{
+			const bool sel = selected == SE_TOGGLE_PREVIEW;
+			char value[12];
+			if (sel)
+				snprintf(value, sizeof(value), "< %s >", previewOn ? "On" : "Off");
+			else
+				SDL_strlcpy(value, previewOn ? "On" : "Off", sizeof(value));
+			fill_rectangle_xy(VGAScreen, panX0 + 2, previewTop - 1, panX1 - 2,
+			                  previewTop + row_h - 3, sel ? C_SEL : C_PANEL);
+			draw_font_hv_shadow(VGAScreen, labelX, previewTop, "Preview", small_font,
+			                    left_aligned, 15, sel ? 5 : 3, false, 1);
+			draw_font_hv_shadow(VGAScreen, valueX, previewTop, value, small_font,
+			                    right_aligned, 15, sel ? 6 : 5, false, 1);
+		}
+
 		fill_rectangle_xy(VGAScreen, panX0 + 2, actionsTop - 3, panX1 - 2, actionsTop - 3, C_DIV);
 		const int actionWidth = (panX1 - panX0 - 4) / SE_ACT_COUNT;
 		for (int a = 0; a < SE_ACT_COUNT; ++a)
 		{
 			const int bx0 = panX0 + 2 + a * actionWidth;
 			const int bx1 = (a == SE_ACT_COUNT - 1) ? panX1 - 2 : bx0 + actionWidth - 2;
-			const bool enabled = a != (SE_ACT_IMPORT - SE_ROW_COUNT) || legacyAvailable;
-			const bool sel = (selected == SE_ROW_COUNT + a);
+			const bool enabled = a != (SE_ACT_IMPORT - SE_ACT_SPRITES) || legacyAvailable;
+			const bool sel = (selected == SE_ACT_SPRITES + a);
 			fill_rectangle_xy(VGAScreen, bx0, actionsTop - 1, bx1, actionsTop + 9, sel ? C_SEL : C_DIV);
 			draw_font_hv_shadow(VGAScreen, (bx0 + bx1) / 2, actionsTop, seActs[a].label, small_font, centered,
 			                    15, enabled ? (sel ? 6 : 4) : -5, false, 1);
 		}
 
+		const char *const help = selected < SE_ROW_COUNT ? seRows[selected].help
+		                       : selected == SE_TOGGLE_PREVIEW ? sePreviewHelp
+		                       : seActs[selected - SE_ACT_SPRITES].help;
 		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
-		                    notice[0] != '\0' ? notice
-		                    : (selected < SE_ROW_COUNT ? seRows[selected].help : seActs[selected - SE_ROW_COUNT].help),
+		                    notice[0] != '\0' ? notice : help,
 		                    small_font, centered, 15, 2, false, 1);
 
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
@@ -1958,12 +2016,14 @@ void JE_shipEditor(void)
 		{
 			if (mouse_y >= fieldsTop - 1 && mouse_y < fieldsTop + SE_ROW_COUNT * row_h)
 				hover = (mouse_y - (fieldsTop - 1)) / row_h;
+			else if (mouse_y >= previewTop - 1 && mouse_y < previewTop + row_h - 2)
+				hover = SE_TOGGLE_PREVIEW;
 			else if (mouse_y >= actionsTop - 1 && mouse_y <= actionsTop + 9)
 			{
 				int a = (mouse_x - (panX0 + 2)) / actionWidth;
 				if (a >= SE_ACT_COUNT)
 					a = SE_ACT_COUNT - 1;
-				hover = SE_ROW_COUNT + (a < 0 ? 0 : a);
+				hover = SE_ACT_SPRITES + (a < 0 ? 0 : a);
 			}
 		}
 		if (hover >= 0 && hover < SE_NAV_COUNT && (mouse_x != prev_mx || mouse_y != prev_my) && hover != selected)
@@ -1990,6 +2050,13 @@ void JE_shipEditor(void)
 				else if (hover < SE_ROW_COUNT)
 				{
 					seStepField(slot, hover, (mouse_x < panMidX) ? -1 : 1);
+					JE_playSampleNum(S_CURSOR);
+				}
+				else if (hover == SE_TOGGLE_PREVIEW)
+				{
+					previewOn = !previewOn;
+					if (previewOn)
+						previewStart = SDL_GetTicks();
 					JE_playSampleNum(S_CURSOR);
 				}
 				else if (hover == SE_ACT_SPRITES)
@@ -2039,7 +2106,14 @@ void JE_shipEditor(void)
 				break;
 			case SDL_SCANCODE_RETURN:
 			case SDL_SCANCODE_SPACE:
-				if (selected == SE_ACT_SPRITES)
+				if (selected == SE_TOGGLE_PREVIEW)
+				{
+					previewOn = !previewOn;
+					if (previewOn)
+						previewStart = SDL_GetTicks();
+					JE_playSampleNum(S_CURSOR);
+				}
+				else if (selected == SE_ACT_SPRITES)
 					openSprites = true;
 				else if (selected == SE_ACT_IMPORT)
 				{
@@ -2080,6 +2154,12 @@ void JE_shipEditor(void)
 					const int reps = (selected == SE_ROW_ARMOR && (lastkey_mod & KMOD_SHIFT)) ? 10 : 1;
 					for (int i = 0; i < reps; ++i)
 						seStepField(slot, selected, dir);
+				}
+				else if (selected == SE_TOGGLE_PREVIEW)
+				{
+					previewOn = !previewOn;
+					if (previewOn)
+						previewStart = SDL_GetTicks();
 				}
 				else
 				{

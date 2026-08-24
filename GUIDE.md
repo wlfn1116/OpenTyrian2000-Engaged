@@ -851,6 +851,8 @@ so later edits to the weapon also change the ship. The choice appears while the
 Weapon Creator is enabled; an existing reference keeps working after it is
 disabled.
 
+**Preview** turns the center ship's banking animation on or off.
+
 **Sprites** opens your eight **Custom Banks**. Each bank contains five turning
 poses. Choose Paint, Fill, Pick, or Erase from the Tool row. Color 0 is
 transparent.

@@ -2,7 +2,7 @@
 #define OPENTYRIAN_VERSION_H
 
 #ifndef OPENTYRIAN_VERSION
-#define OPENTYRIAN_VERSION "Engaged v1.3.3"
+#define OPENTYRIAN_VERSION "Engaged v1.4.0"
 #endif
 
 #ifndef OPENTYRIAN_COMMIT
