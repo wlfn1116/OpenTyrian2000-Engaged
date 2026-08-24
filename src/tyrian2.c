@@ -4234,6 +4234,8 @@ start_level:
 			fade_black(10);
 
 			wait_noinput(true, true, true);
+			newkey = false;
+			newmouse = false;
 		}
 	}
 

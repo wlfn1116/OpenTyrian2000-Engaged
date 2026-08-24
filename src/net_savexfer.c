@@ -1248,6 +1248,7 @@ static const SaveXferOffer *saveXferPickOffer(XferKind kind, UDPsocket sock, UDP
 	const int yItems = (count > 0) ? 60 : 96;
 	const int dyItems = 18;
 	const int hItem = 13;
+	const int yGap = (count > 0) ? dyItems : 0;
 
 	for (;;)
 	{
@@ -1268,7 +1269,8 @@ static const SaveXferOffer *saveXferPickOffer(XferKind kind, UDPsocket sock, UDP
 				saveXferOfferLine(kind, line, sizeof(line), &offers[i]);
 
 			wItem[i] = JE_textWidth(line, normal_font);
-			draw_font_hv_shadow(VGAScreen, SX_XCENTER - wItem[i] / 2, yItems + dyItems * i, line,
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER - wItem[i] / 2,
+			                    yItems + dyItems * i + (i >= typedRow ? yGap : 0), line,
 			                    normal_font, left_aligned, 15, -4 + (i == selectedIndex ? 2 : 0), false, 2);
 		}
 
@@ -1291,7 +1293,7 @@ static const SaveXferOffer *saveXferPickOffer(XferKind kind, UDPsocket sock, UDP
 			for (int i = 0; i < rows; ++i)
 			{
 				const int x = SX_XCENTER - wItem[i] / 2;
-				const int y = yItems + dyItems * i;
+				const int y = yItems + dyItems * i + (i >= typedRow ? yGap : 0);
 
 				if (mouse_x >= x && mouse_x < x + wItem[i] && mouse_y >= y && mouse_y < y + hItem)
 				{
