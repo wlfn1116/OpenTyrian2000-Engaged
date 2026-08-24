@@ -525,20 +525,112 @@ void JE_getShipInfo(void)
 	}
 }
 
+// Preserve ShipEdit graphic IDs 1 through 15. See doc/notes.md for the extended mapping.
+static const JE_word extraLegacyGraphics[7] = { 233, 157, 195, 271, 81, 0, 119 };
+static const JE_word extraCustomGraphics[8] = { 5, 43, 81, 119, 157, 195, 233, 271 };
+
+bool extraShipGraphicIsCustom(int graphic)
+{
+	return graphic >= 8 && graphic <= 15;
+}
+
+static bool extraShipLegacyGraphic(JE_word raw)
+{
+	for (uint i = 0; i < COUNTOF(extraLegacyGraphics); ++i)
+		if (extraLegacyGraphics[i] == raw)
+			return true;
+	return false;
+}
+
+// Sort raw graphics so extended IDs stay stable and shared artwork appears once.
+static int extraShipExtendedGraphics(JE_word *graphics, size_t capacity)
+{
+	int count = 0;
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+	{
+		const JE_word raw = ships[ship].shipgraphic;
+		if (ships[ship].name[0] == '\0' || extraShipLegacyGraphic(raw))
+			continue;
+
+		int at = 0;
+		while (at < count && graphics[at] < raw)
+			++at;
+		if (at < count && graphics[at] == raw)
+			continue;
+		if ((size_t)count >= capacity)
+			continue;
+
+		memmove(&graphics[at + 1], &graphics[at], (size_t)(count - at) * sizeof(*graphics));
+		graphics[at] = raw;
+		++count;
+	}
+	return count;
+}
+
+static bool extraShipGraphicRaw(int graphic, JE_word *raw)
+{
+	if (graphic >= 1 && graphic <= 7)
+	{
+		*raw = extraLegacyGraphics[graphic - 1];
+		return true;
+	}
+	if (graphic < 16)
+		return false;
+
+	JE_word extended[SHIP_DRAGONWING];
+	const int count = extraShipExtendedGraphics(extended, COUNTOF(extended));
+	const int index = graphic - 16;
+	if (index < 0 || index >= count)
+		return false;
+	*raw = extended[index];
+	return true;
+}
+
+bool extraShipGraphicIsNort(int graphic)
+{
+	JE_word raw;
+	return extraShipGraphicRaw(graphic, &raw) && raw == 1;
+}
+
+int extraShipGraphicMax(void)
+{
+	JE_word extended[SHIP_DRAGONWING];
+	return 15 + extraShipExtendedGraphics(extended, COUNTOF(extended));
+}
+
+const char *extraShipEditorGraphicName(int graphic)
+{
+	JE_word raw;
+	if (!extraShipGraphicRaw(graphic, &raw))
+		return NULL;
+
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+		if (ships[ship].name[0] != '\0' && ships[ship].shipgraphic == raw)
+			return ship == 1 ? "USP Talon" : ships[ship].name;
+	return NULL;
+}
+
 // Route online extra-ship graphics through the owning seat's file.
 JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr)
 {
-	const JE_word GR[15] /* [1..15] */ = {233, 157, 195, 271, 81, 0, 119, 5, 43, 81, 119, 157, 195, 233, 271};
-
-	JE_word tempW = extraShipsFor(seat)[(ship - 1) * 15];
-	if (tempW > 7)
+	const int graphic = extraShipsFor(seat)[(ship - 1) * 15];
+	if (extraShipGraphicIsCustom(graphic))
+	{
 		*ptr = extraShapesFor(seat);
+		return extraCustomGraphics[graphic - 8];
+	}
 
-	// Invalid graphics fall back to the first built-in hull.
-	if (tempW < 1 || tempW > 15)
-		return GR[0];
+	JE_word raw;
+	if (!extraShipGraphicRaw(graphic, &raw))
+		raw = extraLegacyGraphics[0]; // invalid graphics fall back to the first built-in hull
 
-	return GR[tempW-1];
+	if (raw > 500)
+	{
+		*ptr = &spriteSheetT2000;
+		return raw - 500;
+	}
+	*ptr = &spriteSheet9;
+	return raw;
 }
 
 void JE_resetPlayerOptions(Player *this_player)

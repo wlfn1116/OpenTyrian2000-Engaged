@@ -4633,7 +4633,18 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 			{
 				shipGrPtr = &spriteSheet9;
 				shipGr = JE_SGr(shop_draw_seat(), itemNum - 90, &shipGrPtr);
-				blit_preview_ship2x2(VGAScreen, x, y, *shipGrPtr, shipGr);
+				if (shipGr == 0)
+				{
+					blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 13);
+					blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 51);
+				}
+				else if (shipGr == 1)
+				{
+					blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 220);
+					blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 222);
+				}
+				else
+					blit_preview_ship2x2(VGAScreen, x, y, *shipGrPtr, shipGr);
 			}
 			else if (ships[itemNum].shipgraphic == 0)
 			{

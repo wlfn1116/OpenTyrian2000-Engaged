@@ -7140,6 +7140,10 @@ static void qa_test_ship_editor_file(void)
 {
 	JE_ShipsType backup, enc;
 	memcpy(backup, extraShips, sizeof(backup));
+	qa_check(strstr(ships[1].name, "Light Fighter") != NULL,
+	         "the USP Talon keeps its full data-file name outside the ship editor");
+	qa_check(strcmp(extraShipEditorGraphicName(1), "USP Talon") == 0,
+	         "the ship editor shortens the USP Talon's graphic label");
 
 	qa_check(extraAvail, "the stock compiled ship file loads");
 	if (extraAvail)
@@ -7170,6 +7174,81 @@ static void qa_test_ship_editor_file(void)
 	memcpy(extraShips, backup, sizeof(backup));
 
 	qa_check(JE_shapeCodecSelfTest(), "the sprite cell codec round-trips every cell");
+	qa_check(JE_legacyUserShapeSelfTest(),
+	         "a legacy User.shp imports every raw cell and its encrypted loadouts");
+	qa_check(JE_captureHullListSelfTest(),
+	         "the sprite editor offers each compatible hull graphic exactly once");
+	qa_check(JE_shipEditorGraphicCycleSelfTest(),
+	         "the ship editor cycles Nort Ship immediately after Dragonwing");
+	{
+		const unsigned int gr = ships[16].shipgraphic - 500;
+		qa_check(ships[16].shipgraphic == 581 &&
+		         sprite2_hflip_equal(spriteSheetT2000, gr - 4, gr + 5) &&
+		         sprite2_hflip_equal(spriteSheetT2000, gr - 3, gr + 4) &&
+		         sprite2_hflip_equal(spriteSheetT2000, gr + 15, gr + 24) &&
+		         sprite2_hflip_equal(spriteSheetT2000, gr + 16, gr + 23),
+		         "Gencore II replaces its malformed hard-left pose with a clean mirror");
+	}
+
+	{
+		static const JE_word legacy[] = { 233, 157, 195, 271, 81, 0, 119 };
+		static const JE_word custom[] = { 5, 43, 81, 119, 157, 195, 233, 271 };
+		Sprite2_array *seenSheets[SHIP_DRAGONWING + 7];
+		JE_word seenGraphics[SHIP_DRAGONWING + 7];
+		const JE_byte savedGraphic = extraShips[0];
+		const bool savedNet = isNetworkGame;
+		const int maxGraphic = extraShipGraphicMax();
+		int seenCount = 0;
+		bool unique = true, named = true, nort = false, dragonwing = false, t2000 = false;
+		bool legacyCompatible = true, customCompatible = true;
+
+		isNetworkGame = false;
+		for (int graphic = 1; graphic <= maxGraphic; ++graphic)
+		{
+			extraShips[0] = (JE_byte)graphic;
+			Sprite2_array *sheet = NULL;
+			const JE_word gr = JE_SGr(0, 1, &sheet);
+			if (extraShipGraphicIsCustom(graphic))
+				continue;
+
+			for (int i = 0; i < seenCount; ++i)
+				unique = unique && !(seenSheets[i] == sheet && seenGraphics[i] == gr);
+			seenSheets[seenCount] = sheet;
+			seenGraphics[seenCount++] = gr;
+			named = named && extraShipEditorGraphicName(graphic) != NULL;
+			nort = nort || (sheet == &spriteSheet9 && gr == 1);
+			dragonwing = dragonwing || (sheet == &spriteSheet9 && gr == 0);
+			t2000 = t2000 || sheet == &spriteSheetT2000;
+		}
+
+		for (uint i = 0; i < COUNTOF(legacy); ++i)
+		{
+			extraShips[0] = (JE_byte)(i + 1);
+			Sprite2_array *sheet = NULL;
+			legacyCompatible = legacyCompatible && JE_SGr(0, 1, &sheet) == legacy[i]
+			                   && sheet == &spriteSheet9;
+		}
+		for (uint i = 0; i < COUNTOF(custom); ++i)
+		{
+			extraShips[0] = (JE_byte)(i + 8);
+			Sprite2_array *sheet = NULL;
+			customCompatible = customCompatible && JE_SGr(0, 1, &sheet) == custom[i]
+			                   && sheet == &extraShapes;
+		}
+
+		extraShips[0] = savedGraphic;
+		isNetworkGame = savedNet;
+		qa_check(maxGraphic > 15 && maxGraphic <= 255,
+		         "the loadout graphic row extends beyond the original ShipEdit choices");
+		qa_check(unique, "the loadout graphic row contains no duplicate built-in sprite identity");
+		qa_check(named, "every built-in graphic choice has an in-game ship name");
+		qa_check(nort && dragonwing, "the loadout graphic row includes Nort Ship and Dragonwing");
+		qa_check(t2000, "the loadout graphic row includes Tyrian 2000 hull art");
+		qa_check(legacyCompatible && customCompatible,
+		         "graphics 1 through 15 retain their original ShipEdit meanings");
+		printf("# ship editor graphics: %d unique built-ins, 8 custom banks, codes 1..%d\n",
+		       seenCount, maxGraphic);
+	}
 
 	{
 		const bool savedEnabled = customWeaponEnabled;

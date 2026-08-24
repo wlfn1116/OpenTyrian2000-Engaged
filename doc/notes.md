@@ -731,6 +731,29 @@ File layout:
 
 The cipher and cell codec must round-trip the stock Tyrian 2000 file exactly.
 
+`User.shp` is the editable source used by the DOS ShipEdit utility:
+
+- Search the active data directory, the executable's `data` directory, then
+  beside the executable. Accept `User.shp` and `user.shp`.
+- The file has 304 presence bytes. Each set byte is followed by one raw 12x14
+  cell; the encrypted ship table follows the final slot.
+- A valid source takes priority over `newsh$.shp`. **Import** reloads it and
+  **Done** compiles `newsh$.shp`. Missing or invalid sources fall back to the
+  compiled file.
+
+Graphic IDs are persistent:
+
+- IDs 1 through 7 are the original built-in hulls. IDs 8 through 15 are the
+  eight custom banks.
+- Extended built-ins follow in raw graphic order. Shared artwork gets one ID,
+  so the mapping stays stable when several ships use the same drawing.
+- Raw values above 500 use the Tyrian 2000 sheet. Values 0 and 1 select the
+  two-piece Dragonwing and Nort Ship hulls. These do not fit a custom bank.
+
+Tyrian 2000's Gencore II hard-left pose is corrupt. Replace it with a mirrored
+hard-right pose only when the known `0xfe` signature is present, leaving custom
+shape packs untouched.
+
 Online Campaign, Endless, and Separate Arcade exchange one file per seat through
 `PACKET_EXTRA_SHIPS`. Simulation lookups use `extraShipsFor(seat)` so both peers
 read the same armor and loadout.
@@ -856,6 +879,11 @@ local player leaves shopping.
 Custom weapon and Endless run transfers retire stale handshake duplicates but
 leave quit packets for the quit handler. `network_shop_begin` owns the co-op quit
 transition back to the outpost.
+
+Content publication may receive `PACKET_WAITING` before its transfer
+acknowledgement. Consume the marker to reach the acknowledgement, then carry its
+readiness into the level barrier. Once that barrier is ready, another marker of
+the same type belongs to the next boundary and stays queued.
 
 A save checkpoint may wait for a peer still on the level-end screen. Draw a wait
 notice, allow Esc, and keep `NET_SHOP_SAVE_WAIT` as the final bound.

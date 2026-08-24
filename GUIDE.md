@@ -826,14 +826,22 @@ in every other mode.
 **Title screen > Extra > Ship Editor** edits the ten ships in `newsh$.shp`.
 Each slot stores a hull, weapons, special, sidekicks, generator, armor, and
 shield. Slot 10 uses the 0 key. The stock Tyrian 2000 file supplies the initial
-ten ships when no edited copy exists.
+ten ships when no edited copy exists. The slots can share built-in hull art or
+use one of eight custom banks.
+
+#### Importing old ShipEdit designs
+
+Put `User.shp` in `data` or beside the game executable. It loads before
+`newsh$.shp`; remove it after importing if you want the compiled file to load on
+the next launch. **Import** reloads `User.shp`, and **Done** writes `newsh$.shp`.
 
 To switch ships:
 
 - In a solo game, hold **Tab** and press a number.
 - **Esc > Extra > Custom Ship** works with keyboards, controllers, and touch.
   Enter steps forward; Left and Right move either way. Standard restores the
-  loadout you had before switching to a custom ship.
+  loadout you had before switching to a custom ship. Highlighting the row shows
+  a preview of the currently assigned hull.
 - Full armor and shields stay full. Damaged gauges keep the same percentage
   after the maximum changes.
 
@@ -843,15 +851,18 @@ so later edits to the weapon also change the ship. The choice appears while the
 Weapon Creator is enabled; an existing reference keeps working after it is
 disabled.
 
-**Sprites** edits graphics 8 through 15. Each bank contains five turning poses.
-Choose Paint, Fill, Pick, or Erase from the Tool row. Color 0 is transparent.
+**Sprites** opens your eight **Custom Banks**. Each bank contains five turning
+poses. Choose Paint, Fill, Pick, or Erase from the Tool row. Color 0 is
+transparent.
 
 - **Col** selects the paint color. **BG** changes only the preview background.
 - **Mirror** reflects Paint, Fill, and Erase across the centerline.
 - The arrow buttons move the current pose by one pixel. Pixels pushed outside
   the frame are discarded.
-- **Capture** copies a built-in hull into the bank. **Flip H** and **Flip V**
-  mirror the current pose.
+- **From Hull** lists each built-in hull that fits one sprite bank. **Capture**
+  copies it into the current bank. Nort Ship and Dragonwing are too wide to
+  capture but remain available under **Graphic**.
+- **Flip H** and **Flip V** mirror the current pose.
 - **Guides** cycles through vertical, horizontal, and combined centerlines. The
   guides are not saved in the sprite.
 
@@ -984,6 +995,7 @@ app-private storage that the system deletes on uninstall.
 | `opentyrian.sav` | Save slots (campaign, two-player and Endless) and high scores |
 | `custom_weapons.cfg` | Weapon Creator library |
 | `newsh$.shp` | Custom ships compiled by the Ship Editor |
+| `User.shp` | Optional legacy ShipEdit source, loaded from `data` or beside the executable |
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |
 

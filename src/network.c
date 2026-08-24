@@ -2393,9 +2393,7 @@ void network_shop_send_transaction(void)
 #define NCW_ATTEMPTS   3    /* whole-stream retries before giving up          */
 #define NCW_ATTEMPT_MS 6000 /* ms to get one attempt acknowledged             */
 
-/* A peer can finish publishing first and send the next level marker while this machine is
- * still publishing. Consume it so acknowledgements behind it remain reachable, then carry
- * its readiness into the barrier that owns it. */
+// Consume an early PACKET_WAITING so transfer acknowledgements behind it remain reachable.
 static bool network_waiting_pending;
 
 static bool network_waiting_pump(void)
@@ -3350,9 +3348,7 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 		const Uint16 head = network_inbound_head();
 		if (head == packet_type)
 		{
-			/* Reliable retransmits keep their original sequence and never enter this queue twice.
-			 * Once this boundary is ready, another marker of the same type therefore belongs to
-			 * the next boundary and must remain at the head for it. */
+			// Once this boundary is ready, another marker of this type belongs to the next one.
 			if (!peer_ready)
 			{
 				peer_ready = true;
@@ -3361,9 +3357,7 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 		}
 		else if (!(packet_type == PACKET_WAITING && head == PACKET_LEVEL_READY))
 		{
-			// Every earlier control phase is complete at this boundary. Retire any delayed
-			// packet at the head so it cannot hide the level marker behind it. A loaded marker
-			// is from the next boundary, so a fast peer's one stays queued for that boundary.
+			// Retire delayed control traffic so it cannot hide this boundary's marker.
 			network_update();
 		}
 

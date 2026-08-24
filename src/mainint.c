@@ -2621,6 +2621,24 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	extraShipLoadoutRefresh(pnum, true);
 }
 
+static void extraMenuDrawShipPreview(uint pnum, int cx, int y)
+{
+	Sprite2_array *const sheet = pnum == 1 ? shipGr2ptr : shipGrPtr;
+	const JE_word gr = pnum == 1 ? shipGr2 : shipGr;
+	if (sheet == NULL || sheet->data == NULL)
+		return;
+
+	if (gr <= 1)
+	{
+		const JE_word left = gr == 0 ? 13 : 220;
+		const JE_word right = gr == 0 ? 51 : 222;
+		blit_sprite2x2(VGAScreen, cx - 2 * SHOP_WIDE_HULL_HALF, y, *sheet, left);
+		blit_sprite2x2(VGAScreen, cx, y, *sheet, right);
+	}
+	else
+		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr);
+}
+
 void qa_test_extra_ship_return(void)
 {
 	Player savedPlayers[COUNTOF(player)];
@@ -2804,6 +2822,10 @@ bool JE_extraMenu(void)
 	const int py1 = py0 + panel_h;
 	const int items_top = py0 + title_h + 4;
 	const int mid_x = (px0 + px1) / 2;
+	const int preview_x0 = px1 - 75;
+	const int preview_x1 = px1 - 10;
+	const int preview_y0 = items_top + 2 * row_h + 1;
+	const int preview_y1 = py1 - footer_h - 5;
 
 	enum {
 		C_PANEL_BG = 0xF1, C_TITLE_BG = 0xF3, C_DIVIDER = 0xF6,
@@ -2904,6 +2926,18 @@ bool JE_extraMenu(void)
 				draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 		}
 
+		const bool showShipPreview = page == PAGE_ROOT && selected == 1 && shipRowAllowed;
+		if (showShipPreview)
+		{
+			fill_rectangle_xy(VGAScreen, preview_x0, preview_y0, preview_x1, preview_y1, 0);
+			JE_rectangle(VGAScreen, preview_x0, preview_y0, preview_x1, preview_y1, C_EDGE_HI);
+			draw_font_hv_shadow(VGAScreen, (preview_x0 + preview_x1) / 2, preview_y0 + 4,
+			                    "PREVIEW", small_font, centered, 15, 2, true, 1);
+			fill_rectangle_xy(VGAScreen, preview_x0 + 2, preview_y0 + 14,
+			                  preview_x1 - 2, preview_y0 + 14, C_DIVIDER);
+			extraMenuDrawShipPreview(shipSeat, (preview_x0 + preview_x1) / 2, preview_y0 + 20);
+		}
+
 		// Footer (two lines so long key combos don't overflow the panel): the
 		// selected row's description, then its key combo.
 		fill_rectangle_xy(VGAScreen, px0 + 1, py1 - footer_h, px1 - 1, py1 - footer_h, C_DIVIDER);
@@ -2936,11 +2970,14 @@ bool JE_extraMenu(void)
 			selected = (size_t)ns;
 			mouse_scroll = 0;
 		}
+		const bool overShipPreview = showShipPreview &&
+		                                 mouse_x >= preview_x0 && mouse_x <= preview_x1 &&
+		                                 mouse_y >= preview_y0 && mouse_y <= preview_y1;
 		if (mouse_x != prev_mx || mouse_y != prev_my)
 		{
 			prev_mx = mouse_x;
 			prev_my = mouse_y;
-			if (mouse_x >= px0 && mouse_x <= px1 && mouse_y >= items_top)
+			if (!overShipPreview && mouse_x >= px0 && mouse_x <= px1 && mouse_y >= items_top)
 			{
 				const int vis = (mouse_y - items_top) / row_h;
 				if (vis >= 0 && vis < count)
@@ -2949,7 +2986,14 @@ bool JE_extraMenu(void)
 		}
 		if (newmouse)
 		{
-			if (lastmouse_but == SDL_BUTTON_LEFT && lastmouse_x >= px0 && lastmouse_x <= px1 && lastmouse_y >= items_top)
+			const bool clickedShipPreview = showShipPreview &&
+			                                lastmouse_x >= preview_x0 && lastmouse_x <= preview_x1 &&
+			                                lastmouse_y >= preview_y0 && lastmouse_y <= preview_y1;
+			if (lastmouse_but == SDL_BUTTON_LEFT && clickedShipPreview)
+			{
+				activate = true;
+			}
+			else if (lastmouse_but == SDL_BUTTON_LEFT && lastmouse_x >= px0 && lastmouse_x <= px1 && lastmouse_y >= items_top)
 			{
 				const int vis = (lastmouse_y - items_top) / row_h;
 				if (vis >= 0 && vis < count)

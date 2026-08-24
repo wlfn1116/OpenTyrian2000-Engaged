@@ -55,6 +55,65 @@ JE_ShipsType extraShips;
 Sprite2_array extraShapes;
 static bool extraUserAvail;
 
+static bool seImportLegacyUserShapes(FILE *f);
+
+// Search the active data directory, then the executable's data and base directories.
+static FILE *seOpenLegacyUserShapes(const char **location)
+{
+	static const char *const names[] = { "User.shp", "user.shp" };
+	const char *const data = data_dir();
+
+	for (uint i = 0; i < COUNTOF(names); ++i)
+	{
+		FILE *f = dir_fopen(data, names[i], "rb");
+		if (f != NULL)
+		{
+			*location = "the data directory";
+			return f;
+		}
+	}
+
+	char *const base = SDL_GetBasePath();
+	if (base != NULL)
+	{
+		for (uint i = 0; i < COUNTOF(names); ++i)
+		{
+			char relative[32];
+			snprintf(relative, sizeof(relative), "data/%s", names[i]);
+			FILE *f = dir_fopen(base, relative, "rb");
+			if (f != NULL)
+			{
+				SDL_free(base);
+				*location = "the executable's data directory";
+				return f;
+			}
+		}
+		for (uint i = 0; i < COUNTOF(names); ++i)
+		{
+			FILE *f = dir_fopen(base, names[i], "rb");
+			if (f != NULL)
+			{
+				SDL_free(base);
+				*location = "beside the executable";
+				return f;
+			}
+		}
+		SDL_free(base);
+	}
+
+	return NULL;
+}
+
+static bool seLegacyUserShapesAvailable(void)
+{
+	const char *location = NULL;
+	FILE *const f = seOpenLegacyUserShapes(&location);
+	if (f == NULL)
+		return false;
+	fclose(f);
+	return true;
+}
+
 // Decrypt in place only when all four plaintext checksums match.
 JE_boolean JE_decryptShips(void)
 {
@@ -140,8 +199,22 @@ void JE_loadExtraShapes(void)
 	JE_freeExtraShapes();
 	extraUserAvail = false;
 
+	const char *legacyLocation = NULL;
+	FILE *f = seOpenLegacyUserShapes(&legacyLocation);
+	if (f != NULL)
+	{
+		const bool imported = seImportLegacyUserShapes(f);
+		fclose(f);
+		if (imported)
+		{
+			fprintf(stderr, "custom ships: imported User.shp from %s\n", legacyLocation);
+			return;
+		}
+		fprintf(stderr, "warning: User.shp is not a valid ShipEdit source file; ignoring it\n");
+	}
+
 	// Prefer the edited file, then the stock Tyrian 2000 copy.
-	FILE *f = dir_fopen(get_user_directory(), "newsh$.shp", "rb");
+	f = dir_fopen(get_user_directory(), "newsh$.shp", "rb");
 	const bool fromUser = f != NULL;
 	if (f == NULL)
 		f = dir_fopen(data_dir(), "newsh$.shp", "rb");
@@ -364,6 +437,7 @@ enum
 	SE_ROW_LEFT, SE_ROW_RIGHT, SE_ROW_GENERATOR, SE_ROW_ARMOR, SE_ROW_SHIELD,
 	SE_ROW_COUNT,
 	SE_ACT_SPRITES = SE_ROW_COUNT,
+	SE_ACT_IMPORT,
 	SE_ACT_REVERT,
 	SE_ACT_DONE,
 	SE_NAV_COUNT,
@@ -371,8 +445,8 @@ enum
 };
 
 static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
-	{ "Ship",           "In flight: hold Tab + the number (Caps Lock for player 2)." },
-	{ "Graphic",        "Seven built-in hulls, plus eight banks you can draw." },
+	{ "Ship",           "Choose one of ten custom ships. In flight, hold Tab + its number." },
+	{ "Graphic",        "Choose built-in hull artwork or one of your eight custom banks." },
 	{ "Front Weapon",   "The main gun this ship flies with." },
 	{ "Rear Weapon",    "The rear gun, or None." },
 	{ "Special",        "The special weapon, or None." },
@@ -384,9 +458,10 @@ static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
 };
 
 static const struct { const char *label, *help; } seActs[SE_ACT_COUNT] = {
-	{ "Sprites", "Draw the custom sprite banks, graphics 8 to 15." },
-	{ "Revert",  "Throw away every change made since the editor opened." },
-	{ "Done",    "Compile the ships to newsh$.shp and leave." },
+	{ "Sprites", "Draw or copy artwork for your eight custom banks." },
+	{ "Import",  "Load all ten ships and their artwork from User.shp." },
+	{ "Revert",  "Discard changes made since you opened the editor." },
+	{ "Done",    "Save your custom ships and leave." },
 };
 
 // Bytes 0..8 map directly to the Graphic through Shield rows.
@@ -429,7 +504,7 @@ static bool seValueOk(int row, int v)
 	switch (row)
 	{
 	case SE_ROW_GRAPHIC:
-		return v >= 1 && v <= 15;
+		return v >= 1 && v <= extraShipGraphicMax();
 	case SE_ROW_FRONT:
 		return v == EXTRA_SHIP_CUSTOM_PORT ||
 		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_FRONT);
@@ -460,9 +535,44 @@ static bool seValueOffered(int row, int v)
 	return seValueOk(row, v);
 }
 
+// Keep stored IDs stable while placing the two wide hulls together in the picker.
+static int seNextGraphic(int current, int dir)
+{
+	JE_byte order[256];
+	const int max = extraShipGraphicMax();
+	int count = 0, nort = 0;
+	for (int graphic = 1; graphic <= max; ++graphic)
+		if (extraShipGraphicIsNort(graphic))
+		{
+			nort = graphic;
+			break;
+		}
+
+	for (int graphic = 1; graphic <= MIN(6, max); ++graphic)
+		order[count++] = (JE_byte)graphic;
+	if (nort != 0)
+		order[count++] = (JE_byte)nort;
+	for (int graphic = 7; graphic <= max; ++graphic)
+		if (graphic != nort)
+			order[count++] = (JE_byte)graphic;
+
+	if (count == 0)
+		return current;
+	for (int i = 0; i < count; ++i)
+		if (order[i] == current)
+			return order[(i + (dir < 0 ? count - 1 : 1)) % count];
+	return order[dir < 0 ? count - 1 : 0];
+}
+
 static void seStepField(int slot, int row, int dir)
 {
 	JE_byte *const p = seField(slot, row);
+	if (row == SE_ROW_GRAPHIC)
+	{
+		*p = (JE_byte)seNextGraphic(*p, dir);
+		return;
+	}
+
 	int v = *p;
 	for (int guard = 0; guard < 256; ++guard)
 	{
@@ -477,6 +587,13 @@ static void seStepField(int slot, int row, int dir)
 			return;
 		}
 	}
+}
+
+bool JE_shipEditorGraphicCycleSelfTest(void)
+{
+	const int nort = seNextGraphic(6, 1);
+	return extraShipGraphicIsNort(nort) && seNextGraphic(nort, 1) == 7 &&
+	       seNextGraphic(7, -1) == nort && seNextGraphic(nort, -1) == 6;
 }
 
 // Item tables pad names with spaces; layout needs the visible width.
@@ -501,10 +618,15 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 		snprintf(buf, bufSize, "%d of 10", v);
 		return buf;
 	case SE_ROW_GRAPHIC:
-		if (v <= 7)
-			snprintf(buf, bufSize, "Built-in %d", v);
+		if (extraShipGraphicIsCustom(v))
+			snprintf(buf, bufSize, "Custom Bank %d", v - 7);
 		else
-			snprintf(buf, bufSize, "Custom bank %d", v - 7);
+		{
+			const char *const name = extraShipEditorGraphicName(v);
+			if (name != NULL)
+				return seTrimName(name, buf, bufSize);
+			snprintf(buf, bufSize, "Built-in Hull %d", v);
+		}
 		return buf;
 	case SE_ROW_FRONT:
 	case SE_ROW_REAR:
@@ -530,7 +652,7 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 	return "";
 }
 
-// Graphic 6 uses the two-piece Dragonwing sentinel.
+// Raw graphics 0 and 1 are the two-piece Dragonwing and Nort Ship sentinels.
 static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr)
 {
 	if (gr <= 1)
@@ -575,6 +697,14 @@ static void seSeedDefaults(void)
 	}
 }
 
+static void seNormalizeShips(void)
+{
+	for (int slot = 1; slot <= 10; ++slot)
+		for (int row = SE_ROW_GRAPHIC; row < SE_ROW_COUNT; ++row)
+			if (!seValueOk(row, *seField(slot, row)))
+				seStepField(slot, row, 1);
+}
+
 // The editor expands the stock Sprite2 layout into flat 12x14 cells.
 
 enum { SE_CELL_W = 12, SE_CELL_H = 14, SE_CELL_BYTES = SE_CELL_W * SE_CELL_H };
@@ -589,20 +719,30 @@ static JE_byte seCells[SE_BLOB_SPRITES + 1][SE_CELL_BYTES];       // [1..SE_BLOB
 static JE_byte seCellsSaved[SE_BLOB_SPRITES + 1][SE_CELL_BYTES];
 
 // Corners 0/1 are top-left/right; 2/3 are bottom-left/right.
+static unsigned seHullCellIndex(unsigned base, int frame, int corner)
+{
+	return base + (frame - 3) * 2 + (corner & 1) + (corner >= 2 ? 19 : 0);
+}
+
 static unsigned seCellIndex(int bank, int frame, int corner)
 {
-	return seBankBase[bank - 1] + (frame - 3) * 2 + (corner & 1) + (corner >= 2 ? 19 : 0);
+	return seHullCellIndex(seBankBase[bank - 1], frame, corner);
+}
+
+static bool seSpriteCellValid(const Sprite2_array *sheet, unsigned index)
+{
+	return sheet->data != NULL && index >= 1 &&
+	       (size_t)index * sizeof(Uint16) <= sheet->size &&
+	       SDL_SwapLE16(((const Uint16 *)sheet->data)[index - 1]) < sheet->size;
 }
 
 // Decode the Sprite2 stream into a flat cell; color 0 stays transparent.
 static void seDecodeCell(const Sprite2_array *sheet, unsigned index, JE_byte *out)
 {
 	memset(out, 0, SE_CELL_BYTES);
-	if (sheet->data == NULL || index < 1 || (size_t)index * sizeof(Uint16) > sheet->size)
+	if (!seSpriteCellValid(sheet, index))
 		return;
 	const Uint16 off = SDL_SwapLE16(((const Uint16 *)sheet->data)[index - 1]);
-	if (off >= sheet->size)
-		return;
 
 	const Uint8 *data = sheet->data + off;
 	const Uint8 *const end = sheet->data + sheet->size;
@@ -665,17 +805,225 @@ static void seRebuildShapes(void)
 	free(blob);
 }
 
-// Copy a built-in hull's five poses into a custom bank.
-static void seCaptureBank(int bank, int source)
+// Compile User.shp's sparse cells into the runtime Sprite2 sheet. See doc/notes.md.
+static bool seImportLegacyUserShapes(FILE *f)
 {
-	static const JE_word hullGr[6] = { 233, 157, 195, 271, 81, 119 };  // graphics 1..5 and 7
+	const long fileSize = ftell_eof(f);
+	const long minSize = SE_BLOB_SPRITES + (long)sizeof(JE_ShipsType);
+	const long maxSize = SE_BLOB_SPRITES * (1 + SE_CELL_BYTES) + (long)sizeof(JE_ShipsType);
+	if (fileSize < minSize || fileSize > maxSize)
+		return false;
+
+	JE_byte (*const importedCells)[SE_CELL_BYTES] = calloc(SE_BLOB_SPRITES + 1, SE_CELL_BYTES);
+	if (importedCells == NULL)
+		return false;
+
+	JE_ShipsType encrypted, savedShips;
+	rewind(f);
+	for (unsigned i = 1; i <= SE_BLOB_SPRITES; ++i)
+	{
+		const int present = fgetc(f);
+		if (present == EOF ||
+		    (present != 0 && fread(importedCells[i], 1, SE_CELL_BYTES, f) != SE_CELL_BYTES))
+		{
+			free(importedCells);
+			return false;
+		}
+	}
+	if (fread(encrypted, 1, sizeof(encrypted), f) != sizeof(encrypted) ||
+	    fgetc(f) != EOF || ferror(f))
+	{
+		free(importedCells);
+		return false;
+	}
+
+	memcpy(savedShips, extraShips, sizeof(savedShips));
+	memcpy(extraShips, encrypted, sizeof(extraShips));
+	if (!JE_decryptShips())
+	{
+		memcpy(extraShips, savedShips, sizeof(extraShips));
+		free(importedCells);
+		return false;
+	}
+
+	memcpy(seCells, importedCells, sizeof(seCells));
+	free(importedCells);
+	seRebuildShapes();
+	extraAvail = true;
+	extraUserAvail = true;
+	return true;
+}
+
+bool JE_legacyUserShapeSelfTest(void)
+{
+	FILE *source = dir_fopen(data_dir(), "user1.shp", "rb");
+	FILE *compiled = dir_fopen(data_dir(), "newsh$.shp", "rb");
+	if (source == NULL || compiled == NULL)
+	{
+		if (source != NULL)
+			fclose(source);
+		if (compiled != NULL)
+			fclose(compiled);
+		return false;
+	}
+
+	JE_ShipsType savedShips;
+	memcpy(savedShips, extraShips, sizeof(savedShips));
+	const Sprite2_array savedShapes = extraShapes;
+	const bool savedAvail = extraAvail, savedUserAvail = extraUserAvail;
+	extraShapes = (Sprite2_array){ 0, NULL };
+
+	bool ok = seImportLegacyUserShapes(source);
+	if (ok)
+	{
+		static const JE_byte firstRecord[15] = {
+			8, 6, 0, 6, 11, 11, 3, 17, 6, 17, 18, 19, 28, 29, 1
+		};
+		ok = memcmp(extraShips, firstRecord, sizeof(firstRecord)) == 0;
+	}
+
+	Sprite2_array expected = { 0, NULL };
+	const long compiledSize = ftell_eof(compiled);
+	if (ok && compiledSize > (long)sizeof(JE_ShipsType))
+	{
+		expected.size = (size_t)(compiledSize - (long)sizeof(JE_ShipsType));
+		expected.data = malloc(expected.size);
+		ok = expected.data != NULL;
+		if (ok)
+		{
+			rewind(compiled);
+			ok = fread(expected.data, 1, expected.size, compiled) == expected.size;
+		}
+	}
+	else
+		ok = false;
+
+	JE_byte actualCell[SE_CELL_BYTES], expectedCell[SE_CELL_BYTES];
+	for (unsigned i = 1; ok && i <= SE_BLOB_SPRITES; ++i)
+	{
+		seDecodeCell(&extraShapes, i, actualCell);
+		seDecodeCell(&expected, i, expectedCell);
+		ok = memcmp(actualCell, expectedCell, SE_CELL_BYTES) == 0;
+	}
+
+	fclose(source);
+	fclose(compiled);
+	free_sprite2s(&expected);
+	free_sprite2s(&extraShapes);
+	extraShapes = savedShapes;
+	memcpy(extraShips, savedShips, sizeof(extraShips));
+	extraAvail = savedAvail;
+	extraUserAvail = savedUserAvail;
+	return ok;
+}
+
+// A custom bank holds one 24x28 hull, so two-piece hulls cannot be captured.
+static bool seCaptureHullInfo(int ship, Sprite2_array **sheet, JE_word *base)
+{
+	if (ship < 1 || ship > SHIP_DRAGONWING || ships[ship].name[0] == '\0' ||
+	    ships[ship].shipgraphic <= 1)
+		return false;
+
+	const bool t2000 = ships[ship].shipgraphic > 500;
+	*sheet = t2000 ? &spriteSheetT2000 : &spriteSheet9;
+	*base = ships[ship].shipgraphic - (t2000 ? 500 : 0);
+
+	for (int frame = 1; frame <= SE_FRAMES; ++frame)
+	{
+		bool painted = false;
+		for (int corner = 0; corner < 4; ++corner)
+		{
+			const unsigned index = seHullCellIndex(*base, frame, corner);
+			if (!seSpriteCellValid(*sheet, index))
+				return false;
+			painted = painted || !sprite2_is_blank(**sheet, index);
+		}
+		if (!painted)
+			return false;
+	}
+	return true;
+}
+
+static int seCaptureHullList(JE_byte *list, size_t capacity)
+{
+	int count = 0;
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+	{
+		Sprite2_array *sheet;
+		JE_word base;
+		if (!seCaptureHullInfo(ship, &sheet, &base))
+			continue;
+
+		bool duplicate = false;
+		for (int i = 0; i < count; ++i)
+			if (ships[list[i]].shipgraphic == ships[ship].shipgraphic)
+			{
+				duplicate = true;
+				break;
+			}
+		if (!duplicate && (size_t)count < capacity)
+			list[count++] = (JE_byte)ship;
+	}
+	return count;
+}
+
+// Keep the stock data-file name in shops and gameplay; only the editor uses the short label.
+static const char *seCaptureHullName(int ship)
+{
+	return ship == 1 ? "USP Talon" : ships[ship].name;
+}
+
+bool JE_captureHullListSelfTest(void)
+{
+	JE_byte list[SHIP_DRAGONWING];
+	const int count = seCaptureHullList(list, COUNTOF(list));
+	if (count <= 0)
+		return false;
+
+	for (int i = 0; i < count; ++i)
+	{
+		Sprite2_array *sheet;
+		JE_word base;
+		if (!seCaptureHullInfo(list[i], &sheet, &base))
+			return false;
+		for (int j = 0; j < i; ++j)
+			if (ships[list[i]].shipgraphic == ships[list[j]].shipgraphic)
+				return false;
+	}
+
+	int uniqueCompatible = 0;
+	JE_word seen[SHIP_DRAGONWING];
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+	{
+		Sprite2_array *sheet;
+		JE_word base;
+		if (!seCaptureHullInfo(ship, &sheet, &base))
+			continue;
+
+		const JE_word raw = ships[ship].shipgraphic;
+		bool duplicate = false;
+		for (int i = 0; i < uniqueCompatible; ++i)
+			duplicate = duplicate || seen[i] == raw;
+		if (!duplicate)
+			seen[uniqueCompatible++] = raw;
+	}
+	return count == uniqueCompatible;
+}
+
+static bool seCaptureBank(int bank, int sourceShip)
+{
+	Sprite2_array *sheet;
+	JE_word base;
+	if (!seCaptureHullInfo(sourceShip, &sheet, &base))
+		return false;
 
 	for (int frame = 1; frame <= SE_FRAMES; ++frame)
 		for (int corner = 0; corner < 4; ++corner)
 		{
-			const unsigned src = hullGr[source - 1] + (frame - 3) * 2 + (corner & 1) + (corner >= 2 ? 19 : 0);
-			seDecodeCell(&spriteSheet9, src, seCells[seCellIndex(bank, frame, corner)]);
+			const unsigned src = seHullCellIndex(base, frame, corner);
+			seDecodeCell(sheet, src, seCells[seCellIndex(bank, frame, corner)]);
 		}
+	return true;
 }
 
 // Round-trip a worst-case cell and every loaded cell.
@@ -796,17 +1144,17 @@ static const char *const sesToolName[SES_TOOL_COUNT] = { "Paint", "Fill", "Pick"
 static const char *const sesGuidesName[SES_GUIDES_COUNT] = { "Off", "Vertical", "Horizontal", "Both" };
 
 static const struct { const char *label, *help; } sesRows[SES_ROW_COUNT] = {
-	{ "Bank",      "One of the eight custom banks, graphics 8 to 15." },
-	{ "Pose",      "The five turning poses, hard left to hard right." },
-	{ "Tool",      "What a canvas press does; Pick reads a color back." },
-	{ "Mirror",    "Reflect Paint, Fill, and Erase across the centerline." },
-	{ "Guides",    "Dotted centerlines shown only on the enlarged preview." },
-	{ "From Hull", "The built-in hull that Capture copies from." },
+	{ "Custom Bank", "Choose which of your eight custom hull drawings to edit." },
+	{ "Pose",        "Choose one of the five turning views." },
+	{ "Tool",        "Choose what happens when you draw. Pick copies a color." },
+	{ "Mirror",      "Draw on both sides of the ship at once." },
+	{ "Guides",      "Show centerlines on the large drawing area." },
+	{ "From Hull",   "Choose a ship whose artwork you want to copy." },
 };
 
 static const char *const sesPaletteHelp[] = {
-	"Palette changes the paint color; 0 is transparent.",
-	"Palette changes the preview background; never saved.",
+	"Choose the paint color. Color 0 is transparent.",
+	"Choose the preview background. It is not saved.",
 };
 
 static const char *const sesNudgeHelp[] = {
@@ -817,12 +1165,12 @@ static const char *const sesNudgeHelp[] = {
 };
 
 static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
-	{ "Capture",     "Copy that hull's five poses over this whole bank." },
+	{ "Capture",     "Copy the selected ship's artwork into this custom bank." },
 	{ "Copy Center", "Copy the center pose onto this pose." },
 	{ "Flip H",      "Mirror this pose left to right." },
 	{ "Flip V",      "Mirror this pose top to bottom." },
 	{ "Clear",       "Erase this pose." },
-	{ "Revert",      "Restore this bank from the last save." },
+	{ "Revert",      "Undo changes to this custom bank." },
 	{ "Done",        "Back to the loadout editor." },
 };
 
@@ -915,19 +1263,21 @@ static void seSpriteEditor(int bank)
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
 	enum { CANV_X = 28, CANV_Y = 22, CANV_SCALE = 4 };
 	enum { STRIP_X = 12, STRIP_Y = 147 };
-	enum { PAL_X = 199, PAL_Y = 84, PAL_CELL = 4 };
-	enum { PAL_BTN_Y = 99, PAL_BTN_SIZE = 32, PAL_COL_X = 160, PAL_BG_X = 272 };
-	enum { NUDGE_BTN_Y = 133, NUDGE_BTN_SIZE = 15 };
+	enum { PAL_X = 199, PAL_Y = 77, PAL_CELL = 4 };
+	enum { PAL_BTN_Y = 91, PAL_BTN_SIZE = 32, PAL_COL_X = 160, PAL_BG_X = 272 };
+	enum { NUDGE_BTN_Y = 125, NUDGE_BTN_SIZE = 15 };
 	const int panX0 = 150, panX1 = 313, panY0 = 7, panY1 = 183;
-	const int fieldsTop = panY0 + 16;
-	const int row_h = 10;
-	const int actionsTop = 152;
-	const int act_h = 8;
+	const int fieldsTop = panY0 + 13;
+	const int row_h = 9;
+	const int actionsTop = 144;
+	const int act_h = 10;
 	const int panMidX = (panX0 + panX1) / 2;
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
 	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_GUIDE = 0xF8, C_HI = 0xFB, C_SEL = 0xF5 };
 
-	int frame = 3, color = 15, source = 1, tool = SES_TOOL_PAINT;
+	JE_byte captureHulls[SHIP_DRAGONWING];
+	const int captureHullCount = seCaptureHullList(captureHulls, COUNTOF(captureHulls));
+	int frame = 3, color = 15, source = 0, tool = SES_TOOL_PAINT;
 	static int background = C_PANEL;
 	static int guides = SES_GUIDES_OFF;
 	bool mirror = false;
@@ -957,7 +1307,7 @@ static void seSpriteEditor(int bank)
 		JE_rectangle(VGAScreen, BOX_X0 - 1, BOX_Y0 - 1, BOX_X1 + 1, BOX_Y1 + 1, C_HI);
 
 		char caption[24];
-		snprintf(caption, sizeof(caption), "Bank %d = Graphic %d", bank, bank + 7);
+		snprintf(caption, sizeof(caption), "Custom Bank %d", bank);
 		draw_font_hv_shadow(VGAScreen, (BOX_X0 + BOX_X1) / 2, BOX_Y0 + 4, caption, small_font, centered, 15, 4, false, 1);
 
 		fill_rectangle_wh(VGAScreen, CANV_X, CANV_Y, SE_FRAME_W * CANV_SCALE,
@@ -1007,7 +1357,7 @@ static void seSpriteEditor(int bank)
 		draw_font_hv_shadow(VGAScreen, panX0 + 5, panY0 + 2, "SPRITE EDITOR", small_font, left_aligned, 15, 3, false, 1);
 		snprintf(caption, sizeof(caption), "BANK %d", bank);
 		draw_font_hv_shadow(VGAScreen, panX1 - 5, panY0 + 2, caption, small_font, right_aligned, 15, 3, false, 1);
-		fill_rectangle_xy(VGAScreen, panX0 + 2, panY0 + 11, panX1 - 2, panY0 + 11, C_DIV);
+		fill_rectangle_xy(VGAScreen, panX0 + 2, panY0 + 10, panX1 - 2, panY0 + 10, C_DIV);
 
 		for (int r = 0; r < SES_ROW_COUNT; ++r)
 		{
@@ -1015,7 +1365,7 @@ static void seSpriteEditor(int bank)
 			const bool sel = (selected == r && !canvasFocus);
 			fill_rectangle_xy(VGAScreen, panX0 + 2, ry - 1, panX1 - 2, ry + row_h - 3, sel ? C_SEL : C_PANEL);
 
-			char raw[24], val[32];
+			char raw[40], val[48];
 			switch (r)
 			{
 			case SES_ROW_BANK:   snprintf(raw, sizeof(raw), "%d of 8", bank); break;
@@ -1023,13 +1373,19 @@ static void seSpriteEditor(int bank)
 			case SES_ROW_TOOL:   snprintf(raw, sizeof(raw), "%s", sesToolName[tool]); break;
 			case SES_ROW_MIRROR: snprintf(raw, sizeof(raw), "%s", mirror ? "On" : "Off"); break;
 			case SES_ROW_GUIDES: snprintf(raw, sizeof(raw), "%s", sesGuidesName[guides]); break;
-			default:             snprintf(raw, sizeof(raw), "%d of 6", source); break;
+			default:
+				if (captureHullCount > 0)
+					seTrimName(seCaptureHullName(captureHulls[source]), raw, sizeof(raw));
+				else
+					SDL_strlcpy(raw, "None", sizeof(raw));
+				break;
 			}
 			if (sel)
 				snprintf(val, sizeof(val), "< %s >", raw);
 			else
 				SDL_strlcpy(val, raw, sizeof(val));
-			draw_font_hv_shadow(VGAScreen, labelX, ry, sesRows[r].label, small_font, left_aligned, 15, sel ? 5 : 3, false, 1);
+			if (labelX + JE_textWidth(sesRows[r].label, small_font) + 6 <= valueX - JE_textWidth(val, small_font))
+				draw_font_hv_shadow(VGAScreen, labelX, ry, sesRows[r].label, small_font, left_aligned, 15, sel ? 5 : 3, false, 1);
 			draw_font_hv_shadow(VGAScreen, valueX, ry, val, small_font, right_aligned, 15, sel ? 6 : 5, false, 1);
 		}
 
@@ -1236,7 +1592,10 @@ static void seSpriteEditor(int bank)
 						case SES_ROW_TOOL:   tool = (tool + SES_TOOL_COUNT + dir) % SES_TOOL_COUNT; break;
 						case SES_ROW_MIRROR: mirror = !mirror; break;
 						case SES_ROW_GUIDES: guides = (guides + SES_GUIDES_COUNT + dir) % SES_GUIDES_COUNT; break;
-						default:             source = (source + 5 + dir) % 6 + 1; break;
+						default:
+							if (captureHullCount > 0)
+								source = (source + captureHullCount + dir) % captureHullCount;
+							break;
 						}
 						JE_playSampleNum(S_CURSOR);
 					}
@@ -1335,7 +1694,10 @@ static void seSpriteEditor(int bank)
 				case SES_ROW_TOOL:   tool = (tool + SES_TOOL_COUNT + dir) % SES_TOOL_COUNT; break;
 				case SES_ROW_MIRROR: mirror = !mirror; break;
 				case SES_ROW_GUIDES: guides = (guides + SES_GUIDES_COUNT + dir) % SES_GUIDES_COUNT; break;
-				case SES_ROW_SOURCE: source = (source + 5 + dir) % 6 + 1; break;
+				case SES_ROW_SOURCE:
+					if (captureHullCount > 0)
+						source = (source + captureHullCount + dir) % captureHullCount;
+					break;
 				case SES_PAL_COLOR:  color = (color + 256 + ((lastkey_mod & KMOD_SHIFT) ? dir * 16 : dir)) % 256; break;
 				case SES_PAL_BACKGROUND: background = (background + 256 + ((lastkey_mod & KMOD_SHIFT) ? dir * 16 : dir)) % 256; break;
 				default:             break;
@@ -1358,9 +1720,16 @@ static void seSpriteEditor(int bank)
 			break;
 		}
 		case SES_ACT_CAPTURE:
-			seCaptureBank(bank, source);
-			SDL_strlcpy(notice, "Captured", sizeof(notice));
-			JE_playSampleNum(S_SELECT);
+			if (captureHullCount > 0 && seCaptureBank(bank, captureHulls[source]))
+			{
+				snprintf(notice, sizeof(notice), "Captured %.28s", seCaptureHullName(captureHulls[source]));
+				JE_playSampleNum(S_SELECT);
+			}
+			else
+			{
+				SDL_strlcpy(notice, "No compatible hull", sizeof(notice));
+				JE_playSampleNum(S_SPRING);
+			}
 			break;
 		case SES_ACT_COPY:
 			for (int y = 0; y < SE_FRAME_H; ++y)
@@ -1416,13 +1785,12 @@ void JE_shipEditor(void)
 		seSeedDefaults();
 
 	// Normalize hand-edited or incompatible fields before cycling them.
-	for (int slot = 1; slot <= 10; ++slot)
-		for (int row = SE_ROW_GRAPHIC; row < SE_ROW_COUNT; ++row)
-			if (!seValueOk(row, *seField(slot, row)))
-				seStepField(slot, row, 1);
+	seNormalizeShips();
 
 	JE_ShipsType savedTable;
 	memcpy(savedTable, extraShips, sizeof(savedTable));
+	const bool savedExtraAvail = extraAvail;
+	const bool savedExtraUserAvail = extraUserAvail;
 
 	for (unsigned i = 1; i <= SE_BLOB_SPRITES; ++i)
 		seDecodeCell(&extraShapes, i, seCells[i]);
@@ -1443,7 +1811,7 @@ void JE_shipEditor(void)
 
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
 	const int panX0 = 150, panX1 = 313, panY0 = 7, panY1 = 183;
-	const int fieldsTop = panY0 + 16;
+	const int fieldsTop = panY0 + 13;
 	const int row_h = 12;
 	const int actionsTop = panY1 - 12;
 	const int panMidX = (panX0 + panX1) / 2;
@@ -1455,6 +1823,8 @@ void JE_shipEditor(void)
 	int selected = 0;
 	char notice[40] = "";
 	int prev_mx = mouse_x, prev_my = mouse_y;
+	bool legacyAvailable = seLegacyUserShapesAvailable();
+	bool forceSave = false;
 	bool done = false;
 
 	wait_noinput(false, false, true);
@@ -1494,7 +1864,7 @@ void JE_shipEditor(void)
 			// Type 0 uses the composed special icon.
 			static const struct { JE_byte type; int row; const char *tag; } icons[5] = {
 				{ 2, SE_ROW_FRONT, "FRONT" }, { 3, SE_ROW_REAR, "REAR" }, { 0, SE_ROW_SPECIAL, "SPEC" },
-				{ 5, SE_ROW_GENERATOR, "POWER" }, { 4, SE_ROW_SHIELD, "SHLD" },
+				{ 5, SE_ROW_GENERATOR, "GEN" }, { 4, SE_ROW_SHIELD, "SHLD" },
 			};
 			for (int i = 0; i < 5; ++i)
 			{
@@ -1520,7 +1890,7 @@ void JE_shipEditor(void)
 		draw_font_hv_shadow(VGAScreen, panX0 + 5, panY0 + 2, "SHIP EDITOR", small_font, left_aligned, 15, 3, false, 1);
 		snprintf(caption, sizeof(caption), "SHIP %d", slot);
 		draw_font_hv_shadow(VGAScreen, panX1 - 5, panY0 + 2, caption, small_font, right_aligned, 15, 3, false, 1);
-		fill_rectangle_xy(VGAScreen, panX0 + 2, panY0 + 11, panX1 - 2, panY0 + 11, C_DIV);
+		fill_rectangle_xy(VGAScreen, panX0 + 2, panY0 + 10, panX1 - 2, panY0 + 10, C_DIV);
 
 		for (int r = 0; r < SE_ROW_COUNT; ++r)
 		{
@@ -1547,10 +1917,11 @@ void JE_shipEditor(void)
 		{
 			const int bx0 = panX0 + 2 + a * actionWidth;
 			const int bx1 = (a == SE_ACT_COUNT - 1) ? panX1 - 2 : bx0 + actionWidth - 2;
+			const bool enabled = a != (SE_ACT_IMPORT - SE_ROW_COUNT) || legacyAvailable;
 			const bool sel = (selected == SE_ROW_COUNT + a);
 			fill_rectangle_xy(VGAScreen, bx0, actionsTop - 1, bx1, actionsTop + 9, sel ? C_SEL : C_DIV);
 			draw_font_hv_shadow(VGAScreen, (bx0 + bx1) / 2, actionsTop, seActs[a].label, small_font, centered,
-			                    15, sel ? 6 : 4, false, 1);
+			                    15, enabled ? (sel ? 6 : 4) : -5, false, 1);
 		}
 
 		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
@@ -1573,6 +1944,7 @@ void JE_shipEditor(void)
 		bool leave = false;
 		bool revert = false;
 		bool openSprites = false;
+		bool importLegacy = false;
 
 		if (mouse_scroll != 0)
 		{
@@ -1622,9 +1994,19 @@ void JE_shipEditor(void)
 				}
 				else if (hover == SE_ACT_SPRITES)
 					openSprites = true;
+				else if (hover == SE_ACT_IMPORT)
+				{
+					if (legacyAvailable)
+						importLegacy = true;
+					else
+					{
+						SDL_strlcpy(notice, "User.shp not found", sizeof(notice));
+						JE_playSampleNum(S_SPRING);
+					}
+				}
 				else if (hover == SE_ACT_REVERT)
 					revert = true;
-				else
+				else if (hover == SE_ACT_DONE)
 					leave = true;
 			}
 			newmouse = false;
@@ -1659,6 +2041,16 @@ void JE_shipEditor(void)
 			case SDL_SCANCODE_SPACE:
 				if (selected == SE_ACT_SPRITES)
 					openSprites = true;
+				else if (selected == SE_ACT_IMPORT)
+				{
+					if (legacyAvailable)
+						importLegacy = true;
+					else
+					{
+						SDL_strlcpy(notice, "User.shp not found", sizeof(notice));
+						JE_playSampleNum(S_SPRING);
+					}
+				}
 				else if (selected == SE_ACT_REVERT)
 					revert = true;
 				else if (selected == SE_ACT_DONE)
@@ -1703,7 +2095,30 @@ void JE_shipEditor(void)
 		if (openSprites)
 		{
 			const JE_byte grByte = *seField(slot, SE_ROW_GRAPHIC);
-			seSpriteEditor(grByte > 7 ? grByte - 7 : 1);
+			seSpriteEditor(extraShipGraphicIsCustom(grByte) ? grByte - 7 : 1);
+		}
+
+		if (importLegacy)
+		{
+			const char *location = NULL;
+			FILE *const f = seOpenLegacyUserShapes(&location);
+			const bool found = f != NULL;
+			const bool imported = found && seImportLegacyUserShapes(f);
+			if (f != NULL)
+				fclose(f);
+			if (imported)
+			{
+				seNormalizeShips();
+				forceSave = true;
+				SDL_strlcpy(notice, "Imported User.shp", sizeof(notice));
+				JE_playSampleNum(S_SELECT);
+			}
+			else
+			{
+				legacyAvailable = found;
+				SDL_strlcpy(notice, found ? "Invalid User.shp" : "User.shp not found", sizeof(notice));
+				JE_playSampleNum(S_SPRING);
+			}
 		}
 
 		if (revert)
@@ -1711,6 +2126,9 @@ void JE_shipEditor(void)
 			memcpy(extraShips, savedTable, sizeof(savedTable));
 			memcpy(seCells, seCellsSaved, sizeof(seCells));
 			seRebuildShapes();
+			extraAvail = savedExtraAvail;
+			extraUserAvail = savedExtraUserAvail;
+			forceSave = false;
 			SDL_strlcpy(notice, "Reverted", sizeof(notice));
 			JE_playSampleNum(S_SELECT);
 		}
@@ -1719,14 +2137,14 @@ void JE_shipEditor(void)
 		{
 			const bool tableChanged = memcmp(savedTable, extraShips, sizeof(savedTable)) != 0;
 			const bool cellsChanged = memcmp(seCellsSaved, seCells, sizeof(seCells)) != 0;
-			if (!tableChanged && !cellsChanged)
+			if (!tableChanged && !cellsChanged && !forceSave)
 				done = true;
 			else
 			{
 				// Custom graphics require a sprite blob, even when blank.
 				if (extraShapes.size == 0)
 					for (int s = 1; s <= 10; ++s)
-						if (*seField(s, SE_ROW_GRAPHIC) > 7)
+						if (extraShipGraphicIsCustom(*seField(s, SE_ROW_GRAPHIC)))
 						{
 							seRebuildShapes();
 							break;
@@ -1739,7 +2157,7 @@ void JE_shipEditor(void)
 				}
 				else
 				{
-					SDL_strlcpy(notice, "Could not write newsh$.shp", sizeof(notice));
+					SDL_strlcpy(notice, "Could not save custom ships", sizeof(notice));
 					JE_playSampleNum(S_SPRING);
 				}
 			}

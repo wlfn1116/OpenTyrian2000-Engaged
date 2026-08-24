@@ -34,6 +34,9 @@ void JE_loadExtraShapes(void);
 void JE_freeExtraShapes(void);
 void JE_shipEditor(void);
 bool JE_shapeCodecSelfTest(void);
+bool JE_legacyUserShapeSelfTest(void);
+bool JE_captureHullListSelfTest(void);
+bool JE_shipEditorGraphicCycleSelfTest(void);
 
 // Online, each player reads that seat's exchanged file. Offline, both read the local file.
 JE_byte *extraShipsFor(uint playerIdx);

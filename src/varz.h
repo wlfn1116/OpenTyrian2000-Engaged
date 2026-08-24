@@ -490,6 +490,10 @@ static const int hud_sidekick_y[2][2] =
 
 void JE_getShipInfo(void);
 JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr);
+bool extraShipGraphicIsCustom(int graphic);
+bool extraShipGraphicIsNort(int graphic);
+int extraShipGraphicMax(void);
+const char *extraShipEditorGraphicName(int graphic);
 
 void JE_drawOptions(void);
 void JE_resetPlayerOptions(Player *this_player);
