@@ -23,6 +23,7 @@ See the [player guide](GUIDE.md) for menu paths and feature details.
 ## Showcase
 
 - [Online campaign co-op, Destruct, and high-refresh rendering](https://www.youtube.com/watch?v=6XYol6TJdhE)
+- [ShipEdit remake and online customizations](https://www.youtube.com/watch?v=x5khKseW_Yk)
 - [Quick Endless mode gameplay](https://www.youtube.com/watch?v=uuwwIsWoOMQ)
 - [Endless Zone 100 clear](https://www.youtube.com/watch?v=O9BM6xOAqes)
 
