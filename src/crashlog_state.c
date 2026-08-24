@@ -70,9 +70,6 @@ static const char *option_name (int id) { return trim_name((id >= 0 && id <= OPT
 static const char *special_name(int id) { return trim_name((id >= 0 && id <= SPECIAL_NUM && special[id].name[0])    ? special[id].name    : "?"); }
 
 // On-screen object-pool census.
-// "In use" tests mirror JE_drawDebugOverlays (mainint.c): an enemy slot is active when
-// enemyAvail != 1 (== 0 is a shootable enemy; == 2 a non-shootable one), a player shot when
-// shotAvail != 0, an enemy shot when enemyShotAvail == 0, and an explosion/spark by its ttl/z.
 typedef struct
 {
 	int enemiesActive, enemiesShootable;

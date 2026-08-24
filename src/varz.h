@@ -237,10 +237,9 @@ typedef struct {
 	Uint8 filter;  // passed on to each explosion this sequence spawns
 } rep_explosion_type;
 
-// `bright` lifts the plotted shade (see rl_superpixel_value). z alone halves into a mid shade at
-// spawn and fades to the bank floor, which the presentation-only showers lose against a lit
-// playfield; 0 keeps the classic shading. `occluded` hides the spark inside this tick's occluder
-// boxes (see JE_addSPOccluder), so a shower thrown from a sprite passes behind it.
+// `bright` lifts the plotted shade (see rl_superpixel_value). z alone halves into a mid shade
+// at spawn and fades to the bank floor, which the presentation-only showers lose against a lit
+// playfield; 0 keeps the classic shading.
 typedef struct {
 	unsigned int x, y, z;
 	signed int delta_x, delta_y;
@@ -456,10 +455,8 @@ extern JE_word neat;
 extern rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS];
 extern superpixel_type superpixels[MAX_SUPERPIXELS];
 
-// Optional clip window for JE_drawSP. While active, superpixels are only plotted (and
-// recorded for smooth replay) inside [x0,x1) x [y0,y1). The shop weapon preview sets this
-// to the preview box so spark trails can't spill out into the item list on the right;
-// gameplay leaves it inactive (sparks clip to the full screen).
+// Optional clip window for JE_drawSP. While active, superpixels are only plotted (and recorded
+// for smooth replay) inside [x0,x1) x [y0,y1).
 extern bool superpixelClipActive;
 extern int superpixelClipX0, superpixelClipY0, superpixelClipX1, superpixelClipY1;
 void JE_setSPClip(int x0, int y0, int x1, int y1);

@@ -40,10 +40,8 @@ extern char soundfont[4096];  // path to a General-MIDI SoundFont (.sf2), used b
 extern bool midi_soundfont_loaded;
 const char *soundfont_basename(void);  // basename of `soundfont` for display, "" if unset
 
-// True when FLUIDSYNTH has something to load: either the configured `soundfont` is
-// readable, or a .sf/.sf2/.sf3 sits next to the .exe or in the data folder. False
-// grays the option out in the Sound menu (and keeps init_audio() on OPL). The scan
-// result is cached until the next init_audio().
+// True when FLUIDSYNTH has something to load: either the configured `soundfont` is readable, or
+// a .sf/.sf2/.sf3 sits next to the .exe or in the data folder.
 bool soundfont_available(void);
 
 typedef enum {
@@ -73,10 +71,7 @@ void clear_song_selection(void);
 void set_volume(Uint8 musicVolume, Uint8 sampleVolume);
 void set_music_disabled(bool disabled);  // toggle music on/off (pauses/resumes MIDI too)
 
-// A short master-volume ramp to silence, for a screen that comes up over a playing track. Unlike
-// fade_song it takes the same time on every backend, which is what makes it usable as a cue.
-// Init when the screen appears, tick it from that screen's wait loop, and finish before leaving so
-// a screen dismissed mid-ramp cannot strand the master volume down.
+// A short master-volume ramp to silence, for a screen that comes up over a playing track.
 #define MUSIC_FADE_OUT_MS 500
 
 typedef struct

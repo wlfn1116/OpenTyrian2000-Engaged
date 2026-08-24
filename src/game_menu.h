@@ -33,10 +33,8 @@ bool game_menu_test_outpost_rows(char *detail, size_t detailSize);
 // Release the shop preview's supersampled frames. Called from JE_tyrianShutdown.
 void game_menu_deinit(void);
 
-// Fill `out` with up to `maxOut` combat-level section numbers for `episode` (the same
-// level scan the debug level picker uses); returns how many were written. When `fileOut`
-// is non-NULL it receives each entry's lvlFileNum in parallel, so callers can distinguish
-// two levels that share a section (Episode 1 section 3's two TYRIAN cuts, files 9 and 15).
+// Fill `out` with up to `maxOut` combat-level section numbers for `episode` (the same level
+// scan the debug level picker uses); returns how many were written.
 uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut);
 
 // Look up the authored level name at (episode, section, fileNum) without loading the level,
@@ -90,7 +88,7 @@ typedef struct
 ShopItemColumns shop_ship_item_columns(JE_word shipId);
 
 // The bay the shipped game issues a weapon port for. Ports it issues to neither bay (None, the
-// sidekick weapon table, a custom design) are unknown. See "Weapon bay tags" in doc/notes.md.
+// sidekick weapon table, a custom design) are unknown. See doc/notes.md#item-tables.
 typedef enum
 {
 	SHOP_BAY_UNKNOWN,
@@ -134,15 +132,13 @@ void JE_drawScore(void);
 void JE_menuFunction(JE_byte select);
 bool JE_debugLevelSelect(void);
 
-// The endless effect layer's control panel, opened from the debug menu: sector modifiers, personal
-// buffs, perks and the zone-scaling readout, applied in place rather than launching a level. Outside
-// endless mode it also carries the master toggle that runs the whole layer in a normal campaign.
+// The endless effect layer's control panel, opened from the debug menu: sector modifiers,
+// personal buffs, perks and the zone-scaling readout, applied in place rather than launching a
+// level.
 void endlessDebugTuneScreen(void);
 
 // The debug level browser drops straight into a level, skipping the campaign route that
-// normally leads there. debugLevelJumpTake() reports (once, then disarms) that the level
-// which just finished was reached that way; debugLevelJumpReturn() puts the player back in
-// the outpost the jump started from, with the loadout they had before it.
+// normally leads there.
 bool debugLevelJumpTake(void);
 void debugLevelJumpReturn(void);
 

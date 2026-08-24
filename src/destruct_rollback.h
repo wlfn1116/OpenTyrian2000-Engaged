@@ -28,20 +28,15 @@
 #include <stdio.h>
 #include <stddef.h>
 
-/* Control bits, carried by every input record.  Both are irreversible transitions, so the driver
- * acts on them only once both machines' record for the frame has arrived.  Bit 0x02 is the offline
- * pause, which no online mode has; it stays unused here for the same reason the lockstep path
- * leaves it unused. */
+/* Control bits, carried by every input record. Both are irreversible transitions, so the driver
+ * acts on them only once both machines' record for the frame has arrived. */
 #define DRB_CTRL_QUIT   0x01
 #define DRB_CTRL_NEWMAP 0x04
 
 /* True while the current Destruct session runs rollback instead of the delay-based lockstep. */
 bool drb_active(void);
 
-/* Arm the module for a session.  `stateBytes`, `save` and `restore` describe the battle simulation
- * as one opaque blob, `hash` summarizes it for the desync canary, and `heldActions` marks the
- * action bits a prediction may repeat: the edge-triggered ones must never be predicted into
- * existence.  Allocates the snapshot ring, so it pairs with drb_session_end. */
+/* Arm the module for a session. */
 void drb_session_begin(size_t stateBytes, void (*save)(void *dst), void (*restore)(const void *src),
                        Uint32 (*hash)(void), Uint8 heldActions);
 void drb_session_end(void);
@@ -75,9 +70,7 @@ typedef enum
 DrbStep;
 
 /* End-of-tick driver: publish this frame's input, ingest the peer's, and either correct the
- * timeline or let the frame stand.  `roundOver` says the pass just finished the round; the driver
- * holds that verdict until every simulated frame is confirmed, so a round can never end on one
- * machine's prediction. */
+ * timeline or let the frame stand. */
 DrbStep drb_driver(bool roundOver);
 
 /* Offline snapshot self-test. Simulate each scripted tick twice, restoring its snapshot before the
@@ -97,9 +90,7 @@ unsigned long drb_selftest_ticks_run(void);
 unsigned long drb_selftest_failures(void);
 
 /* Wire-transfer probe, run once during the self-test on live battle state: the recovery's own
- * serialization taken end to end (snapshot, compress, expand, compare).  False means the round trip
- * did not reproduce the battle byte for byte, so no recovery built on it could either.  The two
- * sizes report what one transfer costs; both are zero until the probe has run. */
+ * serialization taken end to end (snapshot, compress, expand, compare). */
 bool drb_selftest_resync_ok(void);
 void drb_selftest_resync_bytes(size_t *rawBytes, size_t *compressedBytes);
 

@@ -171,7 +171,7 @@ bool endlessShuffleSafeLevel(int position, int *epOut, JE_byte *secOut, JE_byte 
 
 	// A refill must not hand back a piece the emptying bag closed on. Swapping any such piece
 	// out of the opening window and past it keeps the bagful a permutation. The window sizes
-	// and the too-small-pool case are in "Level shuffle" in doc/notes.md.
+	// and the too-small-pool case are in doc/notes.md#rng-and-level-shuffle.
 	const int tailWindow = ENDLESS_MAX_COURSES;
 	const int headWindow = 2 * ENDLESS_MAX_COURSES - 1;
 	if (refill > 0 && npool >= tailWindow + headWindow + 1)

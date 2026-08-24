@@ -75,7 +75,7 @@ int endlessDifficultyZone(void)
 #define ENDLESS_HP_OVERFLOW_MAX 1200    // total ceiling, at depth 275 (zone 221 on Normal)
 
 // Boss and special-tier HP are whole multipliers (1 = stock), each read off a ramp of anchors.
-// The clamps below also bound their debug overrides. See doc/notes.md, "Endless HP scaling".
+// The clamps below also bound their debug overrides. See doc/notes.md#health-and-tiers.
 #define ENDLESS_BOSS_FORTIFIED     3    // FORTIFIED: +this many x (a 4x boss at depth 0)
 #define ENDLESS_BOSS_MARKED        2    // gamble "Marked": the boss you paid to forget comes back bulked up
 #define ENDLESS_BOSS_MAX          32    // ceiling, at depth 247 (zone 199 on Normal)
@@ -91,7 +91,7 @@ int endlessDifficultyZone(void)
 #define ENDLESS_PIERCE_LOCK_MAX            1
 
 // Piercing damage as a percentage of the weapon-table value. Fractional carry preserves changes
-// below one point; see doc/notes.md#combat-pipeline.
+// below one point; see doc/notes.md#combat.
 #define ENDLESS_PIERCE_POTENCY_PER_DEPTH   5  // +% per effective depth (ENDLESS_HP_PER_DEPTH is 4)
 #define ENDLESS_PIERCE_POTENCY_MAX       500  // ceiling, reached at effective depth 80
 
@@ -162,10 +162,7 @@ int endlessArmorOverflow100(void)
 	return (total > ENDLESS_HP_MAX) ? total * 100 / ENDLESS_HP_MAX : 100;
 }
 
-// An HP ramp is a piecewise-linear walk through anchors, read in hundredths of a multiplier. The
-// anchors are the tuning: each names an effective depth and the multiplier the curve passes through
-// there, and a segment's rate is whatever joins its two ends. The ramp holds its last anchor, so
-// that value is the curve's ceiling and FRAGILE halves it rather than an ever-growing figure.
+// An HP ramp is a piecewise-linear walk through anchors, read in hundredths of a multiplier.
 typedef struct { int depth, mult100; } EndlessRampAnchor;
 
 static int endlessRampAt100(const EndlessRampAnchor *pts, unsigned count, int effDepth)
@@ -184,10 +181,9 @@ static int endlessRampAt100(const EndlessRampAnchor *pts, unsigned count, int ef
 	return pts[count - 1].mult100;
 }
 
-// Boss HP. The first segment is the curve the mode shipped with, so every zone below depth 64 is
-// untouched; the two after it carry the raised ceiling, landing 20x and 32x on the zones before a
-// GRAND milestone. Both the stepped and the continuous multiplier read this, so the two cannot
-// drift apart.
+// Boss HP. The first segment is the curve the mode shipped with, so every zone below depth 64
+// is untouched; the two after it carry the raised ceiling, landing 20x and 32x on the zones
+// before a GRAND milestone.
 static const EndlessRampAnchor endlessBossAnchors[] = {
 	{   0,  100 },   // 1x at the surface
 	{  64,  900 },   // 9x, zone 53 on Normal
@@ -201,7 +197,7 @@ static int endlessBossRamp100(int effDepth)
 }
 
 // Boss HP divisor in hundredths, which is what damage is spent through. The debug override is
-// pinned in whole x and scaled here. See doc/notes.md, "Endless HP scaling".
+// pinned in whole x and scaled here. See doc/notes.md#health-and-tiers.
 int endlessBossHpMult100(void)
 {
 	if (endlessScalingOverride[ESO_BOSSHP].active)
@@ -532,9 +528,7 @@ bool endlessEnemyDestructible(JE_byte avail, JE_byte linknum, JE_byte armorleft)
 }
 
 // The tier this enemy wears for the rest of its life, settled on its first processed frame so
-// nothing recolours or rearms in front of the player. A body the level is holding invulnerable
-// takes a tier only when something can eventually hurt it.
-// See doc/notes.md, "Endless enemy tiers".
+// nothing recolours or rearms in front of the player. See doc/notes.md#health-and-tiers.
 int endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem)
 {
 	if (scoreitem)
@@ -726,8 +720,7 @@ int endlessEliteContactPercent(int eliteState)
 
 /* An invulnerable ship rams in Endless, so Failsafe and the invulnerability specials feed a ram
  * build, but it lands only every so many ticks of its window: the cadence is read off the ticks
- * left, so it needs no state of its own and re-simulates as it ran. Vanilla keeps such a ship out
- * of contact entirely. See "Combat" in doc/notes.md. */
+ * left, so it needs no state of its own. See doc/notes.md#perks. */
 #define ENDLESS_RAM_INVULN_CADENCE 10
 bool endlessRamWhileInvulnerable(uint invulnerableTicks)
 {
@@ -754,15 +747,11 @@ void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 	const long bounty = champion ? endlessChampionBounty() : endlessEliteBounty();
 	endlessSetFxPlayer(fxSaved);
 	// A bounty is kill cash under its own ledger row: it follows the same Shared / Individual
-	// credit and Double Earnings rules as every other kill. A kill nothing can claim pays
-	// player 1, the same ship on both machines; endlessEconomyIndex is whoever is sitting at
-	// this keyboard, so paying that would have paid a different wallet on each side.
+	// credit and Double Earnings rules as every other kill.
 	player_award_bounty_cash(&player[payee], bounty);
 
 	// Keep the cash clear of the HUD, showing what was actually paid. Online there are two
 	// wallets, so the figure is worth nothing without whose it is: name the killer beside it.
-	// A kill nobody can claim pays ship one by rule rather than by merit, so that one stays a
-	// bare figure instead of crediting a player who did not fire.
 	const long paid = coop_earnings_are_doubled() ? bounty * 2 : bounty;
 	char tier[24], cash[48];
 	snprintf(tier, sizeof(tier), "%s Enemy", champion ? "Champion" : "Elite");
@@ -858,8 +847,8 @@ void endlessGrantSpecial(uint p)
 }
 
 // Pickups endlessGrantSpecial answers. The conditions mirror JE_playerCollide's two pickup
-// branches, so the "?" art can only appear where a special is handed out. See doc/notes.md,
-// "Endless special pickups".
+// branches, so the "?" art can only appear where a special is handed out. See
+// doc/notes.md#special-pickups.
 bool endlessSpecialPickup(int slot)
 {
 	if (!endlessMode || slot < 0 || slot >= (int)COUNTOF(enemy) || enemyAvail[slot] == 1)
@@ -922,9 +911,7 @@ void endlessDropCubeGem(int slot)
 
 // Kill-fire HUD values.
 /* Everything from here to the ship tint reads the CURRENT ship's mask and its own window: a
- * drive belongs to whoever bought it. A charted one sits in endlessActiveMods, which
- * endlessApplyPurchasedMods folds into both players' masks, so a sector that deals a drive deals
- * it to the pair. Sector-wide effects below keep reading endlessActiveMods directly. */
+ * drive belongs to whoever bought it. */
 int endlessKillBuffTicksLeft(void) { return endlessTurbodriveTimer[endlessFxPlayer()]; }
 int endlessKillBuffTicksMax(void)  { return endlessBuffWindowTicks(); }
 
@@ -1237,10 +1224,9 @@ uint endlessDangerTargetPlayer(int fromX, int fromY)
 	return best;
 }
 
-/* Which ship a homing enemy chases, rolled once when it is created. Vanilla tracking always went
- * for ship one, so in co-op the homing modifiers left the second player alone entirely; a coin
- * toss per enemy splits the pressure. Rolled at creation rather than per tick so a chaser commits
- * to one ship instead of jittering toward the midpoint of the two. */
+/* Which ship a homing enemy chases, rolled once when it is created. Vanilla tracking always
+ * went for ship one, so in co-op the homing modifiers left the second player alone entirely; a
+ * coin toss per enemy splits the pressure. */
 uint endlessRollHomingTarget(void)
 {
 	if (!coopEndlessMode)

@@ -185,9 +185,7 @@ extern int network_host_episode;
 extern int network_host_difficulty;
 
 /* Arcade's third shape, beside the Linked pair and Separate ships: both players race one of the
- * three Timed Battle levels for cash. Only Arcade offers it, so the stored flag alone is not the
- * answer -- ask network_timed_battle(). The level is what timeBattleSelection takes; the episode
- * it belongs to (1 for the first, 5 for the other two) travels as the episode it is. */
+ * three Timed Battle levels for cash. */
 #define NET_TIMED_BATTLE_LEVELS 3
 extern bool network_host_timed_battle;
 extern int network_host_battle_level;   // 1..NET_TIMED_BATTLE_LEVELS
@@ -222,10 +220,8 @@ extern int  network_host_endless_base_rule;
 // Adopt the host's Endless block from the connect packet, clamping every field.
 void network_endless_adopt(const Uint8 *buf);
 
-/* The Destruct lobby block: which of the five data-backed battle modes the session plays
- * (the per-machine Custom mode never goes online), and the terrain seed every round derives
- * from. The side the host mans rides the existing host-slot field (1 = left, 2 = right).
- * Settled by the host before the connect packet goes out; the joiner adopts both from it. */
+/* The Destruct lobby block: which of the five data-backed battle modes the session plays (the
+ * per-machine Custom mode never goes online), and the terrain seed every round derives from. */
 extern int network_host_destruct_mode;
 extern Uint32 network_destruct_session_seed;
 void network_destruct_session_begin(void);
@@ -404,10 +400,7 @@ void network_level_loaded_rendezvous(void);
 void network_ready_publish(bool ready);
 int network_ready_peer(void);
 
-/* Departure gate for the game types with no shared outpost behind the wait: the same retractable
- * shape as the ready barrier, on its own packet type rather than the commit's. Poll returns -1
- * for no update, 0 for a peer that withdrew to its menu, and 1 for one standing at the gate. See
- * "Outpost protocol" in doc/notes.md. */
+/* Departure gate for modes without a shared outpost. See doc/notes.md#session-and-outpost. */
 void network_depart_gate_publish(bool at_gate);
 int network_depart_gate_peer(void);
 
@@ -482,9 +475,8 @@ void network_shop_sync_for_save(void);
 void network_debug_sync_mark(void);
 bool network_debug_sync_changed(void);
 void network_debug_sync_send(void);
-/* pump only inspects the head, because the reliable queue is ordered and nothing can be lifted out
- * of the middle of it. A block queued behind outpost traffic is therefore only reachable to a
- * caller that also runs network_shop_pump; a wait that pumps debug state alone never gets to it. */
+/* pump only inspects the head, because the reliable queue is ordered and nothing can be lifted
+ * out of the middle of it. */
 bool network_debug_sync_pump(bool in_level);
 /* The block itself, exposed the way network_settings_pack is: a round trip through these is what
  * catches a field the debug menu edits and the wire does not carry, which is otherwise only

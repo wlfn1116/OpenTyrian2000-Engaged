@@ -43,9 +43,8 @@ static int match_prev_count[RL_ID_MAX], match_cur_count[RL_ID_MAX];
 static int *match_link;
 static size_t match_link_cap;
 
-// Commands up to and including the tick's last smoothie filter, per buffer; 0 when it recorded
-// none. Everything after that point is not filter input, so a reduced-resolution plasma can leave
-// visible main-surface backgrounds to the high-resolution tail pass. See doc/notes.md.
+// Commands after the last smoothie filter are not filter input. Replay them in the
+// high-resolution tail pass. See doc/notes.md#render-list.
 static size_t bg_filter_end[2];
 // Background layers whose recorded rows sit after the last smoothie filter. In a mixed-resolution
 // display pass these layers are replayed at the foreground factor, so entities bound to them keep
@@ -392,18 +391,15 @@ static inline int rl_iround(float v)
 }
 
 // Round a fractional POSITION offset to the nearest pixel, with exact integer-translation
-// invariance. Unlike round-half-away-from-zero, floor(x + .5) gives the same result after any
-// integer translation; a negative background row and positive enemy therefore cannot separate
-// by 1px merely because the shared fast-scroll phase lands exactly on a half pixel.
+// invariance.
 static inline int rl_round_offset(double v)
 {
 	return (int)floor(v + 0.5);
 }
 
 // Displacement from an entity's recorded (rounded) position to its interpolated one when the
-// sim rounded a sub-pixel offset away: the remainder itself, less the exact own motion still
-// to come this tick. own + sub_d is that motion; keeping them in one float means the position
-// rounds once. A snapped command (recycled slot / teleport) takes the remainder alone.
+// sim rounded a sub-pixel offset away: the remainder itself, less the exact own motion still to
+// come this tick.
 static inline float rl_sub_disp(int own, float sub, float sub_d, float inv)
 {
 	if (inv != 0.0f && own <= 40 && own >= -40)
@@ -427,10 +423,9 @@ static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, i
 	return rl_round_offset(offset);
 }
 
-// A filtered layer can be rasterized below the foreground factor (spatial low-cost mode), or held
-// at the tick endpoint while foreground-local movement keeps interpolating (Vita low-cost mode).
-// Quantize only the shared layer transform; keeping entity-local motion separate prevents scenery
-// from sliding against the layer it rides without giving up smooth independent movement.
+// A filtered layer can be rasterized below the foreground factor (spatial low-cost mode), or
+// held at the tick endpoint while foreground-local movement keeps interpolating (Vita low-cost
+// mode).
 static inline int rl_bound_x_offset(const RenderCmd *c, int layer, float inv, int scale,
                                     int bg_scale, float bg_inv)
 {
@@ -729,10 +724,9 @@ void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 c
 	if (fill > along) fill = along;
 	if (fill < 0)     fill = 0;
 
-	// Track (groove) and shadow live in the fill's own palette bank (col & 0xf0), not a
-	// hardcoded bank 7, so an elite/champion bar is tinted blue/purple top-to-bottom
-	// instead of only on the fill row/column. edge clamps within the bank's brightest.
-	// A custom groove draws a rollover layer beneath the fill.
+	// Track (groove) and shadow live in the fill's own palette bank (col & 0xf0), not a hardcoded
+	// bank 7, so an elite/champion bar is tinted blue/purple top-to-bottom instead of only on the
+	// fill row/column.
 	const int   bank   = col & 0xf0;
 	const Uint8 groove = (grooveCol != 0) ? grooveCol : (Uint8)(bank + 2);
 	const Uint8 shadow = (Uint8)((grooveCol != 0 ? (grooveCol & 0xf0) : bank) + 0);
@@ -861,10 +855,8 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 	}
 }
 
-// Supersampled dispatch: x,y are HI coordinates. Every kind routes to its scaled
-// drawer; the clip-variant sprite kinds share the scaled blitter (it always clips).
-// RC_STAR / RC_SUPERPIXEL / RC_FILTER_SCREEN are positioned specially and handled
-// directly in rl_replay_common, like in the 1x path.
+// Supersampled dispatch: x,y are HI coordinates. Every kind routes to its scaled drawer; the
+// clip-variant sprite kinds share the scaled blitter (it always clips).
 static void rl_draw_cmd_scaled(SDL_Surface *dst, const RenderCmd *c, int x, int y, int scale)
 {
 	switch (c->kind)
@@ -900,10 +892,8 @@ static void rl_draw_cmd_scaled(SDL_Surface *dst, const RenderCmd *c, int x, int 
 	}
 }
 
-// Residual = pixels the captured blit list does not reproduce: non-blit playfield
-// draws (superpixels, boss-health bars, ...), diffed each tick against a blit-only
-// replay and re-applied on every interpolated frame so those effects don't vanish
-// between ticks (they snap rather than interpolate).
+// Residual pixels come from playfield effects the blit list cannot reproduce. Reapply them on
+// interpolated frames; they may snap between ticks, but they must not disappear.
 static int *res_off = NULL;
 static Uint8 *res_val = NULL;
 static size_t res_count = 0, res_cap = 0;
@@ -961,16 +951,13 @@ void rl_set_ship_vel(int player, int vx, int vy)
 	ship_tick_vel_y[player] = vy;
 }
 
-// Ids drawn extrapolated (forward, at the render rate) instead of interpolated (a
-// tick behind), so they share the render-rate ship's clock. Their dx/dy hold the
-// shot's own recorded per-tick velocity (rl_current_vel_*), so cur + dx*alpha is
-// exact even for fast bullets and immune to slot recycling (rl_finalize keeps it).
+// Ids drawn extrapolated (forward, at the render rate) instead of interpolated (a tick behind),
+// so they share the render-rate ship's clock.
 static bool rl_id_extrapolates(int id)
 {
-	// Player + enemy shots (rl_current_vel_* stamped around the blit in shots.c);
-	// a fresh shot leads from the gun with no muzzle gap, and fast free shots don't
-	// lag behind the ship and jitter. Ship-tracking shots (laser, main pulse) instead
-	// follow the ship via ship_attach, which wins in replay.
+	// Player + enemy shots (rl_current_vel_* stamped around the blit in shots.c); a fresh shot
+	// leads from the gun with no muzzle gap, and fast free shots don't lag behind the ship and
+	// jitter.
 	return id >= RL_ID_PSHOT_BASE && id < RL_ID_EXPL_BASE;  // player + enemy shots
 }
 
@@ -1015,9 +1002,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 	VGAScreen = A;
 
 	// B is rebuilt each frame. Foreground and visible tail phases draw straight onto A, so they
-	// skip B. A is cleared only for the self-contained ALL pass on normal levels: the
-	// BG pass's A is the persistent plasma (must carry across frames) and the FG pass's A is a
-	// fresh copy of it (already populated), so neither may be cleared.
+	// skip B.
 	if (B != NULL)
 		JE_clr256(B);
 	if (!feedback && phase == RL_PHASE_ALL)
@@ -1293,8 +1278,8 @@ void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
 }
 
 // Smoothie pass 1 updates the feedback background without entities. With split, it stops at the
-// last filter and leaves the backgrounds recorded after it to a tail pass, which can draw them at
-// a higher scale than the plasma. Both passes must agree on split or the tail is drawn twice.
+// last filter and leaves the backgrounds recorded after it to a tail pass, which can draw them
+// at a higher scale than the plasma.
 void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split)
 {
 	if (alpha < 0.0f)

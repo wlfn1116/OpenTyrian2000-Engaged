@@ -43,10 +43,8 @@ void switch_platform_init(void)
 	mkdir(SWITCH_USER_DIR, 0777);
 
 #ifdef WITH_NETWORK
-	// libnx leaves the BSD socket layer unmounted until this call, so without it every
-	// socket() in SDL_net fails and netplay is dead. Failure is not fatal: the rest of the
-	// game runs fine, and the lobby reports the socket error when the player tries to host
-	// or join. nifm is only for reading our own address (see switch_get_local_ip).
+	// libnx leaves the BSD socket layer unmounted until this call, so without it every socket() in
+	// SDL_net fails and netplay is dead.
 	if (R_SUCCEEDED(socketInitializeDefault()))
 	{
 		net_up = true;

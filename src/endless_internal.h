@@ -84,7 +84,7 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
 /* The Shuffle rules' draw: the whole safe pool shuffled into a bag, taken in order, refilled with
  * a fresh shuffle once empty. Uses a stream of its own, so a shuffled chart consumes no structural
- * RNG and cannot shift the draws around it. See "Level shuffle" in doc/notes.md. */
+ * RNG and cannot shift the draws around it. See doc/notes.md#rng-and-level-shuffle. */
 bool endlessShuffleSafeLevel(int position, int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
 extern int endlessShuffleNext;        // pieces the run has drawn; the next hand starts here
@@ -109,10 +109,7 @@ void endlessResetCustomWeaponZone(void);
 extern int  endlessBestZoneDiff[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
 extern bool endlessBestZoneDiffCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
 
-// The untagged pair is a mode's record belonging to no difficulty, which is only what a config
-// written before the breakdown existed carries in. It keeps the original `best_zone` config keys
-// and counts towards endlessBestZoneAny, so those records survive without inventing a difficulty
-// for them. Nothing writes it unless a run starts on a difficulty outside the six.
+// Untagged records migrate configs written before per-difficulty records existed.
 extern int  endlessBestZoneUntagged[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
 extern bool endlessBestZoneUntaggedCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
 
@@ -224,7 +221,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_OFFERS_BOUGHT    4
 #define ENDLESS_PERK_OFFERS_MILESTONE 5
 
-// Extra Perk pricing. See doc/notes.md#economy-and-perks.
+// Extra Perk pricing. See doc/notes.md#economy.
 #define ENDLESS_PERK_OWNED_PCT         15
 #define ENDLESS_PERK_PAID_GROWTH_PCT  120
 #define ENDLESS_PERK_VISIT_REPEAT_PCT 150
@@ -273,10 +270,7 @@ typedef struct {
 } EndlessPerk;
 
 extern const EndlessPerk endlessPerkTable[PERK_COUNT];
-/* Perks are personal: a stack affects only the ship that picked it. endlessPerkTakenBy is the
- * storage each machine owns a row of; endlessPerkEffective(p, id) is what effects read (through
- * the fx-ship context or an explicit seat), and endlessPerkOwned keeps the capped combined view
- * for diagnostics only. Route writes through endlessPerkGrant / endlessPerkRederive. */
+/* Perks are personal: a stack affects only the ship that picked it. */
 extern JE_byte endlessPerkOwned[PERK_COUNT];
 extern JE_byte endlessPerkTakenBy[2][PERK_COUNT];
 JE_byte endlessPerkEffective(uint p, int id);

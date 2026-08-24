@@ -39,7 +39,7 @@ enum
 #define FRONT_OPTION_SPREAD 10
 
 // Large trailing companions draw below their stored position. Offset gameplay and preview shots
-// to the body's center; see doc/notes.md#rendering.
+// to the body's center; see doc/notes.md#coordinates.
 #define SIDEKICK_TRAIL_SHOT_Y 7
 
 typedef struct
@@ -193,9 +193,7 @@ uint player_sa_ship(const Player *);
 uint player_sa_ball_weapon(const Player *, uint slot);
 
 // Rounds per segment on the sidekick ammo gauge, sized so a full magazine is at most ten
-// segments and stays inside the 29px HUD strip. Rounding UP matters now that the endless
-// Ordnance Reserves perk produces magazines that aren't round numbers (a 26-round magazine
-// at the old `ammo_max / 10` would have drawn 13 segments, running off the end of the bar).
+// segments and stays inside the 29px HUD strip.
 #define AMMO_GAUGE_STEP(ammo_max) ((uint)MAX(1, ((ammo_max) + 9) / 10))
 
 static inline bool all_players_dead(void)
@@ -210,7 +208,7 @@ static inline bool all_players_alive(void)
 
 /* Dead with no life left to come back on, once the wreck has finished exploding. Only the arcade
  * rules hand out lives, so anywhere else a finished explosion is already final. Every per-ship HUD
- * readout keys off this; see doc/notes.md#modes-and-session-settings. */
+ * readout keys off this; see doc/notes.md#session-and-outpost. */
 static inline bool player_is_out(uint p)
 {
 	return !player[p].is_alive && player[p].exploding_ticks == 0
@@ -226,10 +224,8 @@ void player_award_kill_cash(Player *, Sint64 amount);
 // An elite or champion bounty: the kill rules, booked under the ledger's own bounty row.
 void player_award_bounty_cash(Player *, Sint64 amount);
 
-/* Online Campaign credit sharing.
- * coopSharedCredit is the host's stored preference; the session value arrives in the connect
- * packet's settings block, so both machines award identical cash. Shared pays every kill and
- * score pickup to both players at full value; Individual pays the shot's owner or the collector. */
+/* Online Campaign credit sharing. coopSharedCredit is the host's stored preference; the session
+ * value arrives in the connect packet's settings block, so both machines award identical cash. */
 extern bool coopSharedCredit;
 void coop_set_session_shared_credit(bool shared);
 bool coop_credit_is_shared(void);

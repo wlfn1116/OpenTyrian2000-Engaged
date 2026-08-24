@@ -50,10 +50,9 @@
 
 #define MAX_KEY_OPTIONS 4
 
-/* Widescreen Destruct HUD layout.  Each player's readout is a HUD_FRAME_W-wide
- * frame lifted from pic #11 with the drawn box sitting 1px inside it, so the
- * frame's left edge is HUD_BOX_OFFSET px right of DrawHUD's startX anchor.  The
- * two frames are pinned flush against the screen edges, symmetric about center. */
+/* Widescreen Destruct HUD layout. Each player's readout is a HUD_FRAME_W-wide frame lifted from
+ * pic #11 with the drawn box sitting 1px inside it, so the frame's left edge is HUD_BOX_OFFSET
+ * px right of DrawHUD's startX anchor. */
 #define HUD_FRAME_W        144
 #define HUD_FRAME_LEFT_X   0
 #define HUD_FRAME_RIGHT_X  (vga_width - HUD_FRAME_W)
@@ -564,10 +563,7 @@ static bool de_net_desync_noted;
 static bool de_net_have_inputs;              /* false inside the initial delay window */
 static Uint8 de_net_local_bits, de_net_peer_bits;
 
-/* Both netcodes carry the same control bits (state packet byte 5 for the lockstep, the input
- * record's second byte for rollback): QUIT ends the session for both sides at the same frame,
- * NEWMAP is the online Backspace, a fresh round for both.  See DRB_CTRL_* in
- * destruct_rollback.h; pause is offline-only, so bit 0x02 stays unused. */
+/* QUIT ends both sides on the same frame; NEWMAP starts a fresh round for both. */
 
 /* Bits a rollback prediction may repeat: the ones a player holds down.  Change-unit and the two
  * weapon cycles are edge triggered (DE_NetLocalActions consumes the key as it reads it), so
@@ -775,10 +771,7 @@ static void DE_pinSessionConfig(void)
 	config.ai[0] = config.ai[1] = false;
 	config.jumper_straight[0] = config.jumper_straight[1] = true;
 	weaponSystems[UNIT_LASER][SHOT_LASERTRACER] = false;
-	/* max_installations bounds the unit-select wrap, so it is sim state too.  It is derived by
-	 * the caller as a MAX over basetypes' counts, including the two custom army sizes this
-	 * machine's config sets, and it never shrinks across visits, so pin the inputs AND the
-	 * accumulator back to the shipped values. */
+	/* max_installations bounds the unit-select wrap, so it is sim state too. */
 	basetypes[8][0] = basetypes[9][0] = 5;
 	config.max_installations = 10;
 }
@@ -848,10 +841,8 @@ void JE_destructGame(void)
 	crashlog_set_phase("Destruct minigame");
 #endif
 
-	/* A network teardown longjmps straight out of the tick loop, skipping the frees at the
-	 * bottom; releasing the previous visit's buffers here keeps that path leak-free.  Disarming
-	 * the rollback module belongs to the same rule, and doubly so: a visit that left it armed
-	 * would have the next offline game reading itself as a rollback session. */
+	/* A network teardown longjmps straight out of the tick loop, skipping the frees at the bottom;
+	 * releasing the previous visit's buffers here keeps that path leak-free. */
 	destruct_deinit();
 
 	//malloc things that have customizable sizes
@@ -1027,8 +1018,7 @@ static void DE_netIntroBarrier(void)
 
 	// Nothing counts until the press that opened this screen is let go: a key still down from the
 	// lobby confirms the barrier before it can be read, and a held pad button auto-repeats into
-	// fresh presses.  Bounded, so a drifting stick cannot lock the screen out instead; a deadline
-	// of zero is the re-arm after a withdrawal, which waits for a real release (that key IS held).
+	// fresh presses.
 	bool armed = false;
 	Uint32 armDeadline = SDL_GetTicks() + 500;
 
@@ -1064,10 +1054,7 @@ static void DE_netIntroBarrier(void)
 
 			if (localReady)
 			{
-				// Step back rather than out.  The peer is watching this line, so the withdrawal is
-				// announced like the confirmation was; the release below waits on our own channel
-				// being clear, and the channel is ordered, so a withdrawal sent before the peer's
-				// confirmation was acknowledged always reaches them ahead of that acknowledgement.
+				// Step back rather than out.
 				localReady = false;
 				network_ready_publish(false);
 				armed = false;
@@ -1248,10 +1235,9 @@ static void JE_generateTerrain(void)
 
 	play_song(goodsel[mt_rand() % 14] - 1);
 
-	/* JE_loadPic only fills the original 320px; the widescreen strip past it is
-	 * never written, so clear that sky (rows below the HUD) to black or it shows
-	 * stale pixels from the previous game that pile up across restarts.  Rows
-	 * 0..HUD_ROWS-1 there belong to the right HUD frame, so leave them alone. */
+	/* JE_loadPic only fills the original 320px; the widescreen strip past it is never written, so
+	 * clear that sky (rows below the HUD) to black or it shows stale pixels from the previous game
+	 * that pile up across restarts. */
 	fill_rectangle_xy(VGAScreen, LEGACY_WIDTH, HUD_ROWS, vga_width - 1, vga_height - 1, PIXEL_BLACK);
 
 	DE_generateBaseTerrain(world.mapFlags, world.baseMap);
@@ -1706,10 +1692,7 @@ static void JE_superPixel(unsigned int tempPosX, unsigned int tempPosY)
 		{   0,   0,   1,   0,   0 }
 	};
 
-	/* Each pixel is addressed from its own clipped coordinates.  A walking pointer cannot do it:
-	 * the star starts two rows and two columns back, so a flare near an edge underflows the
-	 * unsigned start offset, and skipping a clipped row leaves the pointer short by the five
-	 * columns that row would have stepped -- every row after it lands five pixels to the left. */
+	/* Each pixel is addressed from its own clipped coordinates. */
 	const int maxX = destructTempScreen->pitch;
 	const int maxY = destructTempScreen->h;
 	Uint8* const pixels = destructTempScreen->pixels;
@@ -1899,9 +1882,7 @@ static void DE_ResetActions(void)
 }
 
 /* Smooth present helpers: build a supersampled (NxN) frame from the same game state as the
- * classic per-tick draw, with moving objects at interpolated sub-pixel positions. The static
- * terrain expands once per tick into destruct_bg_hi; each frame copies it, then draws the
- * interpolated foreground and HUD on top. */
+ * classic per-tick draw, with moving objects at interpolated sub-pixel positions. */
 
 /* Fill a scale x scale block at hi-surface pixel (hx, hy), clipped to the surface. */
 static void DE_pixScaled(SDL_Surface* hi, int hx, int hy, Uint8 c, int scale)
@@ -1952,10 +1933,9 @@ static void DE_ExpandBackgroundHi(int scale)
 	}
 }
 
-/* Repaint the two HUD boxes (rows 0..HUD_ROWS-1, the flush-mounted left/right
- * frames) on top of the composed frame, block-expanded from the 1x HUD that
- * DE_RunTickDrawHUD drew into VGAScreen this tick.  The gap between the boxes is
- * live playfield and is left untouched, matching the classic path. */
+/* Repaint the two HUD boxes (rows 0..HUD_ROWS-1, the flush-mounted left/right frames) on top of
+ * the composed frame, block-expanded from the 1x HUD that DE_RunTickDrawHUD drew into VGAScreen
+ * this tick. */
 static void DE_ExpandHUD(SDL_Surface* hi, int scale)
 {
 	static const int spans[2][2] = { { 0, HUD_GAP_LEFT }, { HUD_FRAME_RIGHT_X, vga_width } };
@@ -2090,10 +2070,8 @@ static void DE_ComposeFrame(SDL_Surface* hi, int scale, float alpha)
 	DE_ExpandHUD(hi, scale);   /* HUD last, on top, matching the classic draw order */
 }
 
-/* Present interpolated, supersampled frames until a full tick period has elapsed,
- * then return so the caller runs the next simulation tick.  Modeled on the main
- * game's present loop (JE_starShowVGA): a real-time accumulator keeps the sim rate
- * exact regardless of how many frames we manage to draw. */
+/* Present interpolated, supersampled frames until a full tick period has elapsed, then return
+ * so the caller runs the next simulation tick. */
 static void DE_SmoothPresent(int scale)
 {
 	const float period = get_delay_period();   /* destruct paces one tick per setDelay(1) unit */
@@ -2356,8 +2334,7 @@ static void DE_StateRestore(const void* src)
 
 /* One lockstep exchange, run at the top of every online tick: sample local input, publish it,
  * block until the peer's packet for the same logical tick is here, and settle what the tick is
- * (simulate / new round / session over).  The action bits it leaves in de_net_local_bits and
- * de_net_peer_bits are applied at the same point of the tick the offline path reads its keys. */
+ * (simulate / new round / session over). */
 static enum de_state_t DE_NetExchange(void)
 {
 	touch_ui_flush_keys();
@@ -2444,10 +2421,8 @@ static void DE_NetApplyMoves(void)
 	}
 }
 
-/* Scripted input for the snapshot self-test, which has no keyboard and no peer.  A plain LCG
- * rather than mt_rand: the script must not draw on the simulation's own generator.  Both sides
- * hold directions and fire freely and cycle units and weapons occasionally, so the battle keeps
- * shots, craters and unit changes coming for the replay to disagree about. */
+/* Scripted input for the snapshot self-test, which has no keyboard and no peer. A plain LCG
+ * rather than mt_rand: the script must not draw on the simulation's own generator. */
 static Uint8 DE_SelfTestActions(void)
 {
 	static Uint32 script = 0x9E3779B9u;
@@ -2527,17 +2502,13 @@ de_sim_pass:
 	memset(soundQueue, 0, sizeof(soundQueue));
 
 	/* A silent re-simulation pass corrects state that is already on screen, so it does the whole
-	 * tick with the present, the sound and the frame delay switched off.  Only the pass that
-	 * catches the timeline up reaches the screen.  The self-test presents nothing at all: it has
-	 * no viewer and runs as fast as the machine can simulate. */
+	 * tick with the present, the sound and the frame delay switched off. */
 	const bool de_present = !drb_resim_silent() && !drb_selftest_active();
 
 	JE_tempScreenChecking();
 
-	/* The smooth present kicks in once we're past the first (fade-in) tick, when the
-	 * user has Smooth Motion on and supersampling is running.  When it does, capture
-	 * the clean terrain before this tick draws units and shots, allowing the
-	 * interpolated frames can be rebuilt from a static background. */
+	/* The smooth present kicks in once we're past the first (fade-in) tick, when the user has
+	 * Smooth Motion on and supersampling is running. */
 	const int de_ss = effective_supersample();
 	const bool smooth = de_present && smoothMotion && de_ss > 1 && !destructFirstTime
 	                    && DE_ensureSmoothBuffers(de_ss);
@@ -2982,10 +2953,9 @@ static void DE_RunTickShots(void)
 		/* If the shot can bounce off the map, bounce it */
 		if (shotBounce[shotRec[i].shottype])
 		{
-			/* The ceiling follows the sky window: between the HUD boxes a bouncing shot may
-			 * climb to the top of the screen instead of rebounding off thin air at y=14 in
-			 * the middle of the open window.  Over the boxes the classic ceiling stands (a
-			 * shot that drifts out of the window while high self-corrects on the flip). */
+			/* The ceiling follows the sky window: between the HUD boxes a bouncing shot may climb to the
+			 * top of the screen instead of rebounding off thin air at y=14 in the middle of the open
+			 * window. */
 			const float ceiling = (shotRec[i].x >= HUD_GAP_LEFT && shotRec[i].x < HUD_FRAME_RIGHT_X)
 			                    ? 1.0f : 14.0f;
 			if (shotRec[i].y > 199 || shotRec[i].y < ceiling)
@@ -3046,10 +3016,9 @@ static void DE_RunTickShots(void)
 			}
 		}
 
-		/* Skip collision checks above the map -- except in the sky window between the HUD
-		 * boxes, where the playfield runs to the top of the screen and whatever stands up
-		 * there (a wall top, a ring's dirt at rows 12-14) has to be solid, not a ghost the
-		 * shots pass through.  Over the HUD boxes the classic ceiling stands. */
+		/* Skip collision checks above the map -- except in the sky window between the HUD boxes,
+		 * where the playfield runs to the top of the screen and whatever stands up there (a wall top,
+		 * a ring's dirt at rows 12-14) has to be solid. */
 		{
 			const bool inSky = tempPosX >= HUD_GAP_LEFT && tempPosX < HUD_FRAME_RIGHT_X;
 			if (shotRec[i].y <= (inSky ? 0 : 14))
@@ -3393,10 +3362,8 @@ static void DE_RunTickDrawHUD(void)
 	char tempstr[16]; /* Max size needed: 16 assuming 10 digit int max. */
 	struct destruct_unit_s* curUnit;
 
-	/* Repaint the clean HUD backdrop under the two boxes first, so units or walls
-	 * that poke into the top rows can't scribble on the HUD art.  Only the box
-	 * columns are repainted; the gap between them (HUD_GAP_LEFT..HUD_FRAME_RIGHT_X)
-	 * is left as live playfield, restored each tick by JE_tempScreenChecking. */
+	/* Repaint the clean HUD backdrop under the two boxes first, so units or walls that poke into
+	 * the top rows can't scribble on the HUD art. */
 	for (unsigned int y = 0; y < HUD_ROWS; ++y)
 	{
 		Uint8* dst = (Uint8*)VGAScreen->pixels + y * VGAScreen->pitch;
@@ -3650,10 +3617,8 @@ static void DE_ProcessInput(void)
 	}
 }
 
-// Both cyclers step an int and write the enum back once at the end; nothing reads unit->shotType
-// inside the loop. Keeping the wrap on a local puts the bound on weaponSystems[][MAX_SHOT_TYPES]
-// at the subscript itself, rather than on the enum staying inside [SHOT_FIRST, SHOT_LAST], which
-// SHOT_INVALID = -1 can break.
+// Both cyclers step an int and write the enum back once at the end; nothing reads
+// unit->shotType inside the loop.
 static void DE_CycleWeaponUp(struct destruct_unit_s* unit)
 {
 	int type = unit->shotType;

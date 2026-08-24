@@ -187,10 +187,8 @@ void JE_drawMouseToMenuScreen(SDL_Surface *dst, int x_offset)
 		blit_sprite2x2_clip(dst, x, y, shopSpriteSheet, spriteInfo->index);
 }
 
-// Composite the cursor onto a supersampled frame, block-expanded from the same 1x art so
-// it looks exactly like the classic cursor. For menus that present their own hi frame
-// (the weapon-sim preview): the frame is built before the cursor, so this draws last and
-// survives the region the preview replays over it.
+// Composite the cursor onto a supersampled frame, block-expanded from the same 1x art so it
+// looks exactly like the classic cursor.
 void JE_drawMouseToHiFrame(SDL_Surface *hi, int scale, int x_offset)
 {
 	cursorPresentPending = false;  // this frame carries the cursor; JE_showVGA must not repeat it

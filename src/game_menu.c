@@ -682,9 +682,7 @@ static SDL_Surface *sim_ensure_hi(SDL_Surface **surf, int scale)
 }
 
 // Present the preview box supersampled, so its ship, shots, and orbiting satellites sit at
-// sub-pixel positions between ticks as they do in play. The menu around it is block-expanded,
-// then the box is painted from the NxN replay at the offset the pillarboxed frame put it.
-// Returns false if the buffers could not be allocated.
+// sub-pixel positions between ticks as they do in play.
 static bool JE_weaponSimPresentHi(float alpha, int scale)
 {
 	SDL_Surface *const replay = sim_ensure_hi(&sim_hi_replay, scale);
@@ -713,9 +711,7 @@ static bool JE_weaponSimPresentHi(float alpha, int scale)
 	}
 
 	// The copy above erased whatever the caller drew onto the box after the 1x replay: the
-	// generator gauge's left columns, the weapon creator's overlay. game_screen still holds
-	// that same replay with nothing drawn over it, so the differing pixels are exactly those;
-	// they go back block-expanded, at classic resolution like the gameplay residual.
+	// generator gauge's left columns, the weapon creator's overlay.
 	for (int y = SIM_BOX_Y0; y <= SIM_BOX_Y1; ++y)
 	{
 		const Uint8 *const ref = (const Uint8 *)game_screen->pixels + y * game_screen->pitch;
@@ -769,10 +765,8 @@ static void JE_weaponSimSmoothPresent(void)
 		else if (alpha > 1.0f)
 			alpha = 1.0f;
 
-		// Reconstruct the recorded frame at interpolated positions into game_screen,
-		// then copy just the preview region over the live menu surface. This 1x frame
-		// stays authoritative even when the supersampled present runs below: the gauge,
-		// the overlay, and the classic present all build on it.
+		// Reconstruct the recorded frame at interpolated positions into game_screen, then copy just
+		// the preview region over the live menu surface.
 		rl_replay_interp(game_screen, alpha, false, 1);
 
 		const Uint8 *src = (const Uint8 *)game_screen->pixels
@@ -1602,10 +1596,8 @@ static void set_shop_phase(void)
 		crashlog_set_phase(names[curMenu]);
 }
 
-// Sort every merchant category (itemAvail rows) ascending by item id, with the "None"
-// entry (id 0) always sunk to the BOTTOM of its list. Run once on shop entry and again
-// after an endless reroll regenerates the stock; endlessFillCategory seeds None at the
-// TOP of a rerolled category, so without this re-sort a reroll would show None first.
+// Sort every merchant category (itemAvail rows) ascending by item id, with the "None" entry (id
+// 0) always sunk to the BOTTOM of its list.
 static void sort_shop_inventory(void)
 {
 	for (int x = 0; x < 9; x++)
@@ -1697,9 +1689,9 @@ void shopWaitNotice(const char *text, const char *detail, const char *hint)
 	}
 }
 
-// Keep the waiting frame alive and the cursor moving during a rendezvous. Paced here rather than
-// by a delay in the callers: every one of them can skip its own loop tail with a `continue`, and
-// this runs at the top of each pass. Vsync-on paces through JE_showVGA; off it follows the cap.
+// Keep the waiting frame alive and the cursor moving during a rendezvous. Paced here rather
+// than by a delay in the callers: every one of them can skip its own loop tail with a
+// `continue`, and this runs at the top of each pass.
 void shopWaitFrame(void)
 {
 	// Synthesize keys so controller and touch users can follow the Esc prompt.
@@ -1715,7 +1707,7 @@ void shopWaitFrame(void)
 }
 
 /* The co-op half of leaving the outpost. Returns false when the player withdrew and wants to
- * go on outfitting; "Leaving the outpost" in doc/notes.md covers why it takes two steps. */
+ * keep outfitting; see doc/notes.md#session-and-outpost. */
 static bool shopCampaignRendezvous(void)
 {
 	network_shop_send_state(true);
@@ -2080,8 +2072,8 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 	Uint8 myJumpBlock[ENDLESS_DEBUG_BLOCK_SIZE];
 	const bool myJump = endlessJumpPickGet(myJumpBlock);
 
-	/* The gate, then the commit. The commit is sent once and kept across a peer's withdrawal,
-	 * which drops this machine back to the gate; see "Outpost protocol" in doc/notes.md. */
+	/* The gate, then the commit. The commit survives a peer's withdrawal; see
+	 * doc/notes.md#session-and-outpost. */
 	bool committed = false;
 
 	for (;;)
@@ -2123,10 +2115,8 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		{
 			shopWaitFrame();
 
-			// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
-			// and ordered), so both machines load the level with the same loadouts.  The peer's
-			// last outpost packet can be ahead of it too, and an unread one at the head of the
-			// queue stops WAITING from ever arriving.
+			// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable and
+			// ordered), so both machines load the level with the same loadouts.
 			if (network_debug_sync_pump(false) || network_shop_pump())
 				continue;
 
@@ -2147,10 +2137,9 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 				if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
 				    (!myPick || !network_is_host))
 				{
-					// The apply's capture records "home" for the jump's return, and this machine
-					// may have committed its own planet already, leaving mainLevel on that
-					// destination -- an ENGAGE one would then bounce a later quit into ** ALE **.
-					// Put the outpost's route back first; the apply re-arms the level fields.
+					// The apply's capture records "home" for the jump's return, and this machine may have
+					// committed its own planet already, leaving mainLevel on that destination -- an ENGAGE one
+					// would then bounce a later quit into ** ALE **.
 					mainLevel = route->mainLevel;
 					nextLevel = route->nextLevel;
 					lvlFileNum = route->lvlFileNum;
@@ -2986,9 +2975,7 @@ void JE_itemScreen(void)
 			else
 				JE_barDrawShadow(VGAScreen, 42, 152, 3, 14, shopPlayer()->armor, 2, 13);
 			// Shield ceiling rescaled so a full 28-unit gauge fills exactly 10 bars and every weaker
-			// shield proportionally fewer; matching the in-game gauge. Reading the ceiling rather
-			// than the item's mpwr also shows the arcade lives scaling growing it between levels.
-			// Rounded to the nearest bar; None (mpwr 0) draws nothing; clamped so it can't overrun.
+			// shield proportionally fewer; matching the in-game gauge.
 			{
 				int shieldBars = (int)((arcade_shield_max(shopPlayer()) * 10 + ARCADE_FULL_BAR / 2) / ARCADE_FULL_BAR);
 				if (shieldBars > 10)
@@ -3049,10 +3036,8 @@ void JE_itemScreen(void)
 			{
 				helpBoxColor = 15;
 				helpBoxBrightness = 4;
-				// The hull named here is this ship's own, not the session global: online the two
-				// players pick separately, and the global carries ship one's pick. It still decides
-				// whether the panel is drawn at all, and answers for the one path that clears the
-				// ship's byte without it (the game-over reload), so it stays the fallback.
+				// The hull named here is this ship's own, not the session global: online the two players
+				// pick separately, and the global carries ship one's pick.
 				const uint sa_ship = player_sa_ship(shopPlayer());
 				if (!superTyrian)
 					JE_helpBox(VGAScreen, 35, 25, superShips[sa_ship != SA_NONE ? sa_ship : superArcadeMode], 18);
@@ -4368,10 +4353,7 @@ void draw_ship_illustration(void)
 		 0,  2,  1,  0,  0,  1,  1,  1
 	};
 
-	// The x each mount was drawn with only centres that mount's own sprite on the hull (centre line
-	// x = 77.5), so it belongs to the sprite, not to the mount: the fallbacks below can pair a gun
-	// with a mount drawn for a wider one, and reading x from the mount then draws it off-centre.
-	// Rows 12 and 16-20 are unreachable (12 is unused, 16-20 are the generators).
+	// Center each weapon by its sprite; fallback mounts may have a different width.
 	const int weapon_sprite_x[22] =
 	{
 		61, 52, 54, 61, 66, 51, 53, 66, 41, 27,
@@ -4655,10 +4637,8 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 			}
 			else if (ships[itemNum].shipgraphic == 1)
 			{
-				// The Nort Ship's shipgraphic (1) is a sentinel, not a real sprite index; the
-				// gameplay draw (JE_playerMovement) special-cases it into a two-piece hull. Blitting
-				// sprite 1 here (as for a normal ship) shows garbage, so draw the same two halves,
-				// centred on x to match a normal ship's footprint (and gameplay's x-17/x+7 spacing).
+				// The Nort Ship's shipgraphic (1) is a sentinel, not a real sprite index; the gameplay draw
+				// (JE_playerMovement) special-cases it into a two-piece hull.
 				blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 220);
 				blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 222);
 			}
@@ -4678,10 +4658,8 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 	}
 }
 
-/* The Nort Ship and Dragonwing paint as two 2x2 halves straddling the anchor, 48px wide against
- * the 24px icon column. Each takes an anchor shifted right by that overhang so its hull starts at
- * the column's left edge, and a label column past its own painted width, which the two do not
- * share. See "Wide shop hulls" in doc/notes.md; qa_test_wide_hull_columns recomputes both. */
+/* The Nort Ship and Dragonwing use 48px icons in a 24px column. See
+ * doc/notes.md#extra-ships. */
 #define SHOP_NAME_X_DRAGONWING 209  // its halves paint through x=207
 #define SHOP_NAME_X_NORT_SHIP  203  // its halves paint through x=201
 
@@ -4701,8 +4679,7 @@ ShopItemColumns shop_ship_item_columns(JE_word shipId)
 
 #define SHOP_OPTION_WEAPON_PORT 16  // holds the sidekick weapon table; no bay issues a gun from it
 
-/* The ports the shipped game issues as a rear gun; every other real port is a front gun. See
- * "Weapon bay tags" in doc/notes.md for where each id comes from. */
+/* The ports the shipped game issues as rear guns. See doc/notes.md#item-tables. */
 static const JE_byte shopRearGunPorts[] = { 9, 10, 11, 12, 14, 15, 18, 21, 22, 24, 26, 28, 29, 30, 37, 38 };
 
 ShopWeaponBay shop_weapon_port_bay(JE_word port)
@@ -4771,9 +4748,7 @@ void JE_drawMenuHeader(void)
 }
 
 // Endless E-Shop: tint each buy row by WHAT IT IS, so related purchases share a colour and the
-// player can read the menu at a glance. Palette-1 banks are 12=green, 8=cyan, 4=red,
-// 5=purple, 7=red-to-yellow, and 15=default gold. Keyed
-// by menu row x (== curSel[MENU_ESHOP]); the row order is fixed in configure_endless_shop_menu().
+// player can read the menu at a glance.
 static unsigned int endless_eshop_row_bank(JE_byte x)
 {
 	switch (x)
@@ -4853,11 +4828,10 @@ void JE_drawMenuChoices(void)
 		}
 		free(str);
 
-		// (The perk PICK rows carry no owned/max count; it lives in the help line only.)
+		// Perk pick rows show their count in the help line.
 
-// Endless "gave up the level" outpost: grey out the rows locked to the launch-time choices
-		// (E-Shop = item 2, Upgrade Ship = item 4) so the disabled items read as disabled. Dims only
-		// the glyph pixels (no box over the background); item 6 (Start Level) relaunches, stays bright.
+		// After giving up a zone, dim choices locked to the launch-time loadout. Start Level remains
+		// available for the retry.
 		if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && (x == 2 || x == 4))
 			JE_dStringDarken(VGAScreen, text_x, tempY, entry, font);
 
@@ -5715,10 +5689,8 @@ void JE_drawMainMenuHelpText(void)
 					            sizeof(tempStr));
 				}
 			}
-			// Perk pick: the hovered perk's effect, with the stack count flush right; the pick rows
-			// are bare names, so the help line is the only place it shows. The decline instead quotes
-			// its buyout, and its line is kept short so that stays flush right rather than tripping the
-			// anti-overlap fallback, even at the seven figures a capped deep run can reach.
+			// Perk pick: the hovered perk's effect, with the stack count flush right; the pick rows are
+			// bare names, so the help line is the only place it shows.
 			else if (curSel[MENU_PERKS] == menuChoices[MENU_PERKS])
 			{
 				SDL_strlcpy(tempStr, "Take no perk: depth and perks pay more.", sizeof(tempStr));
@@ -5858,9 +5830,7 @@ void JE_drawMainMenuHelpText(void)
 		draw_help_bar_right(tempStr, ownedStr, 14, 1);  // same bank/brightness as the help text itself
 
 	// Endless: show the run's seed on the E-Shop help line, right-aligned opposite "Open the
-	// E-Shop." so it's always visible from the outpost. Bank/brightness tuned by eye to read as
-	// secondary chrome (not a price). Online, the round trip below owns that edge and the seed
-	// is on the lobby and joiner screens instead, so the two never overprint each other.
+	// E-Shop." so it's always visible from the outpost.
 	if (endlessMode && !isNetworkGame && curMenu == MENU_FULL_GAME && curSel[curMenu] == 2)
 	{
 		char seedStr[16 + ENDLESS_SEED_MAXLEN];
@@ -5874,8 +5844,7 @@ void JE_drawMainMenuHelpText(void)
 
 	// Online play's round trip takes the same right edge, and anything already standing there
 	// outranks it: a price is what the player is deciding on, and the endless seed stands down
-	// online for the same reason. The figure is dropped rather than shunted left, where it would
-	// butt against the sentence and read as part of it.
+	// online for the same reason.
 	ping_shown = false;
 	if (isNetworkGame && costStr[0] == '\0' && ownedStr[0] == '\0')
 	{
@@ -6318,10 +6287,8 @@ void debugLevelPickApply(JE_byte episode, JE_byte section, JE_byte fileNum)
 {
 	const JE_byte startEp = (JE_byte)episodeNum;
 
-	// Same sequence the browser itself runs: snapshot the outpost we are leaving (while
-	// episodeNum still points at it), switch episode if the pick lives in another one, then
-	// arm the jump.  Doing it here means the adopting player also gets handed back to their
-	// own outpost when the level is over.
+	// Same sequence the browser itself runs: snapshot the outpost we are leaving (while episodeNum
+	// still points at it), switch episode if the pick lives in another one, then arm the jump.
 	select_debug_level_capture();
 	if (episode != 0 && episode != (JE_byte)episodeNum)
 		JE_initEpisode(episode);
@@ -6518,9 +6485,7 @@ enum { EDA_CLEAR, EDA_RESET, EDA_UNPIN };
 // of their own (the bounties are economy, and the three ramp figures are the levers' own clock).
 enum { EDI_ELITEBOUNTY, EDI_CHAMPBOUNTY, EDI_EFFDEPTH, EDI_RAMPZONE, EDI_RAMPPCT, EDI_COUNT };
 
-// Zones the curve shown on a selected lever's help line samples. Chosen to straddle every onset and
-// cap in the ramp: 1 (stock), 25 (the tide's first extra shot), 50, 100 (the tide anchor and the
-// contact-damage anchor), 200 (well past every intensity cap, where only the tide is still moving).
+// Zones the curve shown on a selected lever's help line samples.
 static const int endlessCurveZones[] = { 1, 25, 50, 100, 200 };
 
 // The base-level list is the longest screen: every level, an episode heading each, plus Random.
@@ -6629,10 +6594,7 @@ static bool endlessDebugScreen(bool jumpMode)
 	VGAScreen = VGAScreenSeg;
 
 	const int pw = 248;
-	// Centre in whatever content width is actually in force. From the shop (and the endless zone
-	// jump) the legacy 320px area is pillarboxed and the composite adds the offset itself, so
-	// LEGACY_WIDTH is right and vga_width would double-offset. From the IN-GAME debug menu there is
-	// no pillarbox, and that same maths would strand the panel left of centre on a wide screen.
+	// Centre in whatever content width is actually in force.
 	const int contentW = (video_get_menu_x_offset() != 0) ? LEGACY_WIDTH : vga_width;
 	const int px0 = (contentW - pw) / 2;
 	const int px1 = px0 + pw - 1;
@@ -6708,10 +6670,7 @@ static bool endlessDebugScreen(bool jumpMode)
 	char dbgGambleMsg[48];             // last outcome fired here, shown as the gamble list's help
 	dbgGambleMsg[0] = '\0';
 
-	// The difficulty the SCALING page computes at. -1 = "whatever the game is set to", which is what
-	// you want almost always; the explicit settings are there because the ramp is tilted 50%..160% by
-	// difficulty, so "zone 100" means quite different things across the modes and comparing them is
-	// half the point of the page.
+	// The difficulty the SCALING page computes at.
 	int dbgDiff = -1;
 	bool dbgCampFx = endlessCampaignMods;
 
@@ -7619,10 +7578,7 @@ static bool endlessDebugScreen(bool jumpMode)
 
 	VGAScreen = temp_surface;
 
-	// TUNE form: the edits land now, on the way out. Closing with Esc applies too; there is no
-	// "cancel" here by design, because the screen is a live control panel for state you are about to
-	// go and play with, not a dialog that proposes a change. The jump form is the opposite: it stages
-	// everything and commits only on START ZONE, so Esc there really is a cancel.
+	// TUNE form: the edits land now, on the way out.
 	if (!jumpMode)
 	{
 		// Arm FIRST: it clears the stale outpost purchases, including the pending kill-fire buy the
@@ -7648,7 +7604,6 @@ static bool endlessDebugScreen(bool jumpMode)
 
 	// A debug "Free perk pick" outcome was fired but we're not launching a level -> open the perk
 	// pick now, on return to the menu (the shop's front-gate perk gate already passed this visit).
-	// If a level WAS launched, the queued endlessPerkPending rides the normal next-shop gate instead.
 	if (!chosen && endlessMode && endlessPerkPending)
 	{
 		endlessPerkListMode = false;
@@ -8294,10 +8249,8 @@ static Uint8 cwCatColor(int cat)
 // The colour band for a field row, derived from its category.
 static Uint8 cwGroupColor(int row) { return cwCatColor(cwRowCategory(row)); }
 
-// Some rows only make sense for a particular Equip slot: the fire-mode toggle exists only
-// on a rear gun, and charging is a sidekick-only mechanic (a front/rear custom gun can't
-// charge). Those rows are drawn greyed and left inert until the weapon is equipped where
-// they apply, so the editor only offers controls that actually do something.
+// Some rows only make sense for a particular Equip slot: the fire-mode toggle exists only on a
+// rear gun, and charging is a sidekick-only mechanic (a front/rear custom gun can't charge).
 static bool cwRowActive(int row)
 {
 	const int slot = customWeaponEquipSlot;
@@ -8359,10 +8312,8 @@ static int  cwCategory = CWCAT_ALL;  // which row category the top selector is s
 static JE_WeaponType cwLevelClipboard;
 static bool cwLevelClipboardSet = false;
 
-// Direct numeric entry: on a numeric value row, typing digits builds an exact value
-// (so a shop price of 900, or sprite 214, doesn't need scrolling in coarse steps).
-// cwNumRow is the row currently being typed into (-1 = not typing); cwNumText holds
-// the digits entered so far. Committed on Enter / arrows / leaving the row.
+// Direct numeric entry: on a numeric value row, typing digits builds an exact value (so a shop
+// price of 900, or sprite 214, doesn't need scrolling in coarse steps).
 static int  cwNumRow = -1;
 static char cwNumText[12];
 
@@ -8963,11 +8914,8 @@ static void cwAdjustRow(int row, int dir)
 	}
 }
 
-// Exact numeric entry for rows whose range is too wide for step controls.
-// cwNumericRange, cwSetNumeric, and cwCommitNumeric own the edit lifecycle.
-
-// Fill lo/hi with a row's valid range and return true if it accepts a typed number.
-// A negative lo marks a signed field (a leading '-' may be typed).
+// Numeric entry for rows whose range is too wide for step controls. A negative lower bound marks
+// a signed field.
 static bool cwNumericRange(int row, int *lo, int *hi)
 {
 	switch (row)
@@ -9348,10 +9296,9 @@ static void cwDrawSegmentCorners(int x0, int y0, int x1, int y1)
 	fill_rectangle_xy(VGAScreen, x1, y1 - 1, x1, y1, c); fill_rectangle_xy(VGAScreen, x1 - 1, y1, x1, y1, c);
 }
 
-// Drawn on top of the finished preview box (via weaponSimOverlayFn). Bullet-segment
-// category: 2px corner brackets tracking one live shot of the edited segment, interpolated
-// with alpha so they glide with it. Sprite or Shop Icon row: an isolated sprite/icon swatch
-// in the bottom-left corner so scrubbing either shows what you are picking.
+// Drawn on top of the finished preview box (via weaponSimOverlayFn). Bullet-segment category:
+// 2px corner brackets tracking one live shot of the edited segment, interpolated with alpha so
+// they glide with it.
 static void cwDrawPreviewOverlay(float alpha)
 {
 	const int row = cwOvRow;
@@ -9440,10 +9387,7 @@ static void cwHomeShots(void)
 	}
 }
 
-// Collide live shots against the dummies (called after they move). Mirrors the game's
-// on-hit handling: an Explode-To carrier spawns the target weapon at the impact and is
-// consumed; Ice (99) freezes; other damage drains armour; every hit throws a real impact
-// explosion. Non-piercing shots are consumed on contact, exactly like in-game.
+// Collide live shots against the dummies (called after they move).
 static void cwCollideShots(void)
 {
 	if (cwDummyCount == 0)
@@ -9555,10 +9499,8 @@ static void cwDrawDummies(void)
 	}
 }
 
-// Live stats readout (top-left of the box) for the level/mode currently previewing:
-// approximate DPS, per-shot damage x bullet count, and fire rate. The weapon fires every
-// shotrepeat+1 ticks at the SIM_FPS=35 sim rate (nortsong.c). Ice does no HP damage; a
-// chaining bullet's real damage is the weapon it spawns, so it's flagged, not counted.
+// Live stats readout (top-left of the box) for the level/mode currently previewing: approximate
+// DPS, per-shot damage x bullet count, and fire rate.
 static void cwDrawStats(void)
 {
 	const JE_WeaponType *w = cwCur();
@@ -9594,9 +9536,7 @@ static void cwDrawStats(void)
 }
 
 // Draw the equipped sidekick's body sprite in the preview box, roughly where it would sit
-// relative to the ship, so you can SEE the mount + sprite you're editing. Only shown when
-// the weapon is actually equipped as a sidekick. The materialized option holds a base sprite
-// already clamped in-range, so the (unclipped) blit is safe.
+// relative to the ship, so you can SEE the mount + sprite you're editing.
 static void cwDrawSidekickPreview(void)
 {
 	const bool isSidekick = (customWeaponEquipSlot == CUSTOM_EQUIP_LEFT ||
@@ -9628,19 +9568,14 @@ static void cwDrawSidekickPreview(void)
 
 bool JE_customWeaponCreator(bool canEquip)
 {
-	// If opened before any item data has loaded (e.g. from the title-screen Setup menu),
-	// load it now; otherwise ships[]/weapons[]/weaponPort[] are zeroed and the preview
-	// draws from garbage sprite indices (the intermittent title-screen crash).
-	// JE_loadItemDat() also runs customWeaponInit().
+	// The title-screen Setup menu can reach this before item data is loaded.
 	if (weaponPort[1].name[0] == '\0')
 		JE_loadItemDat();
 	else if (customWeaponPort <= 0)
 		customWeaponInit();
 
-	// The impact explosions need the explosion sprite sheet, which the game only loads
-	// lazily at level start; it can be NULL here (creator opened from Setup, or the
-	// between-levels shop). Load it on demand, exactly like the level loader does, or the
-	// first hit would blit from a NULL sheet and crash.
+	// The impact explosions need the explosion sprite sheet, which the game only loads lazily at
+	// level start; it can be NULL here (creator opened from Setup, or the between-levels shop).
 	if (explosionSpriteSheet.data == NULL)
 		JE_loadCompShapes(&explosionSpriteSheet, '6');
 
@@ -10307,10 +10242,8 @@ void JE_menuFunction(JE_byte select)
 				endlessArmLockedRelaunch();
 				break;
 			}
-			// Online Endless: the other player charts this one, so Play Next Level waits here for
-			// the sector they pick and only then commits to leaving. Waiting first keeps Esc
-			// working the whole time and keeps this machine out of a rendezvous it would have no
-			// way out of if the pair somehow agreed that neither of them was charting.
+			// Online Endless: the other player charts this one, so Play Next Level waits here for the
+			// sector they pick and only then commits to leaving.
 			if (endlessCoop() && !endlessLocalPlayerCharts())
 			{
 				const int course = shopEndlessAwaitCourse(true);
@@ -10457,9 +10390,6 @@ void JE_menuFunction(JE_byte select)
 			}
 			configure_endless_shop_menu();  // refresh prices / bought-state labels
 			// A free perk pick can only come from the Gamble (select 12); no other buy grants one.
-			// Gate the perk-menu open on select==12 so a stale/leaked "won a perk" flag can never make
-			// an ordinary buy (Bomb/Special/Turbo/...) spuriously pop the perk pick. Then clear the flag
-			// UNCONDITIONALLY below: it's a one-dispatch signal that must never survive to a later buy.
 			if (bought && select == 12 && endlessGambleWonPerk())  // gamble handed us a free perk: open the pick menu now
 			{
 				endlessPerkListMode = false;   // a real forced PICK, not the read-only list
@@ -11132,9 +11062,8 @@ void JE_drawShipSpecs(SDL_Surface * screen, SDL_Surface * temp_screen)
 }
 
 // Draw the equipped sidekick bodies in the weapon-sim preview, on top of the ship, mirroring
-// the in-game draw (JE_playerMovement): a front/large body (tr 1/2) is a 2x2 from spriteSheet10,
-// the rest a single tile from spriteSheet9. Positions are set in JE_weaponViewFrame. Without this
-// the shop showed sidekick shots coming from nothing; the pods themselves were never drawn.
+// the in-game draw (JE_playerMovement): a front/large body (tr 1/2) is a 2x2 from
+// spriteSheet10, the rest a single tile from spriteSheet9.
 static void JE_drawSimSidekicks(void)
 {
 	for (uint i = 0; i < 2; ++i)
@@ -11298,10 +11227,8 @@ void JE_weaponViewFrame(void)
 			           item_power = shopPlayer()->items.weapon[i].power - 1,
 			           item_mode = (i == REAR_WEAPON) ? shopPlayer()->weapon_mode - 1 : 0;
 
-			// Zica Laser Lv11 tweaks: mirror the in-game fire (JE_mainGamePlayerFunctions)
-			// so the preview matches. Long swaps in the two LV10-length side beams; Buff
-			// adds the Lv10 centre beam. Extra beams are drain-free, but still only fire
-			// when the primary did; see the note at the gameplay site.
+			// Zica Laser Lv11 tweaks: mirror the in-game fire (JE_mainGamePlayerFunctions) so the
+			// preview matches.
 			const bool zica_l11 = (item == 5 && item_power == 10);
 			JE_word l11_primary = weaponPort[item].op[item_mode][item_power];
 			if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)

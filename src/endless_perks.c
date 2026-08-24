@@ -137,8 +137,7 @@ int endlessPerkTotalOwned(void)
 }
 
 // Financier perk, first half: the level-clear bank-interest rate, as a % of unspent cash
-// (ENDLESS_INTEREST_BASE_PCT = stock). endlessApplyLevelPayout raises the interest CAP by the same
-// factor, so a bigger rate genuinely pays more instead of hitting the stock ceiling a level sooner.
+// (ENDLESS_INTEREST_BASE_PCT = stock).
 int endlessPerkInterestPercent(void)
 {
 	if (!endlessFxActive())
@@ -517,10 +516,9 @@ int endlessPerkProwContactPercent(void)
 	return 100 - perkFx(PERK_PROW) * ENDLESS_PERK_PROW_TAKEN_PCT;
 }
 
-/* Knife Fight measures from hull to hull. The ship is its 24x28 sprite, blitted 5 left and 7 up of
- * its position; a tile is the 12x14 cell at its position, or the four cells around it when size is
- * 1. Both boxes are taken by centre and half-extent, and the gap is the larger per-axis clearance,
- * 0 while the boxes overlap. */
+/* Knife Fight measures from hull to hull. The ship is its 24x28 sprite, blitted 5 left and 7 up
+ * of its position; a tile is the 12x14 cell at its position, or the four cells around it when
+ * size is 1. */
 #define KNIFE_SHIP_HALF_W 12
 #define KNIFE_SHIP_HALF_H 14
 static int knife_box_gap(int cx0, int cy0, int hw0, int hh0, int cx1, int cy1, int hw1, int hh1)
@@ -582,9 +580,9 @@ int endlessPerkKnifeFightPercent(unsigned slot)
 	return (full * left + ENDLESS_PERK_KNIFE_FADE_PX / 2) / ENDLESS_PERK_KNIFE_FADE_PX;
 }
 
-// Knife Fight in armor points, from the raw damage of a hit before any enemy-health scaling, so it
-// is measured across the same accumulator as Executioner is (tyrian2.c) and holds against a boss.
-// `pct` is the figure above, taken once per hit and spent on both the damage and the blood.
+// Knife Fight in armor points, from the raw damage of a hit before any enemy-health scaling, so
+// it is measured across the same accumulator as Executioner is (tyrian2.c) and holds against a
+// boss.
 int endlessPerkKnifeFightBonus(int damage, int pct)
 {
 	if (damage <= 0 || pct <= 0)
@@ -593,7 +591,7 @@ int endlessPerkKnifeFightBonus(int damage, int pct)
 }
 
 /* Knife Fight hit effect. It uses presentation-only seeded sparks and the common Endless shade
- * lift; see doc/notes.md#perk-interactions. */
+ * lift; see doc/notes.md#perks. */
 #define KNIFE_BLOOD_DROPS_MAX     4  // at the deepest bonus; enough to mark the hit and stay out of the way
 #define KNIFE_BLOOD_PER_FRAME    10  // ...and one presented frame spawns no more than this, over every hit in it
 #define KNIFE_BLOOD_SPREAD_PX     4  // how wide a shower starts around the hit
@@ -701,9 +699,9 @@ void endlessResetZonePerkTimers(void)
 // Pulse application lives at the player-shot kill sites in tyrian2.c.
 bool endlessPerkChainReactionActive(void) { return endlessFxActive() && perkFx(PERK_CHAINRXN) > 0; }
 
-// The ship whose stacks decide a pulse: the one that made the kill, or, when nothing can be credited
-// with it, whichever ship holds more (endlessCountKill credits an unclaimed kill to both). Outside
-// coop the answer is always ship 0, which is what the effect player resolves to there anyway.
+// The ship whose stacks decide a pulse: the one that made the kill, or, when nothing can be
+// credited with it, whichever ship holds more (endlessCountKill credits an unclaimed kill to
+// both).
 uint endlessPerkChainOwner(int killer)
 {
 	if (!endlessCoop())

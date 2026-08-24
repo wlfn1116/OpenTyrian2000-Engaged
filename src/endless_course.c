@@ -563,7 +563,7 @@ static Uint64 endlessPickSignatureTheme(int forCourse)
 
 /* Where the next Shuffle draw comes from, and where the live chart's hand came off. Every deal
  * takes its hand off the front and leaves the cursor past it, so a Radar reroll spends the hand it
- * discarded. Both are run state and ride the save; see "Level shuffle" in doc/notes.md. */
+ * discarded. Both are run state and ride the save; see doc/notes.md#rng-and-level-shuffle. */
 int endlessShuffleNext = 0;
 int endlessShuffleHandStart = 0;
 int endlessShuffleHandDepth = -1;
@@ -579,7 +579,7 @@ void endlessShuffleSetNext(int position)
 
 /* Online: the cursor is the one chart input that accumulates rather than being recomputed, so it is
  * the one that can drift. A machine disagreeing with the charting seat's published hand re-anchors
- * onto it and deals again. Why the depth stamp: "Level shuffle" in doc/notes.md. */
+ * onto it and deals again. See doc/notes.md#rng-and-level-shuffle. */
 void endlessShuffleSyncHand(uint p, int handStart)
 {
 	if (p != endlessChartSeat || !endlessBaseRuleShuffled(endlessRunBaseRule)
@@ -1164,10 +1164,9 @@ static void endlessMakeCourseNamesUnique(void)
 	}
 }
 
-// Cache the authored base-level name behind each finalized course, so the Radar perk's per-frame
-// help line (endlessCourseHelp) reads a string instead of re-parsing levels*.dat every frame. Runs
-// after the danger sort (so index i matches the displayed order) and after any course restore, off
-// the final (episode, section, file) each course actually launches. Empty for unused slots.
+// Cache the authored base-level name behind each finalized course, so the Radar perk's
+// per-frame help line (endlessCourseHelp) reads a string instead of re-parsing levels*.dat
+// every frame.
 void endlessNameCourseBaseLevels(void)
 {
 	for (int i = 0; i < endlessCourseCnt && i < ENDLESS_MAX_COURSES; ++i)
@@ -1313,9 +1312,7 @@ void endlessCourseReroll(void)
 }
 
 /* Online: the chart is derived rather than sent, so a peer's reroll arrives as the count on its
- * shop packet and this machine rebuilds the same slate from it. Only the charting seat rerolls,
- * and every packet it sends carries the count, so the packet publishing its pick cannot arrive
- * without it. */
+ * shop packet and this machine rebuilds the same slate from it. */
 void endlessChartSyncRerolls(uint p, JE_byte rerolls)
 {
 	if (p != endlessChartSeat || rerolls == endlessChartRerolls)

@@ -49,14 +49,12 @@ bool nrb_session_recovery(void);
 Uint32 nrb_frame(void);
 
 /* End the level out of band because the packet at the head of the reliable queue says the peer
- * has already left it. `head` is the packet type, or 0 for an empty queue; returns true when the
- * level was ended. A quit is flagged as one, so Endless reopens the outpost instead of banking a
- * clear the peer never made. */
+ * has already left it. */
 bool nrb_peer_left_level(Uint16 head);
 
 /* The idle rule behind the level-end confirmation wait and the in-game menu hold: true once
- * `newest`, the peer's newest frame, has not advanced for NRB_PEER_IDLE_TIME_OUT ms of `now`. Every
- * advance re-arms the clock (see "Rollback input" in doc/notes.md). Destruct's round end shares it. */
+ * `newest`, the peer's newest frame, has not advanced for NRB_PEER_IDLE_TIME_OUT ms of `now`.
+ * See doc/notes.md#rollback. */
 #define NRB_PEER_IDLE_TIME_OUT 8000
 bool nrb_peer_idle(Uint32 now, Uint32 newest, Uint32 *newest_seen, Uint32 *newest_tick);
 

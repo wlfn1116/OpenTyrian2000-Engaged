@@ -2,7 +2,7 @@
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
  * Rollback netcode for the online Destruct minigame.  See destruct_rollback.h for the interface
- * and doc/notes.md for the invariants the battle simulation has to hold up.
+ * and doc/notes.md#rollback for the simulation invariants.
  *
  * This program is free software: you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -760,7 +760,7 @@ static void drb_process_controls(void)
 
 /* Desync recovery engine.  The battle snapshot carries no relocatable pointers (destruct.c re-pins
  * the three it holds on every restore), so the host's blob is adopted as it arrives; see
- * doc/notes.md for what the size guard covers and what it does not. */
+ * doc/notes.md#rollback for the size guard. */
 
 /* FNV-1a over the compressed stream: guards the assembly logic, not the link (UDP already
  * checksums each datagram). */
@@ -775,9 +775,7 @@ static Uint32 drb_rs_hash(const Uint8 *p, size_t n)
 	return h;
 }
 
-/* Pump for the transfer loops: OS events, inbound datagrams, the overlay, the link timeouts.
- * False = this attempt ran out of time.  Not drb_stall_pump: that one resends input records, which
- * are noise while a transfer owns the channel, and it dispatches inbound recoveries (this IS one). */
+/* Pump for the transfer loops: OS events, inbound datagrams, the overlay, the link timeouts. */
 static bool drb_resync_pump(Uint32 wait_start, bool *reported, const char *why)
 {
 	watchdog_heartbeat();
@@ -1380,9 +1378,7 @@ DrbStep drb_driver(bool roundOver)
 		return DRB_STEP_NEWMAP;
 
 	/* Desync recovery rendezvous, after the two irreversible transitions above: a round that is
-	 * already ending has nothing left to repair.  Either path that fires here leaves the frame
-	 * machinery reset, so this pass presents and the next tick simulates the fresh timeline's
-	 * frame 1; nothing below it may run after one. */
+	 * already ending has nothing left to repair. */
 	if (drb_resync_dispatch())
 		return DRB_STEP_PRESENT;
 	if (resync_wanted)

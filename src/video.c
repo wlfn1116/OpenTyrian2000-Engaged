@@ -83,10 +83,7 @@ int effective_supersample(void)
 		return 1;
 
 #ifdef __vita__
-	// The Vita GPU can't sustain the NxN sub-pixel present (render at N* then downscale). Force
-	// 1x: Smooth Motion's render-rate interpolation still runs (even ship/background motion at
-	// 60fps), just at native resolution, which the SGX can handle. Mirrors the cap the Switch
-	// port used before its faster GPU made supersampling viable there.
+	// The Vita GPU can't sustain the NxN sub-pixel present (render at N* then downscale).
 	return 1;
 #else
 	int factor = render_supersample;
@@ -420,10 +417,8 @@ void reinit_fullscreen(int new_display)
 void video_on_win_resize(void)
 {
 #ifdef PLATFORM_HANDHELD
-	// The SDL driver owns the window size here; the present path re-reads the live window
-	// size every frame (calc_dst_render_rect), so there's nothing to reconcile. Snapping the
-	// window back to a scaler-sized minimum here would just fight the driver (e.g. a 4x scaler
-	// is wider than 720p) and re-break fullscreen.
+	// The SDL driver owns the window size here; the present path re-reads the live window size
+	// every frame (calc_dst_render_rect), so there's nothing to reconcile.
 	return;
 #endif
 

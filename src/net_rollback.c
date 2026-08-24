@@ -47,10 +47,7 @@ static bool session_vt = true;
 static bool session_recovery = false;
 
 #ifdef WITH_NETWORK
-/* Levels started in this session, stamped on every input packet.  A peer stalled
- * at the end of the previous level keeps re-sending its records for as long as
- * the stall timeout allows, and those frame numbers can fall inside the new
- * level's acceptance window; the epoch is what tells them apart. */
+/* Levels started in this session, stamped on every input packet. */
 static Uint16 nrb_epoch;
 
 /* Session-long wire/stall counters for the crash log (nrb_write_diagnostics).
@@ -63,10 +60,8 @@ static struct
 	Uint32 stalls;                    /* waits that earned a >3 s crashlog note */
 } nrb_diag;
 
-/* The peer's registry has a different layout (mismatched builds, or PC<->console),
- * so its bytes can never be adopted here.  Session-scoped like the counters above,
- * not per level: the peer's build does not change mid-session, and each retry costs
- * the host a full state export to be refused on chunk 0 again. */
+/* The peer's registry has a different layout (mismatched builds, or PC<->console), so its bytes
+ * can never be adopted here. */
 static bool resync_layout_bad;
 #endif
 
@@ -134,20 +129,14 @@ bool nrb_active(void)
  * RB_MOVE_DIAG cone flag).  The RB_EV_* bits (9-10) are self-test-local and
  * never leave a machine. */
 #define NRB_WIRE_BUTTONS (0x01FFu | RB_MOVE_MASK | RB_MOVE_DIAG)
-/* Of those, the bits the SIMULATION reads.  Pause and in-game-menu requests are
- * processed outside the sim, from remote_hist rather than from what the frame
- * consumed, so an unpredicted pulse changes no simulated byte; comparing them
- * only bought a rollback that re-derived the identical state. */
+/* Of those, the bits the SIMULATION reads. */
 #define NRB_SIM_BUTTONS (NRB_WIRE_BUTTONS & ~(RB_REQ_PAUSE | RB_REQ_MENU))
 /* Bits a PREDICTED tuple may carry: held buttons + analog flag + held movement
  * intent; one-shot request pulses must never be predicted into existence. */
 #define NRB_PREDICT_BUTTONS (RB_BTN_FIRE | RB_BTN_LSIDEKICK | RB_BTN_RSIDEKICK | \
                              RB_BTN_CHANGEFIRE | RB_LINK_ANALOG | RB_MOVE_MASK | RB_MOVE_DIAG)
 
-/* How much of a remote frame's tuple the simulation consumed.  The level-end
- * fade and a dead ship skip the movement/apply path entirely, but the frame's
- * REQUEST bits are still consumed at the next frame's start, so verification
- * must compare exactly what was consumed, no more and no less. */
+/* How much of a remote frame's tuple the simulation consumed. */
 enum
 {
 	NRB_USED_NONE = 0,   /* nothing consumed: any truth is compatible        */
@@ -258,10 +247,7 @@ static Uint32 resync_used;   /* attempts consumed this level (either role)      
 static Uint16 resync_gen;    /* newest attempt id sent (host) / adopted (joiner)  */
 static bool   resync_wanted; /* canary mismatch seen; the host acts on it         */
 
-/* Presentation: a recovery is in play, so the stall overlay names that instead of
- * the wait.  Held from the mismatch until the peer is heard on the fresh timeline
- * the host finishes streaming while the joiner is still adopting, and one
- * hitch showing two different messages read like two different faults. */
+/* Presentation: a recovery is in play, so the stall overlay names that instead of the wait. */
 static bool   resync_notice;
 static Uint16 resync_notice_epoch;  /* epoch the notice was armed in */
 
@@ -377,10 +363,8 @@ void nrb_frame_begin(void)
 		fflush(stderr);
 	}
 
-	/* Wire-test desync: the joiner bends one frame of the epoch that first reaches it, after
-	 * the snapshot so every simulation pass through that frame bends it exactly once. Armor,
-	 * because the input tuples carry positions and would repair those; the divergence is then
-	 * stable until a recovery opens a later epoch, where the gate goes quiet. */
+	/* Wire-test desync: the joiner bends one frame of the epoch that first reaches it, after the
+	 * snapshot so every simulation pass through that frame bends it exactly once. */
 	if (qa_net_corrupt_frame > 0 && thisPlayerNum != networkHostPlayerNum
 	    && nrb_cur == qa_net_corrupt_frame)
 	{
@@ -497,10 +481,8 @@ static void nrb_predict_remote(Uint32 frame, RbInput *out)
 	out->x = (Sint16)((int)base.x + dx * (int)steps);
 	out->y = (Sint16)((int)base.y + dy * (int)steps);
 
-	/* Velocity: integrate the engine's own rule (vel += accel per tick, clamped
-	 * to the classic ±4) instead of holding it flat.  Held-flat velocity was
-	 * the top mispredictor while the fused pair manoeuvred; every accel tick
-	 * forced a rollback, and the resim cost snowballed on long fused levels. */
+	/* Velocity: integrate the engine's own rule (vel += accel per tick, clamped to the classic ±4)
+	 * instead of holding it flat. */
 	{
 		int pv = (int)base.velX + (int)base.accelX * (int)steps;
 		if (pv > 4) pv = 4; else if (pv < -4) pv = -4;
@@ -738,10 +720,8 @@ void nrb_handle_packet(const Uint8 *data, int len)
 		++nrb_diag.refused_window;
 		return;
 	}
-	/* ...and a SHORT previous level leaves frame numbers small enough to pass that
-	 * test, which the epoch catches instead.  Only strictly older is refused: a
-	 * peer that is a level ahead of us is the pre-existing behaviour, and refusing
-	 * it would turn a one-sided level-start skew into a mutual stall. */
+	/* ...and a SHORT previous level leaves frame numbers small enough to pass that test, which the
+	 * epoch catches instead. */
 	if ((Sint16)(SDLNet_Read16(&data[14]) - nrb_epoch) < 0)
 	{
 		++nrb_diag.refused_epoch;
@@ -1085,10 +1065,8 @@ NrbMenuClaim nrb_menu_claim(Uint16 local_bits, Uint16 remote_bits, bool is_host)
 	return claim;
 }
 
-/* Walk the newly verified frames for an in-game menu request. The menu opens at the earliest one
- * carrying it, and requests on later frames belong to the timeline that menu discards (see
- * "Rollback input" in doc/notes.md). A settled frame also stops the walk while the rewind onto it
- * is in flight, the one state where `verified_upto` is ahead of the frame being simulated. */
+/* Walk the newly verified frames for an in-game menu request. The menu opens at the earliest
+ * one carrying it; later requests belong to the discarded timeline. See doc/notes.md#rollback. */
 static void nrb_process_requests(void)
 {
 	while (menu_at == 0 && req_done < verified_upto)
@@ -1194,10 +1172,8 @@ bool nrb_peer_left_level(Uint16 head)
 	return true;
 }
 
-/* Pump the world while stalled: OS events, inbound packets, periodic input
- * resend (the peer may be waiting on a lost packet), bounded by timeout.
- * Returns true when an inbound desync recovery reset the timeline underneath
- * the wait; the caller must abandon it and fall through to present. */
+/* Pump the world while stalled: OS events, inbound packets, periodic input resend (the peer may
+ * be waiting on a lost packet), bounded by timeout. */
 static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *why)
 {
 	service_SDL_events(false);
@@ -1377,10 +1353,7 @@ size_t nrb_resync_expand(const Uint8 *src, size_t n, Uint8 *dst, size_t cap)
 	return out;
 }
 
-/* Pump for the transfer loops: OS events, inbound datagrams, the overlay, the
- * link timeouts.  False = this attempt ran out of time.  Not nrb_stall_pump:
- * that one resends input records (noise while a transfer owns the channel),
- * dispatches inbound recoveries (this IS one), and names the wrong wait. */
+/* Pump for the transfer loops: OS events, inbound datagrams, the overlay, the link timeouts. */
 static bool nrb_resync_pump(Uint32 wait_start, bool *reported, const char *why)
 {
 	service_SDL_events(false);
@@ -2055,8 +2028,8 @@ static int nrb_menu_hold(Uint32 *resim_from)
 }
 
 /* Serve the menu at menu_at: rewind to it when the timeline ran past (the caller re-enters once
- * that pass has run), open it over the state both machines confirmed there, then resume on a fresh
- * epoch, which retires the frames either machine simulated beyond it and their records in flight. */
+ * that pass has run), open it over the state both machines confirmed there, then resume on a
+ * fresh epoch, which retires the frames. */
 static NrbStep nrb_menu_serve(void)
 {
 	/* Every caller runs outside a re-simulation, so nrb_cur is the whole discarded timeline. */
@@ -2136,10 +2109,8 @@ static void nrb_qa_gameplay_verdict(void)
 	}
 	else
 	{
-		/* No divergence allowed, and the run must have actually exercised a rollback, or the
-		 * proxy's faults never reached the prediction path and this proved nothing. The
-		 * session counter matters for multi-zone runs: every level reset wipes stat_deepest,
-		 * and the verdict may fire from an outpost. */
+		/* No divergence allowed, and the run must have actually exercised a rollback, or the proxy's
+		 * faults never reached the prediction path and this proved nothing. */
 		rc = (qa_desyncs_total == 0 && (stat_deepest >= 1 || qa_rollbacks_session >= 1)) ? 0 : 1;
 	}
 	if (qa_net_scenario == 5 && qa_net_special_flashes == 0)

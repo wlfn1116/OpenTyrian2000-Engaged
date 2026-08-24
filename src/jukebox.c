@@ -87,10 +87,9 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 	Uint64 last_frame = SDL_GetPerformanceCounter();
 	float tick_acc = 0.0f;
 
-	// If sub-pixel supersampling is on, render the starfield into a hi-res buffer
-	// and present it through the same downscaling path the game uses, so the flying
-	// stars/sparks glide smoothly instead of stepping whole pixels. The video scaler
-	// can't change from inside the jukebox, so the factor is fixed for the session.
+	// If sub-pixel supersampling is on, render the starfield into a hi-res buffer and present it
+	// through the same downscaling path the game uses, so the flying stars/sparks glide smoothly
+	// instead of stepping whole pixels.
 	SDL_Surface *juke_hi = NULL;
 	{
 		const int ss = effective_supersample();

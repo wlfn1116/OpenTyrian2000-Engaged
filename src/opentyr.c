@@ -234,10 +234,9 @@ static bool toggle_xmas_mode(void)
 	return true;
 }
 
-// While supersampling is enabled, algorithm scalers (Scale2x/hqNx) are bypassed by
-// the in-game hi path, which would make gameplay and pause/menus look different;
-// so switch to the same-size plain scaler. Called after the Sub-pixel setting changes;
-// the scaler picker enforces the same rule (algorithm entries grayed and unselectable).
+// While supersampling is enabled, algorithm scalers (Scale2x/hqNx) are bypassed by the in-game
+// hi path, which would make gameplay and pause/menus look different; so switch to the same-size
+// plain scaler.
 static void enforcePlainScalerForSupersample(void)
 {
 	if (render_supersample != 1 && !scaler_is_plain(scaler))
@@ -1117,10 +1116,8 @@ static bool runOptionsMenu(MenuId startMenu)
 
 		size_t *const selectedMenuItemIndex = &selectedMenuItemIndexes[currentMenu];
 
-		// Drop this frame's conditional rows (isMenuItemVisible) up front, so everything
-		// below indexes one contiguous list of rows that are actually on screen.
-		// The scan stops one short of the array so the terminator below always has a slot,
-		// which is also the most rows a menu can declare and still be terminated.
+		// Drop this frame's conditional rows (isMenuItemVisible) up front, so everything below
+		// indexes one contiguous list of rows that are actually on screen.
 		MenuItem visibleItems[COUNTOF(menu->items)];
 		size_t menuItemsCount = 0;
 		for (size_t i = 0; i + 1 < COUNTOF(visibleItems) && menu->items[i].id != (MenuItemId)-1; ++i)
@@ -2363,18 +2360,13 @@ int main(int argc, char *argv[])
 		network_host_battle_level = 1;
 	}
 
-	/* Multi-zone runs must not lose a ship to the scripted wiggle: a death reroutes the run
-	 * into the death menus, which these scenarios do not model. SuperTyrian's two rungs kill
-	 * the wiggle inside the frame budget too, and every death restarts the level so the
-	 * at-frame-N verdict never fires. Set on both peers alike, so the simulations agree. */
+	/* Multi-zone runs must not lose a ship to the scripted wiggle: a death reroutes the run into
+	 * the death menus, which these scenarios do not model. */
 	if (qa_net_gameplay_ticks > 0
 	    && (qa_net_zones > 0 || network_game_type_is_super(network_game_type)))
 		cheatInfiniteArmor = true;
 
-	/* The doubled-pickups scenario proves the session-flag arming end to end: the peers take
-	 * the production lobby roles, the host arms Individual credit plus Double Earnings from
-	 * its own config, and the joiner starts from the opposite values, which the settings
-	 * block in the connect packet must replace. */
+	/* Start the joiner with opposite values so the settings packet must replace them. */
 	if (qa_net_gameplay_ticks > 0 && qa_net_lobby_settings)
 	{
 		network_from_lobby = true;
@@ -2451,10 +2443,9 @@ int main(int argc, char *argv[])
 		crashlog_set_phase("title / main menu");
 
 #ifdef WITH_NETWORK
-		// A lobby session that has run its course: close the socket and hand the joiner its
-		// own settings back, so the title screen behaves like a normal single-player one and
-		// a second session can be started cleanly.  (Command-line netplay reconnects instead,
-		// and the QA lobby-settings peers are command-line peers under lobby roles.)
+		// A lobby session that has run its course: close the socket and hand the joiner its own
+		// settings back, so the title screen behaves like a normal single-player one and a second
+		// session can be started cleanly.
 		if (isNetworkGame && network_from_lobby && !qa_net_lobby_run())
 		{
 			network_shutdown();

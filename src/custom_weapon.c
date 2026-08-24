@@ -672,9 +672,7 @@ int customSidekickSpriteCount(int mount)
 }
 
 // Synthesize an owner's custom sidekick (an options[] entry firing that owner's compiled
-// weapon); rebuilt whenever the design changes. It fires the mode-0 designs: with charge
-// (pwr > 0) the engine fires wpnum + charge, and the consecutive level slots make the
-// per-level curve the charge ramp. Body appearance comes from the design record.
+// weapon); rebuilt whenever the design changes.
 static void customSidekickMaterialize(int owner, const CustomWeaponSlot *design)
 {
 	const int slot = customSidekickOwnerSlot[owner];
@@ -997,10 +995,9 @@ static void deserializeRaw(JE_WeaponType *w, const char *str)
 			++str;
 	}
 
-	// Detect the per-bullet array width this blob was written with. The layout is 8 leading scalars +
-	// 7 arrays of width W + 6 trailing scalars = 14 + 7*W integers, so W = (cnt - 14) / 7. Configs
-	// written before the bullet cap was raised used W = 8; reading exactly W per array keeps the
-	// trailing scalars aligned, so an old design still loads correctly (its unused slots stay zero).
+	// Detect the per-bullet array width this blob was written with. The layout is 8 leading
+	// scalars + 7 arrays of width W + 6 trailing scalars = 14 + 7*W integers, so W = (cnt - 14) /
+	// 7.
 	int width = (cnt >= 14) ? (cnt - 14) / 7 : CUSTOM_BULLETS_MAX;
 	if (width < 1) width = 1;
 	if (width > CUSTOM_BULLETS_MAX) width = CUSTOM_BULLETS_MAX;
@@ -1582,10 +1579,7 @@ static bool customOptionIsSpare(int option)
 	return false;
 }
 
-/* Claim the reserved port and sidekick option for each owner, top down, so a real item is never
- * clobbered: the Tyrian 2000 data fills every port name but leaves ports 48-60 as dummy "Test"
- * placeholders, and the item tables end in several "None" sidekicks. A sidekick slot can come
- * back 0 (none free), which equipping handles. See "Custom weapons online" in doc/notes.md. */
+/* Claim only placeholder ports and empty sidekick slots. See doc/notes.md#custom-weapons. */
 static void customWeaponClaimSlots(void)
 {
 	int port = PORT_NUM;

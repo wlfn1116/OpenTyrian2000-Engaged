@@ -16,7 +16,7 @@ static inline bool endlessFxActive(void) { return endlessMode || endlessCampaign
 
 /* Online co-op. Both ships fly a shared run: the sector, its modifiers and the course slate are
  * run-wide, while wallets, stock, gear and the personal upgrades below belong to one player each.
- * See "Endless online" in doc/notes.md. */
+ * See doc/notes.md#session-and-outpost. */
 
 // The ship this machine outfits and spends for: player 1 solo, the local ship in co-op.
 uint    endlessEconomyIndex(void);
@@ -26,9 +26,7 @@ uint    endlessPartnerIndex(void);
 uint    endlessEffectPlayers(void);
 
 /* Sector modifiers as ONE ship sees them: the charted set, plus whatever that player bought for
- * themselves. A drive one player paid for boosts that player alone, on both machines.
- * endlessFxPlayer is the ship whose effects are being computed; every caller that works through
- * the players in turn sets it, and it is 0 outside co-op. */
+ * themselves. */
 extern Uint64 endlessPlayerMods[2];
 void endlessSetFxPlayer(uint p);
 uint endlessFxPlayer(void);
@@ -190,9 +188,9 @@ enum {
 // in the elite banks. Well under the aura's lift, so the sprite keeps its own gradient.
 #define ENDLESS_EXPLOSION_BRIGHT 3
 
-// Shade lift for a tinted enemy bullet (see blit_sprite2_filter_bright). Shot art spans the whole
-// ramp, and the champion bank's bottom third is nearly black, so its darker pixels would disappear
-// at the sprite's own shade. Smaller than the explosion lift, which is undoing a blend as well.
+// Shade lift for a tinted enemy bullet (see blit_sprite2_filter_bright). Shot art spans the
+// whole ramp, and the champion bank's bottom third is nearly black, so its darker pixels would
+// disappear at the sprite's own shade.
 #define ENDLESS_SHOT_BRIGHT 2
 
 // Player-side kill-fire tint banks.
@@ -320,7 +318,7 @@ const char *endlessRecordTableName(int players);
 typedef enum {
 	ENDLESS_BASE_VARIED = 0,       // every charted route is its own level
 	ENDLESS_BASE_SAME,             // one level fills the chart, leaving the modifiers as the choice
-	ENDLESS_BASE_VARIED_SHUFFLE,   // Varied, drawing from the level bag in doc/notes.md
+	ENDLESS_BASE_VARIED_SHUFFLE,   // Varied; see doc/notes.md#rng-and-level-shuffle
 	ENDLESS_BASE_SAME_SHUFFLE,     // Same, drawing its one level from that bag
 	ENDLESS_BASE_RULE_COUNT
 }
@@ -433,7 +431,7 @@ bool endlessSaveLegacyWasRead(void);      // ...and did this session read it thr
 
 /* Everything one Endless co-op player owns for themselves that the other machine also has to
  * know: the run-wide sector effects are derived identically on both sides, but these are bought.
- * Rides every outpost sync packet; see "Endless online" in doc/notes.md. */
+ * Rides every outpost sync packet; see doc/notes.md#session-and-outpost. */
 #define ENDLESS_PLAYER_BLOCK_PERKS 32
 #define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 11 + 8 * 3 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
@@ -645,8 +643,8 @@ void endlessGrantSpecial(uint p);
 bool endlessSpecialPickup(int slot);
 
 // Top half of the shop's unknown-item icon; its bottom half is a ship body. INK is the opaque
-// glyph's measured extent from the enemy reference point, grown by GRAB on each side for the pickup
-// box. The outline pass puts one more pixel on each side, so the solid shape is INK grown by 1.
+// glyph's measured extent from the enemy reference point, grown by GRAB on each side for the
+// pickup box.
 #define ENDLESS_SPECIAL_PICKUP_ICON 125
 #define ENDLESS_SPECIAL_GLYPH_INK_X0 2
 #define ENDLESS_SPECIAL_GLYPH_INK_X1 9

@@ -26,9 +26,7 @@
 #define CUSTOM_WEAPON_OWNERS 2
 
 // Scratch weapon slots for the compiled custom designs: one per (owner, mode, level),
-// CUSTOM_WEAP_BASE + (owner*CUSTOM_WEAPON_MODES + mode)*CUSTOM_POWER_LEVELS + (level-1). Lives
-// in the unused WEAP_END1(818)..WEAP_START2(1000) gap, past the Charge-Laser (900-905) and Zica
-// side-beams (906-907); 2 owners x 2 modes x 11 levels = 910..953 fits.
+// CUSTOM_WEAP_BASE + (owner*CUSTOM_WEAPON_MODES + mode)*CUSTOM_POWER_LEVELS + (level-1).
 #define CUSTOM_WEAP_BASE 910
 
 // Highest sound sample the engine can play (see sndmast.h SFX_COUNT).
@@ -173,10 +171,7 @@ int customWeaponRemoveChargeState(void);
 void customWeaponCopyToAllLevels(void);
 void customWeaponResetAllLevels(void);
 
-// Auto-scale: treat the level currently being edited as the "anchor" and generate a power curve
-// for the other ten levels of the current fire mode; scaling damage, fire rate and bullet count
-// down for levels below the anchor and up for levels above it. The anchor level is left exactly as
-// designed, as is every field that defines the weapon's look and feel (sprite, motion, sound, ...).
+// Generate the other ten power levels around the level currently being edited.
 void customWeaponAutoScaleLevels(void);
 
 // Persistence helpers (used by config.c). One (mode, level) design serializes to a

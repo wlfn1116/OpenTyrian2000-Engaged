@@ -419,14 +419,9 @@ int lds_update(void)
 							Uint8	sound;
 							Uint16	high;
 							Sint8	transp = transpose & 127;
-							/*
-							 * Originally, in assembler code, the player first shifted
-							 * logically left the transpose byte by 1 and then shifted
-							 * arithmetically right the same byte to achieve the final,
-							 * signed transpose value. Since we can't do arithmetic shifts
-							 * in C, we just duplicate the 7th bit into the 8th one and
-							 * discard the 8th one completely.
-							 */
+							/* Originally, in assembler code, the player first shifted logically left the transpose
+							 * byte by 1 and then shifted arithmetically right the same byte to achieve the final,
+							 * signed transpose value. */
 
 							if(transpose & 64)
 							{
@@ -466,18 +461,8 @@ int lds_update(void)
 		}
 
 		tempo_now = tempo;
-		/*
-		  The continue table is updated here, but this is only used in the
-		  original player, which can be paused in the middle of a song and then
-		  unpaused. Since AdPlug does all this for us automatically, we don't
-		  have a continue table here. The continue table update code is noted
-		  here for reference only.
-
-		  if(!pattplay) {
-			conttab[speed & maxcont].position = posplay & 0xff;
-			conttab[speed & maxcont].tempo = tempo;
-		  }
-		*/
+		/* The continue table is updated here, but this is only used in the original player, which can
+		 * be paused in the middle of a song and then unpaused. */
 		pattplay++;
 		if(vbreak)
 		{

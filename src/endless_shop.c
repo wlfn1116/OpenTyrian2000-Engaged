@@ -115,9 +115,8 @@ Sint64 endlessStartingCash(void)
 	}
 }
 
-// The run's starting front gun: endless launches with the Atomic RailGun, not the campaign's Pulse
-// Cannon. Applied both when the run is created (newEndlessGame) and at the depth-0 outpost, so it
-// holds however the first shop was reached; both points run before the player can buy anything.
+// The run's starting front gun: endless launches with the Atomic RailGun, not the campaign's
+// Pulse Cannon.
 #define ENDLESS_START_FRONT_WEAPON 39   // Atomic RailGun
 
 void endlessApplyStartingLoadout(void)
@@ -506,7 +505,7 @@ static Sint64 endlessExtraPerkCompound(int stepPct, int count)
 	return pct;
 }
 
-// Extra Perk pricing is personal. See doc/notes.md#economy-and-perks.
+// Extra Perk pricing is personal. See doc/notes.md#economy.
 Sint64 endlessExtraPerkPrice(void)
 {
 	const Sint64 owned = (Sint64)endlessPerkTotalOwned() * ENDLESS_PERK_OWNED_PCT;

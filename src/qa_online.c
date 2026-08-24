@@ -389,8 +389,7 @@ static void qa_arcade_economy_matrix(void)
 
 /* player[].lives aliases a weapon-power byte, and which bay it aliases differs by mode: the
  * linked pair puts player two's on the Dragonwing's rear gun, Separate arcade gives each ship
- * its own front gun. Every binding site reads player_lives_port, so a rollback restore cannot
- * hand a ship a different counter than the one it started the level with. */
+ * its own front gun. */
 static void qa_separate_arcade_lives(void)
 {
 	qa_modes_clear();
@@ -477,9 +476,7 @@ static bool qa_rects_overlap(int ax, int ay, int aw, int ah, int bx, int by, int
 }
 
 /* The special-weapon icon and its ready light sit above the owning ship's name and lives, on
- * that ship's own side. Drawn straight into playfield space with no clipping or precedence of
- * their own, so the placement is checked here: nothing overlaps, the pair stays inside the
- * playfield, and the top-cluster edges a centred TOP boss bar reads cover the whole block. */
+ * that ship's own side. */
 static void qa_special_block_geometry(void)
 {
 	char label[224];
@@ -585,10 +582,7 @@ static void qa_special_block_geometry(void)
 
 /* ---- 3d. boss bar clearance ---------------------------------------------------------- */
 
-/* Check one side's span against the ink around it, stated here rather than read back from the
- * layout code: the special block ends on row 28, a lives row's deepest ink is its collapsed
- * count (rowY+11), the score outline starts on HUD_SCORE_Y-1 and the superbomb row on 160.
- * The frame keeps three blank rows above and one below. */
+/* Check boss-bar clearance against the surrounding HUD ink. */
 static void qa_boss_bar_side(bool onLeft, int inkBottom, int inkTop, const char *label)
 {
 	int top, bot;
@@ -677,9 +671,7 @@ static void qa_boss_bar_clearance(void)
 /* ---- 3e. the rear-gun mode toggle is each ship's own --------------------------------- */
 
 /* weapon_mode is per ship and its toggle rides the networked button tuple, so both machines
- * simulate both ships' toggles. The pattern count the toggle wraps against has to be the
- * toggling ship's own bay: answering with the local ship's had a partner's change wrap away on
- * one machine and never reach that screen at all. */
+ * simulate both ships' toggles. */
 static void qa_rear_gun_mode_matrix(void)
 {
 	char label[224];
@@ -1319,9 +1311,7 @@ static void qa_hostile_packets(void)
 }
 
 /* A co-op quit reopens the outpost on both machines with the quitter's notice still at the head
- * of the other one's reliable queue, where the level leaves it for its handler. Untouched there
- * it hides every shop packet behind it and reads as a departure; opening the outpost is what
- * retires it. */
+ * of the other one's reliable queue, where the level leaves it for its handler. */
 static void qa_quit_notice_retire(void)
 {
 	const JE_boolean savedNet = isNetworkGame;

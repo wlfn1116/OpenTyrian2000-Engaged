@@ -1,224 +1,122 @@
 # Maintainer notes
 
-This is the home for rules that are hard to recover from the code. Player-facing
-behavior belongs in the [player guide](../GUIDE.md). Keep source comments local
-and short; point here when a rule needs more room.
+Rules that are easy to break and hard to recover from the code live here. Keep
+player instructions in [GUIDE.md](../GUIDE.md) and build recipes in the platform
+READMEs.
 
-## Build and targets
+If a code comment grows past three sentences, shorten it and put the missing
+context in the relevant section below.
 
-`build-all.ps1` builds PC, Switch, and Vita targets. Successful outputs are
-collected under `build`. `-FailFast` stops after the first failed target.
+## Build contracts
 
-- PC executables run beside `data`. `build` is an output directory.
-- MIDI is available on Windows x86-64.
-- Windows and Linux release both x86-64 and ARM64. The MSVC project's MIDI
-  conditions are x64-only, so ARM64 excludes FluidSynth and midiproc.
-- SDL's VC packages hold x86 and x64 import libraries only. The ARM64 job builds
-  SDL2 and SDL2_net from source, restages them as `include` plus `lib\arm64`, and
-  caches the result. That build needs two options: CMake 4 refuses SDL2 without
-  `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, and `-DSDL_LIBC=ON` keeps SDL2 off the
-  `/NODEFAULTLIB` path it takes on ARM64, where the CRT's `_Interlocked` helpers
-  would go unresolved.
-- MSVC has no `-fsigned-char`, so `opentyr.c` asserts the default at compile time.
-- Switch builds use devkitPro bash and an MSYS-style `DEVKITPRO` path.
-- Vita builds use native CMake and Ninja. MSYS paths do not work there.
+`build-all.ps1` builds PC, Switch, and Vita targets. Collected artifacts go under
+`build/`; `-FailFast` stops after the first failed target.
+
+- Windows and Linux ship x86-64 and ARM64 builds.
+- FluidSynth and native MIDI are Windows x86-64 only.
+- MSVC has no `-fsigned-char`, so `opentyr.c` checks the assumption at compile
+  time.
+- The Windows ARM64 job builds SDL2 and SDL2_net from source. SDL2 needs
+  `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` and `-DSDL_LIBC=ON` there.
+- Switch builds run under devkitPro bash. Vita builds use native CMake and Ninja.
 - Console Release builds define `NDEBUG`.
-- Warning suppressions should name a DOS-era or third-party issue.
 
-Run MSVC analysis separately:
+For MSVC analysis:
 
 ```text
 MSBuild visualc\opentyrian.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:RunCodeAnalysis=true /p:EnableMicrosoftCodeAnalysis=true
 ```
 
-Check analyzer range warnings. Use `OT_ASSUME` only after a real bounds check.
+Check range warnings instead of hiding them. `OT_ASSUME` belongs after a real
+bounds check.
 
 ## Rendering
 
-### Render list
-
-The simulation runs at 35 Hz. `render_list.c` records a tick and replays it at
+The simulation runs at 35 Hz. `render_list.c` records one tick and replays it at
 the display rate.
 
-- Every moving object needs a stable `rl_current_id`.
-- Use the performance counter for presentation timing.
-- Exact replay (`use_override == false`) must reproduce the recorded frame.
-- Read projectile velocity from the projectile. Shot slots are reused.
-- Separate ship motion from motion belonging to a ship-attached shot.
+### Render list
+
+- Give every moving object a stable `rl_current_id`.
+- Exact replay must reproduce the recorded frame.
+- Read velocity from the object being drawn. Pool slots are reused.
 - Give conditional pieces separate IDs when their command count can change.
 - Store rounded sub-pixel remainders in `rl_current_sub_x/y`.
+- Keep ship motion separate from motion local to an attached shot.
 
-`rl_finalize` pairs each remainder with the previous tick. Display replay uses
-the pair to recover smooth motion without changing exact replay. The Nort ship
-trim uses `RL_ID_SHIP_TRIM_BASE` because its command count changes while banking.
+`rl_finalize` pairs the current and previous tick. Presentation code uses that
+pair for interpolation; simulation state does not.
 
-### Display-rate ship movement
+`rl_get_ship_override_dx/dy` is the displayed ship offset. Anything attached to
+the displayed ship must use it. `player[].x/y` remains the tick position online.
 
-The real-time integrator is simulation code.
+### Feedback surfaces
 
-- Disable it during demo recording and playback.
-- Advance it on every presentation loop, including loops that run a tick.
-- Preserve joystick press edges used by pause and menu handling.
-- Rollback sessions adopt the host's Smooth Motion setting through
-  `nrb_session_vt()`.
+Ice, water, and lava keep filtered background in `render_gs` and the current
+background in `smoothie_frame`. Entities never enter the persistent surface.
 
-Online placement differs by netcode:
+Apply full-screen colour and brightness to both sides of a residual comparison.
+Keep text out of feedback surfaces and draw the performance overlay after the
+final composite.
 
-- Rollback presents the local ship at its live integrated position.
-- Delay-Based presents the delayed simulation position.
-- Remote ships are extrapolated from their last tick, clamped, then eased.
-- Large jumps snap instead of easing.
-
-Anything attached to the presented ship uses
-`rl_get_ship_override_dx/dy`. Online, `player[].x/y` remains the tick position;
-using it directly can leave attached effects one tick behind the sprite.
-
-### Feedback and overlays
-
-Ice, water, and lava use two surfaces:
-
-- `render_gs` holds persistent filtered background.
-- `smoothie_frame` holds the current background.
-
-Entities never enter the persistent surface. Apply full-screen color and
-brightness to both sides of the residual comparison.
-
-Presentation-only drawing includes fades, picture wipes, Destruct, gauges, boss
-bars, the special meter, and the Zinglon pillar. Their state still advances once
-per simulation tick.
-
-- Interpolate gauge fill, not its base row.
-- Linked Arcade merges special-meter edges from both player passes.
-- Re-arm the meter when a new special replaces a running recharge.
-- Advance ready flashes only on live ticks.
-- Draw `JE_drawPerfOverlay` after the final composite.
-- Keep hitbox overlays in `game_screen`; keep text out of feedback surfaces.
-
-### Dismissing the death screens
-
-`JE_playerMovement` returns as soon as `is_alive` is false, before the block that
-fills `button[]` from the pad and the mouse. Anything drawn after the ship dies,
-including the wreck-animation skip and GAME OVER, therefore cannot read input
-through `button[]`.
-
-A finger reaches those screens through `mouse_pressed[0]` alone: touch in
-relative mode sets neither `mousedown` nor `newmouse`. The latch stays set while
-held, so the fresh-press guard must clear it with `newkey` and `newmouse`.
-
-### Boss vulnerability cue
-
-`vulnerableCue` is presentation-only: Off, Bosses, or All. Arm it only when a
-direct write changes `armorleft` from 255 to 1 through 254. Store
-`rl_presented_frames() + 1` on live passes and clear it when the slot is reused.
-
-Choose the eligible set when drawing. An armor event can run before the boss bar
-appears in the same tick, and may affect a link group or every active slot.
-
-Resolve bar colour and flash from the link group because `boss_bar[]` slots can
-move. Bank 0 is the in-game grey ramp; use `blit_sprite2_filter_bright` for the
-body flash. Grey the bar while every live group part remains invulnerable, then
-use the newest cue stamp for its brightness.
-
-Boss-bar surveys include only parts with `enemyAvail == 0`. Wreckage uses state
-2 and is out of combat; transformed parts that remain active still count.
-
-### Supersparks
-
-Sparks share one `MAX_SUPERPIXELS` ring. A later spawn may replace a live spark.
-`z` is both shade and remaining life.
-
-- `classic_cap` is reserved for weapon trails controlled by their own setting.
-- Other effects, including Opening Salvo, spawn uncapped.
-- Uncapped sparks still retire the classic cursor slot, then use the uncapped
-  area. This preserves the way combat traffic thins classic trails.
-- Clear both private cursors through `JE_resetSP`.
-
-Seeded effects use `JE_doSPSeeded` and related helpers. Their mixer must spread
-regular caller strides across the full angle range. An affine LCG produces
-visible fixed rays for those strides.
-
-The spark ring is presentation state and is absent from rollback snapshots:
-
-- Silent re-simulation consumes the normal RNG cost and writes no sparks.
-- `JE_beginSPPass` and `JE_discardSPPass` undo a presented pass that is replaced.
-- Spawn brief-life sparks before `JE_drawSP`; after the draw their `z` is
-  indistinguishable from a stepped spark.
-
-Coverage lives in `qa_test_superspark_seeded_spread`,
-`qa_test_superspark_discarded_pass`, `qa_test_superspark_rng_cost`, and
-`qa_test_superspark_shapes`.
-
-### Backgrounds and supersampling
-
-Background commands carry integer movement and fractional phase.
-
-- `background3x1` binds layer 3 to layer 1.
-- Publish phase even when a layer draws no rows.
-- Keep whole-pixel correction separate from fractional phase.
-- Round combined layer and local offsets once.
-- Preserve layer 3's authored base step after advancing.
-- Use the ship's actual travel range for horizontal normalization.
-- `enemy_rides_layer2` is the shared binding test. Pickups do not bind.
-- Call `endlessScrollExtraPx` once per layer per tick.
-
-Mirrored Layers is part of the render command so 1x and supersampled replay
-agree. Large scroll steps must process event spawns through the current phase.
-
-Supersampling values 1 through 5 are fixed. `0` is Auto and
-`RENDER_SUPERSAMPLE_NATIVE` follows the fitted output. Vita always resolves to
-1x. The final copy uses nearest-neighbor sampling.
-
-For low-resolution smoothie effects:
+For low-resolution feedback with a supersampled foreground:
 
 1. Replay the filtered background head at 1x.
 2. Expand it into `pf_hi`.
 3. Draw the background tail at the foreground factor.
 4. Draw foreground commands over both.
 
-The tick advance keeps `split` false because persistent feedback needs the full
-background. Cache render-list scratch surfaces by factor to avoid resizing them
-twice in one frame.
+Vita keeps the 1x endpoint in `smoothie_frame` and composites display-rate
+foreground into `smoothie_present_frame`.
 
-Vita keeps the current 1x endpoint in `smoothie_frame` and composites
-display-rate foreground into `smoothie_present_frame`. The endpoint becomes the
-next feedback frame.
+### Display-rate ship movement
 
-The weapon preview is also a `present_hi` consumer. Run the 1x replay for its
-gauges and overlays, restore anything drawn over the box, and draw the cursor
-last into the high-resolution frame.
+The real-time ship integrator affects simulation.
 
-### Coordinates and bounds
+- Disable it for demo recording and playback.
+- Advance it on every presentation loop, including loops that also run a tick.
+- Preserve joystick press edges used by menus and pause.
+- Rollback sessions use the host's Smooth Motion choice.
+- Rollback shows the local live position; Delay-Based shows the delayed tick
+  position.
+- Remote ships extrapolate from the last tick, then ease. Large jumps snap.
+
+### Gauges and effects
+
+Presentation-only drawing includes fades, picture wipes, gauges, boss bars, the
+special meter, and the Zinglon pillar. Their state still advances once per tick.
+
+- Interpolate gauge fill, not its base row.
+- Linked Arcade merges special-meter edges from both movement passes.
+- Re-arm the meter when a new special replaces a running recharge.
+- Advance ready flashes only on live ticks.
+- Silent rollback replay consumes gameplay RNG but emits no presentation sparks.
+
+Supersparks share one ring. `JE_beginSPPass` and `JE_discardSPPass` undo a
+presented pass that gets replaced. Seeded presentation effects must not draw from
+the simulation RNG.
+
+### Coordinates
 
 The frame is 356x200. The playfield is 299x184 and the HUD is 57 pixels wide.
 
-- World drawing uses `game_screen` and `PLAYFIELD_LEFT`.
-- The final compositor crops the playfield to screen x=0.
-- Menus use a centered 320-pixel canvas.
-- HUD overlays use composited-buffer coordinates.
-- `PLAYFIELD_X_SHIFT` is background phase, not crop offset.
-- Row walks use the surface pitch.
+| Space | Rule |
+| --- | --- |
+| World | Draw through `game_screen` and `PLAYFIELD_LEFT` |
+| Final playfield | Cropped to screen x=0 by the compositor |
+| Menus | Centered 320-pixel canvas |
+| HUD overlays | Composited-buffer coordinates |
 
-SDL measures the window and its input events in points, while the renderer draws
-in output pixels. The window asks for a high-DPI drawable, so the two differ on
-backends with that split, including Cocoa, UIKit, and Wayland.
+SDL window events use points; renderers use output pixels on high-DPI backends.
+Size render rectangles from `video_output_size`, and convert input with
+`video_output_pixel_scale`.
 
-Windows uses `SDL_HINT_WINDOWS_DPI_SCALING`, which also declares the process DPI
-aware. Without high-DPI support, the backend draws at the point size and the
-system upscales the result.
+Validate every `Sprite2_array` index. A 2x2 sprite reads the base index plus 1,
+19, and 20.
 
-- Render-side rectangles come from `video_output_size`, not `SDL_GetWindowSize`.
-- Mouse and finger positions convert with `video_output_pixel_scale`.
-- Limits written in points scale by it: the touch buttons' size clamps, the
-  windowed minimum size, and the rectangle the Center scaling mode fills.
-- Windowed sizes stay in points, so a scaler still opens the window it always
-  did and the drawable behind it carries the display's own pixels.
-
-Validate every `Sprite2_array` index. A 2x2 sprite uses the base index plus 1,
-19, and 20. Specials use `spriteSheet10`; ship `itemgraphic` values do not.
-
-Destruct leaves an open sky window between its two HUD boxes. Persistent terrain,
-wall generation, collision ceilings, and shot trails must respect that window.
-Clamp wall writes to `baseMap`; the next field in the struct is a pointer.
+Destruct leaves open sky between its HUD boxes. Terrain, wall generation,
+collision ceilings, and shot trails must respect that gap. Clamp wall writes to
+`baseMap`; the next struct field is a pointer.
 
 ## Endless
 
@@ -228,1025 +126,531 @@ Clamp wall writes to `baseMap`; the next field in the struct is a pointer.
 | --- | --- |
 | `endless.c` | Run lifecycle, milestones, summary |
 | `endless_rng.c` | Seeds and structural RNG |
-| `endless_level.c` | Level and music selection |
+| `endless_level.c` | Level and music choice |
 | `endless_combat.c` | Scaling, tiers, combat modifiers |
 | `endless_perks.c` | Perk rules |
 | `endless_shop.c` | Outpost, prices, E-Shop, gamble |
 | `endless_mods.c` | Modifier registry and text |
 | `endless_course.c` | Course generation and selection |
-| `endless_save.c` | Save records and sortie snapshots |
+| `endless_save.c` | Saves and sortie snapshots |
 | `endless.h` | Public interface |
 | `endless_internal.h` | Private interface and shared tuning |
 
 Keep tuning with its owner.
 
-### Structural RNG and level shuffle
+### RNG and level shuffle
 
-Run structure uses SplitMix64 streams derived from seed and depth. Combat timing
-must not change later shops or courses.
+Run structure uses SplitMix64 streams derived from the seed and depth. Combat
+timing must not change later levels, shops, courses, or perks.
 
 - Draw order is a compatibility interface.
-- Use a unique phase salt for new work.
+- Give new work a unique phase salt.
 - Append draw phases when possible.
 - Store or reproduce music choices across retries.
-- Course generation order is gather, modify, filter, sort, uniquify, cache.
+- Generate courses in this order: gather, modify, filter, sort, uniquify, cache.
 
-`endlessRunBaseRule` values are save, record, and wire order. Menu order goes
-through `endlessBaseRuleAtMenuIndex`; never reorder the persisted enum to change
-the screen.
+`endlessRunBaseRule` values are save, record, and wire order. Use
+`endlessBaseRuleAtMenuIndex` to change menu order.
 
-The Shuffle rules use `endlessShuffleNext` as a cursor into deterministic bags.
+Shuffle rules consume deterministic bags:
 
 - Count each distinguishable level section once.
 - Advance the cursor for every hand, including discarded Radar hands.
-- Shuffled deals consume no structural RNG.
-- Keep the end of one bag out of the opening window of the next when the pool is
+- Do not spend structural RNG while dealing from the bag.
+- Keep the end of one bag out of the next bag's opening window when the pool is
   large enough.
+- Publish the live cursor online. A disagreeing peer re-anchors to the charting
+  player's cursor before dealing again.
 
-Online peers publish the live hand position. `endlessShuffleSyncHand` re-anchors
-a disagreeing peer at the charting seat's cursor, then redeals. Read the reroll
-count and player block before doing that redeal.
-
-### Combat pipeline
+### Combat
 
 - Scale raw damage before `enemy_hp_divisor100` spends it.
 - Decode piercing damage before scaling and encode it afterward.
-- Keep piercing repeat-hit state and fractional carry on the bullet.
+- Keep piercing carry and repeat-hit state on the bullet.
 - Use `enemy_has_boss_bar()` for boss classification.
-- Contact scaling changes damage to the player only where stated.
-- Round percentage effects that would otherwise disappear at low values.
+- Round percentage effects that would vanish at small values.
 
 `enemy_logical_death` owns kill count, bounty deduplication, Shockwave,
-Martyrdom, and Chain Reaction. Destruction sites use `enemy_kill_group` and
-`enemy_part_destroy` so drops, transformations, linked parts, events, and credit
-stay together.
+Martyrdom, and Chain Reaction. Destruction sites go through
+`enemy_kill_group` or `enemy_part_destroy` so drops, transforms, links, events,
+and credit stay together.
 
-`enemy_death_payout` decides the resulting body, cash, datacube, or Super Arcade
-pickup. `player_credit_cash` applies Shared or Individual credit. Keep payout
-choice out of kill sites.
+`enemy_death_payout` chooses the body, cash, datacube, or Super Arcade pickup.
+`player_credit_cash` applies the credit rule. Do not choose payout at kill sites.
 
-`healthbar_max` records the full damageable armor for health bars and Executioner.
-Direct writes to `armorleft` call `enemy_note_full_armor`; damage does not. Armor
-255 is the invulnerable sentinel and is never a denominator.
+`healthbar_max` stores full damageable armour. Armour 255 means invulnerable and
+must never become a denominator.
 
-`endlessMode` controls run structure, saves, prices, and pickup replacement.
-`endlessFxActive()` controls scaling, modifiers, perks, and tiers.
-
-### Enemy homing
-
-Light Homing, Kamikaze, and Rampage floor weak tracking at 90, 92, and 96.
-Stronger tracking survives, and later script writes still win.
-
-`endlessEnemyDestructible` mirrors shot eligibility. Only state 0 can be hit;
-sealed bodies qualify only when an armor event can open their link. If any member
-of a linked object is permanent scenery, the whole object stays still. Pickups
-keep the drift their level script gave them and never chase.
-
-Settle this on the body's first processed frame, after its link is known. Restore
-the enemy table's acceleration when it should not chase. Rebuild the link flags
-from the live board before each homing pass; they are not rollback state.
-
-A tier also suppresses the wreck an `edlevel` -1 part leaves. That corpse settled
-its tracking while alive and is past the shot loop's reach afterwards, so it would
-follow the ship for the rest of the level with nothing able to clear it.
-`endlessHomingTierActive` names the three tiers for both rules.
-
-### Perk interactions
-
-Perks belong to a player. Use `perkMine` for the local outpost owner and `perkFx`
-for the ship whose effect is being calculated.
-
-- Guidance Package marks shots by bay. It targets shootable screen positions,
-  retargets after a kill, preserves ship-relative velocity ranges, and ignores
-  circle shots.
-- Twin Pods creates a second shot from the same bay. It pays power, advances the
-  pattern, and spends ammo. Fire neither twin when the primary is refused.
-- Reinforced Prow scales the enemy and player sides of contact separately.
-  Invulnerable rams use `ENDLESS_RAM_INVULN_CADENCE`.
-- Knife Fight measures hull-to-hull clearance. Apply its raw bonus before the HP
-  divisor. Presentation blood uses seeded sparks and a per-frame budget.
-- Deflector fires only when shield falls and armor does not. The returned shot
-  keeps the incoming art and tint, reverses motion, and takes the firing ship's
-  damage context. Its shield discount is refunded after damage resolution,
-  preserving full armor overflow and returned damage.
-- Opening Salvo tags emitted shots. Chained shots and Chain Reaction waves carry
-  the tag. Rams and shotless specials read the live window.
-- Kinetic Converter applies to actual shield or hull loss and to affordable
-  twiddle charges.
-
-Countermeasures is stateless. Each hull hit calls `endlessCountermeasureBurst`;
-shield-only hits do not. The sweep extends 80 or 120 pixels past the hitbox on
-each axis. Cleared shots keep their sparks; the edge flare and sound require at
-least one cleared shot.
-
-Opening Salvo is armed before `JE_doSpecialShot` and the front-gun loop. Only the
-front gun consumes the charge.
-
-Chain Reaction queues one target per linked hull and one hit per wave:
-
-- `chainPulseOwner`, `chainPulseSalvo`, and `chainPulseWave` travel with each
-  queued pulse and are rollback state.
-- A cascade inherits its owner's effects, salvo tag, and wave serial.
-- New pulses queued during a drain run on the next tick.
-- `CHAIN_QUEUE_MAX` bounds one hop.
-- Reset the queue and wave serial at level start.
-- Apply damage through `enemy_spend_damage`, then destroy through the normal
-  group path.
-
-Presentation rings and bolts use seeded spark helpers and do not run during
-silent re-simulation. `qa_test_chain_wave_latch`, `qa_test_chain_cascade`, and
-the owner/credit matrix cover the queue.
+`endlessMode` controls run flow, saves, prices, and pickup replacement.
+`endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
 
 ### Health and tiers
 
-All figures below use Normal difficulty zones.
+Normal difficulty uses these ceilings:
 
-| Lever | Curve | Ceiling | Ceiling zone |
+| Lever | Curve | Ceiling | Zone |
 | --- | --- | ---: | ---: |
-| Ordinary armor | `100 + effective_depth * 4` percent | 600% in the armor byte | 101 |
-| Ordinary overflow | Same curve through the damage divisor | 1200% total | 221 |
+| Ordinary armour byte | `100 + depth * 4` percent | 600% | 101 |
+| Ordinary overflow | Same curve through the damage divisor | 1200% | 221 |
 | Elite and champion | Piecewise 2x, 4x, 6x | 6x | 99 |
 | Boss | Piecewise 1x, 9x, 20x, 32x | 32x | 199 |
 
-`endlessBossRamp100` and `endlessEliteRamp100` are the authorities for tier HP.
-Their hundredths values use `ENDLESS_HP_MULT_SCALE`, which must equal
-`ENEMY_DAMAGE_ACCUM_SCALE`. The whole-number accessors are for mechanics defined
-in whole multipliers, such as pierce delay.
+`endlessBossRamp100` and `endlessEliteRamp100` are authoritative. Their unit is
+`ENDLESS_HP_MULT_SCALE`, which must equal `ENEMY_DAMAGE_ACCUM_SCALE`.
 
-The byte-sized `armorleft` stops at 254. `endlessArmorOverflow100` carries later
-ordinary HP through the damage divisor. `endlessArmorPercentTotal` is the public
-total and the unit used by debug overrides.
+Tier rules:
 
-Champions use elite HP. Champion status changes offense, bounty, pierce lock,
-ram damage, and Shockwave radius. An elite boss multiplies boss HP by two, capped
-by `ENDLESS_HP_MULT_MAX`.
-
-Tier selection rules:
-
-- Settle a tier on the first processed enemy frame.
-- Cache the tier by nonzero link group.
-- Score pickups remain normal.
-- Scan level events for groups that begin at armor 255 and later become
-  damageable. Permanent scenery must not roll a tier.
-- Follow type 39 link renames to a fixpoint.
-- Pass a tier through hostile `enemydie` transformations.
-- Treat `enemyAvail == 2 && edamaged` after an `edlevel == -1` transformation
-  as wreckage. Wrecks stay out of combat and draw without tier tint.
+- Settle a tier on the first processed frame.
+- Cache it by nonzero link group.
+- Keep pickups and permanent scenery normal.
+- Pass it through hostile `enemydie` transforms.
+- Treat transformed `enemyAvail == 2` bodies as wreckage.
 - Keep the event scan derived and outside rollback state.
 
-`endlessEliteTint` is the palette-bank authority for bodies, health bars, shots,
-explosions, auras, and bounty labels. Store tint on projectiles and explosions
-that can outlive the source. Keep those bytes zero outside Endless.
+Tint belongs on projectiles and explosions that can outlive their source. Those
+fields stay zero outside Endless.
 
-### Special pickups and orbiting specials
+Homing modifiers never target pickups, scenery, wreckage, or a downed co-op
+ship. A homing enemy chooses its player once when created and keeps that target
+until the ship goes down.
 
-`endlessSpecialPickup()` must match the two pickup branches in
-`JE_playerCollide`. Its art is presentation-only:
+### Special pickups
 
-- Draw from `spriteSheet10` without changing `enemy[]`.
-- Use `rl_present_gen` for color cycle and emission cadence.
-- Use seeded sparks and skip silent re-simulation.
-- Publish the glyph as a spark occluder.
-- Keep palette bank and brightness in separate arguments.
+`endlessSpecialPickup()` matches the two `JE_playerCollide` pickup branches.
+Draw its glyph from `spriteSheet10` without changing the enemy record. Collision
+follows the visible glyph, so changing the box is a wire change and requires a
+`NET_VERSION` bump.
 
-The collision box follows the glyph, not the original 2x2 item. This is a wire
-rule. Change it only with a `NET_VERSION` bump.
-
-Some specials share or lack icons. `unusedSpecialIcons` assigns the spare whole
-icon. `unusedSpecialTops` builds the remaining icons from a common ship body and
-an unused shot sprite. Center overlays by measured ink bounds.
-
-The Orange Shield is the shipped shot whose `sx`, `sy`, and `circlesize` pin it
-to a ship and orbit it. Endless removes the table's `bx/by` offset and centers
-the orbit on the loop measured by `shot_circle_center_offset_px`. Campaign keeps
-the shipped path.
+Seeded pickup sparks are presentation only and stay off silent rollback passes.
+The Orange Shield orbit is an Endless effect; campaign play keeps the shipped
+special path.
 
 ### Modifiers and courses
 
-`endlessModTable` owns modifier text, danger, payout, and classification. Adding
-a modifier requires updates to:
+`endlessModTable` owns modifier text, danger, payout, and class. Adding a
+modifier also requires updates to masks, course pools, milestone rules, monitor
+rows, help text, glyphs, and saved widths.
 
-- persisted mask width and migration;
-- compatibility masks and course pools;
-- danger, payout, and milestone rules;
-- monitor rows and help text;
-- glyphs, card width, and generated-name uniqueness.
+`endlessCanonicalMods` is deterministic and idempotent. Run it after generation,
+purchase folding, launch, and restore.
 
-`endlessCanonicalMods` resolves the special-enemy and course-correction ladders.
-It is idempotent and uses no RNG. Run it after generation, purchase folding,
-launch, and restore.
+Course-correction modifiers are exclusive. Canonicalization keeps the strongest:
 
-Course-correction modifiers are mutually exclusive. Canonicalization keeps the
-strongest one:
+| Modifier | Corrections | Maximum turn |
+| --- | ---: | ---: |
+| Seeker Rounds | 1 | 23 degrees |
+| Twin Seekers | 2 | 23 degrees |
+| Hunter Rounds | 1 | 55 degrees |
+| True Aim | 1 | Direct |
+| Kill Shot | 2 | Direct |
 
-| Modifier | Corrections | Maximum turn | Availability |
-| --- | ---: | ---: | --- |
-| Seeker Rounds | 1 | 23 degrees | Ordinary pools |
-| Twin Seekers | 2 | 23 degrees | 40-zone rare window |
-| Hunter Rounds | 1 | 55 degrees | 110-zone window from zone 45 |
-| True Aim | 1 | Direct | 140-zone window from zone 120 |
-| Kill Shot | 2 | Direct | 200-zone window from zone 180 |
+Milestones use the upcoming zone. Multiples of 100 exclude scroll-speed
+modifiers; The End also excludes Dead Generator.
 
-`seekerArm` counts down to the next correction; `seekerLeft` records how many
-remain. Both fields must start at zero for ordinary shots. The two bytes come
-from `EnemyShotType`'s reserved tail, keeping the structure size unchanged.
+### Perks
 
-The finale unlocks one more correction tier per 100 difficulty zones. Draw its
-tier after the established finale rolls so older seed-stream positions remain
-stable.
+Perks belong to a player. Use `perkMine` for the local shopper and `perkFx` for
+the ship whose effect is being calculated.
 
-Rare signatures are scheduled by seeded windows. A Radar reroll may move the
-signature within its window. Guarded signatures suppress Jackpot and Ambush;
-milestone slates may replace them.
+- Guidance Package tags shots by bay and retargets after a kill.
+- Twin Pods spends the second shot's power and ammunition. If the primary shot
+  is refused, fire neither.
+- Reinforced Prow scales damage dealt and received separately.
+- Knife Fight measures hull clearance before HP scaling.
+- Deflector fires only when shield falls and armour does not. Apply its refund
+  after damage resolution so overflow remains unchanged.
+- Opening Salvo tags emitted shots and Chain Reaction pulses. Only front-gun
+  fire spends the charge.
+- Kinetic Converter uses actual shield or hull loss and applies only to
+  affordable twiddle charges.
 
-Milestones use the upcoming zone:
+Countermeasures triggers on every hull hit, has no cooldown, and ignores
+shield-only hits.
 
-- Odd multiples of 25 offer S and S+.
-- Other multiples of 50 offer S+ and S++.
-- Multiples of 100 offer one END, two S+++, and two S++.
-- Multiples of 100 exclude every scroll-pace modifier.
-- The END route never carries Dead Generator. Static Discharge rolls at 1-in-22;
-  Topsy Turvy rolls at 1-in-17.
-- One draw chooses at most one homing tier: Light Homing at 1-in-2 or Kamikaze at
-  1-in-33.
+Chain Reaction carries owner, salvo tag, and wave serial with each pulse. Queue
+new pulses for the next tick and hit a linked hull once per wave. Damage and
+destruction still go through the normal enemy paths.
 
-Course order uses cached danger and payout. Purchases and Sabotage update the
-chosen card without changing its original sort key.
+### Economy
 
-### Economy and perks
-
-All cash changes use `endlessCashCredit`, `endlessCashDebit`, or the shop trade
-pair. Preserve this ledger equation:
+All wallet changes use `endlessCashCredit`, `endlessCashDebit`, or the shop trade
+pair. The ledger must satisfy:
 
 ```text
 earned - spent == wallet
 ```
 
-Wallets and prices are `Sint64`, bounded by `CASH_MAX`. Use the helpers in
-`player.h`; `JE_cashLeft` may be negative only while previewing an unaffordable
-row.
+Wallets and prices are `Sint64` bounded by `CASH_MAX`. `JE_cashLeft` may be
+negative only while previewing an unaffordable row.
 
-`endlessCleanseCharges` is the shared Sabotage count. Prices, perk rows, shop RNG,
-and Extra Perk counters are personal.
+Sabotage charges are shared. Prices, perk rows, shop RNG, and paid-perk counters
+are personal. Extra Perk pricing depends on held stacks, total bought picks, and
+picks bought during the current visit. Wallet size and income do not affect it.
 
-`endlessExtraPerkPrice` starts with the depth price, then applies:
+### Saves and retries
 
-- `ENDLESS_PERK_OWNED_PCT` for every held stack, including free picks;
-- `ENDLESS_PERK_PAID_GROWTH_PCT` compounded over `endlessExtraPerksBought`;
-- `ENDLESS_PERK_VISIT_REPEAT_PCT` compounded over `endlessExtraPerksVisit`.
+Current saves use the named-key format in `opentyrian.sav`:
 
-All three counts are personal. The purchase counts are saved and mirrored;
-`endlessResetShopPrices` clears only the visit count. Wallet size and income do
-not affect the price. `ENDLESS_PERK_COMPOUND_MAX` bounds both exponents if a
-save contains a corrupt count.
+| Section | Contents |
+| --- | --- |
+| `saves` | `SAVE_FILE_FORMAT` |
+| `save`, `N` | Game slot |
+| `endless`, `N` | Endless half of that slot |
+| `highscore` | One score board |
 
-### Saves, records, and retries
+Missing or invalid keys use defaults. Unknown keys are ignored. Add a new
+Endless field to both section codecs and the online run codec.
 
-All current saves live in `opentyrian.sav`, using the named-key format from
-`config_file.c`:
+Legacy import runs only when `opentyrian.sav` is absent. It reads `tyrian.sav`,
+binary `endless.sav` versions 3 through 27, and the 28-byte `tyrian.cfg`.
 
-- `section 'saves'` stores `SAVE_FILE_FORMAT`.
-- `section 'save' 'N'` stores the game slot.
-- `section 'endless' 'N'` stores its Endless half.
-- `section 'highscore'` stores each board.
-
-Missing or invalid keys use defaults. Unknown keys are ignored. Add an Endless
-field to both `endlessRecToSection` and `endlessRecFromSection`. Online resume
-uses the same text codec through `endlessRunSerialize` and `endlessRunAdopt`.
-
-Hardcore keeps an in-memory sortie snapshot and writes no checkpoint.
-
-Legacy import runs only when `opentyrian.sav` is absent:
-
-- `legacy_save_parse` reads `tyrian.sav`.
-- `endlessLegacyReadRec` reads binary `endless.sav` versions 3 through 27.
-- The 28-byte `tyrian.cfg` is imported into `opentyrian.cfg`.
-
-Read a future sidecar through its declared record width and the known v27
-prefix. A missing width is the case that cannot be recovered. If a `ZONE n` slot
-lacks an Endless section, `endlessSaveRepairFromLegacy` may restore it from the
-sidecar.
-
-Records are split by mode, difficulty, crew size, and Base Level rule. Append to
-persistent tables; never reorder them. A custom-weapon record mark is earned only
-by firing during a zone.
+Persistent tables are append-only. This includes run mode, difficulty, crew
+size, Base Level rule, cash categories, and record marks.
 
 Retry rules:
 
-- Relaxed death screens own and finish their music fade.
-- Release input before arming dismissal.
+- Hardcore keeps only an in-memory sortie snapshot and writes no checkpoint.
 - Restore the launch snapshot on retry.
 - Return to Outpost uses Quit Level.
-- Restart Zone reloads the same music and clears visit resume.
-- Advance the Alternating chart seat only after a cleared sector.
-- Restore `endlessPlayerMods` and purchased one-shots when relaunch bypasses
-  course selection.
-- Read `]I` shop blocks to keep the parser aligned, then discard them in
-  Endless.
-- Preserve `endlessSortieOutpostEp` while restoring stock IDs.
+- Restart Zone keeps the same music and clears visit resume.
+- Advance Alternating course ownership only after a cleared sector.
+- Restore personal modifiers and purchased one-shots when relaunch skips course
+  selection.
 
-## Menus and UI
+## Menus and touch UI
 
-Menu labels, row counts, values, and help indices are parallel data. Update them
+Menu labels, row counts, values, and help indices are parallel data. Change them
 together.
 
-- Generic option rows map through `menuItemIntSetting` and
-  `menuItemBoolSetting`.
-- Keep explicit cases for rows with side effects.
-- `enhancementSettings[]` is the authority for both presets.
-- Engaged values must match fresh-install defaults.
-- `chargeSidekickAutofire` is per-save and stays outside presets.
-- `touchSidekickButtons`, `touchNavButtons` and `touchButtonOpacity` are controls,
-  not behaviour, and stay outside presets.
-- Apply table-backed settings through `JE_applyItemDataSettings` immediately.
-
-### Touch and mobile UI
-
-SDL surface palettes are empty; `scale_and_flip()` maps indices itself.
-`SDL_ConvertSurface()` and `SDL_DuplicateSurface()` therefore fail on
-`VGAScreen`, while `SDL_BlitSurface()` performs unwanted palette matching.
-Copy screen-sized 8-bit surfaces row by row. The software keyboard uses this for
-its backdrop because `JE_barShade()` darkens existing pixels instead of erasing
-them.
-
-Touch layouts are expiring requests. Keep these rules together:
-
-- Reassert a layout or extra button while its screen needs it. Clear it
-  immediately when a no-fade screen exits or a per-frame condition becomes
-  false; let transition fades carry it out otherwise.
-- While `palette_fading()` is true, renew fresh requests. When the palette is
-  below the visibility floor and still falling, clear them. Both fade paths must
-  update `palette_fading()`.
-- Request buttons before a blocking fade. `DE_RunTick()` reasserts its layout
-  beside the fade for this reason.
-- Any-key waits use Confirm and renew it while blocked. Back, Confirm, and any
-  visible navigation button dismiss the screen.
-- Logos use Skip: Back plus the optional navigation cluster. Every visible
-  button skips.
-- `touch_ui_suppress()` clears hit targets and queued input before the title
-  menu appears. Startup logos use `touch_ui_consume_input()` so their buttons
-  remain through the fade while the accepted press is discarded.
-- Idle screens re-present the last output texture when the layout signature
-  changes. Levels present every frame themselves; never repeat a frame during a
-  transition.
-- Check `outpostListScrolls()` and `outpostRearModeCyclable()` at the top of the
-  outpost frame, before `JE_showVGA()`. Keep every scrolling outpost list in the
-  first helper.
-
-`TouchGate` controls optional button groups. Include every gate setting in
-`desired_signature()` so idle screens repaint when a gate changes.
-
-Relative mouse mode is active only in a level. There a finger sets
-`mouse_pressed[0]`, so input waits after death must test that latch. Menus disable
-relative mode, allowing taps to satisfy ordinary mouse input.
-
-Queue touch-button keys until `push_joysticks_as_keyboard()`. Injecting them
-inside the event pump loses them on screens that pump twice. Drop queued keys
-after a gap so fades cannot feed the next screen. `JE_anyButton()` keeps edges
-seen by an intervening pump. One-shot actions use a release latch because
-`wait_noinput()` blocks presentation while a finger remains down.
-
-Composite each button into a texture before applying opacity; drawing
-overlapping glyph primitives directly would blend some pixels more than once.
-Palette brightness uses `SDL_SetTextureColorMod()`, and the cache key covers size,
-glyph, held state, plate alpha, and opacity. `touch_ui_renderer_lost()` drops
-textures with their renderer. Opacity zero also removes buttons from hit-testing.
-
-Android fullscreen uses `WindowInsetsController` from API 30 onward and legacy
-immersive flags below that. Reassert it after focus returns because the software
-keyboard, notifications, and task switching restore the system bars.
-
-Clip the weapon simulator's starfield to its preview box with
-`starfield_set_clip`; it treats any black surface pixel as drawable.
-
-Custom preset state is a positional list guarded by `enhancementTableShape`.
-Reordering or retuning the table invalidates the stored list. Capture Custom
-when the live values match neither built-in preset.
-
-Gun settings usually apply to all eleven weapon records in a port. Use helpers
-such as `JE_setPortFiringSound` and `JE_applySuperSparks`; changing power level 1
-alone leaves upgraded shots unchanged.
-
-`JE_applyChargeLaserCannon` owns a captured free option slot. Restore the
-captured record when disabled and refuse to overwrite a slot claimed by a
-custom sidekick.
-
-Font constraints:
-
-| Bank | Safe use |
-| --- | --- |
-| `TINY_FONT` | Most printable characters |
-| `SMALL_FONT_SHAPES` | Letters, digits, common punctuation |
-| `FONT_SHAPES` | Uppercase headings without digits |
+- `enhancementSettings[]` owns both presets.
+- Engaged values match fresh-install defaults.
+- Sidekick Autofire is per-save and stays outside presets.
+- Touch button settings are controls and stay outside presets.
+- Apply table-backed settings immediately through `JE_applyItemDataSettings`.
 
 `SMALL_FONT_SHAPES` has blank glyphs for `(`, `)`, `+`, `*`, `=`, `]`, `{`, and
-`}`. Tilde changes brightness and is not printed. Measure rendered width instead
-of character count.
+`}`. Tilde changes brightness. Measure rendered width instead of character count.
 
-Other UI limits:
+Useful layout limits:
 
-- Seven rows fit above a classic help line.
-- Row name beside value: 135 px.
-- Value: 95 px.
-- Help text from x=45: 275 px.
-- Chart-a-Course uses `endlessCourseRerollRow` and `mapPNum` because it has gaps.
-- Online outposts insert Customize above Options. Keep switches and help on stock
-  row numbers; translate display rows with `outpost_row()` and
-  `outpost_stock_row()`.
-- Debug menu headings are not selectable.
-- Boss and enemy bars use playfield coordinates.
-- Two-player gauge blocks repeat every 134 px.
+| Item | Width |
+| --- | ---: |
+| Row name beside value | 135 px |
+| Value | 95 px |
+| Help from x=45 | 275 px |
+
+Seven rows fit above a classic help line. Debug headings are not selectable.
+Boss and enemy bars use playfield coordinates.
+
+### Touch requests
+
+Touch layouts expire. Reassert a layout while its screen needs it, clear it on a
+no-fade exit, and let transition fades carry it out otherwise.
+
+- Request buttons before a blocking fade.
+- Any-key waits accept Confirm and every visible navigation button.
+- Startup logos consume the accepted press but keep their buttons through the
+  fade.
+- Idle screens re-present the last frame when the layout signature changes.
+- Include every optional-button setting in `desired_signature()`.
+- Opacity zero removes buttons from drawing and hit testing.
+
+Queue touch keys until `push_joysticks_as_keyboard()`. Injecting them inside the
+event pump loses keys on screens that pump twice. Drop stale queued keys after a
+gap so a fade cannot feed the next screen.
+
+Relative mouse mode is active only in a level. A finger there sets
+`mouse_pressed[0]`; post-death waits must read that latch because
+`JE_playerMovement` has already returned.
+
+Copy 8-bit screen surfaces row by row. SDL palette conversion and ordinary blits
+do not preserve the indexed pixels used by the software-keyboard backdrop.
 
 ## Networking
 
-Both machines simulate both ships. Send every simulation-affecting choice before
-either peer resumes. Rendering, audio, and local input settings stay local.
+Both peers simulate both ships. Send every simulation-affecting choice before
+either peer resumes. Rendering, audio, and local controls stay local.
 
-`network_is_host` names settings authority. `networkHostPlayerNum` names the ship
-flown by that machine.
+`network_is_host` identifies the settings authority.
+`networkHostPlayerNum` identifies the ship flown by the host machine.
 
 ### Wire compatibility
 
-Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 84. Packet readers check length before
-optional fields and use fixed-width types.
+`NET_VERSION` in `network.c` is the compatibility gate. Bump it for any change to
+a packet, deterministic rule, field meaning, offset, or registered simulation
+layout. Readers validate lengths and clamp received enums before indexing.
 
-Recent compatibility points:
+Keep persistent and wire enums append-only. Version history belongs in Git; this
+file records only current constraints.
 
-| Version | Change |
-| ---: | --- |
-| 37 | Glyph-sized Endless special pickup collision |
-| 40 | Ship-centered Endless orbiting specials |
-| 42 | Four Base Level rules and shuffle-hand position |
-| 43 | Endless run transfer uses the v25-width save header |
-| 44 | Piercing carry and fractional tier damage |
-| 46 | Twiddle ownership and scheduled rare sectors |
-| 48 | Health bars remember starting armor |
-| 49 | Synthesized Dragonwing ship row |
-| 50 | Save acknowledgement returns the peer outpost half |
-| 51 | Withdrawable departure gate |
-| 52 | Twiddle direction cone and neutral diagonal bit |
-| 53 | Strict twiddle cancellation |
-| 54 | Twiddle intent mirrors with Topsy Turvy |
-| 55 | Short Opening Salvo spark cue |
-| 56 | Opening Salvo covers the special fired on the same tick |
-| 58 | Equal online vertical travel ranges |
-| 59 | Guidance Package steering |
-| 60 | Guided Aim screen-position rule |
-| 61 | Twin Pods second volley |
-| 62 | Endless ram, Prow, Knife Fight, and Deflector rules |
-| 63 | 64-bit wallets and text run transfer |
-| 64 | Whole-state Endless debug block |
-| 65 | Opening Salvo and Knife Fight on rams |
-| 66 | Zinglon ramp and refire gate |
-| 67 | Rollback menu request removed from the old handshake |
-| 68 | Rollback menu opens on the verified press frame |
-| 69 | Extra Perk counters in the outpost player block |
-| 70 | Fractional and overflow Endless HP scaling |
-| 71 | Course-correction tiers and per-shot pass state |
-| 72 | Countermeasure Suite bursts on every hull hit |
-| 73 | Zinglon pillar damage scale and beam ownership |
-| 74 | Boss-bar live-part surveys exclude wreckage |
-| 75 | The End excludes Dead Generator and makes Static rare |
-| 76 | Homing modifiers exclude permanent scenery, pickups, and wreckage |
-| 77 | The End rolls one homing tier |
-| 78 | Ship dye announcements |
-| 79 | Save records carry both ships' dyes |
-| 80 | Look packets and saves carry per-seat views |
-| 81 | The End makes Topsy Turvy rare |
-| 82 | The End rolls Light Homing on a coin flip |
-| 83 | Deflector discounts the shield's share of a shot |
-| 84 | Extra-ship file exchange and per-seat extra ship tables |
+### Reliable UDP
 
-Earlier versions are available in Git history. Keep this table focused on rules
-that still constrain current code.
-
-### Extra ships (newsh$.shp)
-
-File layout:
-
-- a Sprite2 blob with a 16-bit offset table and nibble-RLE cells;
-- ten 15-byte ship records, XOR-chain encrypted with `extraCryptKey`;
-- four plaintext checksums;
-
-The cipher and cell codec must round-trip the stock Tyrian 2000 file exactly.
-
-`User.shp` is the editable source used by the DOS ShipEdit utility:
-
-- Search the active data directory, the executable's `data` directory, then
-  beside the executable. Accept `User.shp` and `user.shp`.
-- The file has 304 presence bytes. Each set byte is followed by one raw 12x14
-  cell; the encrypted ship table follows the final slot.
-- A valid source takes priority over `newsh$.shp`. **Import** reloads it and
-  **Done** compiles `newsh$.shp`. Missing or invalid sources fall back to the
-  compiled file.
-
-Graphic IDs are persistent:
-
-- IDs 1 through 7 are the original built-in hulls. IDs 8 through 15 are the
-  eight custom banks.
-- Extended built-ins follow in raw graphic order. Shared artwork gets one ID,
-  so the mapping stays stable when several ships use the same drawing.
-- Raw values above 500 use the Tyrian 2000 sheet. Values 0 and 1 select the
-  two-piece Dragonwing and Nort Ship hulls. These do not fit a custom bank.
-
-Stock sprite repairs run only when the expected pixel patterns match. This
-leaves replacement shape packs untouched:
-
-- Gencore II's corrupt hard-left pose is replaced with a mirrored hard-right
-  pose only when the known `0xfe` pattern is present.
-- U-Ship cells 276, 289, 293, and 295 contain 1, 1, 2, and 7 stray `0xfe`
-  pixels. Remove them only when all four counts match.
-
-Online Campaign, Endless, and Separate Arcade exchange one file per seat through
-`PACKET_EXTRA_SHIPS`. Simulation lookups use `extraShipsFor(seat)` so both peers
-read the same armor and loadout.
-
-The pause-menu cycler saves one standard loadout per seat. A custom ship must
-not replace that return point. Restoring it keeps weapon power and sidekick
-progress earned after the switch. Armor and shields retain their filled ratio
-when a new loadout changes their maximum.
-
-Separate Arcade has no outpost. It publishes any referenced custom weapon, then
-the ship file, and waits for both queues to settle before gameplay.
-
-Weapon byte 255 (`EXTRA_SHIP_CUSTOM_PORT`) refers to the custom weapon owned by
-the ship's seat. Resolve it at equip time with `extraShipResolvePort`; reserved
-ports differ by seat. Resolution must ignore `customWeaponEnabled` because that
-setting is local. A ship using the sentinel also forces its weapon design onto
-the wire.
-
-### Online ship styles
-
-`net_style.c` owns cosmetic online styles. Body styles cover hulls, trim, and
-sidekicks; shot styles never take the ship dye. Offline styles are always plain.
-
-- Dyes belong to player seats. Repeat the unacknowledged
-  `PACKET_PLAYER_LOOK` on the keep-alive beat so packet loss repairs itself.
-  Store both dyes in `JE_SaveFileType` so a resumed peer receives them.
-- Shield-hit explosions follow hull opacity. `JE_setupExplosion()` copies
-  `explosionOpacity` into a parallel slot table; local opacity must stay out of
-  the snapshotted and hashed `Explosion` structure.
-- Opacity, **Apply to Ship**, and **HP Bars** form one `NetShipView` per seat.
-  Only `netStyleLocalView()` affects rendering. **Apply to Ship** may spare the
-  body without sparing its shots.
-- Announce and store both seats' views so either player can host a resume.
-  Two-player records carry them; one-player records must leave the session view
-  alone.
-- Use `thisPlayerNum` in `netStyleLocalSeat()`. The Linked Arcade sidebar helper
-  names player one on both machines.
-- Kill-fire tint overrides dye. `netStyleColorReserved()` removes its four banks
-  from the Endless picker and ignores a previously selected matching dye.
-- Picker previews override session styles only while their page is open.
-  `shop_draw_seat()` selects the affected player, including Linked Arcade's
-  sentinel-based second hull.
-
-Alpha blits mix brightness in sixteenths and keep one palette bank. Full opacity
-uses the original blit path. Faded bodies and shots omit their shadows.
-
-Partner HP bars reuse `enemy_bar_place()` and its layout settings, but ignore the
-enemy-bar on/off switch. Their opacity starts with `enemyBarOpacity` and follows
-the partner fade when **Apply to Ship** is on.
-
-Shield and armor use that ship's own ceilings, `shield_max` and `initial_armor`,
-so Life Boost and Endless upgrades stay proportional. Armor rollover draws the
-current layer over the previous one; only the ceiling's last layer may be
-shorter than 28 units.
-
-`JE_updateGaugeFlash()` advances the On Hit timer only on live ticks, keeping it
-outside rollback. Linked Arcade omits the bars because its shared HUD already
-shows both players.
-
-`netStyleSessionReset()` restores defaults for a new session. A resume restores
-both seats' dyes and views from the record itself.
-
-### Modes and session settings
-
-`coopCampaignMode` and `coopEndlessMode` are co-op flags.
-`coop_mode_active()` covers both. `dual_ship_mode()` also covers Separate Arcade,
-Timed Battle, SuperTyrian, and Super Arcade. Use `split_arcade_mode()` for the
-linked Silver Ship and Dragonwing pair.
-
-Load and save per-ship runtime state around each movement pass. Generator state,
-cooldowns, sidekicks, lives, and specials remain in the owning `Player` and in
-rollback state.
-
-`player[].lives` aliases a weapon-power byte. Access it through
-`player_lives_port()`. `player_is_out()` controls HUD visibility after the final
-life is spent.
-
-The host arms session flags through `network_arm_local_session`; the joiner
-adopts them from the settings block. Preserve bytes 0 through 23, keep byte 47
-reserved, and clamp received enums and expert values.
-
-### Discovery, keep-alives, and reliable UDP
-
-LAN discovery broadcasts every 400 ms to the well-known port, the last host
-port, the global broadcast, and interface /24 broadcasts. A host on another game
-port keeps `discover_socket` on the well-known port until a player joins.
-
-The peer timeout is 16 seconds. Long-lived online screens must call
-`network_check()` or `NETWORK_KEEP_ALIVE()`.
-
-Reliable channel rules:
-
-- A receive error does not prove the peer is gone.
+- A receive error does not prove that the peer left.
 - `network_is_sync()` means the outbound reliable queue is empty.
-- Retry from the queue head and resend unacknowledged packets oldest first.
+- Retry from the queue head, oldest packet first.
 - Apply backpressure when the outbound window is full.
 - Trust acknowledgements only for packets still outstanding.
 - Drop packets beyond the receive window without acknowledging them.
 - Re-acknowledge packets behind the window.
 - Leave packets queued for the state machine that owns them.
 
-Chunked transfers keep at most half of `NET_PACKET_QUEUE` outstanding. Transport
-acknowledgement covers delivery; complete transfers also use an application ack.
+Chunked transfers keep no more than half of `NET_PACKET_QUEUE` outstanding.
+Transport acknowledgement proves delivery; a completed transfer still needs an
+application acknowledgement.
 
-Level-start and result barriers use dedicated markers. Once both result
-dismissals have arrived, `NET_DEPART_GRACE` allows the slower peer to finish even
-if its last acknowledgement was lost.
+The peer timeout is 16 seconds. Long online screens must call `network_check()`
+or `NETWORK_KEEP_ALIVE()`.
 
-### Outpost and departure
+### Session and outpost
 
 Each player owns their shop state. `PACKET_SHOP_SYNC` mirrors cash, loadout,
-route, and mode after committed purchases.
+route, and mode after a committed purchase.
 
-Shared-outpost departure has two persistent states:
+A shared outpost has two departure states:
 
 1. DONE allows withdrawal.
 2. LOCK closes withdrawal after both peers have seen DONE.
 
-Modes without a shared outpost use `PACKET_DEPART_GATE` for a retractable gate
-and `PACKET_WAITING` for the final commit. Adopt the host's level only after the
+Modes without a shared outpost use `PACKET_DEPART_GATE` for the retractable gate
+and `PACKET_WAITING` for final commit. Adopt the host's level only after the
 local player leaves shopping.
 
-Custom weapon and Endless run transfers retire stale handshake duplicates but
-leave quit packets for the quit handler. `network_shop_begin` owns the co-op quit
-transition back to the outpost.
+Content publication can receive `PACKET_WAITING` before its transfer ack. Carry
+that readiness into the level barrier, but leave a second marker queued for the
+next boundary.
 
-Content publication may receive `PACKET_WAITING` before its transfer
-acknowledgement. Consume the marker to reach the acknowledgement, then carry its
-readiness into the level barrier. Once that barrier is ready, another marker of
-the same type belongs to the next boundary and stays queued.
+In online Endless, seed, depth, course, and difficulty are shared. Wallets,
+equipment, shop stock, perks, revive, personal modifiers, and outpost RNG belong
+to a player. Fold the selected course only after both purchase sets are known.
 
-A save checkpoint may wait for a peer still on the level-end screen. Draw a wait
-notice, allow Esc, and keep `NET_SHOP_SAVE_WAIT` as the final bound.
+### Online appearance
 
-### Endless co-op ownership
+Ship dye and view settings are local presentation choices, published per seat.
+Dye affects the hull and sidekicks, never shots. A kill-fire tint takes priority.
 
-Run seed, depth, course, and difficulty are shared. Each player's machine owns
-and mirrors that player's:
+Opacity is not rollback state. Shield-hit effects follow hull opacity, while
+health bars and other view choices remain local. Linked Arcade has no partner
+health bars.
 
-- wallet, loadout, bombs, hull upgrades, and revive;
-- purchases, shop tax, prices, perk rows, and outpost RNG;
-- chart rerolls and shuffle hand;
-- perk stacks and personal modifier masks.
-
-`itemAvail` and the local cash ledger remain local. The partner stash keeps the
-remote outpost half between checkpoint acknowledgement and record capture.
-
-Store perks in `endlessPerkTakenBy[2][PERK_COUNT]` and grant them through
-`endlessPerkGrant`. Fold the chosen course only after both players' purchases are
-known. Call the per-ship half of the Endless tick for both players.
-
-The online debug panel sends one whole-state block through
-`endlessPackDebugBlock`. It includes depth, modifiers, both perk tables, and both
-personal modifier masks. Host wins simultaneous edits.
-
-### Rollback and determinism
+### Rollback
 
 `PACKET_INPUT` carries a fixed header and up to sixteen redundant records. It is
-unacknowledged and idempotent. Reject records from another level epoch.
+unacknowledged, idempotent, and stamped with a level epoch.
 
-The rollback menu request rides the input record. Open on the earliest verified
-request frame, with host priority on a tie. Rewind to that frame, reset the core,
-and begin a new epoch after the menu closes. `PACKET_GAME_MENU` carries the input
-image needed to release a peer that missed the original datagram.
+The menu request travels with the input record. Open on the earliest verified
+request frame, with host priority on a tie. Rewind to that frame and begin a new
+epoch after the menu closes.
 
-Every wait that stops frame production must continue servicing menu requests and
-peer records. Level-end confirmation waits for the peer through the same frame
-and uses `NRB_PEER_IDLE_TIME_OUT` from the last observed advance.
+Every wait that stops frame production must still service menu requests and peer
+records. Level-end confirmation waits for the peer through the same frame.
 
-Determinism rules:
+Deterministic simulation rules:
 
 - Demo record and playback share seed and initial state.
-- Store multiple `mt_rand()` calls in named locals before combining them.
+- Store multiple `mt_rand()` results before combining them.
 - Use `sim_sinf` and `sim_cosf` in simulation.
-- Build Linux and consoles with signed `char` semantics.
-- Use precise floating point on MSVC and disable contraction elsewhere.
+- Build with signed `char` semantics.
+- Use precise floating point and disable contraction.
 - Do not use mutable function-local statics in rollback simulation.
-- Register pointer relocations for cross-process export.
+- Register pointer relocations needed by cross-process export.
 
-Main-game recovery transfers registered host state in `PACKET_RESYNC` chunks.
-Peers compare registry size and `rollback_layout_fingerprint()` first. The joiner
-acknowledges only after adopting a complete generation. Limit recovery to three
-attempts per level.
+Presentation state stays outside snapshots. Silent replay repaints dirty HUD
+state and suppresses live-only sound and flashes.
 
-Presentation state stays outside snapshots. Silent replay must repaint dirty HUD
-state, restore text backgrounds, suppress live-only flashes and sounds, and leave
-`SFX_CUE_CHANNEL` presentation-only.
+Main-game recovery compares registry size and
+`rollback_layout_fingerprint()` before adopting host state. The joiner
+acknowledges only after a complete generation has been adopted. Limit recovery
+to three attempts per level.
 
-### Online saves and records
+Destruct recovery snapshots units, terrain, shots, explosions, RNG, and
+`destructTempScreen`. Re-pin its three live pointers after restore and start a
+new epoch each round.
+
+### Online saves
 
 Online saves use slots 12 through 22. Slot 22 is the read-only `LAST LEVEL`
-backup. `save_record_pack` and `save_record_unpack` define the 97-byte
-little-endian wire record.
+backup. `save_record_pack` and `save_record_unpack` define the 97-byte wire
+record.
 
-Dual-ship tags:
+A save writes only to the local machine. The peer acknowledgement supplies the
+other outpost half. Preserve player numbers on resume and restore both co-op mode
+flags after `JE_loadGameRecord`.
 
-- `0xc74f`: Campaign and Endless co-op.
-- `0xc7a5`: Separate Arcade, Timed Battle, Super Arcade, and SuperTyrian.
+Record co-op Campaign only when its starting episode is completed for the first
+time. Later episodes, repeats, and deaths do not replace it.
 
-A save writes only to the local machine. Its acknowledgement returns the peer's
-outpost half for inclusion in that record. Preserve each machine's player number
-through resume; the lobby's `networkHostPlayerNum` must adopt the saved seat.
+### Data transfer
 
-Reassert `coopCampaignMode` and `coopEndlessMode` after `JE_loadGameRecord`.
-Endless resume must also adopt the run record or halt the session.
+`net_savexfer.c` uses blocking UDP port 1332 outside live game sessions.
 
-`coopCampaignScoreNote` owns co-op Campaign record eligibility. Record only a
-completed starting episode, before repeat, outside demos. Do not record a death
-or later episode reached by the same run. Store the Credit rule beside the row.
+- Single saves and bulk transfers use separate packet families.
+- A single save carries its page and online seat; the receiver chooses the slot
+  and name.
+- All Saves replaces slots and Endless runs but keeps high scores and custom
+  content.
+- Custom Data replaces only the marked ship or weapon content.
+- Transfer All replaces saves, scores, seats, ships, and weapons as one
+  transaction.
+- Roll back the destination if adoption fails.
+- Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
 
-### LAN data transfer
+iOS has no multicast entitlement, so direct push must work without discovery.
+On platforms with `getifaddrs`, advertise only active broadcast-capable IPv4
+interfaces that are neither loopback nor point-to-point.
 
-`net_savexfer.c` uses blocking UDP port 1332, separate from the game session.
-The menu belongs under **Extra > Transfer** on the title screen because a live
-session cannot service its keep-alive. Save upload reuses the normal load list
-only as a picker.
+## Ships, weapons, and item data
 
-The title screen normally has no item data loaded. A transfer containing custom
-weapons initializes it before packing or adoption so the full library is
-available, including for rollback.
+### Extra ships
 
-Wire rules:
+`newsh$.shp` contains a Sprite2 blob, ten encrypted 15-byte ship records, and
+four plaintext checksums. The cipher and cell codec must round-trip the stock
+file exactly.
 
-- Single-save and bulk transfers use separate packet families. Each bulk menu
-  choice has its own transport version, so mismatched choices cannot pair.
-- A single save contains a 12-byte header, a 97-byte save record, and its Endless
-  text. The header preserves the save page and `online_seat`. The receiver
-  chooses the slot and name.
-- Single-save adoption writes the record and Endless cache directly. It must not
-  capture live game state, and a save without an Endless run clears the old one.
-- All Saves replaces every slot, Endless run, and online seat in place. It keeps
-  the receiver's high scores and rolls back the full slot set on failure.
-- The custom-data envelope marks ships, weapons, or both. Weapons include the
-  full library, active index, and enabled flag. Ships include the compiled
-  `newsh$.shp` data.
-- Custom adoption replaces only the marked content. It does not import other
-  `opentyrian.cfg` settings. If the sender has no user ship file, remove the
-  receiver's copy and reload the stock file.
-- Transfer All contains the in-memory `opentyrian.sav` form and the full custom
-  envelope. It replaces all 22 slots, Endless runs, high scores, online seats,
-  ships, and weapons in place. Roll back both halves if adoption fails.
-- Chunks repeat until acknowledged. Large payloads pause every 16 chunks to poll
-  acknowledgements, events, and cancellation.
+`User.shp` is the DOS editor source. It has 304 presence bytes, followed by one
+12x14 cell for each set byte and then the encrypted ship table. Search the
+active data directory, the executable's `data` directory, and the executable
+directory, in that order.
 
-Discovery sends both global broadcast and directed `/24` probes. The typed
-address row uses the normal offer reply before pulling; strip a pasted `:port`
-because the transfer port is fixed.
+Graphic IDs are persistent:
 
-Either side may initiate the transfer. A normal download pulls from an offer.
-**Wait for a sender** binds port 1332 and accepts a push; its transfer deadline
-starts with the first chunk, not when the waiting screen opens.
+- 1 through 7 are original built-in hulls.
+- 8 through 15 are custom banks.
+- Extended built-ins follow in raw graphic order.
+- Raw values above 500 use the Tyrian 2000 sheet.
+- Values 0 and 1 are the two-piece Dragonwing and Nort Ship sentinels.
 
-iOS local-network access needs `NSLocalNetworkUsageDescription`. Broadcast also
-needs Apple's multicast entitlement, which this build does not have, so the push
-path must work without discovery. macOS 15 uses the same permission description.
+Only repair known stock sprite defects when their exact pixel patterns match.
+Replacement shape packs must remain untouched.
 
-On platforms with `getifaddrs`, `network_local_addresses` accepts only IPv4
-interfaces that are up, running, broadcast-capable, and neither loopback nor
-point-to-point. This avoids tunnel and carrier addresses and SDL_net omitting
-Wi-Fi on Apple devices. Android supports the call because its minimum API is 26.
-Strict C99 can hide the platform `IFF_*` macros, so the module uses checked
-`NET_IFF_*` values.
+Online Campaign, Endless, and Separate Arcade exchange one ship file per seat.
+Use `extraShipsFor(seat)` for simulation lookups.
 
-Custom adoption clears the matching cached online copies. At the next co-op
-rendezvous, each machine republishes its local ships and current weapon under
-its own seat. A ship's custom-weapon sentinel forces that weapon onto the wire
-even when Custom Weapons is disabled.
+Weapon byte 255 refers to the custom weapon owned by the same seat. Resolve it at
+equip time because reserved ports differ by player. The reference works even
+when the local Weapon Creator setting is off.
 
-### Destruct and ENGAGE modes
+### Custom weapons
 
-Online Destruct uses `NETWORK_GAME_DESTRUCT` and Normal speed. Both netcodes send
-one action byte and one control byte per tick. QUIT and NEWMAP are confirmed
-control bits; pause is unused.
+Reserve one port, sidekick, and scratch range per player. Claim only placeholder
+slots and materialize again after every item-data reload.
 
-Rollback snapshots include units, walls, shots, explosions, world state, RNG,
-and every pixel of `destructTempScreen`. Predictions repeat held movement and
-fire; unit and weapon changes are edge-triggered. Start a new epoch each round.
+The wire decoder validates a complete design before committing it. Fixed-width
+padding must be zero so identical designs produce identical bytes.
 
-Recovery uses `PACKET_DESTRUCT_RESYNC` and `DE_StateSave`. Restore the three live
-pointers in the blob before use. Derive each map from session seed and round
-number after pinning simulation settings.
+Older weapon-library rows may use a smaller bullet-array width. Derive the width
+from the serialized row before reading its trailing scalars.
 
-Online Campaign keeps two-player state active through `]e` and `]g`. Mini-game
-death or quit reloads slot 22. A cleared TIME WAR continues under SuperTyrian
-rules. Decide shared random results before locally timed credits begin.
+A synthesized custom sidekick fires consecutive mode-0 scratch weapons as its
+charge stages. Clamp its 1-based sprite reads, including 2x2 offsets.
 
-## Weapons and item data
+### Item tables
 
-Apply episode differences after item loading and keep the operation idempotent.
+Apply episode differences after loading item data and keep the operation
+idempotent. Settings that affect a gun usually apply to all eleven weapon
+records in its port.
+
 Projectile graphics above 1000 encode a superspark palette bank and base sprite.
+A temporary `poweruse == 0` removes generator cost; extra beams still fire only
+when the primary shot succeeds.
 
-Custom weapons reserve a port, sidekick, and scratch range per player. Ownership
-is by player index on both peers. Call `customWeaponMaterializeAll()` after item
-data reload. Validate a complete wire design before materializing it.
+The Dragonwing is synthesized as ship 19 after each item load. Only Endless
+shops list it. IDs 20 through 90 remain invalid normal ship rows.
 
-A temporary `poweruse == 0` bypasses cost and generator availability. Fire extra
-beams only after the primary succeeds.
+Shop weapon tags follow these rules:
 
-`JE_applyUnusedShopSprites` captures its baseline after placeholder and
-Charge-Laser setup and before custom slots. Restore that baseline when disabled.
-
-The Flying Punch's fifth bolt has no sprite. It still deals damage and carries
-its reserved smoke trail.
-
-Episode Versions owns the Gencore Solar Shield icon and the U-Ship/Nort Ship
-`bigshipgraphic` values. Only 28, 32, 33, 45, and 46 have illustration layouts.
-
-The Dragonwing is synthesized as ship 19 after each item load:
-
-- `shipgraphic == 0` selects its two-piece hull.
-- Only Endless shops list it.
-- IDs 20 through 90 remain invalid for normal ship rows.
-- In `dual_ship_mode()`, a bought Dragonwing is a full ship, including seat two.
-
-Wide shop hulls straddle their anchor. Shift only the item-list call site;
-changing `JE_drawItem` would move centered preview art.
-
-Weapon row tags:
-
-- `Dual-Mode` belongs only to rear-list ports with `opnum == 2`.
-- Endless mixed-bay lists may add `Front` or `Rear` from `shopRearGunPorts`.
+- `Dual-Mode` appears only in the rear list for a two-mode port.
+- Endless mixed-bay lists may add `Front` or `Rear`.
 - Port 16 is sidekick data and has no bay.
 - Campaign lists do not show mixed-bay tags.
 
-The uncertain front-port classification for 6, 32 through 35, 44, 46, and 47
-comes from shipped shop and pickup evidence. Revisit it only with better source
-data. `qa_test_weapon_bay_tags` pins the current classification.
-
 ### Twiddles and specials
 
-`shipCombos` is indexed by ship ID. `shipCombosB` replaces it in SuperTyrian.
-Ships outside the table have no twiddles. Linked seat two uses row 0; full-ship
-modes use each ship's row.
+`shipCombos` is indexed by ship ID; SuperTyrian uses `shipCombosB`. All input
+paths resolve through `SF_twiddleTarget`.
 
-All input paths pass through `SF_twiddleTarget`:
+- One axis must exceed twice the other to count as a direction.
+- Shallower diagonals are neutral and ride `RB_MOVE_DIAG` online.
+- Apply the Topsy Turvy mirror inside `SF_twiddleTarget`.
+- Wrong input cancels a combo. A held accepted direction and code 9 are exempt.
+- Gate a fired twiddle on the ship's `twiddleWait`.
+- Charge shield or armour only when the complete cost is available.
+- Clear all special and twiddle clocks at level start.
 
-- An axis must exceed twice the other to count as a direction.
-- Shallower diagonals are neutral.
-- `RB_MOVE_DIAG` preserves that neutral result online.
-- Apply the Topsy Turvy horizontal mirror inside `SF_twiddleTarget`.
-- Self-test replay passes an already resolved target.
+Flare specials may own the full-screen grade only while the level grade is idle.
+Track ownership in rollback state and clear only a grade the flare owns.
 
-Recognition is strict. Wrong input cancels a combo. Holding the last accepted
-direction and code 9 (all released) are exempt. `SFExecuted` lasts one tick.
+Soul of Zinglon and MineField share duration and ramp state. A refire refreshes
+duration without resetting a live ramp. Overlapping beams do not stack; the
+stronger hit wins and supplies perk context and kill credit.
 
-Gate a fired twiddle on per-ship `twiddleWait`, not the equipped special's
-cooldown. Charge shield or armor only when the full cost is available.
-`JE_resetSpecialState` clears all live special and twiddle clocks at level start.
-
-Flare-family specials and level event 44 share the full-screen grade. A flare
-may claim it only while the level grade is inactive. Track ownership in
-`flareOwnsFilter`, which is rollback state, and clear only a grade the flare
-owns.
-
-Soul of Zinglon and MineField share `zinglonDuration` and `zinglonRamp`.
-`zinglon_pillar_width` opens for 25 ticks, holds, then closes for 25. A refire
-refreshes duration without resetting a live ramp. Keep the ramp per ship and in
-rollback state.
-
-The beam occupies `MAX_PWEAPON - 1` without a `playerShotData` entry.
-`zinglon_pillar_hit` supplies its collision width, scaled damage, and owner.
-Overlapping beams do not stack; the stronger hit wins and its owner gets the
-perk context and kill credit.
-
-## Audio, logs, and consoles
+## Audio, platforms, and logs
 
 MIDI backends convert LDS through vendored midiproc. At loop start, replay
 pre-loop program, controller, pitch, and SysEx state at time zero. Never replay
 notes.
 
-### LDS conversion
+LDS detune uses sixteenths of a semitone. Normalize equivalent patch groups
+around zero, sound the nearest MIDI key, and put the remainder on the pitch
+wheel. Do not add `arp_tab[0]` on the MIDI path.
 
-LDS detune uses sixteenths of a semitone. Group equivalent patches while
-ignoring volume, MIDI velocity, and detune; normalize each group around zero,
-sound the nearest MIDI key, and put the remainder on the channel's pitch wheel.
-A lone patch normalizes to zero because `midi_transpose` owns its MIDI pitch.
-Do not add `arp_tab[0]` on the MIDI path; it is part of the Adlib voicing.
+Release active notes at song and loop boundaries. Events scheduled beyond the
+boundary never run on repeat.
 
-A zero `keyoff` relies on the OPL envelope. `LdsEnvelopeTicks` estimates the
-percussive decay from `opl.c` using the slowest key-scale slot; zero means the
-voice sustains or has a rate that never completes. The estimate is an upper
-bound. Exact KSR scaling needs the note and belongs in `PlaySound`.
+Logs are created lazily under `log/`. Network reports keep unsymbolized RVAs to
+avoid blocking the game loop; crash and hang reports may symbolize. Console log
+cleanup removes only recognized OpenTyrian names.
 
-Release active notes at the song or loop boundary. Events scheduled past that
-point are never reached on repeat. `ENABLE_VIB`, `ENABLE_TREM`, and `ENABLE_ARP`
-remain disabled because those branches are incomplete.
+Switch must keep its SDL window resizable for dock changes and save controller
+changes immediately. Vita presents at native size, forces 1x supersampling,
+keeps presenting during IME use, and uses front touch only.
 
-Windows native MIDI uses `CALLBACK_NULL` and its own sequencer thread. When a
-configured SoundFont path is stale, retry its filename under `data_dir()` before
-discovery. See the [midiproc vendor notes](../src/midiproc/VENDORED.md).
+## Level and data formats
 
-The Windows crash logger resumes the main thread before symbol work. State dumps
-must tolerate unloaded item tables and invalid IDs.
-
-Logs are created lazily under `log/`:
-
-- Network reports keep full bodies and unsymbolized RVAs to avoid blocking the
-  game loop.
-- Crash and hang reports may symbolize.
-- Console cleanup removes only recognized OpenTyrian log names.
-
-Switch constraints:
-
-- Keep the SDL window resizable for dock changes.
-- Persist state before `_Exit`.
-- Save controller changes immediately; HOME may bypass shutdown.
-
-Vita constraints:
-
-- Present at native size and force 1x supersampling.
-- Keep presenting while the IME is open.
-- Terminate the IME once on every exit path.
-- Clear latched input after draining raw events.
-- Use front touch only.
-
-Both consoles fold the right stick into movement and disable MIDI. Switch uses
-`switch-sdl2_net`; Vita provides the needed UDP subset in `vita_net.c`.
-
-## Level scripts and data
-
-Tyrian levels are event scripts. Reseeding `mt_rand` changes runtime jitter,
-background choices, effects, and sounds. It does not reorder authored pickups.
+Tyrian levels are event scripts. Reseeding `mt_rand` changes runtime effects but
+does not reorder authored pickups.
 
 - The event clock advances with vertical scroll.
 - A map stop resumes when the screen clears, link 254 jumps, or `forceEvents`
   advances the clock.
-- The parked-enemy watchdog culls only an unreachable stop holder with no
-  reachable linked member after `MAP_STOP_STALL_LIMIT`.
+- Cull only a stop holder with no reachable linked member after
+  `MAP_STOP_STALL_LIMIT`.
 - Test the HARVEST entrance after watchdog changes.
-- Use `sprite2_is_blank` on the active sheet for blank map structures.
-- Dormant dispenser bases are enemy IDs 80 through 83. Piece 80 fires on frame 9.
+- Dormant dispenser bases are enemy IDs 80 through 83; piece 80 fires on frame 9.
 
-## Data dump
-
-`tools/dump/dump_data.py` mirrors loaders in `src/` and writes the tracked trees
-under `dumps/`. Update a reader when its loader changes.
-
-The dumper reads Tyrian 1.1, Tyrian 2.1 and Tyrian 2000. It identifies a data
-directory from the item counts stored in front of its tables and binds the
-tables that differ, so `data/`, `data_21/` and `data_11/` dump to
-`dumps/dump_2000/`, `dumps/dump_21/` and `dumps/dump_11/` with the same layout.
-`dumps/DIFFERENCES.md` records what changed between the three.
-
-`tools/dump/verify_dump.py` is the correctness check. Every reader needs a check
-that accounts for all source bytes or compares the engine arithmetic it mirrors.
-Point it at the tree under test with `--data` and `--dump`.
+`tools/dump/dump_data.py` mirrors the loaders and writes the tracked `dumps/`
+trees. Every decoder needs a verification check that accounts for its source
+bytes or matches the engine arithmetic it copies.
 
 Format traps:
 
-- `user1.shp` and `user2.shp` contain a two-byte header and raw 12x14 cells.
+- `user1.shp` and `user2.shp` start with a two-byte header.
 - Shipped `shapes?.dat` files contain 520 bytes after tile 600.
-- Episodes 1 through 3, 4, and 5 use three different item/enemy tables. Tyrian
-  2.1 has the same split with no episode 5. Tyrian 1.1 stores a set at the end of
-  every level file and none in `tyrian.hdt`.
-- `tyrian.hdt` text groups are position-dependent. They end at the item-data
-  offset in Tyrian 2000 and at the last byte in Tyrian 1.1, which stores no
-  offset at all.
-- A compiled 12px frame ends where the next offset in its table starts. Tyrian
-  2.1 and 2000 also terminate one with 0x0f. Tyrian 1.1 does not, and pads its
-  streams with zero bytes that skip nothing.
-- Tyrian 1.1 orders the seven `tyrian.shp` sprite tables differently and ships
-  eleven banks; Tyrian 2.1 ships twelve in the 2000 order.
-- The enemy shapebank table only grows: 30 entries in 1.1, 34 in 2.1, 36 in 2000,
-  with no slot reassigned. Each release stores it verbatim in `file0001.exe`.
-- Encrypted record dumps preserve one terminator per record, including trailing
-  empty records.
-- Re-encode decrypted text as CP437 to recover its bytes.
-- Data files are matched and dumped in lower case. Tyrian 1.1 names them in
-  upper case, and the same release dumps to the same tree either way.
+- Episodes 1 through 3, 4, and 5 use different item and enemy tables.
+- `tyrian.hdt` text groups are position-dependent.
+- Tyrian 1.1 compiled sprite frames end at the next offset; later releases also
+  use a `0x0f` terminator.
+- Tyrian 1.1 orders the seven `tyrian.shp` banks differently.
+- The enemy shapebank table only grows; no existing slot was reassigned.
+- Re-encode decrypted text as CP437 to recover the original bytes.
 
-Use each tree's `index.csv` to find a data file's decoder, engine loader,
-references, and outputs.
+Use each dump tree's `index.csv` to find the decoder, engine loader, references,
+and output for a data file.
 
 ## Tests
 
-Runner details belong in [testing/README.md](../testing/README.md). Before
-changing persistent or deterministic state, cover:
+Runner details live in [testing/README.md](../testing/README.md). Persistent or
+deterministic changes need coverage for:
 
 - old save import and malformed input;
 - rollback save, restore, and pointer relocation;
-- cross-process state hashes;
-- host arming and joiner adoption;
+- cross-process hashes;
+- host setup and joiner adoption;
 - both player indices and host roles;
 - loss, reordering, duplication, outages, and sequence wrap.
 
-## Small rules with large consequences
+Small mistakes with large effects:
 
 - Use the correct sprite bank.
 - `enemycycle` is one-based.
 - Positional enums index shipped data. Do not remove unused-looking entries.
 - Keep `config_file.c`, `opl.c`, and midiproc public contracts stable.
-- Preserve upstream Doxygen comments and third-party documentation.

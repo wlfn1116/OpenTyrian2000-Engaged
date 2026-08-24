@@ -78,10 +78,7 @@ static bool qa_net_take_phase(void)
 	return true;
 }
 
-/* Keep the reliable queue moving. Only one kind of packet is consumed by any given wait, and a
- * head nobody consumes stalls every phase after it: the shop pump returns false without
- * advancing, so a single stray arrival is enough to wedge the session. Bounded, so a busy peer
- * cannot hold us in here. */
+/* Keep the reliable queue moving. */
 static void qa_net_drain(void)
 {
 	for (int guard = 0; guard < 32 && packet_in[0] != NULL; ++guard)
@@ -144,8 +141,7 @@ static void qa_net_announce(Uint32 phase)
 
 /* Announcements are state, not events: a product wait that legitimately consumes transient
  * rendezvous traffic (the save checkpoint does) can eat one unrecorded, and the announcer has
- * moved on and never says it again. Every wait re-broadcasts the highest phase reached, rate
- * limited and never more than one in flight, the way the outpost keepalive re-announces. */
+ * moved on and never says it again. */
 static void qa_net_phase_keepalive(void)
 {
 	if (qa_net_my_phase == 0 || SDL_GetTicks() - qa_net_announced_at < 250 || !network_is_sync())
@@ -186,9 +182,7 @@ static int qa_net_sync(Uint32 phase, const char *what)
 	} while (0)
 
 /* Drain until the link is quiet: everything acknowledged, nothing at the head, and a beat of
- * silence. A blocking chunked transfer consumes only its own packets, so a straggling or
- * proxy-duplicated announcement still in flight when one starts wedges it for good. Bounded,
- * like every wait here. */
+ * silence. */
 static void qa_net_settle(void)
 {
 	const Uint32 started = SDL_GetTicks();
@@ -246,9 +240,7 @@ int qa_net_campaign_phases(void)
 	Player *const peer  = &player[QA_THEM];
 
 	/* Arcade lives live in a weapon-power slot, and everything that re-derives a hull ceiling
-	 * reads through this pointer. A real session sets it up while starting the game; a peer that
-	 * starts straight into a wire scenario never runs that, and the first refresh of either ship
-	 * faults on a null. */
+	 * reads through this pointer. */
 	for (uint p = 0; p < COUNTOF(player); ++p)
 		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 
@@ -325,10 +317,7 @@ int qa_net_campaign_phases(void)
 
 	/* ---- the debug menu, across the wire ---- */
 
-	/* One machine edits and both must end up holding the same values, in either direction. The
-	 * block's contents are pinned in qa_online.c; this drives the delivery itself, on the same
-	 * reliable queue as the outpost traffic. The adopt also rewrites both ships from the
-	 * sender's view, which has to be a no-op here: both machines converged above. */
+	/* One machine edits and both must end up holding the same values, in either direction. */
 	const bool hosting = (thisPlayerNum == networkHostPlayerNum);
 	const PlayerItems debugItemsBefore = local->items;
 
@@ -367,9 +356,7 @@ int qa_net_campaign_phases(void)
 
 	qa_net_phase("campaign slow rendezvous");
 	/* One machine finishes outfitting long before the other. The early one must sit at the
-	 * rendezvous rather than dragging the slow one out of its outpost. The host also leaves
-	 * for a level of its own choosing, which the joiner must adopt: both players can point at
-	 * different planets, and the host's pick is the one the session flies. */
+	 * rendezvous rather than dragging the slow one out of its outpost. */
 	const JE_byte savedMainLevel = mainLevel;
 	const JE_boolean savedJump = jumpSection;
 	if (thisPlayerNum == networkHostPlayerNum)
@@ -676,10 +663,8 @@ int qa_net_endless_phases(void)
 
 	/* ---- both ships down: the Relaxed prompt, all three answers ---- */
 
-	/* The host reads the death menu for as long as it likes and the joiner waits on the
-	 * answer, which travels on the Endless co-op channel. Each of the menu's three choices
-	 * is its own exchange, the way three separate deaths would be, and each has to arrive
-	 * as itself: the joiner's whole next act (relaunch, outpost, run summary) hangs on it. */
+	/* The host reads the death menu for as long as it likes and the joiner waits on the answer,
+	 * which travels on the Endless co-op channel. */
 	static const int deathChoice[] = {
 		(int)ENDLESS_DEATH_RESTART, (int)ENDLESS_DEATH_OUTPOST, (int)ENDLESS_DEATH_END_RUN };
 	static char deathPhase[32];
@@ -777,7 +762,7 @@ int qa_net_endless_phases(void)
 
 /* Nothing but barriers, back to back. Any scenario deep enough to need many rendezvous
  * inherits whatever the barrier mechanism does under loss, so it is pinned here on its own,
- * away from any mode's protocol. See doc/notes.md on wire-scenario barriers. */
+ * away from any mode's protocol. See doc/notes.md#tests. */
 int qa_net_barrier_phases(void)
 {
 	static char name[24];

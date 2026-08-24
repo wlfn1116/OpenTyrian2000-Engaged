@@ -103,17 +103,8 @@
 #define TREM_FREQ			((fltype)(3.7))			// tremolo at 3.7hz
 
 
- /* operator struct definition
- For OPL2 all 9 channels consist of two operators each, carrier and modulator.
- Channel x has operators x as modulator and operators (9+x) as carrier.
- For OPL3 all 18 channels consist either of two operators (2op mode) or four
- operators (4op mode) which is determined through register4 of the second
- adlib register set.
- Only the channels 0,1,2 (first set) and 9,10,11 (second set) can act as
- 4op channels. The two additional operators for a channel y come from the
- 2op channel y+3 so the operators y, (9+y), y+3, (9+y)+3 make up a 4op
- channel.
- */
+ /* operator struct definition For OPL2 all 9 channels consist of two operators each, carrier
+  * and modulator. */
 typedef struct operator_struct {
 	Bit32s cval, lastcval;			// current output/last output (used for feedback)
 	Bit32u tcount, wfpos, tinc;		// time (position in waveform) and time increment

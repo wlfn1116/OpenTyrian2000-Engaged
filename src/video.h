@@ -113,10 +113,7 @@ void video_repeat_last_present(void);
 void present_hi(SDL_Surface *hi);
 void set_vsync(bool enabled);
 
-// Recover the window contents after a resolution change / expose. video_repaint()
-// re-presents the current frame unconditionally; video_repaint_if_stale() does so only
-// when the output size changed since the last present (or `force` for expose / render
-// reset). The event pump calls the latter so input-wait screens don't freeze on a resize.
+// Recover the window contents after a resolution change / expose.
 void video_repaint(void);
 void video_repaint_if_stale(bool force);
 

@@ -24,7 +24,7 @@
 
 #include <stdbool.h>
 
-/* Cosmetic styles for distinguishing online players. See "Online ship styles" in doc/notes.md. */
+/* Cosmetic styles for distinguishing online players. See doc/notes.md#online-appearance. */
 
 // Dye 0 keeps the original colors; 1..NET_SHIP_COLORS map to palette bank value - 1.
 #define NET_SHIP_COLORS     16

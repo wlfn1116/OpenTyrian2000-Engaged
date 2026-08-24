@@ -67,10 +67,9 @@ static bool shot_guidance_can_steer(const PlayerShotDataType *shot)
 	return !shot->shotComplicated;
 }
 
-/* One velocity nudge on one axis. A ship-relative velocity (see SHOT_ATTACHED_VEL_MIN) is nudged
- * within its range, so the shot keeps riding the ship and its curve travels with it; a free velocity
- * is kept out of that range. On x the range starts one above the value that pins both axes, which
- * `xAxis` names because that meaning belongs to x alone. */
+/* One velocity nudge on one axis. A ship-relative velocity (see SHOT_ATTACHED_VEL_MIN) is
+ * nudged within its range, so the shot keeps riding the ship and its curve travels with it; a
+ * free velocity is kept out of that range. */
 static void shot_guidance_nudge(JE_integer *vel, bool positive, bool xAxis)
 {
 	if (xAxis && *vel == SHOT_ATTACHED_VEL_MIN)
@@ -228,10 +227,8 @@ void simulate_player_shots(void)
 					rl_current_acc_y = shot->shotYC;
 					if (anim_frame > 1000)
 					{
-						// Match the in-game shot draw (player_shot_move_and_draw): a shot graphic
-						// > 1000 leaves a superspark trail (colour bank = the thousands digit; see
-						// JE_doSP). Without this the weapon-sim previews (shop + custom weapon
-						// creator) silently dropped the superspark / sparky custom-bullet trail.
+						// Match the in-game shot draw (player_shot_move_and_draw): a shot graphic > 1000 leaves a
+						// superspark trail (colour bank = the thousands digit; see JE_doSP).
 						JE_doSP(tempShotX+1 + 6, tempShotY + 6, 5, 3, (anim_frame / 1000) << 4,
 						        superSparkCapForSprite(shot->shotGr % 1000));
 						anim_frame = anim_frame % 1000;
@@ -272,7 +269,7 @@ draw_player_shot_loop_end:
 
 // Endless Opening Salvo: the spark cue marking a boosted shot, coloured from the shot's own sprite
 // so each weapon flashes its own hue. Kept sparse and short-lived so a wide many-shot weapon does
-// not fill the screen with it; see doc/notes.md, "Superspark ring buffer".
+// not fill the screen with it; see doc/notes.md#gauges-and-effects.
 #define SALVO_LAUNCH_SPARKS     6  // one-off puff on the shot's first drawn tick
 #define SALVO_LAUNCH_REACH      5
 #define SALVO_LAUNCH_LIFE_TICKS 4
@@ -842,10 +839,8 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 				shot->shotY -= player[shot->playerNumber-1].delta_y_shot_move;
 		}
 
-		// Endless: a special pinned to the ship on both axes and spun by circlesize is a
-		// shield ring. Its shipped spawn offset puts the loop's centre off the hull, so
-		// replace that offset with the loop's own centre and sit the ring on the ship.
-		// See doc/notes.md, "Endless orbiting specials".
+		// Endless: a special pinned to the ship on both axes and spun by circlesize is a shield ring.
+		// See doc/notes.md#special-pickups.
 		if (endlessFxActive() && (bay_i == SHOT_SPECIAL || bay_i == SHOT_SPECIAL2) &&
 		    shot->shotComplicated && shot->shotXM > 100 && shot->shotYM > 100)
 		{
@@ -934,9 +929,8 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	return shot_id;
 }
 
-/* Endless Twin Pods, contract in shots.h: a second full player_shot_create from the same gun, so it
- * pays the generator again and takes the pattern's next position. A refused first volley fires no
- * twin, which keeps a pod starved for power or ammo starving whole. See "Combat" in doc/notes.md. */
+/* Endless Twin Pods, contract in shots.h: a second full player_shot_create from the same gun,
+ * so it pays the generator again and takes the pattern's next position. See doc/notes.md#perks. */
 JE_integer player_shot_create_twin(JE_integer first, JE_word portNum, uint sidekick, int twinDx,
                                    int x, int y, JE_word mouseX, JE_word mouseY, JE_word wpNum,
                                    JE_byte playerNum)
@@ -949,7 +943,7 @@ JE_integer player_shot_create_twin(JE_integer first, JE_word portNum, uint sidek
 }
 
 /* Deflected shots keep the incoming art and tier tint while reversing velocity and acceleration.
- * Damage follows the normal player-shot path; see doc/notes.md#perk-interactions. */
+ * Damage follows the normal player-shot path; see doc/notes.md#perks. */
 #define DEFLECT_MIN_SPEED   4    // px per tick straight up, for a bullet that had come to rest
 #define DEFLECT_LIFE_TICKS  255  // the pool countdown; the screen cull retires it before that
 
@@ -1022,10 +1016,8 @@ JE_integer player_shot_create_deflected(const EnemyShotType *incoming, int damag
 	return shot_id;
 }
 
-// A chain-reaction carrier deals no damage of its own: it is consumed on impact and replaced by the
-// weapon named in its attack byte, which is what the enemy actually takes. The carrier's Opening
-// Salvo tag passes down so a bomb fired in a charged window still explodes for the boost once the
-// window has closed, and a carrier that loiters past one cannot pick the boost up from a later volley.
+// A chain-reaction carrier deals no damage of its own: it is consumed on impact and replaced by
+// the weapon named in its attack byte, which is what the enemy actually takes.
 JE_integer player_shot_create_chained(JE_word PX, JE_word PY, JE_word mouseX, JE_word mouseY,
                                       JE_word wpNum, JE_byte playerNum, bool salvoBoost)
 {

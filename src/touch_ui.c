@@ -799,7 +799,7 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	}
 	last_peak = peak;
 
-	// Keep live requests fresh through blocking fades. See "Touch and mobile UI" in doc/notes.md.
+	// Keep live requests fresh through blocking fades. See doc/notes.md#touch-requests.
 	if (palette_fading())
 	{
 		if (fresh(requested_at_ms, now_ms))

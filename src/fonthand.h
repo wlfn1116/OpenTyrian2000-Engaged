@@ -40,9 +40,8 @@ extern JE_byte warningCol;
 extern JE_shortint warningColChange;
 
 void JE_dString(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);
-// Dim an already-drawn shape-font string in place (halves each glyph's shade), following the same
-// glyph advance as JE_dString. Greys out disabled shape-font rows without darkening the background
-// behind them; it only touches the glyph-shaped pixels. Draw the row with JE_dString first.
+// Dim an already-drawn shape-font string in place (halves each glyph's shade), following the
+// same glyph advance as JE_dString.
 void JE_dStringDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);
 
 int JE_fontCenter(const char *s, unsigned int font);

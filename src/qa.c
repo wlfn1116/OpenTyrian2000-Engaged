@@ -136,9 +136,7 @@ void qa_net_apply_linked_special(void)
 }
 
 /* Sidekick mount combinations for the gameplay wire tests, applied identically on both
- * machines. The profiles cross the styles the mounts differ most in: front pods fire from the
- * nose, side pods ride fixed offsets, trailing companions integrate motion history, and
- * satellites orbit on a shared angle. */
+ * machines. */
 void qa_net_apply_loadout(int profile)
 {
 	const JE_byte side  = qa_first_sidekick_with_tr(0);
@@ -1816,8 +1814,7 @@ static void qa_test_cash_ledger(void)
 
 /* Elite and champion bounties across the whole session surface: both machines, both credit
  * modes, the Bounty perk, and Double Earnings, which covers bounties the way it covers every
- * other combat payment. The wallet outcomes have to be identical whichever machine simulates
- * the kill. */
+ * other combat payment. */
 static void qa_test_bounty_matrix(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -3713,10 +3710,8 @@ static void qa_spark_frame(Uint32 seed)
 	JE_drawSP();
 }
 
-/* The ring is presentation state and is not restored with the simulation, so a rollback that
-   discards a pass which has already drawn has to leave it where a clean run of the same frames
-   would: the replacement pass reuses the discarded slots and repeats its step rather than adding
-   one. See doc/notes.md, "Superspark ring buffer". */
+/* A replacement pass must reuse discarded spark slots instead of advancing the ring twice.
+ * See doc/notes.md#gauges-and-effects. */
 static void qa_test_superspark_discarded_pass(void)
 {
 	if (VGAScreen == NULL || VGAScreen->format->BitsPerPixel != 8)
@@ -3869,7 +3864,7 @@ static void qa_spark_seeded_offset(Uint32 seed, int *dx, int *dy)
 
 /* A seeded source's successive showers sit a fixed stride apart, and each has to get a fresh
    direction out of it. The strides below are what the callers in tyrian2.c produce at their
-   emission cadences. See doc/notes.md, "Superspark ring buffer". */
+   emission cadences. See doc/notes.md#gauges-and-effects. */
 static void qa_test_superspark_seeded_spread(void)
 {
 	static const Uint32 strides[] = { 1u, 100u, 137u, 500u, 685u };
@@ -4192,10 +4187,8 @@ static void qa_test_knife_fight_blood(void)
 	coopEndlessMode = savedCoop;
 }
 
-/* Settings baked into the loaded item data do nothing on their own: something has to rewrite the
- * tables JE_loadItemDat filled, which is JE_applyItemDataSettings. Each setting below is flipped
- * between two values with that call in between, and the tables have to come out different. One
- * that stops reaching them fails here instead of silently doing nothing in the running game. */
+/* Settings baked into the loaded item data do nothing on their own: something has to rewrite
+ * the tables JE_loadItemDat filled, which is JE_applyItemDataSettings. */
 static Uint32 qa_item_data_hash(void)
 {
 	const struct { const void *data; size_t size; } tables[] = {
@@ -4301,9 +4294,7 @@ static void qa_test_item_data_settings(void)
 }
 
 /* A gun is a port: each of its eleven power levels is a separate weapon record with its own
- * sound, and both data sets set all eleven alike. An epdiff row therefore has to move every
- * level, and moving only the first leaves every upgraded shot on the other episode's sound while
- * still changing the item data enough to satisfy the hash check above. */
+ * sound, and both data sets set all eleven alike. */
 static void qa_test_firing_sound_levels(void)
 {
 	static const struct
@@ -5446,10 +5437,7 @@ static void qa_test_coop_combo_and_pickups(void)
 	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
 }
 
-/* The peer leaving a level under us. Drives the real departure rule the rollback stall uses,
- * because the bug it covers was not in what any of these functions return: a quit was ending the
- * level without saying it was a quit, so the machine that stayed banked the zone and deepened
- * while the one that quit reopened the same outpost. */
+/* The peer leaving a level under us. */
 static void qa_test_peer_left_level(void)
 {
 #ifdef WITH_NETWORK
@@ -5523,9 +5511,9 @@ static void qa_test_peer_idle_rule(void)
 #endif
 }
 
-/* Who owns the in-game menu a frame's request bits open. The property that matters is that the two
- * seats never disagree: a frame either opens no menu, or opens one with exactly one presser and
- * one waiter. Either answer twice deadlocks, so drive both seats through every combination. */
+/* Who owns the in-game menu a frame's request bits open. The property that matters is that the
+ * two seats never disagree: a frame either opens no menu, or opens one with exactly one presser
+ * and one waiter. */
 static void qa_test_menu_claim(void)
 {
 #ifdef WITH_NETWORK
@@ -6148,10 +6136,8 @@ static void qa_test_network_settings(void)
 	         && chargeSidekickAutofire == CHARGE_AUTOFIRE_OFF && debugTwiddleSpecial == 0,
 	         "...and restores the joiner's local autofire/debug controls afterward");
 
-	/* The host runs on flags armed from its own config; the joiner adopts the block packed
-	 * from that same config. The two must land on identical session behavior, or the pair
-	 * splits at the first payout: Double Earnings was armed on the joiner alone, and every
-	 * pickup desynced the wallets by its own value. */
+	/* The host runs on flags armed from its own config; the joiner adopts the block packed from
+	 * that same config. */
 	coopSharedCredit = false;
 	coopDoubleEarnings = true;
 	net_rollback = true;
@@ -6416,9 +6402,7 @@ static void qa_mod_parity_sample(int zone, Uint64 mods, uint fx, QaModParity *ou
 }
 
 /* Every sector modifier's derived combat parameters, identical whichever machine computes them:
- * both thisPlayerNum values, both isNetworkGame values, both host roles, and both fx players. A
- * lever that read local-only state here would tilt one machine's simulation and desync the pair
- * a frame later. */
+ * both thisPlayerNum values, both isNetworkGame values, both host roles, and both fx players. */
 static void qa_test_modifier_online_parity(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -6836,10 +6820,7 @@ static void qa_test_flying_punch_bolt(void)
 	}
 }
 
-/* The Dragonwing's ships[] row is synthesized (no episode table carries one), so its invariants
- * live here: the graphic-0 sentinel, a hull and price between the Gencore Maelstrom and the
- * MicroCorp Stalker, the id clamps resolving the row instead of the entry-0 fallback, and the
- * co-op seat that must not be taken for the linked pair's rear bay. */
+/* Check the synthesized Dragonwing row, including its sentinel graphic, stats, and id clamps. */
 static void qa_test_dragonwing_row(void)
 {
 	const JE_byte hull = ships[SHIP_DRAGONWING].dmg;
@@ -6931,10 +6912,8 @@ static bool qa_fold_2x2_ink(Sprite2_array sheet, unsigned int index, int xOff, b
 	return painted;
 }
 
-/* The Nort Ship and Dragonwing paint 48px wide against the item list's 24px icon column, so each
- * takes a shifted anchor and a label column of its own. Both follow from the sprite ink, so
- * recompute them: the hull must sit inside the column, and its label must leave the same gap the
- * tightest single-2x2 hull leaves at the fixed label column. */
+/* The Nort Ship and Dragonwing paint 48px wide against the item list's 24px icon column, so
+ * each takes a shifted anchor and a label column of its own. */
 static void qa_test_wide_hull_columns(void)
 {
 	if (spriteSheet9.data == NULL)
@@ -6999,10 +6978,9 @@ static void qa_test_wide_hull_columns(void)
 	printf("# wide shop hulls clear their labels by %dpx\n", gap);
 }
 
-/* A weapon row tags a two-mode port, or a gun Endless stocked for the other bay, after its cost,
- * in a column that has to clear both the cost text and the owned marker the same row can carry.
- * Endless scales prices, so it is measured at both multiplier caps as well as at the shipped
- * price. Dual-Mode is the widest tag, so it is the one the column has to fit. */
+/* A weapon row tags a two-mode port, or a gun Endless stocked for the other bay, after its
+ * cost, in a column that has to clear both the cost text and the owned marker the same row can
+ * carry. */
 static void qa_test_dual_mode_tag(void)
 {
 	const int tagW = JE_textWidth(SHOP_DUAL_MODE_TAG, TINY_FONT);
@@ -7348,10 +7326,7 @@ static void qa_test_gauge_flash_lifetime(void)
 	hud_bars_dirty = savedDirty;
 }
 
-/* The two repair specials have to stay distinct where there are two hulls. stype 13 mends the ship
- * that fired; stype 14 is vanilla's repair-the-OTHER-hull special, so in co-op it mends the partner
- * and in the linked pair it stays on hull two. Driven through a scratch special slot so the test
- * does not depend on the shipped table being loaded. */
+/* The two repair specials have to stay distinct where there are two hulls. */
 static void qa_test_partner_repair_special(void)
 {
 	const bool savedTwo = twoPlayerMode, savedCoop = coopCampaignMode, savedSep = arcadeSeparateMode;
@@ -7410,10 +7385,7 @@ static void qa_fire_twiddle(JE_byte pwr, uint *armor, uint *shield)
 	JE_doSpecialShot(1, armor, shield);
 }
 
-/* What a twiddle charges. Without Kinetic Converter every kind of charge has to deduct exactly what
- * it always did, the odd half-shield bar included; with the perk each deducts less, while temp2,
- * the magnitude JE_specialComplete reads, keeps the list price. Driven through a scratch special
- * slot, as the repair test above is. */
+/* What a twiddle charges. */
 static void qa_test_twiddle_charges(void)
 {
 	if (VGAScreenSeg == NULL || game_screen == NULL)
@@ -7521,9 +7493,7 @@ static void qa_test_twiddle_charges(void)
 }
 
 /* One twiddle keystroke through the real detector. The codes are the keyboardCombos alphabet:
- * 1..4 are UP/DOWN/LEFT/RIGHT, 5..8 the same four with fire held, 9 everything released. The
- * detector reads a direction as the gap between where the ship is and where it came from, so each
- * code becomes a one-pixel offset. */
+ * 1..4 are UP/DOWN/LEFT/RIGHT, 5..8 the same four with fire held, 9 everything released. */
 static void qa_twiddle_step(JE_byte playerNum, JE_byte code)
 {
 	enum { PX = 100, PY = 100 };
@@ -7818,10 +7788,7 @@ static void qa_test_twiddle_wire(void)
 	qa_check(agree, "a flick reads as the same code from the wire as from its displacement, "
 	                "upside down or not");
 
-	/* A whole combo over the wire on an upside-down screen. The Nort ship's first row is Seeker
-	 * Bombs (LEFT, RIGHT, DOWN with fire); the displacements below are the ones the classic reads
-	 * hand the wire for the rotated keys, RIGHT, LEFT, UP with fire, since the vertical half is
-	 * inverted before the tuple is filled and the horizontal one at the detector. */
+	/* A whole combo over the wire on an upside-down screen. */
 	enum { SEEKER_BOMBS_SPECIAL = 39 };
 	static const struct {
 		int dx, dy;
@@ -7924,10 +7891,7 @@ static void qa_test_twiddle_strictness(void)
 	superTyrian = savedSuper;
 }
 
-/* A twiddle keeps its own clock. SFExecuted is cleared at the top of every tick, so a twiddle the
- * equipped special's recharge turns away is discarded outright, and with an autofiring special
- * that recharge is running nearly every tick. Firing a twiddle must likewise leave the equipped
- * special's own recharge where it found it. */
+/* A twiddle keeps its own clock. */
 static void qa_test_twiddle_cooldown(void)
 {
 	if (VGAScreenSeg == NULL || game_screen == NULL)
@@ -8026,10 +7990,8 @@ static void qa_flare_tick(void)
 	JE_doSpecialShot(1, &armor, &shield);
 }
 
-/* Which full-screen grade a flare special may pulse and release: a tint-less flare running out
- * leaves a level's brightness flash alone, a tinted one leaves a level's own filter alone, and a
- * flare that took an idle grade hands it back. See doc/notes.md, "Flare specials and the level
- * grade". */
+/* A flare may release only the full-screen grade it acquired. See
+ * doc/notes.md#twiddles-and-specials. */
 static void qa_test_flare_grade_ownership(void)
 {
 	const JE_boolean savedActive = filterActive, savedFade = filterFade;
@@ -8483,10 +8445,8 @@ static void qa_test_save_fixtures(void)
 	endlessResetRun();
 	endlessMode = savedEndless;
 
-	/* The repair pass: a save file whose Endless-named slot lost its half (an import that could not
-	 * read the sidecar) gets it back from that sidecar, and only that slot. The save file records
-	 * that the sidecar has been taken in, which is what stops a deleted run coming back; that gate
-	 * lives in JE_loadConfiguration, so this drives the pass itself. */
+	/* The repair pass: a save file whose Endless-named slot lost its half (an import that could
+	 * not read the sidecar) gets it back from that sidecar, and only that slot. */
 	endlessMode = false;
 	endlessSaveCaptureSlot(10);   // not in endless mode: clears the half, as such an import left it
 	endlessMode = savedEndless;

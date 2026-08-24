@@ -166,10 +166,9 @@ static char text_window_right[32];
 static int text_window_right_x;
 bool hud_message_dirty = false;
 
-/* The erase is unconditional: textErase == 0 no longer proves the bar is
- * clean, because the countdown's own erase can be swallowed when the 1->0
- * crossing lands in a silent rollback re-simulation pass (sprite blits are
- * no-ops there).  Redrawing the bar background is cheap and self-heals. */
+/* The erase is unconditional: textErase == 0 no longer proves the bar is clean, because the
+ * countdown's own erase can be swallowed when the 1->0 crossing lands in a silent rollback
+ * re-simulation pass (sprite blits are no-ops there). */
 void JE_repaintTextWindow(void)
 {
 	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
@@ -200,9 +199,7 @@ void JE_drawTextWindow(const char *text)
 	JE_repaintTextWindow();
 }
 
-// Draw a split message-bar line: left text at x=20 and right text ending at right_x. The left side
-// opens with tint in palette bank tint_bank, so a caller can colour its first words; pass NULL to
-// draw the whole line in the bar's own bank. Endless uses it for elite labels and bounties.
+// Draw a split message-bar line: left text at x=20 and right text ending at right_x.
 void JE_drawTextWindowSplit(const char *tint, unsigned int tint_bank, const char *left,
                             const char *right, int right_x)
 {
@@ -1378,10 +1375,8 @@ void JE_nextEpisode(void)
 
 	if (jumpBackToEpisode1)
 	{
-		// Drawn before the credits, not after: their ship animation draws mt_rand a variable
-		// number of times and a keypress cuts the roll short, so the two machines' streams part
-		// company in there. Ahead of it both are still on the level's lockstep stream (reseeded
-		// at level start, draw counts verified by the canary), so the pair agrees on the joke.
+		// Roll before the credits. Their animation consumes a variable number of random values, but
+		// both peers are still on the same stream here.
 		const bool superCarrot = (mt_rand() % 6) == 0;
 
 		if (episodeNum > 2 &&
@@ -1464,9 +1459,7 @@ void JE_initPlayerData(void)
 		player[0].items.sidekick[i] = 0;          // None
 	player[0].items.special = 0;                  // None
 	// Which Super Arcade ruleset a ship flies now lives on the ship (player_sa_ship), because
-	// online Super Arcade gives the two players different ones. It therefore has to be cleared
-	// with the rest of the loadout: left over from a previous Super Arcade run it would hand a
-	// plain arcade ship that ship's ball table and its paired special.
+	// online Super Arcade gives the two players different ones.
 	player[0].items.super_arcade_mode = SA_NONE;
 
 	player[0].last_items = player[0].items;
@@ -1536,10 +1529,7 @@ void JE_sortHighScores(void)
 	}
 }
 
-// The Endless high-score page. Endless keeps no score table, so the page lists the furthest zone
-// each run mode has reached; selecting one narrows to the Base Level rules behind it, and one of
-// those to its breakdown by difficulty, where a record is erased behind the same confirmation the
-// rest of the game uses for a destructive choice.
+// The Endless high-score page.
 
 /* One list at a time, each a step narrower than the last, and each row the deepest figure in the
  * list it opens. The four Base Level rules are a level of this rather than four boards to page
@@ -1572,9 +1562,7 @@ typedef struct
 	int  confirmChoice;  // which answer the cursor sits on
 } EndlessPageState;
 
-/* Page geometry, shared by the draw and input halves below. Every list is laid out in one band
- * under the header with the notes in one place below it, so the page holds its shape from level to
- * level: a shorter list centres in the band, and the difficulty list runs the tighter pitch. */
+/* Page geometry, shared by the draw and input halves below. */
 static const int endlessPageXCenter = 160;   // center of the 320px menu field
 static const int endlessPageBandY0 = 74, endlessPageBandH = 70;
 static const int endlessPageRowDy = 14, endlessPageRowH = 12;
@@ -1712,8 +1700,7 @@ static const char *endlessPageTrail(const EndlessPageState *page, int level)
 
 // Center that block and hang the columns off its edges: labels start at the left, zones end
 // right-aligned on xZoneRight, and the custom mark takes the strip after it so a marked record
-// still ends flush with the notes. Both columns come from the block, not from the current records,
-// so nothing shifts as those change.
+// still ends flush with the notes.
 static void endlessPageColumns(int *xLabel, int *xZoneRight)
 {
 	int blockW = 0;
@@ -2386,10 +2373,8 @@ JE_boolean JE_gammaCheck(void)
 
 void JE_drawNetworkNotice(const char *text)
 {
-	// Drawn into VGAScreenSeg, so this is display space: the playfield is x in [0, PLAYFIELD_WIDTH)
-	// and y in [0, 184), with the HUD to the right of it.  Centre on that, not on the frame -- a
-	// frame-centred panel slides its right edge under the HUD and sits low, the same way the
-	// endless death menu did.  See JE_endlessDeathMenu, which centres on the same box.
+	// Drawn into VGAScreenSeg, so this is display space: the playfield is x in [0,
+	// PLAYFIELD_WIDTH) and y in [0, 184), with the HUD to the right of it.
 	const int playfieldRows = 184;
 	const int panelW = MIN(JE_textWidth(text, normal_font) + 28, PLAYFIELD_WIDTH - 16);
 	const int panelH = 26;
@@ -2423,7 +2408,7 @@ void JE_doInGameSetup(void)
 #ifdef WITH_NETWORK
 	// A rollback session reaches this menu on a frame both machines confirmed and needs no
 	// handshake here; its release also carries the menu frame's input records and, unlike
-	// PACKET_WAITING, means nothing to the level-end paths (doc/notes.md, "Rollback input").
+	// PACKET_WAITING, means nothing to the level-end paths. See doc/notes.md#rollback.
 	const bool rollback = nrb_active();
 	const Uint16 release = rollback ? PACKET_GAME_MENU : PACKET_WAITING;
 	if (isNetworkGame && !rollback)
@@ -3324,8 +3309,7 @@ JE_boolean JE_inGameSetup(void)
 
 	/* Both boxes are authored flush against the left edge (x=3); centre each of them in the
 	 * PLAYFIELD, which composite_playfield lays down at screen x 0, PLAYFIELD_WIDTH (299) wide,
-	 * with the HUD owning everything to its right. Everything below is expressed as the original
-	 * coordinate plus one of these offsets, so the layout inside each box is untouched. */
+	 * with the HUD owning everything to its right. */
 	const int xOfs = (PLAYFIELD_WIDTH - 215) / 2 - 3;      /* main box: x 3..217 */
 	const int xHelpOfs = (PLAYFIELD_WIDTH - 255) / 2 - 3;  /* help box: x 3..257 */
 	const int xHelpMid = 3 + xHelpOfs + 255 / 2;
@@ -4006,8 +3990,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 
 	// Put the level's ramp back in `colors` for whoever sets the palette next, but do NOT push it
 	// to the screen: the panel is still up while the caller fades to black, and re-applying the
-	// level ramp under it wrecks the letters again for the length of that fade. Every exit from
-	// here (level reload, outpost, run summary) installs a palette of its own.
+	// level ramp under it wrecks the letters again.
 	memcpy(&colors[240], savedRamp, sizeof(savedRamp));
 
 	VGAScreen = temp_surface; /* side-effect of game_screen */
@@ -5209,9 +5192,7 @@ static void debug_toggle_campaign_mods(void)
 }
 
 /* Flip the rollback self-test. Goes through rollback_selftest_set() rather than the flag, so
- * switching it on mid-level also arms the registry and snapshot ring. The config write persists
- * it the way the `rollback_selftest` key already did: a divergence hunt usually spans restarts,
- * and the session it is diagnosing may well end in a crash. */
+ * switching it on mid-level also arms the registry and snapshot ring. */
 static void debug_toggle_rollback_selftest(void)
 {
 	rollback_selftest_set(!rollback_selftest);
@@ -5337,8 +5318,7 @@ static void extraShipLoadoutRefresh(uint pnum, bool overHud)
 
 /* Peer side of a networked debug edit (network.c): the wire block already carried the armor and
  * shield the editing machine ended up with, so nothing is re-derived here; this only rebuilds
- * the caches that hang off items[]. `overHud` says a gameplay HUD is on screen to repaint, which
- * the caller knows and this side of the wire does not. */
+ * the caches that hang off items[]. */
 void debugLoadoutRefresh(bool overHud)
 {
 	const bool wasOverHud = debugMenuOverHud;
@@ -6138,8 +6118,7 @@ void JE_debugMenu(bool center)
 #ifdef WITH_NETWORK
 	// Publish whatever was changed: every loadout row, cheat and difficulty here is simulation
 	// state, so an edit the peer never hears about leaves the two machines playing different
-	// games. No-op when nothing moved. Sent from inside the rendezvous the menu was opened from
-	// (the in-game options menu or the shop), which is what makes applying it on the far side safe.
+	// games.
 	if (isNetworkGame)
 		network_debug_sync_send();
 #endif
@@ -6875,7 +6854,7 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 				/* Strict: anything that is not the next step throws the combo away, including the
 				 * expected direction with the fire button in the wrong state. Only the code just
 				 * consumed (a held direction) and code 9 (everything released) are exempt. See
-				 * doc/notes.md, "Twiddles". */
+				 * doc/notes.md#twiddles-and-specials. */
 				if (temp != 9 &&
 				    (SFCurrentCode[playerNum_-1][temp2] == 0 ||
 				     keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]-1] != temp))
@@ -6972,10 +6951,9 @@ void JE_playCredits(void)
 
 	const int ticks_max = lines * 20 * 3;
 
-	// Smooth-motion pacing for the credits sim: it advances one tick per real
-	// tick-period, but we present every display frame (vsync-aligned) in between so
-	// the flying ships and portrait fade glide rather than stepping at ~35fps. This
-	// state persists across ticks; see the present block at the bottom of the loop.
+	// Smooth-motion pacing for the credits sim: it advances one tick per real tick-period, but we
+	// present every display frame (vsync-aligned) in between so the flying ships and portrait fade
+	// glide rather than stepping at ~35fps.
 	const float cred_period = get_delay_period();
 	const float cred_counter_to_ms = 1000.0f / (float)SDL_GetPerformanceFrequency();
 	Uint64 cred_last = SDL_GetPerformanceCounter();
@@ -7098,10 +7076,7 @@ void JE_playCredits(void)
 		}
 
 		NETWORK_KEEP_ALIVE();
-		// The zone-100 roll happens at an outpost both machines are sitting in, and it is minutes
-		// long. Holding the link is not enough on its own: the peer keeps announcing its outpost
-		// state on the reliable channel, and an unread head of that queue blocks the rendezvous
-		// this outpost ends with, so drain it while the credits play.
+		// Credits can run for minutes. Drain outpost traffic so it cannot block the rendezvous.
 		while (network_shop_pump())
 			;
 
@@ -7218,9 +7193,7 @@ void JE_endLevelAni(void)
 	}
 
 	// Time left is one clock for the whole level, so an online pair that beat it beat it together
-	// and both purses take the same bonus.  Banked here, but printed where it fits: solo keeps
-	// vanilla's row above the destruction line, and a race has two score lines in the way, so its
-	// copy goes out below that line instead (both are drawn top to bottom as they are revealed).
+	// and both purses take the same bonus.
 	const int timeBonus = timedBattleMode ? (levelTimerCountdown / 10) * 100 : 0;
 	if (timedBattleMode)
 	{
@@ -7388,8 +7361,7 @@ void JE_endLevelAni(void)
 		temp2 = 168;
 	// Endless adds a payout block under the scores (Zone Bonus, and Bank Interest below it), and
 	// two players add a second score line above that, so the two-player y lands this right on top
-	// of the last of them. Give it its own row clear of the block and centre it properly rather
-	// than hanging it off a fixed left edge that was only ever centred for one line width.
+	// of the last of them.
 	if (endlessMode)
 	{
 		temp2 = 168;
@@ -7472,9 +7444,6 @@ void JE_operation(JE_byte slot)
 	char tempStr[51];
 
 	// This screen (name entry + on-screen SAVE/CANCEL buttons) needs the absolute pointer.
-	// If it was opened during gameplay the mouse is in relative mode; force absolute so a
-	// Switch touch is a tap-to-click on the buttons; in relative mode a touch steers the
-	// ship, so the buttons never register and the dialog appears frozen. Restored on exit.
 	const bool op_was_relative = mouseGetRelative();
 	mouseSetRelative(false);
 
@@ -7500,10 +7469,8 @@ void JE_operation(JE_byte slot)
 		while (stemp[temp-1] == ' ' && --temp) { }  // trim the trailing pad spaces
 
 #ifdef PLATFORM_HANDHELD
-		// No physical keyboard here: get the name from the software keyboard and
-		// fill the field DIRECTLY here (deterministic). Delivering it as an injected SDL
-		// TEXTINPUT event raced with service_SDL_events clearing new_text and sometimes lost
-		// the whole name. The dialog then shows it and the user taps SAVE to confirm.
+		// No physical keyboard here: get the name from the software keyboard and fill the field
+		// DIRECTLY here (deterministic).
 		{
 			char kb[15];
 			int n = (temp < 14) ? temp : 14;
@@ -7877,8 +7844,7 @@ static int hud_lives_count_left(const char *count)
 
 /* Special block geometry. Player one's icon sits inside the left playfield edge with its ready
  * light just past it; player two's mirrors that against the right, right-aligned on the same
- * anchor its name label uses. Only the ship this machine draws the HUD for gets a block, so a
- * Separate-arcade joiner cannot paint its special over player one's row. */
+ * anchor its name label uses. */
 #define HUD_SPECIAL_GAP       1   // between the icon and its ready light
 #define HUD_SPECIAL_P1_X     25
 #define HUD_SPECIAL_P2_RIGHT (PLAYFIELD_WIDTH + 22)   // the anchor hud_top_right_left_edge mirrors
@@ -7961,7 +7927,7 @@ static void hud_special_light_tick_begin(void)
 	}
 }
 
-// Equipping a special opens a meter phase. See "Feedback and overlays" in doc/notes.md.
+// Equipping a special opens a meter phase. See doc/notes.md#gauges-and-effects.
 void hud_special_light_rearm(uint p)
 {
 	if (hud_special_block_shown(p))
@@ -8057,7 +8023,7 @@ static bool hud_special_light_ready(void)
 static void hud_special_light_step_flash(void)
 {
 	// A meter that has left full since the previous live tick owes a pop, whether or not this
-	// machine ever saw the shot's edge. See "Feedback and overlays" in doc/notes.md.
+	// machine ever saw the shot's edge. See doc/notes.md#gauges-and-effects.
 	const bool ready = hud_special_light_ready();
 	if (hud_light_meter_seen && hud_light_was_ready && !ready)
 		hud_light_await_pop = true;
@@ -8170,8 +8136,7 @@ static void draw_special_ready_light(int x, int y)
 
 	// The light is opaque over its ink block, and only the residual carries it onto interpolated
 	// frames; without the mark, a pixel that happens to match the playfield under it is dropped
-	// there and the bar shows a hole. (hud_special_light_present overdraws the whole block on an
-	// interpolated frame, but the residual is still what every other path shows.)
+	// there and the bar shows a hole.
 	rl_mark_overlay_rect(x + HUD_LIGHT_INK_X, y + HUD_LIGHT_ROW_FIRST, HUD_LIGHT_INK_W, HUD_LIGHT_ROWS);
 
 	hud_special_light_paint(VGAScreen, 1, x, y, filled, hud_light_flash);
@@ -8450,10 +8415,9 @@ void JE_inGameDisplays(void)
 		const int rightX = baseRightX - boss_bar_hud_left_shift(baseRightX);
 		const int yBase = 7;  // +7px down from the original placement
 
-		// This readout is last in the bottom-band precedence, so it lifts clear of everything
-		// else rather than the other way round: the FPS counter below it, and a BOTTOM boss
-		// bar that may have grown upward into this space. Derived from where those actually
-		// are, so a stacked pair of bars pushes it exactly as far as it needs to go.
+		// This readout is last in the bottom-band precedence, so it lifts clear of everything else
+		// rather than the other way round: the FPS counter below it, and a BOTTOM boss bar that may
+		// have grown upward into this space.
 		int floorRow = vga_height;  // nothing below to avoid
 		if (show_fps)
 		{
@@ -8929,10 +8893,7 @@ static void blit_ship2x2_blend(SDL_Surface *surface, int x, int y, Sprite2_array
 		blit_sprite2x2_alpha(surface, x, y, sheet, index, style.bank, (Uint8)(style.opacity / 2));
 }
 
-// Resting/home position for a front-mounted (style 2) option. When BOTH slots hold a
-// front option they sit side by side so both are visible and both are seen to launch;
-// a lone front option stays centered on the ship as it always has.
-// (FRONT_OPTION_SPREAD lives in player.h so the shop preview matches.)
+// Resting/home position for a front-mounted (style 2) option.
 static int front_option_home_x(const Player *this_player, uint i)
 {
 	const bool both = this_player->sidekick[LEFT_SIDEKICK].style == 2
@@ -8943,10 +8904,7 @@ static int front_option_home_x(const Player *this_player, uint i)
 	                            : this_player->x + FRONT_OPTION_SPREAD;
 }
 
-// Front-mounted (launchable) option physics for one sidekick slot. Each slot keeps its
-// own attachment state (optionAttachment*[i]), so a LEFT and a RIGHT front option can
-// both be launched at once: "Fire Both Sidekicks" sets button[1] and button[2], and each
-// pod launches on its own slot's trigger (button[1 + i]). Mirrors the RIGHT slot's stock behavior.
+// Front-mounted (launchable) option physics for one sidekick slot.
 static void JE_frontOption(Player *this_player, uint i, int home_x, JE_boolean launch_pressed)
 {
 	int temp;
@@ -9195,10 +9153,8 @@ void endlessPerShipTick(Player *this_player)
 	}
 }
 
-/* Spend a charged Opening Salvo on the volley this ship is about to fire, and answer whether one
- * was there. This is the weapon loop's own front-gun fire gate read a step early, so the window is
- * already open when JE_doSpecialShot runs; see doc/notes.md, "Economy and perks". Seat two works
- * the rear bay in the linked pair and never arms one. */
+/* Spend a charged Opening Salvo on the volley this ship is about to fire, and answer whether
+ * one was there. See doc/notes.md#perks. */
 bool endlessArmOpeningSalvoForTick(Player *this_player, JE_byte playerNum_)
 {
 	if (!endlessFxActive() || !(coopEndlessMode || this_player == &player[0]))
@@ -9450,10 +9406,9 @@ redo:
 
 		/* Movement. */
 
-		// Netplay with the variable-timestep ship: fold the motion VT accumulated since the
-		// last tick into the ship now, between the snapshot above and the netcode below that
-		// reads (and reverts) the difference. Only our own ship; the other player's motion
-		// arrives over the wire. No-op unless VT owns a network game.
+		// Netplay with the variable-timestep ship: fold the motion VT accumulated since the last tick
+		// into the ship now, between the snapshot above and the netcode below that reads (and
+		// reverts) the difference.
 		if (isNetworkGame && playerNum_ == thisPlayerNum && !rollback_resim)
 			vt_ship_commit_net(playerNum_ - 1);
 
@@ -9892,10 +9847,9 @@ redo:
 			}
 			else
 			{
-				// Replay OUR ship at the same logical tick the remote packet names, taken from
-				// the sync-keyed history rather than by counting back through the outbound
-				// queue; see net_own_state_store. This is what guarantees both machines
-				// reconstruct the identical pair of positions for the identical tick.
+				// Replay OUR ship at the same logical tick the remote packet names, taken from the
+				// sync-keyed history rather than by counting back through the outbound queue; see
+				// net_own_state_store.
 				const Uint16 tick = SDLNet_Read16(&packet_state_in[0]->data[2]);
 
 				int own_x, own_y;
@@ -10901,7 +10855,7 @@ redo:
 				{
 					// The orbit offset above is rounded to whole pixels, which makes the
 					// recorded arc advance unevenly; the remainder puts the interpolated
-					// path back on the exact circle. See doc/notes.md, "Render list".
+					// path back on the exact circle. See doc/notes.md#render-list.
 					const float ox = sim_sinf(optionSatelliteRotate) * 20,
 					            oy = sim_cosf(optionSatelliteRotate) * 20;
 					const float dir = (i == LEFT_SIDEKICK) ? 1.0f : -1.0f;  // right slot mirrors

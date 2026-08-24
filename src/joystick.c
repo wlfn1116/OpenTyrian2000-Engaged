@@ -689,9 +689,7 @@ bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 	bool detected = false;
 
 	// The controller "confirm" that opened this prompt pushed a synthetic RETURN
-	// (push_joysticks_as_keyboard) that is still queued. Without draining it, the first
-	// service_SDL_events() in the loop below sets newkey and aborts detection on frame 1,
-	// making it impossible to bind anything with a controller. Consume it first.
+	// (push_joysticks_as_keyboard) that is still queued.
 	service_SDL_events(true);
 	newkey = newmouse = false;
 

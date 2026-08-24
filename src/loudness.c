@@ -103,11 +103,9 @@ static Sint32 volumeFactorTable[256];
 #define TO_FIXED(x) ((Sint32)((x) * (1 << 12)))
 #define FIXED_TO_INT(x) ((Sint32)((x) >> 12))
 
-// Twice the Loudness update rate (in updates/second).  In Tyrian, Loudness
-// updates were performed at the same rate as the game timer, which varied
-// depending on the game speed (~69.57 Hz at most game speeds).  We don't have
-// the same limitations, so we'll keep the update rate constant, but we do want
-// to stick to integer math, so we'll update at 69.5 Hz.
+// Twice the Loudness update rate (in updates/second). In Tyrian, Loudness updates were
+// performed at the same rate as the game timer, which varied depending on the game speed
+// (~69.57 Hz at most game speeds).
 static const int ldsUpdate2Rate = 139;  // 69.5 * 2
 
 static int samplesPerLdsUpdate;
@@ -733,10 +731,8 @@ void play_song(unsigned int song_num)  // FKA NortSong.playSong
 	SDL_UnlockAudioDevice(audioDevice);
 }
 
-// Forget which song is selected, so the next play_song() reloads the track even when it names the
-// one already up. That same-song early-out is normally right; it stops a re-issued jingle
-// restarting every tick. fade_song leaves a song selected at volume 1 rather than stopped,
-// so a screen that fades out and then returns to the same track has no other way to be heard.
+// Forget which song is selected, so the next play_song() reloads the track even when it names
+// the one already up.
 void clear_song_selection(void)
 {
 	song_playing = NO_SONG_PLAYING;

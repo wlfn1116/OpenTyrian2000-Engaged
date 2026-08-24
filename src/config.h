@@ -27,9 +27,8 @@
 
 #define SAVE_FILES_NUM (11 * 2)
 
-/* The plain-text save file beside opentyrian.cfg. The DOS-era tyrian.sav (encrypted, checksummed,
- * fixed record widths) is read once to migrate and never written; see "Saves and records" in
- * doc/notes.md. */
+/* The plain-text save file beside opentyrian.cfg. The DOS-era tyrian.sav is imported once; see
+ * doc/notes.md#saves-and-retries. */
 #define SAVE_FILE_NAME        "opentyrian.sav"
 #define SAVE_FILE_LEGACY_NAME "tyrian.sav"
 #define SAVE_FILE_FORMAT      1   // bumped when a key changes meaning; a missing key is a default
@@ -124,8 +123,7 @@ extern T2KHighScoreType t2kHighScores[20][3];
 
 /* Which credit rule paid a co-op Campaign run. Shared pays every pickup into both wallets and
  * Double Earnings pays a split take twice, so the same play reaches roughly twice the combined
- * cash under either one. A record kept before the board carried this is UNKNOWN and prints
- * without a rule. */
+ * cash under either one. */
 enum
 {
 	COOP_CREDIT_UNKNOWN = 0,
@@ -371,10 +369,9 @@ bool superSparkCapForSprite(JE_word sprite); // cap setting for a trail-tagged s
 // every episode with the same SUPER_SPARKS_* Auto/On/Off semantics (Auto = as shipped).
 extern int wallopSecondBolt;
 
-// Items whose ep1-3 (tyrian.hdt) and ep4/5 (tyrian4/5.lvl) item data differ beyond the superspark
-// trail above (full diff of the two data sets): gameplay reworks, a blast sprite, retuned sounds,
-// one shop icon, two shop ship pictures. epDiffMode[] forces one episode's data; JE_applyEpDiffs
-// rewrites from shipped constants.
+// Items whose ep1-3 (tyrian.hdt) and ep4/5 (tyrian4/5.lvl) item data differ beyond the
+// superspark trail above (full diff of the two data sets): gameplay reworks, a blast sprite,
+// retuned sounds, one shop icon, two shop ship pictures.
 enum
 {
 	EPDIFF_AUTO = 0,     // per-episode default: ep1-3 data in ep1-3, ep4/5 data in ep4/5
@@ -456,7 +453,7 @@ extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force
 
 /* Enhancement presets. The Enhancements menu's Preset row writes every enhancement setting at
  * once, and names whichever preset the live values still match. The set is enhancementSettings[]
- * in config.c; "Menus and UI" in doc/notes.md covers what it leaves out and why. */
+ * in config.c; see doc/notes.md#menus-and-touch-ui. */
 typedef enum
 {
 	ENH_PRESET_VANILLA = 0,  // reproduce the shipped DOS behavior wherever a setting can

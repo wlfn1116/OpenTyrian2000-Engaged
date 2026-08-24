@@ -29,10 +29,8 @@
 #define EPISODE_MAX 5
 #define EPISODE_AVAILABLE 5
 
-// Width of a weapon's per-bullet arrays; raised from the original 8 so the Custom Weapon
-// Creator can build wider weapons (stock data still loads exactly 8 per array; only custom
-// weapons touch the extra slots; the shots.c wrap guard and editor clamps key off this).
-// MUST stay in 8..255: multi/max and the fire cursor shotMultiPos are all bytes.
+// Custom weapons may use wider patterns than the eight entries in stock data. The fire cursor
+// and pattern length are bytes, so this must stay between 8 and 255.
 #define WEAPON_MULTI_MAX 255
 
 typedef struct
@@ -180,9 +178,7 @@ void JE_loadItemDat(void);
 void JE_initEpisode(JE_byte newEpisode);
 
 // Hand the shop sheet's 11 never-referenced 2x2 icons to the weapons/sidekicks that otherwise
-// share another item's icon (or fall back to the 167 placeholder). Reads `unusedShopSprites`;
-// restores the shipped icons when it is off, so the Visuals row takes effect between games
-// without an item reload. Idempotent.
+// share another item's icon (or fall back to the 167 placeholder).
 void JE_applyUnusedShopSprites(void);
 
 /* Rewrite the loaded item data from every enhancement setting baked into it: the Zica Lv11
@@ -201,9 +197,7 @@ JE_byte JE_epDiffFiringSound(int item, int mode);
 // the special draws its own shipped 2x2. Reads `unusedShopSprites`; see draw_special_icon.
 const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr);
 
-// Display name of a special. Two records ship as "Pearl Wind", one firing a single aimed bolt and
-// one spraying a flare-style field, and the endless grant pool can hand out either, so the bolt
-// shows as "Pearl Shot" while endless effects are active. Every other name is the loaded one.
+// Display name of a special.
 const char *JE_specialName(JE_byte id);
 
 // Display name of a weapon port. The endless shop pools every real port into both gun menus,

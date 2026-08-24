@@ -31,10 +31,8 @@ extern JE_word backMove, backMove2, backMove3;
 // backMove lumps. See backgrnd.c and endlessScrollExtraPx() (endless_combat.c).
 extern int endlessScrollExtraPx1, endlessScrollExtraPx2, endlessScrollExtraPx3;
 
-// TRUE per-tick vertical scroll (px) of each background layer [1..3], computed at draw
-// time in backgrnd.c/tyrian2.c. Unlike a screen-position diff (which only sees the
-// sub-tile remainder, mod 28), this carries the whole-tile component, so the render-list
-// interpolation stays continuous when a speed modifier pushes the scroll past 28px/tick.
+// TRUE per-tick vertical scroll (px) of each background layer [1..3], computed at draw time in
+// backgrnd.c/tyrian2.c.
 extern int bgScrollDeltaY[4];
 
 // Offscreen rows retained below each background layer. Scroll modifiers widen the

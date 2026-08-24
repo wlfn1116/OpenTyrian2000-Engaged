@@ -323,9 +323,8 @@ void JE_outTextAdjust(SDL_Surface * screen, int x, int y, const char *s, unsigne
 }
 
 // brightness is SIGNED: a negative value slides the glyph shades DOWN a palette bank's ramp
-// (TINY_FONT bodies sit at shade 7, edges at 3; see the Chart-a-Course threat tints), and
-// the blit's value parameter is Sint8 anyway. Keep it >= -2 so the shade-2 edge pixels can't
-// underflow the bank.
+// (TINY_FONT bodies sit at shade 7, edges at 3; see the Chart-a-Course threat tints), and the
+// blit's value parameter is Sint8 anyway.
 void JE_outTextAndDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int font)
 {
 	int bright = 0;

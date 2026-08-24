@@ -97,10 +97,7 @@ void JE_dBar3_scaled(SDL_Surface *surface, JE_integer x, JE_integer y, float num
 
 	if (dir == GAUGE_GRAD_LEFT || dir == GAUGE_GRAD_RIGHT)
 	{
-		// Horizontal gradient: nine 1px-wide, full-height stripes whose shade steps across
-		// the width. Same vertical extent as the stacked bands (bottom row y, top row y-2*num-1).
-		// Lifted +2 shades so the horizontal ramp reads a touch brighter (still in-family; the
-		// vertical bar's upper bands reach higher still).
+		// Horizontal gradient: nine 1px-wide, full-height stripes whose shade steps across the width.
 		for (int j = 0; j <= 8; j++)
 		{
 			const int off = (dir == GAUGE_GRAD_RIGHT) ? j : (8 - j);

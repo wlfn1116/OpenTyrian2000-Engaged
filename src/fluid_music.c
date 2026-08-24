@@ -122,9 +122,7 @@ static void fm_send_event(const FmEvent *e)
 }
 
 // Restart at the loop target (the loopStart marker, or the top if none): reset to a clean synth
-// and re-establish the exact channel state the song had there. Replaying every state event before
-// the target (in order, notes skipped) makes each loop begin identically, like OPL's register
-// state.
+// and re-establish the exact channel state the song had there.
 static void fm_restore_loop_state(void)
 {
 	fm_all_notes_off();

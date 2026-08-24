@@ -34,13 +34,11 @@ int      endlessSortiePreLongCon[2]   = { 0, 0 };
 // Mutators captured when the outpost opens. An unlocked bail must restore this previous-sector set.
 Uint64   endlessSortieOutpostMods = 0;
 // Episode captured with them. Shop stock is item ids, and each episode loads its own item tables,
-// so a bail must restore this before the outpost redraws. See "Death, retries" in doc/notes.md.
+// so a bail must restore this before the outpost redraws. See doc/notes.md#saves-and-retries.
 JE_byte  endlessSortieOutpostEp = 0;
 
 /* Every save slot's Endless half lives in opentyrian.sav as a `section 'endless' 'N'`, written
- * beside the campaign record so the pair cannot drift (the codec is below). The DOS-era binary
- * sidecar endless.sav is read only to migrate, through the frozen reader further down. See
- * "Saves and records" in doc/notes.md. */
+ * beside the campaign record so the pair cannot drift. See doc/notes.md#saves-and-retries. */
 
 #define ENDLESS_LEGACY_SAVE_FILE      "endless.sav"
 #define ENDLESS_LEGACY_VERSION_MAX    27   // the last binary format; the reader knows v3..v27
@@ -237,10 +235,7 @@ static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 	endlessNameCourseBaseLevels();  // populate the Radar perk's base-level cache for the restored chart
 }
 
-/* Text codec: one config section per record, every field under a name. Absent keys read as zero,
- * unknown keys are ignored, and lists are space-separated numbers, so a hand edit or a build that
- * knows one field more or less parses the rest of the record unharmed. The wire
- * (endlessRunSerialize) carries this same text. */
+/* Text codec: one config section per record, every field under a name. */
 
 // A player-prefixed key: p1_armor_bonus, p2_armor_bonus.
 static const char *endlessPlayerKey(char *buf, size_t n, uint p, const char *key)
@@ -971,9 +966,7 @@ int endlessSaveLegacyVersionMax(void)
 	return ENDLESS_LEGACY_VERSION_MAX;
 }
 
-/* A file past v27 came from a build that appended fields the frozen reader does not know. Its
- * header still states the record width, so the v27 prefix of every record is where it always was:
- * read that and skip the tail (endlessLegacyReadOneRec). Only a file with no width is refused. */
+/* A file past v27 came from a build that appended fields the frozen reader does not know. */
 static bool endlessLegacyReadHeader(EndlessReader *rd, EndlessSaveHeader *h)
 {
 	Uint8 tag[6];
@@ -1404,9 +1397,7 @@ bool endlessSaveLegacyLoad(void)
 }
 
 /* opentyrian.sav exists but a slot named for an Endless zone has no run behind it, and the old
- * sidecar still does: take that slot's half from there. This is the state an import that could not
- * read the sidecar leaves, and a run without its half replays one level. Returns whether any slot
- * was repaired. */
+ * sidecar still does: take that slot's half from there. */
 static bool endlessSaveRepairFrom(const char *dir, const char *path)
 {
 	int wanted = 0;
@@ -1500,7 +1491,7 @@ bool endlessSaveTestNewerLegacy(const char *v27Path, char *detail, size_t detail
 
 /* The partner's half of a save, as their machine reported it over the save acknowledgement:
  * their stock rows and the stream position they came off. Cleared when a new visit deals, so
- * a stale half cannot ride a later save; see "Online saves" in doc/notes.md. */
+ * a stale half cannot ride a later save; see doc/notes.md#online-saves. */
 static struct
 {
 	bool   fresh;
@@ -2050,7 +2041,7 @@ void endlessUnpackDebugBlock(const Uint8 *buf)
 
 /* Online co-op resume: the host serializes the live run as the same text a save slot holds and the
  * joiner adopts it, so both machines resume from identical state. Each machine's own shop stock is
- * redrawn from the seed rather than sent (see "Endless online" in doc/notes.md). */
+ * redrawn from the seed rather than sent (see doc/notes.md#session-and-outpost). */
 size_t endlessRunSerialize(Uint8 *out, size_t max)
 {
 	if (!endlessMode || out == NULL)
@@ -2080,10 +2071,7 @@ bool endlessRunAdopt(const Uint8 *bytes, size_t len)
 	endlessApplyCurrent(&rec);
 	endlessMode = true;
 
-	/* The record's own rows belong to the machine that captured them, its equipped gear seeded
-	 * in. This seat's half is the record's partner block when the save checkpointed one; without
-	 * it the rows are redealt from the restored stream, which reproduces the deal this seat was
-	 * originally shown (the capturing machine never draws from its peer's stream). */
+	/* Use this seat's partner block when the checkpoint captured one; otherwise redeal its rows. */
 	const uint p = endlessEconomyIndex();
 	if (rec.partnerValid && rec.partnerSeat == p)
 	{

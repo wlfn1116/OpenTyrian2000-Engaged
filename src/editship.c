@@ -835,7 +835,7 @@ static void seRebuildShapes(void)
 	free(blob);
 }
 
-// Compile User.shp's sparse cells into the runtime Sprite2 sheet. See doc/notes.md.
+// Compile User.shp's sparse cells into the runtime Sprite2 sheet. See doc/notes.md#extra-ships.
 static bool seImportLegacyUserShapes(FILE *f)
 {
 	const long fileSize = ftell_eof(f);

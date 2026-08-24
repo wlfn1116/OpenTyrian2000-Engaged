@@ -131,9 +131,7 @@ int JE_loadScreen(bool net2p, bool saving);
 void JE_saveTransferUpload(void);
 void JE_saveTransferDownload(void);
 /* Which sessions may load a given record. The save pages show an incompatible slot dimmed and
- * unselectable rather than hiding it. Public for the unit suite: the rule now separates three
- * arcade lobbies that share one slot page, and loading across them would resume with a loadout
- * the session's own rules never issue. */
+ * unselectable rather than hiding it. */
 bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p);
 void JE_operation(JE_byte slot);
 void JE_inGameDisplays(void);
@@ -151,8 +149,7 @@ int hud_top_right_left_edge(void);
 
 // Vertical extent of the same corner clusters, for the side-hugging vertical boss bars: the
 // bottom row of each top cluster, -1 where that corner draws nothing, and the top row of each
-// bottom corner's score and superbomb rows. Player one's score holds the bottom-left corner in
-// every mode; only the bottom-right one can be empty, and reports vga_height when it is.
+// bottom corner's score and superbomb rows.
 int hud_top_left_bottom_edge(void);
 int hud_top_right_bottom_edge(void);
 int hud_bottom_left_top_edge(void);

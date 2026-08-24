@@ -271,7 +271,7 @@ void coopCampaignScoreConfigLoad(const ConfigSection *section)
 }
 
 /* Record a completed co-op Campaign episode under both lobby names. Eligibility stays here; see
- * doc/notes.md#online-saves-and-records. */
+ * doc/notes.md#online-saves. */
 void coopCampaignScoreNote(void)
 {
 	const int e = initial_episode_num - 1;
@@ -450,29 +450,20 @@ bool arcadeRandomBalls = true;
    balls, instead of the rear gun sitting where those balls left it (arcade_weapon_power in
    player.c). Two-player is out; there the rear bay already IS player 2's life counter. */
 bool arcadeRearGunScale = true;
-/* Spend the sheets' never-referenced icons on the weapons, sidekicks and specials that ship
-   sharing another item's icon or with none at all (JE_applyUnusedShopSprites in episodes.c).
-   Cosmetic; it shows in the shops and on the special-weapon HUD icon, and matters most in
-   Endless, which offers every port at once. */
+/* Give unused sheet icons to items that otherwise reuse an icon or have none. */
 bool unusedShopSprites = true;
 /* Take a projectile's hit test from the middle of its sprite rather than the top-left corner of
-   its cell, and the target's from the middle of its own (the two shot loops in tyrian2.c). Off
-   restores the vanilla geometry, whose boxes sit above the sprites they belong to.
-   Host-authoritative online; doc/notes.md has the box arithmetic. */
+ * its cell, and the target's from the middle of its own (the two shot loops in tyrian2.c). See
+ * doc/notes.md#coordinates. */
 bool centeredShotHitboxes = true;
 /* Steer a weapon-table guided shot toward the enemy's screen x (ex + mapoffset), where the
-   collision loop measures it (player_shot_aim_step in shots.c). Off keeps the shipped map-x aim,
-   which the attract demos and the replay fixtures pin. Host-authoritative online; doc/notes.md,
-   "Combat", covers what stays stock. */
+ * collision loop measures it (player_shot_aim_step in shots.c). */
 bool guidedShotScreenAim = false;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
 
-/* Every setting the Enhancements menu edits, with the value each preset writes to it. Vanilla
- * reproduces the DOS game wherever a setting can; Engaged is this fork's recommended set and
- * matches the defaults above. See "Menus and UI" in doc/notes.md for what depends on this table
- * staying complete. */
+/* Every setting the Enhancements menu edits, with the value each preset writes to it. */
 typedef struct
 {
 	int  *intSetting;   // exactly one of the two pointers is set
@@ -1720,10 +1711,8 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		if (player[1].weapon_mode == 0) player[1].weapon_mode = 1;
 	}
 
-	/* Which weapon bay each ship counts lives on depends on the shape of the session, and this
-	 * is the one path that installs a loadout without going through newGame(). A resumed
-	 * Separate arcade left on newGame()'s linked binding would spend ship two's rear-gun power
-	 * every time it died, and hand it the wrong life count on the way in. */
+	/* Which weapon bay each ship counts lives on depends on the shape of the session, and this is
+	 * the one path that installs a loadout without going through newGame(). */
 	for (uint p = 0; p < COUNTOF(player); ++p)
 		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 

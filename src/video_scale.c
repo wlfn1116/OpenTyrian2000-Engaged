@@ -111,10 +111,8 @@ void set_scaler_by_name(const char *name)
 	}
 }
 
-// Plain scalers only enlarge pixels (nearest-neighbour: None/2x/3x/4x/Native); the
-// rest (Scale2x, hqNx) are pixel-art reconstruction algorithms. The supersampled
-// present path bypasses the algorithm in-game, so while supersampling is enabled only
-// plain scalers are selectable (else gameplay and pause/menus would look different).
+// Plain scalers only enlarge pixels (nearest-neighbour: None/2x/3x/4x/Native); the rest
+// (Scale2x, hqNx) are pixel-art reconstruction algorithms.
 bool scaler_is_plain(uint index)
 {
 	return index < scalers_count

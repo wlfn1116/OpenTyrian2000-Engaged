@@ -176,10 +176,8 @@ static int lobbyCycleDifficulty(int difficulty, int direction)
 	return lobby_difficulties[index];
 }
 
-/* SuperTyrian reads the difficulty field as its variant, so selecting it moves that one field off
- * the ladder and onto Standard/Scrollock. Both are also ladder rungs (Lord of Game and Suicide),
- * so the two meanings are indistinguishable once swapped: these park each side while the other is
- * showing, and cycling the type through SuperTyrian and back out puts the rung it found back. */
+/* SuperTyrian reads the difficulty field as its variant, so selecting it moves that one field
+ * off the ladder and onto Standard/Scrollock. */
 static int lobbyLadderDifficulty = DIFFICULTY_NORMAL;
 static int lobbySuperTyrianVariant = DIFFICULTY_LORD_OF_GAME;
 
@@ -196,10 +194,7 @@ static void lobbyRestoreBackdrop(void)
 	memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 }
 
-// Wait for a key, a button, or mouse MOTION; returns true if the mouse moved.  Motion has to
-// wake the caller: the cursor is composited into the frame by JE_mouseStart/JE_mouseReplace,
-// so a loop that only wakes on clicks never redraws and the pointer appears to be missing.
-// Same contract as menus.c's menuWaitForInput, which every other menu in the game uses.
+// Wait for a key, a button, or mouse MOTION; returns true if the mouse moved.
 static bool lobbyWaitForInput(void)
 {
 	const Uint16 startMouseX = mouse_x;
@@ -876,16 +871,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		 * page instead. */
 		const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
 		const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
-		/* SuperTyrian and Super Arcade are the one-player rulesets flown as two personal ships, so
-		 * they settle Ships and Host Flies themselves; SuperTyrian replaces the difficulty ladder
-		 * with its two variants, and Super Arcade picks no ship here at all (each player chooses
-		 * their own on the screen that follows). */
+		/* These modes give each player a complete ship. SuperTyrian selects its variant here;
+		 * Super Arcade lets each player choose a ship on the next screen. */
 		const bool super = network_game_type_is_super(network_game_type);
 		const bool variant = network_game_type == NETWORK_GAME_SUPERTYRIAN;
 		/* Destruct brings its own battle-mode row and mans a side rather than flying a ship, so it
-		 * has no episode and no difficulty ladder.  It answers both netcode rows with its own
-		 * rollback and recovery (destruct_rollback.c).  It has no speed choice; both sides play it
-		 * at Normal so their frame counters advance together. */
+		 * has no episode and no difficulty ladder. */
 		const bool destruct = network_game_type == NETWORK_GAME_DESTRUCT;
 		/* Arcade's Timed Battle: three fixed levels raced for cash, so the row that names an
 		 * episode names a battle instead. Held on the same row rather than a second one -- the
@@ -1667,9 +1658,8 @@ bool networkLobby(void)
 /* ---- string checks ------------------------------------------------------------------- */
 
 /* Run by qa_test_online_suite. Rows are label + 20px gap + value hung off a block clamped to
- * 300px, so a pair past that is two columns drawn into each other; help lines are centred on
- * a 320px field. Checked here because an overflow is only visible on whichever machine opens
- * the screen with that value selected. */
+ * 300px, so a pair past that is two columns drawn into each other; help lines are centred on a
+ * 320px field. */
 
 static bool lobbyStringDrawable(const char *s)
 {

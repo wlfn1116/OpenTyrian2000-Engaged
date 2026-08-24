@@ -53,9 +53,8 @@ int enemy_hp_divisor100(unsigned int slot);
 // Armor points `damage` buys against it, banking the remainder in the hull's accumulator.
 int enemy_spend_damage(unsigned int slot, int damage);
 
-/* How full a boss bar draws, from the most-damaged part's remaining armor and the armor that part
- * started with. Boss armor varies: the difficulty curve scales it at spawn and level scripts arm
- * and re-arm boss groups at their own values, so the two have to be measured against each other. */
+/* How full a boss bar draws, from the most-damaged part's remaining armor and the armor that
+ * part started with. */
 JE_byte boss_bar_fill(unsigned int armorleft, unsigned int full);
 
 /* Return remaining and full armor for a group's most-damaged active part. Wreckage is ignored;
@@ -82,8 +81,8 @@ void enemy_note_full_armor(struct JE_SingleEnemyType *enemy);
 void enemy_logical_death(unsigned int i, int killer);
 
 /* Take the hull `slot` belongs to down as a killing shot does: every linked part pays out to
- * `payee`, dies credited to `killer` and explodes, a part with edlevel -1 transforms instead, and a
- * link-254 kill fires the level's jump. The player-shot loop and the Endless ram site share it. */
+ * `payee`, dies credited to `killer` and explodes, a part with edlevel -1 transforms instead,
+ * and a link-254 kill fires the level's jump. */
 void enemy_kill_group(unsigned int slot, int payee, int killer);
 
 /* True for an edlevel -1 transformed part that no longer participates in combat. */
@@ -144,10 +143,7 @@ bool newGame(void);
 bool newSuperArcadeGame(unsigned int i);
 bool newSuperTyrianGame(void);
 
-/* Online Super Arcade's ship picker (networkStartScreen). The nine names go in two columns,
- * hit-tested for the mouse and stepped by the arrow keys, so the layout is declared here rather
- * than buried in the draw: the unit suite measures the real names against it and fails if a
- * column would clip or a row would collide with the hull below. */
+/* Online Super Arcade's ship picker (networkStartScreen). */
 #define SA_PICK_HEADER_Y   16
 #define SA_PICK_ROWS        5   // rows in the left column; the right one takes the remainder
 #define SA_PICK_TOP_Y      44

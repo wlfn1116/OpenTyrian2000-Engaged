@@ -195,10 +195,8 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots, Uin
 	}
 }
 
-// SHOCKWAVE (endless boon): an elite/champion death vaporises every enemy bullet within `radius` of it
-// (a negative radius clears the whole field; what a boss bar emptying does). Only touches the
-// enemy-shot pool, never enemy[], so unlike the Chain Reaction pulse below it is safe to fire straight
-// from a death site inside the player-shot loop: it cannot disturb that loop's linkgroup bookkeeping.
+// SHOCKWAVE (endless boon): an elite/champion death vaporises every enemy bullet within
+// `radius` of it (a negative radius clears the whole field; what a boss bar emptying does).
 static void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius)
 {
 	if (radius == 0)
@@ -244,7 +242,7 @@ void JE_deriveStarShowSpecial(void)
 }
 
 // Before damage, the latest armor write becomes full health. After damage, full health can only
-// grow. See doc/notes.md#combat-pipeline.
+// grow. See doc/notes.md#combat.
 void enemy_note_full_armor(struct JE_SingleEnemyType *enemy)
 {
 	if (enemy->armorleft >= 255)
@@ -290,9 +288,7 @@ static void chain_reset_queue(void)
 	chainDrainSalvo = CHAIN_DRAIN_IDLE;
 }
 
-// Append a pulse of `wave` belonging to `owner`. A pulse queued while the drain runs lands past the
-// stretch that drain claimed, so it waits for the next tick: the cascade advances one hop per tick
-// and can be watched crossing a formation. CHAIN_QUEUE_MAX bounds how wide one hop can get.
+// Append a pulse of `wave` belonging to `owner`.
 static void chain_queue_at(int screenX, int y, int owner, bool salvo, JE_word wave)
 {
 	if (chainPulseN < CHAIN_QUEUE_MAX)
@@ -327,10 +323,8 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 	chain_queue_at(screenX, y, owner, salvo, inDrain ? chainDrainWave : enemyKilled);
 }
 
-// The tier multiplier this hull's damage is divided by, in ENEMY_DAMAGE_ACCUM_SCALE units: Nx boss
-// HP (expert mode and/or endless depth) combined with the endless elite/champion tier. The boss
-// share is fractional, so a boss thickens a little each zone instead of a whole multiplier at a
-// time. 100 means it takes damage point for point.
+// The tier multiplier this hull's damage is divided by, in ENEMY_DAMAGE_ACCUM_SCALE units: Nx
+// boss HP (expert mode and/or endless depth) combined with the endless elite/champion tier.
 static int enemy_hp_multiplier100(unsigned int slot)
 {
 	const bool has_boss_bar = enemy_has_boss_bar(enemy[slot].linknum);
@@ -354,8 +348,7 @@ int enemy_hp_multiplier(unsigned int slot)
 
 // The divisor a hull spends damage through, in hundredths: the tier multiplier above times the
 // endless ordinary-HP overflow, which is the part of the depth curve the 254 armor byte cannot
-// hold. 100 means it takes damage point for point. Every damage site asks this one question, or the
-// same hit wears a boss down at a different rate depending on what dealt it.
+// hold.
 int enemy_hp_divisor100(unsigned int slot)
 {
 	return enemy_hp_multiplier100(slot) * endlessArmorOverflow100() / ENEMY_DAMAGE_ACCUM_SCALE;
@@ -376,10 +369,9 @@ int enemy_spend_damage(unsigned int slot, int damage)
 	return spent;
 }
 
-// What a destroyed enemy leaves behind: the body its death turns into (loot, a rising bomb, a second
-// stage, a Super Arcade power-up) and what it was worth, paid to `payee`, a 0-based player index.
-// Worth is cash, or a datacube for the enemies carrying one, which Endless drops as a gem instead.
-// Every site that destroys an enemy owes this call; one that skips it deletes the drop and the score.
+// What a destroyed enemy leaves behind: the body its death turns into (loot, a rising bomb, a
+// second stage, a Super Arcade power-up) and what it was worth, paid to `payee`, a 0-based
+// player index.
 static void enemy_death_payout(unsigned int slot, int payee)
 {
 	if ((enemy[slot].enemydie > 0) &&
@@ -511,10 +503,8 @@ static void enemy_part_destroy(unsigned int slot, int payee, int killer, bool st
 	explosionFilter = 0;
 }
 
-/* Which parts a killing blow on `slot` takes with it: the slot itself, everything a link-254 blow
- * touches, and the parts its nonzero link names by the level's three linking rules. `staged` is the
- * transformation a part with edlevel -1 owes in place of a death, and only a part matched by the
- * plain link rule takes it. */
+/* Which parts a killing blow on `slot` takes with it: the slot itself, everything a link-254
+ * blow touches, and the parts its nonzero link names by the level's three linking rules. */
 static bool enemy_kill_group_matches(unsigned int slot, unsigned int part, JE_byte link, bool *staged)
 {
 	const JE_byte partLink = enemy[part].linknum;
@@ -561,9 +551,7 @@ void enemy_logical_death(unsigned int i, int killer)
 	const JE_integer sy = enemy[i].ey;
 
 	// Latched bookkeeping: mandatory for every kill, elite or not. Each self-guards on
-	// endlessFxActive(), so outside an endless run these cost a call and nothing else. The two
-	// decide-functions are evaluated here rather than at the point of use; neither touches the shot
-	// pool, so pulling them above the sweep is safe.
+	// endlessFxActive(), so outside an endless run these cost a call and nothing else.
 	endlessCountKill(linknum, killer);
 	endlessAwardEliteKill(linknum, elite, killer);
 	const int shockRadius = endlessShockwaveRadius(linknum, elite);
@@ -587,9 +575,8 @@ void enemy_logical_death(unsigned int i, int killer)
 // commonest blast filter in the weapon tables.
 #define CHAIN_FLASH_FILTER 0xF0
 
-// Flash a chipped victim and the rest of its linked hull; JE_drawEnemy paints filter for one frame
-// and clears it again. Unlike the vanilla shot-hit flash this covers air sprites, since most chain
-// fodder flies. A tier tint rides the same byte and gives way for that frame, as it does for a hit.
+// Flash a chipped victim and the rest of its linked hull; JE_drawEnemy paints filter for one
+// frame and clears it again.
 static void chain_flash_enemy(unsigned int i)
 {
 	if (enemy[i].linknum == 0)
@@ -605,10 +592,7 @@ static void chain_flash_enemy(unsigned int i)
 	}
 }
 
-// The ring shows the reach of the blast and a bolt shows what it caught. Both are seeded from the
-// pulse site and hold no rollback state, so they cost no simulation RNG and need no registration,
-// and both space their sparks by distance so a wider blast is drawn with more of them. See
-// doc/notes.md, "Combat", for the per-tick caps and what they protect.
+// The ring shows the blast radius; a bolt marks each hit. See doc/notes.md#gauges-and-effects.
 #define CHAIN_RING_SPACING_PX   12   // between neighbouring sparks around the ring
 #define CHAIN_RING_LIFE_TICKS    5
 #define CHAIN_RINGS_PER_TICK    16
@@ -647,10 +631,9 @@ static void chain_bolt_sparks(int x0, int y0, int x1, int y1, int victim)
 	                  ((Uint32)x1 << 20) ^ ((Uint32)y1 << 8) ^ (Uint32)victim);
 }
 
-// Enemies a pulse of `wave` may damage, which is everything carrying hit points that this wave has
-// not landed on yet: bosses and elite tiers included, each spending the blast through whatever
-// accumulator scales it. 255 is the invulnerable sentinel and is refused; 254 is the ordinary boss
-// armor cap and is not.
+// Enemies a pulse of `wave` may damage, which is everything carrying hit points that this wave
+// has not landed on yet: bosses and elite tiers included, each spending the blast through
+// whatever accumulator scales it.
 static bool chain_target_eligible(int slot, JE_word wave)
 {
 	if (enemyAvail[slot] != 0)
@@ -720,9 +703,8 @@ static bool chain_group_target(JE_byte linknum, int px, int py, int radius, JE_w
 	return best >= 0;
 }
 
-// Take a linked hull down whole, every live tile paying out, dying and exploding as it would under
-// a killing shot. One tile left standing would orphan the rest, so the blast finishes all of them or
-// none. The deaths are FULL, which is what queues the wave's next hop, deduped to one per hull.
+// Take a linked hull down whole, every live tile paying out, dying and exploding as it would
+// under a killing shot.
 static void chain_destroy_group(JE_byte linknum, int owner)
 {
 	for (int g = 0; g < 100; ++g)
@@ -997,10 +979,7 @@ bool qa_chain_salvo_latch_holds(int owner)
 	return everyHopTagged && hops >= 3;
 }
 
-/* The cascade, driven through the real queue and the real drain. A row of fodder is laid out inside
- * one blast of its neighbour, so a single seeded pulse has to carry the whole row, and the same row
- * spaced beyond the blast has to stop at the first. Lives here because the queue and the drain are
- * this file's own; declared in qa.h beside the other tests placed with their subject. */
+/* The cascade, driven through the real queue and the real drain. */
 void qa_test_chain_cascade(void)
 {
 	struct JE_SingleEnemyType savedEnemy[8];
@@ -1355,10 +1334,7 @@ static void endlessSeekerCorrect(EnemyShotType *s)
 
 boss_bar_t boss_bar[2];
 
-// Is this linkgroup one the level put a boss health bar on? The `linknum != 0` guard is the whole
-// point (see tyrian2.h): an idle bar slot and an unlinked enemy both read 0, so without it every
-// ordinary enemy answers yes whenever a slot is free, incorrectly granting boss health
-// multiplier, the boss branch of the Executioner perk, and (in endless) the pierce lockout.
+// Link group 0 means both "unlinked enemy" and "unused bar slot". Never treat it as a match.
 bool enemy_has_boss_bar(JE_byte linknum)
 {
 	if (linknum == 0)
@@ -1798,17 +1774,13 @@ static void vt_ship_step_player(int p, float dt)
 	vt_wrote_vx[p] = player[p].x_velocity;
 	vt_wrote_vy[p] = player[p].y_velocity;
 
-	// Display the recorded (tick-time) ship sprite at its new continuous position
-	// via the override channel the interpolator already understands. Pass the FLOAT
-	// integrator position, not the rounded player.x: under supersampling the ship
-	// (and everything attached to it) then moves on the sub-pixel grid.
+	// Display the recorded (tick-time) ship sprite at its new continuous position via the override
+	// channel the interpolator already understands.
 	rl_set_ship_override(p, vt_x[p] - (float)ship_tick_x[p], vt_y[p] - (float)ship_tick_y[p]);
 }
 
 // Netplay: publish VT's current (unlagged) position into the ship, so the netcode picks it up
-// as this tick's absolute. Called from JE_playerMovement after the tick-start snapshot and
-// before the netcode reads and restores the ship, so what goes on the wire is exactly where
-// VT has reached, then both machines place the ship at that absolute coordinate.
+// as this tick's absolute.
 void vt_ship_commit_net(int player_index)
 {
 	if (!vt_ship_owns() || !isNetworkGame)
@@ -1947,10 +1919,7 @@ void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
 	}
 }
 
-// Per-tick ship movement for shots that track the ship (delta_x_shot_move, e.g. the
-// laser). VT moves the ship BETWEEN ticks, so vanilla's intra-tick delta reads ~0;
-// supply current pos vs the previous tick snapshot instead. (ship_tick_x/y still hold
-// the previous tick here; ship_pred_on_tick updates them after JE_playerMovement.)
+// Per-tick ship movement for shots that track the ship (delta_x_shot_move, e.g. the laser).
 void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy)
 {
 	const int p = (player_index <= 0) ? 0 : 1;
@@ -1964,10 +1933,8 @@ void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy)
 	*out_dy = player[p].y - ship_tick_y[p];
 }
 
-// Hand the twiddle-code detector the mouse direction since the last call as a -1/0/+1
-// per axis (raw / un-inverted), then reset the accumulator. vt_ship_step drains the
-// mouse at render rate, so the once-per-tick detector in JE_playerMovement would
-// otherwise never see a mouse direction.
+// Hand the twiddle-code detector the mouse direction since the last call as a -1/0/+1 per axis
+// (raw / un-inverted), then reset the accumulator.
 void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy)
 {
 	const int p = (player_index <= 0) ? 0 : 1;
@@ -2086,10 +2053,8 @@ static void composite_playfield(SDL_Surface *playfield, bool interpolate)
 	}
 }
 
-// composite_playfield at NxN: same three modes (normal copy, vertical flip,
-// spotlight) on the supersampled playfield, writing into vga_hi's playfield
-// region. The spotlight math runs in HI units (every distance multiplied by
-// scale), so the light circle is the same size on screen, just smoother.
+// composite_playfield at NxN: same three modes (normal copy, vertical flip, spotlight) on the
+// supersampled playfield, writing into vga_hi's playfield region.
 static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int scale,
                                    bool interpolate)
 {
@@ -2259,10 +2224,7 @@ static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scal
 	JE_barBright(surface, x0, 0, x1, bottom);
 }
 
-/* Both ships off the same per-tick request. The two-ship path used to re-derive the pillar from
- * zinglon_duration instead, and that counter stops at 1 rather than reaching 0, so the last live
- * value and the spent one are the same number: every blast left a two-pixel pillar trailing its
- * ship for the rest of the level. */
+/* Both ships off the same per-tick request. */
 static void draw_active_zinglon_pillars(SDL_Surface *surface, int scale, bool interpolate)
 {
 	for (uint p = 0; p < COUNTOF(zinglonPillarActive); ++p)
@@ -2335,9 +2297,7 @@ static void gauge_bar_edge_row(SDL_Surface *dst, int x0, int x1, int top, float 
 }
 
 // level is the pixel height with a fractional top edge. salvo_frac tints that share green;
-// segments divides counted resources into visible blocks. dst/scale are the present pass's
-// target: at scale > 1 the whole bar renders NxN and the top edge lands on a sub-pixel row,
-// so it climbs smoothly instead of arriving block-expanded off the 1x HUD.
+// segments divides counted resources into visible blocks.
 static void draw_gauge_bar(SDL_Surface *dst, int scale, float level, float salvo_frac, int segments)
 {
 	// 9 pixels wide (x1..x2). The classic art drew this gauge 1px narrower than the
@@ -2452,10 +2412,9 @@ static void draw_gauge_bar(SDL_Surface *dst, int scale, float level, float salvo
 			h = h2 + 1;
 		}
 
-		// The leading edge above the last whole row: solid for the sub-rows it fully covers,
-		// then one row dimmed toward the darkest shade by what is left, so the top edge moves
-		// at sub-pixel resolution as the bar fills. In Down the top band is the darkest
-		// (PG_BASE); in Up it is the current top shade.
+		// The leading edge above the last whole row: solid for the sub-rows it fully covers, then one
+		// row dimmed toward the darkest shade by what is left, so the top edge moves at sub-pixel
+		// resolution as the bar fills.
 		if (full < PG_BAR_MAX)
 		{
 			const int barCol = (dir == GAUGE_GRAD_DOWN) ? edgeBase : (edgeBase + full / 7);
@@ -2472,10 +2431,8 @@ static void draw_power_gauge(SDL_Surface *dst, int scale, float power_value, flo
 	draw_gauge_bar(dst, scale, power_value * PG_BAR_MAX / (float)PG_POWER_MAX, salvo_frac, 0);
 }
 
-// The arcade modes have no generator, so its gauge slot sits empty; hand it to the life
-// counter instead: one segment per life, full bar at ARCADE_LIVES_MAX. The fill height is
-// integer-divided so it lands exactly on a segment boundary (no anti-aliased top edge on a
-// value that only ever moves in whole steps).
+// The arcade modes have no generator, so its gauge slot sits empty; hand it to the life counter
+// instead: one segment per life, full bar at ARCADE_LIVES_MAX.
 static void draw_lives_gauge(int lives)
 {
 	if (lives < 0)
@@ -2788,10 +2745,7 @@ static float bgSmoothRatePend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 static float bgSmoothFracPend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 static bool  bgSmoothActivePend  = false;
 
-// Only the part of fixedmovey left after it cancels an opposing eyc is scroll-relative. BRAINIAC,
-// for example, pairs fixed=-1 with eyc=+1 to make a zero local velocity; scaling fixed alone would
-// turn that exact cancellation into a speed-dependent drift. Any excess fixed component still
-// modifies the layer advance and is therefore the part that must scale with it.
+// Only the part of fixedmovey left after it cancels an opposing eyc is scroll-relative.
 static int enemy_scalable_fixed_y(int fixed_move, int own_move)
 {
 	if (fixed_move < 0 && own_move > 0)
@@ -2862,7 +2816,7 @@ static Uint32 rl_present_gen;
 // Contract in tyrian2.h.
 Uint32 rl_presented_frames(void) { return rl_present_gen; }
 
-/* Boss vulnerability cue. Timing and grouping rules live in doc/notes.md. */
+/* Boss vulnerability cue. See doc/notes.md#health-and-tiers. */
 
 // Presented-frame stamp plus one; 0 means idle.
 static Uint32 enemyArmedFlashAt[100];
@@ -3784,10 +3738,9 @@ enemy_still_exists:
 					enemy[i].ex--;
 			}
 
-			// Scroll-track at overclock pace using the SMOOTH per-tick px of whichever layer this
-			// enemy rides (tagged per batch beside tempBackMove), so ground enemies glide with the
-			// terrain instead of drifting when two layers share a backMove. Attached sky scenery
-			// rides layer 2 through its own eyc, so it takes that layer's extra pixels here.
+			// Scroll-track at overclock pace using the SMOOTH per-tick px of whichever layer this enemy
+			// rides (tagged per batch beside tempBackMove), so ground enemies glide with the terrain
+			// instead of drifting when two layers share a backMove.
 			enemy[i].ey += tempBackMove + tempScrollExtraPx +
 			               (skyGlueThisEnemy ? endlessScrollExtraPx2 : 0);
 
@@ -4241,10 +4194,8 @@ start_level:
 	// Leaving the level loop: whatever rollback machinery was live is done.
 	rollback_level_end();
 
-	// A script's music fade (event 34) drops the MASTER volume and is normally undone by the
-	// event 35 that follows it. Every exit from a level; clear, death, Quit Level; can strand
-	// that ramp part-way, and only the next level start put the volume back, so the level-end
-	// jingle and the shop/outpost after it played at the fade floor.
+	// A script's music fade (event 34) drops the MASTER volume and is normally undone by the event
+	// 35 that follows it.
 	musicFade = false;
 	set_volume(tyrMusicVolume, fxVolume);
 
@@ -4355,10 +4306,9 @@ start_level:
 				mainLevel = nextLevel;
 
 #ifdef WITH_NETWORK
-				/* Wire campaign run: after the second-to-last scheduled clear, drive the
-				 * episode's own ]Q transition (episode 1 section 26) instead of flying the
-				 * rest of the episode; the final scheduled level is then the next episode's
-				 * first. Both machines take the jump from the same cleared-level count. */
+				/* Wire campaign run: after the second-to-last scheduled clear, drive the episode's own ]Q
+				 * transition (episode 1 section 26) instead of flying the rest of the episode; the final
+				 * scheduled level is then the next episode's first. */
 				if (qa_net_gameplay_ticks > 0 && qa_net_zones > 0 && episodeNum == 1
 				    && network_game_type == NETWORK_GAME_CAMPAIGN
 				    && qa_net_zones_cleared == qa_net_zones - 1)
@@ -4390,9 +4340,6 @@ start_level:
 		else
 		{
 			// Endless death in Relaxed: the frozen death frame gets a choice before the run summary.
-			// Standard and Hardcore skip it and go straight to GAME OVER plus the summary, and both lock
-			// their pause menu from the moment the ship dies (see the ingamemenu_pressed gate in the
-			// level loop), so Quit Level is no way out of a fatal hit there either.
 			EndlessDeathChoice deathPick = ENDLESS_DEATH_END_RUN;
 
 			// The blocking death menu fades and restores its own music. Endless keeps
@@ -4402,10 +4349,9 @@ start_level:
 				// One run, so one decision: the host chooses for the pair and the joiner adopts it.
 				if (endlessCoop() && thisPlayerNum != networkHostPlayerNum)
 				{
-					// A panel over the frozen death frame, like the one the pause menu puts up for
-					// a partner in the options screen: the wait is modal, so it belongs where the
-					// prompt the host is reading would be, not in the bottom message bar. The sync
-					// wait below only re-presents, so the panel stays up until the choice lands.
+					// A panel over the frozen death frame, like the one the pause menu puts up for a partner
+					// in the options screen: the wait is modal, so it belongs where the prompt the host is
+					// reading would be, not in the bottom message bar.
 					SDL_Surface *const death_surface = VGAScreen;
 					VGAScreen = VGAScreenSeg;   /* side-effect of game_screen; display space */
 					JE_drawNetworkNotice("Waiting for the host to choose.");
@@ -5366,8 +5312,7 @@ level_loop:
 
 	// Publish the PREVIOUS tick's smooth vertical scroll rate + sub-pixel fraction for the render
 	// list (the present loop shows this tick's list at its pre-advance position, so the data lags
-	// one tick, matching bgScrollDeltaY).  (File-scope statics, declared above level_loop, so the
-	// rollback registry can reach them: bgSmoothFracPend feeds eventScrollSkyPhase100, which is sim.)
+	// one tick, matching bgScrollDeltaY).
 	for (int L = 1; L <= 3; ++L)
 	{
 		bg_layer_dy[L]    = bgSmoothRatePend[L];
@@ -5377,8 +5322,6 @@ level_loop:
 
 	// Smooth every layer to its true average scroll rate so a delay-gated slow section (event 3:
 	// layer 1 1px/3 ticks, layer 2 1px/2 ticks) slides sub-pixel instead of freezing then jumping.
-	// Runs on every level; a scroll modifier additionally emits extra px. fireN = per-fire step (1
-	// while delay-gated, else backMoveN); baseN = px that actually moved this tick.
 	{
 		int fire1 = (map1YDelayMax > 1 && backMove < 2) ? 1 : (int)backMove;
 		endlessScrollExtraPx1 = endlessScrollExtraPx(0, fire1, map1YDelayMax, base1ScrollPx,
@@ -5607,10 +5550,7 @@ level_loop:
 		tempScrollYLayer   = 3;
 		tempScrollBaseStep = (int)backMove3;
 		tempScrollDelayMax = 1;
-		// All enemies are authored and recorded at their pre-advance ey phase. Layer 3's
-		// terrain is post-advance, but shifting only this bank's sprites by the current
-		// delta breaks cross-bank structures (BRAINIAC) by exactly 1px normally and 2px
-		// on a Slipstream pulse. Preserve the entity phase; pull its post-move bar back.
+		// All enemies are authored and recorded at their pre-advance ey phase.
 		tempScrollYBase    = 0;
 		tempScrollYfrac    = bg_layer_yfrac[3];
 		tempScrollYBaseBar = -(tempBackMove + tempScrollExtraPx);
@@ -5797,7 +5737,7 @@ level_loop:
 						// The damage the bullet itself carries, kept for the further hulls it
 						// crosses this tick. `damage` below becomes what this hull's accumulator
 						// paid out, which is zero on anything with an HP multiplier.
-						// See doc/notes.md, "Combat".
+						// See doc/notes.md#combat.
 						const int bulletDamage = damage;
 
 						int armorleft = enemy[b].armorleft;
@@ -5810,10 +5750,9 @@ level_loop:
 						// scaled hull on every overlapping tick.
 						if (endlessFxActive() && infiniteShot)
 						{
-							// Ask what THIS hull's tier is owed BEFORE consulting the lock, never the
-							// other way round: an ordinary enemy answers 0 and so is neither charged
-							// nor blocked, even while the bullet is locked out of a boss it overlaps.
-							// Testing the lock first spills a boss's protection onto the trash beside it.
+							// Ask what THIS hull's tier is owed BEFORE consulting the lock, never the other way
+							// round: an ordinary enemy answers 0 and so is neither charged nor blocked, even while
+							// the bullet is locked out of a boss it overlaps.
 							const int lock100 = endlessPierceLock100(has_boss_bar, hpMult, enemy[b].eliteState);
 							if (lock100 > 0)
 							{
@@ -5831,9 +5770,7 @@ level_loop:
 						}
 
 						// Apply Executioner and Knife Fight to raw damage before the health multiplier
-						// accumulator; a post-divide percentage would vanish against heavily scaled
-						// targets. Both are per hull: the wound and the range belong to this enemy.
-						// The range is measured once and spent on both the damage and the blood.
+						// accumulator; a post-divide percentage would vanish against heavily scaled targets.
 						const int knifePct = endlessFxActive()
 							? endlessPerkKnifeFightPercent((unsigned)b) : 0;
 						const int knifeRaw = endlessPerkKnifeFightBonus(damage, knifePct);
@@ -6104,10 +6041,8 @@ draw_player_shot_loop_end:
 					}
 				}
 
-				// X cull is against the VISIBLE window: [PLAYFIELD_LEFT, PLAYFIELD_RIGHT] after
-				// the composite crop (vanilla: 0..262, cull at >275/<=0). Right: 13 past the last
-				// visible column, fully hidden and row-wrap-safe (blit_sprite2 doesn't clip X).
-				// Left: <=0 is already 12+ px past hidden thanks to the crop margin.
+				// X cull is against the VISIBLE window: [PLAYFIELD_LEFT, PLAYFIELD_RIGHT] after the
+				// composite crop (vanilla: 0..262, cull at >275/<=0).
 				if (enemyShot[z].duration-- == 0 || enemyShot[z].sy > 190 || enemyShot[z].sy <= -14 || enemyShot[z].sx > PLAYFIELD_RIGHT + 13 || enemyShot[z].sx <= 0)
 				{
 					enemyShotAvail[z] = true;
@@ -6786,9 +6721,6 @@ draw_player_shot_loop_end:
 		}
 
 		// Endless Standard and Hardcore: the pause menu is off-limits from the moment the ship dies.
-		// Its Quit Level row returns to the outpost, which during the death explosion would turn a
-		// fatal hit into a free retry; the one thing neither mode allows. (Relaxed offers that
-		// retry openly through the death menu instead; see JE_main.)
 		if (ingamemenu_pressed && endlessDeathLocksMenu() && all_players_dead())
 			ingamemenu_pressed = false;
 
@@ -6881,10 +6813,8 @@ draw_player_shot_loop_end:
 	JE_advanceLevelFade();
 
 #ifdef WITH_NETWORK
-	/* Wire-test scripted events, keyed to the frame counter so re-simulation passes replay
-	 * them exactly. The pickup grants drive the doubled-pickups payment rule inside the sim
-	 * on both machines; the scripted level end turns a bounded flight into a cleared zone so
-	 * the whole between-level machinery runs over the wire. */
+	/* Wire-test scripted events, keyed to the frame counter so re-simulation passes replay them
+	 * exactly. */
 	if (qa_net_gameplay_ticks > 0 && isNetworkGame && nrb_active())
 	{
 		if (qa_net_lobby_settings && nrb_frame() >= 200 && nrb_frame() <= 320
@@ -7963,9 +7893,8 @@ new_game:
 	set_menu_centered(false);
 
 	// The scan above set lvlFileNum from the section's first ']L', but a caller may need a LATER
-	// ']L' in the same section (Episode 1 section 3's second TYRIAN cut); reachable via the endless
-	// pool or the debug/level-select menu. select_level and the endless commit paths stash that in
-	// forcedLvlFileNum; apply it here, then consume it so normal campaign progression is untouched.
+	// ']L' in the same section (Episode 1 section 3's second TYRIAN cut); reachable via the
+	// endless pool or the debug/level-select menu.
 	if (forcedLvlFileNum != 0)
 	{
 		if (JE_levelFileNumValid(forcedLvlFileNum))
@@ -8192,10 +8121,8 @@ static void networkEndlessNewRun(void)
 	endlessReseedPlayers(0);
 }
 
-/* Resume an online Endless run: the host loads it from its own save file and streams the record,
- * and the joiner adopts it. The record carries the joiner's own outpost half when the save's
- * checkpoint captured it; without one the joiner's rows are redealt from the seed (the adopt
- * settles that; see endlessRunAdopt). */
+/* Resume an online Endless run: the host loads it from its own save file and streams the
+ * record, and the joiner adopts it. */
 static bool networkEndlessResume(JE_byte slot)
 {
 	const Uint32 begin = SDL_GetTicks();
@@ -8236,10 +8163,8 @@ static bool networkEndlessResume(JE_byte slot)
 	return okay;
 }
 
-/* Steps the host adds to the lobby's difficulty, which the joiner subtracts again so both land on
- * the same initialDifficulty. Only the linked pair takes one, because two players concentrate fire
- * on one hull; everything that flies a ship each plays the rung the host picked, so the lobby row
- * means what it says. Solo Super Arcade's extra step has no equivalent here for that reason. */
+/* Steps the host adds to the lobby's difficulty, which the joiner subtracts again so both land
+ * on the same initialDifficulty. */
 int networkDifficultyBump(void)
 {
 	return dual_ship_mode() ? 0 : 1;
@@ -8265,10 +8190,7 @@ static int networkSuperArcadeShipSelect(void)
 	// take-back and leave (see network_sa_ship_publish).
 	int announcedPick = 0;
 	bool announcedSawPeer = false;
-	// Nothing is accepted until the press that opened this screen is let go: the poll below never
-	// clears the edge flags, so a Return still down from the host's start menu commits a ship
-	// nobody picked and strands the player on "Waiting for the other player...". Bounded, so a
-	// drifting stick holding joydown cannot lock the screen out instead.
+	// Wait for the press that opened this screen to be released before accepting a ship.
 	bool armed = false;
 	const Uint32 armDeadline = SDL_GetTicks() + 500;
 	// This screen redraws every frame (it has to: the peer's pick can land at any moment), so
@@ -8284,10 +8206,7 @@ static int networkSuperArcadeShipSelect(void)
 		if (restart)
 		{
 			JE_loadPic(VGAScreen2, 2, false);
-			// The backdrop's own palette paints the low banks in its planet's browns, and the hull
-			// below is blitted in raw indices out of those same banks, so the screen runs on the
-			// shop palette the ship sprites are drawn for. That leaves the picture bright enough to
-			// fight the list: dim it (shade >> 3), and black out whatever survives that floor.
+			// Use the shop palette shared by the raw-index ship sprites.
 			memcpy(colors, palettes[0], sizeof(colors));
 			for (int y = 0; y < VGAScreen2->h; ++y)
 			{
@@ -8536,8 +8455,7 @@ static void networkTimedBattleReady(void)
 
 	// Nothing counts until the press that opened this screen is let go: a key still down from the
 	// menu behind it would confirm the card before it is on screen, and a held pad button
-	// auto-repeats into fresh presses. Bounded, so a drifting stick cannot lock the card instead;
-	// a deadline of zero is the re-arm after a withdrawal, which waits for a real release.
+	// auto-repeats into fresh presses.
 	bool armed = false;
 	Uint32 armDeadline = SDL_GetTicks() + 500;
 
@@ -8614,10 +8532,7 @@ static void networkTimedBattleReady(void)
 
 			if (localReady)
 			{
-				// Step back rather than out. The peer is watching this line, so the withdrawal is
-				// announced like the confirmation was; the release below waits on our own channel
-				// being clear, and the channel is ordered, so a withdrawal sent before the peer's
-				// confirmation was acknowledged always reaches them ahead of that acknowledgement.
+				// Step back rather than out.
 				localReady = false;
 				network_ready_publish(false);
 				armed = false;
@@ -8678,10 +8593,8 @@ void networkStartScreen(void)
 		draw_font_hv_shadow(VGAScreen2, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 	}
 
-	// A Destruct session was settled entirely in the lobby -- battle mode, sides and terrain
-	// seed all rode the connect packet -- so there is no episode/difficulty handshake to run
-	// and none of the main game's session shape (two ships, purses, co-op flags) applies.
-	// Wait out the reliable channel, then let the main loop dispatch into the minigame.
+	// Destruct receives its mode, teams, and terrain seed from the lobby. Skip the campaign
+	// handshake and wait for the reliable channel before entering the minigame.
 	if (network_game_type == NETWORK_GAME_DESTRUCT)
 	{
 		while (!network_is_sync())
@@ -8716,9 +8629,7 @@ void networkStartScreen(void)
 		arcadeSeparateMode = true;
 	}
 	/* The two one-player rulesets flown online give each player a complete ship, so they run in
-	 * the Separate arcade shape whatever the host's Mode row says. Armed here rather than from
-	 * the settings block: the block carries a lobby preference, and this is the game type
-	 * deciding for itself. */
+	 * the Separate arcade shape whatever the host's Mode row says. */
 	if (network_game_type_is_super(network_game_type))
 		arcadeSeparateMode = true;
 	bool resumed = false;
@@ -8731,16 +8642,15 @@ void networkStartScreen(void)
 	{
 		fade_black(10);
 
-		// New Game or Load Game.  A load applies the save right in the load menu; its record
-		// rides in the details packet so the joiner adopts the exact same state (difficulty
-		// already carries the 2-player +1 bump).  A Timed Battle is a single scored run against
-		// a clock with nothing to carry into it, so it is never offered the choice.
+		// New Game or Load Game. A load applies the save right in the load menu; its record rides in
+		// the details packet so the joiner adopts the exact same state (difficulty already carries
+		// the 2-player +1 bump).
 		const int resumeSlot = timedBattleMode ? 0 : networkHostStartSelect();
 		if (resumeSlot > 0)
 		{
 			// The load clears the co-op flags; the game type the pair connected on owns them, and
 			// the seat belongs to the save rather than to the lobby row that opened the session.
-			// See "Online saves" in doc/notes.md; the joiner reasserts both the same way.
+			// See doc/notes.md#online-saves; the joiner reasserts both the same way.
 			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 
@@ -8755,10 +8665,8 @@ void networkStartScreen(void)
 			packet_out_temp->data[10 + SAVE_RECORD_PACKED_SIZE] = (Uint8)networkHostPlayerNum;
 			network_send(11 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
 
-			// The save record carries the two loadouts; the Endless run behind them is a record of
-			// its own, so it follows on the reliable channel before either machine plays a tick.
-			// Without it there is no session: one machine alone dropping to Campaign would leave
-			// the pair in two different modes.
+			// The save record carries the two loadouts; the Endless run behind them is a record of its
+			// own, so it follows on the reliable channel before either machine plays a tick.
 			if (coopEndlessMode && !networkEndlessResume((JE_byte)resumeSlot))
 				network_tyrian_halt(3, false);
 
@@ -8902,10 +8810,8 @@ void networkStartScreen(void)
 			const int xLabel = LEGACY_WIDTH / 2 - blockW / 2;
 			const int xValue = xLabel + blockW;
 
-			// Centre the list and the waiting line together under the title, which is large-font
-			// and reaches y=40. A full Endless block runs to thirteen rows, more than a comfortable
-			// pitch fits, so the longest lists tighten by a pixel or two rather than running off the
-			// bottom; everything shorter keeps the roomier spacing.
+			// Centre the list and the waiting line together under the title, which is large-font and
+			// reaches y=40.
 			const int dyRow = (rows >= 13) ? 9 : (rows >= 11) ? 10 : 11;
 			const int gapToWait = 14, waitH = 12;
 			const int yTop = 42 + (196 - 42 - (rows * dyRow + gapToWait + waitH)) / 2;
@@ -8936,10 +8842,9 @@ void networkStartScreen(void)
 			if (!output_vsync)
 				limit_render_fps();
 
-			// The length matters: packet_copy fills only the first `len` bytes of a reused
-			// buffer, so a short packet would set the episode and difficulty from whatever the
-			// previous one left behind; a desync before the first tick.  Discard it and keep
-			// waiting; a peer that never sends a whole one times out as a lost connection.
+			// The length matters: packet_copy fills only the first `len` bytes of a reused buffer, so a
+			// short packet would set the episode and difficulty from whatever the previous one left
+			// behind; a desync before the first tick.
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_DETAILS &&
 			    packet_in[0]->len >= 10)
 				break;
@@ -9580,10 +9485,9 @@ bool newGame(void)
 	if (gameplaySelect())
 	{
 #ifdef WITH_NETWORK
-		// The multiplayer lobby connected us from inside the mode menu.  networkStartScreen()
-		// runs the episode/difficulty handshake; the host picks and sends, the joiner waits
-		// and receives, then initializes both ships and purses. An Endless lobby builds its run
-		// there too, so this has to come before the single-player Endless setup below.
+		// The multiplayer lobby connected us from inside the mode menu. networkStartScreen() runs the
+		// episode/difficulty handshake; the host picks and sends, the joiner waits and receives, then
+		// initializes both ships and purses.
 		if (isNetworkGame)
 		{
 			networkStartScreen();
@@ -9668,10 +9572,8 @@ bool newSuperArcadeGame(unsigned int i)
 			blit_sprite2x2(VGAScreen, 148, 70, spriteSheetT2000, tempW - 500);
 		else if (tempW == 1)
 		{
-			// Nort Ship: shipgraphic 1 is a sentinel (see JE_playerMovement / JE_drawItem), so draw
-			// its two-piece hull here rather than treating 1 as a sprite index. The halves straddle
-			// the 148 anchor every other ship blits at (the -12/+12 spacing JE_drawItem uses), so
-			// the wider hull ends up centred on the same point instead of hanging 12px to its right.
+			// Nort Ship: shipgraphic 1 is a sentinel (see JE_playerMovement / JE_drawItem), so draw its
+			// two-piece hull here rather than treating 1 as a sprite index.
 			blit_sprite2x2(VGAScreen, 148 - 12, 70, spriteSheet9, 220);
 			blit_sprite2x2(VGAScreen, 148 + 12, 70, spriteSheet9, 222);
 		}
@@ -10117,10 +10019,9 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 		enemy->launchspecial = enemyDat[eDatI].elaunchtype / 1000;
 	}
 
-	// Dispenser restore: the dormant 2x2 base (pieces 80-83) gets its cousin hatch's
-	// cadence so the shipped 17-frame open/close cycle finally plays; same-tick creation
-	// keeps all four quadrants in sync. Piece 80's trigger fires the actual volley
-	// (aimed top shot + lightning column); see dispenser_fire.
+	// Dispenser restore: the dormant 2x2 base (pieces 80-83) gets its cousin hatch's cadence so
+	// the shipped 17-frame open/close cycle finally plays; same-tick creation keeps all four
+	// quadrants in sync.
 	if (dispenserBasesActive && eDatI >= 80 && eDatI <= 83)
 	{
 		enemy->launchfreq = 40;
@@ -11674,10 +11575,7 @@ static void bbfill(SDL_Surface *dst, int x0, int y0, int x1, int y1, int scale, 
 // brightens on a hit. Colors stay within the supplied palette bank.
 #define BOSS_BAR_MIN_SIDE 4   // a frame any smaller draws nothing at all
 
-// The tick draw is the only one the residual carries to the interpolated frames
-// (draw_boss_bar_present redraws them there only while they flash), and the gauge is opaque over
-// its whole frame -- but only if it drew one, so this shares the gauge's own size floor. Marking a
-// rect it declined would freeze the playfield under it into the residual instead.
+// Mark only boss bars large enough to draw; marking an empty rectangle freezes its background.
 static void boss_bar_mark_overlay(int gx, int gy, int gw, int gh)
 {
 	if (gw >= BOSS_BAR_MIN_SIDE && gh >= BOSS_BAR_MIN_SIDE)
@@ -12044,10 +11942,8 @@ static void draw_enemy_health_bars(void)
 			if (sy < top)              top = sy;
 			if (sy + sh > bottom)      bottom = sy + sh;
 
-			// Bar only while alive AND damageable: armorleft == 0 is dead/dying, 255 is the
-			// "invincible" sentinel. A level-script event (types 25/47) can raise an
-			// already-damaged enemy's armor to 255 mid-fight; it can then never lose armor
-			// again, so its bar would hang over an unkillable enemy forever.
+			// Bar only while alive AND damageable: armorleft == 0 is dead/dying, 255 is the "invincible"
+			// sentinel.
 			if (enemy[f].healthbar_seen && enemy[f].armorleft > 0 && enemy[f].armorleft < 255 &&
 			    enemy[f].healthbar_max >= ENEMY_BAR_MIN_HP)
 			{
@@ -12125,9 +12021,7 @@ void draw_boss_bar(void)
 			if (endlessMode)
 				++endlessRunBossKills;
 			// SHOCKWAVE boon, top tier: a boss bar emptying wipes the WHOLE field of enemy fire, so the
-			// screenful of bullets a dying boss leaves behind can't kill you after the fact. Radius -1 is
-			// endlessShockwaveClear's "everything" form; the boss is off-box anyway, so a position would
-			// be meaningless here.
+			// screenful of bullets a dying boss leaves behind can't kill you after the fact.
 			if (endlessShockwaveActive())
 				endlessShockwaveClear(0, 0, -1);
 		}
@@ -12249,10 +12143,7 @@ void tyrian2_register_rollback(void)
 	rollback_register("t2.chainPulseWave",   chainPulseWave, sizeof(chainPulseWave));
 	rollback_register("t2.shipTick",         ship_tick_x, sizeof(ship_tick_x));
 	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
-	/* The latch that arms them.  It flips false->true inside the tick, so a replay of
-	 * the level's FIRST tick found it already set and took vt_ship_shot_delta's other
-	 * branch; the shot-move deltas and the aim anchors came out swapped, which is
-	 * what the self-test reported as three items diverging on tick 1. */
+	/* The latch that arms them. */
 	rollback_register("t2.shipPredHave",     &ship_pred_have_tick, sizeof(ship_pred_have_tick));
 	rollback_register("t2.tempMapXOfsFrac",  &tempMapXOfs_frac, sizeof(tempMapXOfs_frac));
 	rollback_register("t2.tempMapXOfsLayer", &tempMapXOfs_layer, sizeof(tempMapXOfs_layer));

@@ -442,9 +442,7 @@ const char *endlessRunModeName(EndlessRunMode mode)
 }
 
 /* All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
- * difficulty it started on, or the untagged one if that difficulty is outside the six below.
- * The outer indices are the chart rule (EndlessBaseRule) and crew size: runs under different rules
- * or crew sizes are not comparable, so none of those sets of records ever meet. */
+ * difficulty it started on, or the untagged one if that difficulty is outside the six below. */
 int  endlessBestZoneUntagged[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { { 0 } } };
 bool endlessBestZoneUntaggedCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { { false } } };
 static int endlessBestZoneAtRunStart = 0;
@@ -608,7 +606,7 @@ void endlessNoteZoneReached(int zone)
 
 // Mark the record this run set, after the fact: a record is stamped as its zone is entered, before
 // that zone is flown. Ownership must come from the run-start baseline rather than the run depth;
-// see the Save format section of doc/notes.md.
+// see doc/notes.md#saves-and-retries.
 static void endlessMarkRecordCustom(void)
 {
 	int *best;
@@ -854,10 +852,7 @@ void endlessCampaignModsArm(void)
 	endlessPerkPending = false;
 }
 
-/* Multi-part enemies share a nonzero link number and count once; this is that dedup guard.
- * Simulation state, in the rollback registry: left function-local it survived into every
- * re-simulation pass, which then skipped the kill it had already counted, and the combo feed
- * (and with it the Turbodrive fire rate) came out different on the two machines. */
+/* Multi-part enemies share a nonzero link number and count once; this is that dedup guard. */
 static int endlessLastCountedLink = 0;
 
 void endlessResetKillDedup(void)
@@ -877,8 +872,7 @@ void endlessCountKill(int linknum, int killer)
 	++endlessRunKills;
 	/* Boss kills are counted when their health bar empties. Whose streak a kill feeds is the
 	 * session's Combo Feed setting: Individual credits the ship that fired the shot, Shared feeds
-	 * both. A kill nothing can be credited with feeds both either way, so neither ship's streak
-	 * is punished for a death it could not have claimed. */
+	 * both. */
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
 		if (endlessCoop() && !endlessCoopComboShared

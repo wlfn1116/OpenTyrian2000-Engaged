@@ -663,9 +663,7 @@ static void qa_reactive_state_matrix(void)
 	}
 
 	/* The pulse rides the owner's damage scale, so a damage build deepens it and the partner's
-	 * build never does. Heavy Rounds on one ship only, both holding the same chain stacks, and no
-	 * drives on either: the figures below are derived from the two constants, not from the function
-	 * under test re-run. */
+	 * build never does. */
 	const unsigned savedScaleMods[2] = { endlessPlayerMods[0], endlessPlayerMods[1] };
 	endlessPlayerMods[0] = 0;
 	endlessPlayerMods[1] = 0;
@@ -1119,10 +1117,9 @@ static void qa_outpost_matrix(void)
 
 /* ---- 4b. every E-Shop button, from both machines ------------------------------------ */
 
-/* Each buy is checked three ways: it is refused when the buyer cannot afford it, it charges
- * and delivers to the buyer alone when they can, and its refusal gate (already held, maxed
- * out, still recharging) holds. A purchase leaking to the partner is the failure that matters,
- * so every case reads both slots. */
+/* Each buy is checked three ways: it is refused when the buyer cannot afford it, it charges and
+ * delivers to the buyer alone when they can, and its refusal gate (already held, maxed out,
+ * still recharging) holds. */
 static void qa_eshop_matrix(void)
 {
 	char label[224];
@@ -1756,10 +1753,8 @@ static int qa_boss100(int zone)
 	return v;
 }
 
-/* The ceilings, where each is reached, and the promise the first ramp segment exists for: every
- * zone below it keeps the curve it had when the ceilings were 600% / 4x / 16x, so raising them
- * cannot disturb a run that never gets that deep. The ordinary curve also has to survive the 254
- * armor byte, which is what the overflow divisor is for. */
+/* Raising a late-game ceiling must not change the curve in earlier zones. The armour byte must
+ * also survive the ordinary curve without overflowing. */
 static void qa_hp_scaling_matrix(void)
 {
 	char label[192];
@@ -1928,9 +1923,8 @@ static void qa_hp_scaling_matrix(void)
 	endlessActiveMods = savedActive;
 }
 
-/* Every depth landmark that used to sit on zone 100 now sits on 99, so a GRAND milestone is fought
- * with all of them already standing rather than one zone short. The HP ceilings are checked above;
- * these are the rest of the curve family, each read one zone short and then on the mark. */
+/* Every depth landmark that used to sit on zone 100 now sits on 99, so a GRAND milestone is
+ * fought with all of them already standing rather than one zone short. */
 static void qa_depth_landmark_matrix(void)
 {
 	char label[192];
@@ -2325,9 +2319,8 @@ static void qa_scenario_suite(void)
 	}
 
 	/* The disconnect chain, end to end on one machine: the outpost checkpoint writes slot 22, the
-	 * dropped session reverts to that backup and saves it into a slot of its own, and the host that
-	 * later resumes it finds an Endless slot whose run and record are the ones it checkpointed.
-	 * Wire scenarios 7 and 21 fly the two-process half. */
+	 * dropped session reverts to that backup and saves it into a slot of its own, and the host
+	 * that later resumes it finds an Endless slot. */
 	{
 		JE_SaveFileType savedSlots[2] = { saveFiles[22 - 1], saveFiles[15 - 1] };
 		const NetworkGameType savedType = network_game_type;
@@ -2622,8 +2615,7 @@ static void qa_death_prompt_matrix(void)
 }
 
 /* Restart Zone re-arms the committed level without reopening the outpost, so nothing downstream
- * re-runs the course pick that folded the drives into the per-ship masks. Everything the launch
- * was paid for has to survive the revert; the wallet it reverts to has already spent that cash. */
+ * re-runs the course pick that folded the drives into the per-ship masks. */
 static void qa_sortie_restart_matrix(void)
 {
 	const bool savedHave = endlessSortieHave;
@@ -2679,10 +2671,7 @@ static void qa_sortie_restart_matrix(void)
 	endlessSortieHave = savedHave;
 }
 
-/* Every gamble outcome, fired through the debug trigger from both machines. The assertions are
- * the invariants an outcome must never break whichever effect it rolls: wallets stay inside 32
- * bits, the combined perk holding stays within its caps, and nothing runs away. A broken clamp
- * in any outcome's effect shows up here as a wrapped or runaway value. */
+/* Every gamble outcome, fired through the debug trigger from both machines. */
 static void qa_gamble_matrix(void)
 {
 	char label[160];

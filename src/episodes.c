@@ -103,16 +103,13 @@ static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
 #define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
 
 // Special itemgraphic values index spriteSheet10. Each replacement must be an otherwise unused
-// 2x2; see doc/notes.md#special-pickups-and-orbiting-specials.
+// 2x2; see doc/notes.md#special-pickups.
 static const struct { JE_byte id; JE_word gr; } unusedSpecialIcons[] =
 {
 	{ 48, 53 },  // Dragon Lightning (was 93, Lightning Zone's)
 };
 
 // Eleven more have no spare icon to take: three icons between them, eight wearing the same "?".
-// Each gets a player-shot sprite for its upper half instead, so an entry has to fit the 24x14
-// draw_special_icon centres it in. Bank is one of tyrian.shp's two shot sheets
-// (JE_loadMainShapeTables).
 static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[] =
 {
 	{  2, 11,  25 },  // Pearl Wind, the instant-shot record; the field one keeps the shipped icon
@@ -322,9 +319,7 @@ static void JE_writeChargeLaserCannon(int slot)
 }
 
 /* Put the Charge-Laser in its captured slot or take it back out, so the menu toggle applies
- * without an item-data reload. Only ever writes the slot captured at load: the custom sidekicks
- * claim from the far end and skip chargeLaserSlot, but with the toggle off at load one of them
- * could have taken this slot, and overwriting a claimed slot would lose that sidekick. */
+ * without an item-data reload. */
 static void JE_applyChargeLaserCannon(void)
 {
 	if (!chargeLaserCaptured || chargeLaserNativeSlot == 0)
@@ -502,9 +497,8 @@ static void JE_applySuperSparks(void)
 // Apply episode-specific item data from shipped constants. Auto keeps the running episode;
 // only active pattern slots are rewritten.
 /* The five items whose two data sets differ in nothing but the firing sound. One table, so the
- * apply below and the menu's preview (JE_epDiffFiringSound) cannot drift apart. A gun names its
- * port, whose every power level takes the sound; the two sidekicks carry no charge stages and
- * name their single weapon record (see "Menus and UI" in doc/notes.md). */
+ * apply below and the menu's preview (JE_epDiffFiringSound) cannot drift apart. See
+ * doc/notes.md#item-tables. */
 static const struct
 {
 	JE_byte port;
@@ -854,10 +848,8 @@ void JE_loadItemDat(void)
 		fread_u8_die( &ships[i].bigshipgraphic, 1, f);
 	}
 
-	/* The data flies the Dragonwing only as the linked pair's rear half, through the
-	 * shipgraphic 0 draw path, so no episode's table carries a row for it. Build the one the
-	 * Endless shop sells: hull and price sit between the Gencores and the MicroCorp Stalkers,
-	 * and the Talon lends its shop illustration (the Dragonwing never got one). */
+	/* The data flies the Dragonwing only as the linked pair's rear half, through the shipgraphic 0
+	 * draw path, so no episode's table carries a row for it. */
 	strcpy(ships[SHIP_DRAGONWING].name, "Dragonwing");
 	ships[SHIP_DRAGONWING].shipgraphic    = 0;
 	ships[SHIP_DRAGONWING].itemgraphic    = 277;
@@ -1003,9 +995,8 @@ void JE_loadItemDat(void)
 void JE_applyItemDataSettings(void)
 {
 	// Each of these rewrites its fields from shipped constants (the Zica Lv11 pattern and the
-	// Charge-Laser's slot from the natives captured at load), so the set is idempotent and safe
-	// to reapply at any time. The Charge-Laser goes first: it sets chargeLaserSlot, which the
-	// shop-icon pass at the end reads.
+	// Charge-Laser's slot from the natives captured at load), so the set is idempotent and safe to
+	// reapply at any time.
 	JE_applyChargeLaserCannon();
 	JE_applyZicaLaserConfig();
 	JE_applySuperSparks();

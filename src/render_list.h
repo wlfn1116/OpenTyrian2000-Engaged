@@ -60,10 +60,7 @@ typedef struct
 	int id;
 	int dx, dy;
 
-	// Per-tick acceleration (shots only; 0 for everything else). Extrapolation leads
-	// by velocity + acceleration = the predicted NEXT displacement, so a decelerating
-	// shot lands on its next tick position instead of overshooting and snapping back
-	// each boundary (which reads as the shot briefly reversing).
+	// Per-tick acceleration (shots only; 0 for everything else).
 	int acc_x, acc_y;
 
 	// sprite2 family
@@ -92,10 +89,7 @@ typedef struct
 	int sp_dx, sp_dy;
 	Uint8 sp_z, sp_color, sp_bright;
 
-	// enemy health bar (RC_HP_BAR): length along the fill axis, filled-pixel count,
-	// fill colour. Top-left in x,y, interpolating by (dx,dy) like the enemy.
-	// bar_vertical: 0 fills left->right, 1 fills bottom->up; bar_opacity = blend
-	// alpha (0..255, 255 = solid). A nonzero bar_groove overrides the empty track.
+	// enemy health bar (RC_HP_BAR): length along the fill axis, filled-pixel count, fill colour.
 	int bar_w, bar_fill;
 	Uint8 bar_col;
 	Uint8 bar_vertical;
@@ -228,10 +222,8 @@ void rl_finalize(void);
 // Re-draw every captured command into dst at its recorded position (alpha=1).
 void rl_replay(SDL_Surface *dst);
 
-// Smoothie levels replay feedback backgrounds and foregrounds separately.
-// scale=1 is the classic path; larger values use the supersampled grid.
-// split leaves backgrounds recorded after the last filter for rl_replay_bg_tail, letting the
-// filtered head and unfiltered tail run at different scales.
+// Smoothie levels replay feedback backgrounds and foregrounds separately. scale=1 is the
+// classic path; larger values use the supersampled grid.
 void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split);
 void rl_replay_bg_tail(SDL_Surface *dst, float alpha, int scale);
 // bg_scale/bg_alpha are the filtered background's actual spatial and temporal phase. split tells
@@ -252,10 +244,7 @@ void rl_mark_overlay_rect(int x, int y, int w, int h);
 // health bars. `scratch` is a same-size 8-bit work surface. Call after the tick draws.
 void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch);
 
-// Capture residual from a before/after diff of the authoritative frame. Used on
-// feedback (smoothie) levels to grab only the overlays drawn after the per-pixel
-// filters (boss bar, in-game displays); a blit-only replay can't rebuild the
-// evolved plasma, so the full capture would wrongly flag the filtered playfield.
+// Capture residual from a before/after diff of the authoritative frame.
 void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after);
 
 // Draw a ship at its render-rate offset instead of its interpolated tick position.
@@ -295,8 +284,6 @@ void rl_rec_smoothie_filter(RenderCmdKind kind);  // RC_ICED_BLUR / RC_LAVA_FILT
 
 // Plotted value of one superpixel tap over background `bg`: the z-driven shade, lifted `bright`
 // steps and clamped inside `color`'s own bank so a bright spark can't bleed into the next bank.
-// Halo taps pass both z and bright halved. Shared by the tick draw (JE_drawSP) and the replay, so
-// an exact (alpha=0) replay reproduces the tick pixel-for-pixel.
 static inline Uint8 rl_superpixel_value(Uint8 bg, Uint8 z, Uint8 color, Uint8 bright)
 {
 	unsigned int shade = (((bg & 0x0f) + z) >> 1) + bright;

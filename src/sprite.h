@@ -145,9 +145,8 @@ void blit_sprite2_solid(SDL_Surface *, int x, int y, Sprite2_array, unsigned int
 void blit_sprite2_solid_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 color);
 void blit_sprite2_filter(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
-// Recolour, then lift the shade, for a sprite whose dark end would vanish in the destination bank
-// (endless elite bullets). `filter` packs the bank and the lift the way blit_sprite2_blend_filter
-// does; the plain filter blit cannot take one, since it ORs its argument over the sprite's shade.
+// Recolour, then lift the shade, for a sprite whose dark end would vanish in the destination
+// bank (endless elite bullets).
 void blit_sprite2_filter_bright(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_filter_bright_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 // Recolor and blend in one pass without reading tinted output back. `filter` packs the destination
