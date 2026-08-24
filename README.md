@@ -91,8 +91,8 @@ build one or more targets and collect their outputs under `build`:
 
 Run `.\build-all.ps1 -Help` for the complete option list.
 
-`-Platform ARM64` builds for Windows on ARM. SDL ships x86 and x64 import
-libraries only, so `SDL2BaseDir` and `SDL2netBaseDir` in
+`-Platform ARM64` builds for Windows on ARM. SDL ships x86 and x64
+import libraries only, so `SDL2BaseDir` and `SDL2netBaseDir` in
 `visualc\sdl_paths.props` have to point at SDKs built from source, each
 holding an `include` directory and a `lib\arm64` directory.
 
