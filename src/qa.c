@@ -7153,7 +7153,13 @@ static void qa_test_ship_editor_file(void)
 
 	qa_check(JE_shapeCodecSelfTest(), "the sprite cell codec round-trips every cell");
 	qa_check(JE_legacyUserShapeSelfTest(),
-	         "a legacy User.shp imports every raw cell and its encrypted loadouts");
+	         "a legacy User.shp imports every cell and becomes transferable custom ships");
+	qa_check(JE_legacyUserShapeCaseSelfTest(),
+	         "User.shp discovery is case-insensitive on case-sensitive filesystems");
+	qa_check(JE_stockExtraShapesSelfTest(),
+	         "the ship editor can reload the untouched stock newsh$.shp");
+	qa_check(JE_shipEditorConfirmationSelfTest(),
+	         "destructive ship-editor actions require two consecutive activations");
 	qa_check(JE_captureHullListSelfTest(),
 	         "the sprite editor offers each compatible hull graphic exactly once");
 	qa_check(JE_shipEditorGraphicCycleSelfTest(),

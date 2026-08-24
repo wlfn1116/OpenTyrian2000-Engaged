@@ -35,8 +35,11 @@ void JE_freeExtraShapes(void);
 void JE_shipEditor(void);
 bool JE_shapeCodecSelfTest(void);
 bool JE_legacyUserShapeSelfTest(void);
+bool JE_legacyUserShapeCaseSelfTest(void);
+bool JE_stockExtraShapesSelfTest(void);
 bool JE_captureHullListSelfTest(void);
 bool JE_shipEditorGraphicCycleSelfTest(void);
+bool JE_shipEditorConfirmationSelfTest(void);
 
 enum { EXTRA_SHIP_PREVIEW_BANK_MS = 220 };
 // Return a banking pose from -2 to 2 for menu and editor previews.

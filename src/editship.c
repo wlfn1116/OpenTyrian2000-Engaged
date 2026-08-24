@@ -43,10 +43,13 @@
 
 #include "SDL.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
 #define SAS (sizeof(JE_ShipsType) - 4)
+#define EXTRA_SHIPS_USER_FILE "custom_ships.shp"
+#define EXTRA_SHIPS_STOCK_FILE "newsh$.shp"
 
 static const JE_byte extraCryptKey[10] = { 58, 23, 16, 192, 254, 82, 113, 147, 62, 99 };
 
@@ -57,48 +60,97 @@ static bool extraUserAvail;
 
 static bool seImportLegacyUserShapes(FILE *f);
 
-// Search the active data directory, then the executable's data and base directories.
+static FILE *seOpenAsciiCaseFile(const char *dir, const char *canonical)
+{
+	char name[32];
+	unsigned letterPositions[COUNTOF(name)];
+	unsigned letterCount = 0;
+	const size_t length = strlen(canonical);
+	if (length >= sizeof(name))
+		return NULL;
+
+	memcpy(name, canonical, length + 1);
+	for (unsigned i = 0; i < length; ++i)
+	{
+		if (name[i] >= 'A' && name[i] <= 'Z')
+			name[i] += 'a' - 'A';
+		if (name[i] >= 'a' && name[i] <= 'z')
+			letterPositions[letterCount++] = i;
+	}
+	if (letterCount >= sizeof(unsigned) * CHAR_BIT)
+		return NULL;
+
+	for (unsigned mask = 0; mask < (1u << letterCount); ++mask)
+	{
+		for (unsigned i = 0; i < letterCount; ++i)
+		{
+			const unsigned pos = letterPositions[i];
+			const char lower = canonical[pos] >= 'A' && canonical[pos] <= 'Z'
+			                 ? canonical[pos] + ('a' - 'A') : canonical[pos];
+			name[pos] = (mask & (1u << i)) != 0 ? lower - ('a' - 'A') : lower;
+		}
+
+		FILE *const f = dir_fopen(dir, name, "rb");
+		if (f != NULL)
+			return f;
+	}
+
+	return NULL;
+}
+
+static FILE *seOpenLegacyUserShapesIn(const char *dir)
+{
+	return seOpenAsciiCaseFile(dir, "user.shp");
+}
+
+bool JE_legacyUserShapeCaseSelfTest(void)
+{
+	FILE *const f = seOpenAsciiCaseFile(data_dir(), "USER1.SHP");
+	if (f == NULL)
+		return false;
+
+	fclose(f);
+	return true;
+}
+
+// Search writable state first, then data and executable directories.
 static FILE *seOpenLegacyUserShapes(const char **location)
 {
-	static const char *const names[] = { "User.shp", "user.shp" };
-	const char *const data = data_dir();
-
-	for (uint i = 0; i < COUNTOF(names); ++i)
+	FILE *f = seOpenLegacyUserShapesIn(get_user_directory());
+	if (f != NULL)
 	{
-		FILE *f = dir_fopen(data, names[i], "rb");
-		if (f != NULL)
-		{
-			*location = "the data directory";
-			return f;
-		}
+		*location = "the save directory";
+		return f;
+	}
+
+	f = seOpenLegacyUserShapesIn(data_dir());
+	if (f != NULL)
+	{
+		*location = "the data directory";
+		return f;
 	}
 
 	char *const base = SDL_GetBasePath();
 	if (base != NULL)
 	{
-		for (uint i = 0; i < COUNTOF(names); ++i)
+		char *const baseData = malloc_die(strlen(base) + sizeof("/data"));
+		sprintf(baseData, "%s/data", base);
+		f = seOpenLegacyUserShapesIn(baseData);
+		free(baseData);
+		if (f != NULL)
 		{
-			char relative[32];
-			snprintf(relative, sizeof(relative), "data/%s", names[i]);
-			FILE *f = dir_fopen(base, relative, "rb");
-			if (f != NULL)
-			{
-				SDL_free(base);
-				*location = "the executable's data directory";
-				return f;
-			}
+			SDL_free(base);
+			*location = "the executable's data directory";
+			return f;
 		}
-		for (uint i = 0; i < COUNTOF(names); ++i)
-		{
-			FILE *f = dir_fopen(base, names[i], "rb");
-			if (f != NULL)
-			{
-				SDL_free(base);
-				*location = "beside the executable";
-				return f;
-			}
-		}
+
+		f = seOpenLegacyUserShapesIn(base);
 		SDL_free(base);
+		if (f != NULL)
+		{
+			*location = "beside the executable";
+			return f;
+		}
 	}
 
 	return NULL;
@@ -114,10 +166,10 @@ static bool seLegacyUserShapesAvailable(void)
 	return true;
 }
 
-// Decrypt in place only when all four plaintext checksums match.
-JE_boolean JE_decryptShips(void)
+// Decrypt one table in place only when all four plaintext checksums match.
+static bool seDecryptShips(JE_ShipsType ships)
 {
-	JE_boolean correct = true;
+	bool correct = true;
 	JE_ShipsType s2;
 	JE_byte y;
 
@@ -126,40 +178,42 @@ JE_boolean JE_decryptShips(void)
 		// (unsigned) only to make the index's non-negativity local; x is >= 0 by the loop condition.
 		const unsigned int k = (unsigned)(x + 1) % 10;
 		OT_ASSUME(k < 10);
-		s2[x] = extraShips[x] ^ extraCryptKey[k];
+		s2[x] = ships[x] ^ extraCryptKey[k];
 		if (x > 0)
-			s2[x] ^= extraShips[x - 1];
+			s2[x] ^= ships[x - 1];
 	}  /*  <= Key Decryption Test (Reversed key) */
 
 	y = 0;
 	for (uint x = 0; x < SAS; x++)
 		y += s2[x];
-	if (extraShips[SAS + 0] != y)
+	if (ships[SAS + 0] != y)
 		correct = false;
 
 	y = 0;
 	for (uint x = 0; x < SAS; x++)
 		y -= s2[x];
-	if (extraShips[SAS + 1] != y)
+	if (ships[SAS + 1] != y)
 		correct = false;
 
 	y = 1;
 	for (uint x = 0; x < SAS; x++)
 		y = y * s2[x] + 1;
-	if (extraShips[SAS + 2] != y)
+	if (ships[SAS + 2] != y)
 		correct = false;
 
 	y = 0;
 	for (uint x = 0; x < SAS; x++)
 		y ^= s2[x];
-	if (extraShips[SAS + 3] != y)
+	if (ships[SAS + 3] != y)
 		correct = false;
 
 	if (correct)
-		memcpy(extraShips, s2, sizeof(extraShips));
+		memcpy(ships, s2, sizeof(JE_ShipsType));
 
 	return correct;
 }
+
+JE_boolean JE_decryptShips(void) { return seDecryptShips(extraShips); }
 
 // Encrypt the table and append its four checksums.
 void JE_encryptShips(JE_ShipsType dst)
@@ -194,56 +248,85 @@ void JE_encryptShips(JE_ShipsType dst)
 	dst[SAS + 3] = y;
 }
 
+// Read a compiled SHIPEDIT file without changing the active editor state on failure.
+static bool seReadCompiledShips(FILE *f, JE_ShipsType table, Sprite2_array *shapes)
+{
+	const long fileSize = ftell_eof(f);
+	if (fileSize < (long)sizeof(JE_ShipsType) || fileSize - (long)sizeof(JE_ShipsType) > UINT16_MAX)
+		return false;
+
+	Sprite2_array loaded = {0, NULL};
+	loaded.size = (size_t)(fileSize - (long)sizeof(JE_ShipsType));
+	if (loaded.size > 0)
+		loaded.data = malloc_die(loaded.size);
+
+	rewind(f);
+	const bool read = (loaded.size == 0 || fread(loaded.data, 1, loaded.size, f) == loaded.size) &&
+	                  fread(table, 1, sizeof(JE_ShipsType), f) == sizeof(JE_ShipsType) &&
+	                  fgetc(f) == EOF && !ferror(f);
+	if (!read || !seDecryptShips(table))
+	{
+		free_sprite2s(&loaded);
+		return false;
+	}
+
+	*shapes = loaded;
+	return true;
+}
+
+bool JE_stockExtraShapesSelfTest(void)
+{
+	FILE *const f = dir_fopen(data_dir(), EXTRA_SHIPS_STOCK_FILE, "rb");
+	if (f == NULL)
+		return false;
+
+	JE_ShipsType table;
+	Sprite2_array shapes = {0, NULL};
+	const bool ok = seReadCompiledShips(f, table, &shapes) && shapes.size > 0;
+	fclose(f);
+	free_sprite2s(&shapes);
+	return ok;
+}
+
 void JE_loadExtraShapes(void)
 {
 	JE_freeExtraShapes();
 	extraUserAvail = false;
 
-	const char *legacyLocation = NULL;
-	FILE *f = seOpenLegacyUserShapes(&legacyLocation);
-	if (f != NULL)
+	// User.shp is an editor import source, never an automatic startup override.
+	// Load the saved custom file when present; otherwise use the untouched shipped defaults.
+	FILE *f = dir_fopen(get_user_directory(), EXTRA_SHIPS_USER_FILE, "rb");
+	bool fromUser = f != NULL;
+	if (f == NULL)
+		f = dir_fopen(data_dir(), EXTRA_SHIPS_STOCK_FILE, "rb");
+	if (f == NULL)
+		return;
+
+	JE_ShipsType loadedTable;
+	Sprite2_array loadedShapes = {0, NULL};
+	if (!seReadCompiledShips(f, loadedTable, &loadedShapes))
 	{
-		const bool imported = seImportLegacyUserShapes(f);
 		fclose(f);
-		if (imported)
+		if (!fromUser)
 		{
-			fprintf(stderr, "custom ships: imported User.shp from %s\n", legacyLocation);
+			fprintf(stderr, "warning: stock custom ship file is invalid; ignoring it\n");
 			return;
 		}
-		fprintf(stderr, "warning: User.shp is not a valid ShipEdit source file; ignoring it\n");
-	}
 
-	// Prefer the edited file, then the stock Tyrian 2000 copy.
-	f = dir_fopen(get_user_directory(), "newsh$.shp", "rb");
-	const bool fromUser = f != NULL;
-	if (f == NULL)
-		f = dir_fopen(data_dir(), "newsh$.shp", "rb");
-	if (f == NULL)
-		return;
-
-	const long file_size = ftell_eof(f);
-	if (file_size < (long)sizeof(extraShips) || file_size - (long)sizeof(extraShips) > UINT16_MAX)
-	{
-		fprintf(stderr, "warning: invalid extra ship file size: %ld\n", file_size);
-		fclose(f);
-		return;
+		fprintf(stderr, "warning: %s is invalid; using the stock ships\n", EXTRA_SHIPS_USER_FILE);
+		fromUser = false;
+		f = dir_fopen(data_dir(), EXTRA_SHIPS_STOCK_FILE, "rb");
+		if (f == NULL || !seReadCompiledShips(f, loadedTable, &loadedShapes))
+		{
+			if (f != NULL)
+				fclose(f);
+			return;
+		}
 	}
-
-	extraShapes.size = (size_t)(file_size - (long)sizeof(extraShips));
-	if (extraShapes.size > 0)
-	{
-		extraShapes.data = malloc_die(extraShapes.size);
-		fread_die(extraShapes.data, extraShapes.size, 1, f);
-	}
-	fread_die(extraShips, sizeof(extraShips), 1, f);
 	fclose(f);
 
-	if (!JE_decryptShips())
-	{
-		fprintf(stderr, "warning: newsh$.shp failed its checksums; ignoring it\n");
-		JE_freeExtraShapes();
-		return;
-	}
+	memcpy(extraShips, loadedTable, sizeof(extraShips));
+	extraShapes = loadedShapes;
 	extraAvail = true;
 	extraUserAvail = fromUser;
 }
@@ -355,7 +438,7 @@ bool extraShipsAdoptLocal(const Uint8 *buf, size_t len)
 		return false;
 	if (buf[1] == 0)
 	{
-		if (!dir_remove_file(get_user_directory(), "newsh$.shp"))
+		if (!dir_remove_file(get_user_directory(), EXTRA_SHIPS_USER_FILE))
 			return false;
 		JE_loadExtraShapes();
 		extraShipsNetReset();
@@ -414,7 +497,7 @@ static bool JE_saveExtraShapes(void)
 	JE_ShipsType enc;
 	JE_encryptShips(enc);
 
-	FILE *f = dir_fopen(get_user_directory(), "newsh$.shp", "wb");
+	FILE *f = dir_fopen(get_user_directory(), EXTRA_SHIPS_USER_FILE, "wb");
 	if (f == NULL)
 		return false;
 
@@ -433,10 +516,19 @@ static bool JE_saveExtraShapes(void)
 
 enum
 {
-	SE_ROW_SLOT, SE_ROW_GRAPHIC, SE_ROW_FRONT, SE_ROW_REAR, SE_ROW_SPECIAL,
-	SE_ROW_LEFT, SE_ROW_RIGHT, SE_ROW_GENERATOR, SE_ROW_ARMOR, SE_ROW_SHIELD,
+	SE_ROW_SLOT,
+	SE_ROW_GRAPHIC,
+	SE_ROW_FRONT,
+	SE_ROW_REAR,
+	SE_ROW_SPECIAL,
+	SE_ROW_LEFT,
+	SE_ROW_RIGHT,
+	SE_ROW_GENERATOR,
+	SE_ROW_ARMOR,
+	SE_ROW_SHIELD,
 	SE_ROW_COUNT,
-	SE_TOGGLE_PREVIEW = SE_ROW_COUNT,
+	SE_RESTORE_DEFAULTS = SE_ROW_COUNT,
+	SE_TOGGLE_PREVIEW,
 	SE_ACT_SPRITES,
 	SE_ACT_IMPORT,
 	SE_ACT_REVERT,
@@ -458,7 +550,13 @@ static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
 	{ "Shield",         "The shield model fitted to this ship." },
 };
 
+static const char *const seDefaultsHelp =
+	"Restore all ten ships and sprite banks from the stock file.";
+static const char *const seDefaultsConfirmHelp =
+	"Choose Defaults again to confirm the stock restore.";
 static const char *const sePreviewHelp = "Animate the center ship's banking poses.";
+static const char *const seRevertConfirmHelp =
+	"Choose Revert again to discard the editor's changes.";
 
 static const struct { const char *label, *help; } seActs[SE_ACT_COUNT] = {
 	{ "Sprites", "Draw or copy artwork for your eight custom banks." },
@@ -466,6 +564,24 @@ static const struct { const char *label, *help; } seActs[SE_ACT_COUNT] = {
 	{ "Revert",  "Discard changes made since you opened the editor." },
 	{ "Done",    "Save your custom ships and leave." },
 };
+
+static bool seConfirmAction(bool *armed)
+{
+	if (*armed)
+	{
+		*armed = false;
+		return true;
+	}
+
+	*armed = true;
+	return false;
+}
+
+bool JE_shipEditorConfirmationSelfTest(void)
+{
+	bool armed = false;
+	return !seConfirmAction(&armed) && armed && seConfirmAction(&armed) && !armed;
+}
 
 // Bytes 0..8 map directly to the Graphic through Shield rows.
 static JE_byte *seField(int slot, int row)
@@ -835,6 +951,31 @@ static void seRebuildShapes(void)
 	free(blob);
 }
 
+// Keep defaults in memory so Revert can recover the editor's opening state.
+static bool seLoadStockDefaults(void)
+{
+	FILE *const f = dir_fopen(data_dir(), EXTRA_SHIPS_STOCK_FILE, "rb");
+	if (f == NULL)
+		return false;
+
+	JE_ShipsType table;
+	Sprite2_array shapes = {0, NULL};
+	const bool loaded = seReadCompiledShips(f, table, &shapes);
+	fclose(f);
+	if (!loaded)
+		return false;
+
+	memcpy(extraShips, table, sizeof(extraShips));
+	free_sprite2s(&extraShapes);
+	extraShapes = shapes;
+	extraAvail = true;
+	extraUserAvail = false;
+	for (unsigned i = 1; i <= SE_BLOB_SPRITES; ++i)
+		seDecodeCell(&extraShapes, i, seCells[i]);
+	seNormalizeShips();
+	return true;
+}
+
 // Compile User.shp's sparse cells into the runtime Sprite2 sheet. See doc/notes.md#extra-ships.
 static bool seImportLegacyUserShapes(FILE *f)
 {
@@ -887,7 +1028,7 @@ static bool seImportLegacyUserShapes(FILE *f)
 bool JE_legacyUserShapeSelfTest(void)
 {
 	FILE *source = dir_fopen(data_dir(), "user1.shp", "rb");
-	FILE *compiled = dir_fopen(data_dir(), "newsh$.shp", "rb");
+	FILE *compiled = dir_fopen(data_dir(), EXTRA_SHIPS_STOCK_FILE, "rb");
 	if (source == NULL || compiled == NULL)
 	{
 		if (source != NULL)
@@ -935,6 +1076,18 @@ bool JE_legacyUserShapeSelfTest(void)
 		seDecodeCell(&expected, i, expectedCell);
 		ok = memcmp(actualCell, expectedCell, SE_CELL_BYTES) == 0;
 	}
+
+	// An explicit User.shp import is immediately eligible for online/custom-data transfer.
+	Uint8 *const wire = malloc(EXTRA_SHIPS_WIRE_MAX);
+	if (ok && wire != NULL)
+	{
+		const size_t wireSize = extraShipsSerializeUser(wire, EXTRA_SHIPS_WIRE_MAX);
+		ok = wireSize > 6 + sizeof(JE_ShipsType) && wire[1] == 1 &&
+		     extraShipsPayloadValid(wire, wireSize);
+	}
+	else
+		ok = false;
+	free(wire);
 
 	fclose(source);
 	fclose(compiled);
@@ -1850,6 +2003,7 @@ void JE_shipEditor(void)
 	const int row_h = 12;
 	const int actionsTop = panY1 - 11;
 	const int previewTop = actionsTop - row_h - 2;
+	const int defaultsTop = previewTop - row_h;
 	const int panMidX = (panX0 + panX1) / 2;
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
 	const int boxMid = (BOX_X0 + BOX_X1) / 2;
@@ -1860,6 +2014,8 @@ void JE_shipEditor(void)
 	int slot = 1;
 	int selected = 0;
 	bool previewOn = true;
+	bool defaultsArmed = false;
+	bool revertArmed = false;
 	Uint32 previewStart = SDL_GetTicks();
 	int previewSlot = slot;
 	JE_byte previewGraphic = *seField(slot, SE_ROW_GRAPHIC);
@@ -1961,6 +2117,22 @@ void JE_shipEditor(void)
 		}
 
 		{
+			const bool sel = selected == SE_RESTORE_DEFAULTS;
+			fill_rectangle_xy(VGAScreen, panX0 + 2, defaultsTop - 1, panX1 - 2, defaultsTop + row_h - 3,
+			                  sel ? C_SEL : C_PANEL);
+			draw_font_hv_shadow(VGAScreen, labelX, defaultsTop, "Defaults", small_font,
+			                    left_aligned, 15, sel ? 5 : 3, false, 1);
+			const char *const value = defaultsArmed ? "Confirm" : "Restore";
+			char shown[16];
+			if (sel)
+				snprintf(shown, sizeof(shown), "< %s >", value);
+			else
+				SDL_strlcpy(shown, value, sizeof(shown));
+			draw_font_hv_shadow(VGAScreen, valueX, defaultsTop, shown, small_font,
+			                    right_aligned, 15, sel ? 6 : 5, false, 1);
+		}
+
+		{
 			const bool sel = selected == SE_TOGGLE_PREVIEW;
 			char value[12];
 			if (sel)
@@ -1983,14 +2155,19 @@ void JE_shipEditor(void)
 			const int bx1 = (a == SE_ACT_COUNT - 1) ? panX1 - 2 : bx0 + actionWidth - 2;
 			const bool enabled = a != (SE_ACT_IMPORT - SE_ACT_SPRITES) || legacyAvailable;
 			const bool sel = (selected == SE_ACT_SPRITES + a);
+			const char *const label = a == SE_ACT_REVERT - SE_ACT_SPRITES && revertArmed
+			                        ? "Confirm" : seActs[a].label;
 			fill_rectangle_xy(VGAScreen, bx0, actionsTop - 1, bx1, actionsTop + 9, sel ? C_SEL : C_DIV);
-			draw_font_hv_shadow(VGAScreen, (bx0 + bx1) / 2, actionsTop, seActs[a].label, small_font, centered,
-			                    15, enabled ? (sel ? 6 : 4) : -5, false, 1);
+			draw_font_hv_shadow(VGAScreen, (bx0 + bx1) / 2, actionsTop, label, small_font, centered, 15,
+			                    enabled ? (sel ? 6 : 4) : -5, false, 1);
 		}
 
 		const char *const help = selected < SE_ROW_COUNT ? seRows[selected].help
-		                       : selected == SE_TOGGLE_PREVIEW ? sePreviewHelp
-		                       : seActs[selected - SE_ACT_SPRITES].help;
+		                         : selected == SE_RESTORE_DEFAULTS
+		                             ? (defaultsArmed ? seDefaultsConfirmHelp : seDefaultsHelp)
+		                         : selected == SE_TOGGLE_PREVIEW            ? sePreviewHelp
+		                         : selected == SE_ACT_REVERT && revertArmed ? seRevertConfirmHelp
+		                         : seActs[selected - SE_ACT_SPRITES].help;
 		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
 		                    notice[0] != '\0' ? notice : help,
 		                    small_font, centered, 15, 2, false, 1);
@@ -2009,6 +2186,7 @@ void JE_shipEditor(void)
 		// Do not leave with unsaved changes.
 		bool leave = false;
 		bool revert = false;
+		bool loadDefaults = false;
 		bool openSprites = false;
 		bool importLegacy = false;
 
@@ -2024,6 +2202,8 @@ void JE_shipEditor(void)
 		{
 			if (mouse_y >= fieldsTop - 1 && mouse_y < fieldsTop + SE_ROW_COUNT * row_h)
 				hover = (mouse_y - (fieldsTop - 1)) / row_h;
+			else if (mouse_y >= defaultsTop - 1 && mouse_y < defaultsTop + row_h - 2)
+				hover = SE_RESTORE_DEFAULTS;
 			else if (mouse_y >= previewTop - 1 && mouse_y < previewTop + row_h - 2)
 				hover = SE_TOGGLE_PREVIEW;
 			else if (mouse_y >= actionsTop - 1 && mouse_y <= actionsTop + 9)
@@ -2060,6 +2240,8 @@ void JE_shipEditor(void)
 					seStepField(slot, hover, (mouse_x < panMidX) ? -1 : 1);
 					JE_playSampleNum(S_CURSOR);
 				}
+				else if (hover == SE_RESTORE_DEFAULTS)
+					loadDefaults = true;
 				else if (hover == SE_TOGGLE_PREVIEW)
 				{
 					previewOn = !previewOn;
@@ -2114,7 +2296,9 @@ void JE_shipEditor(void)
 				break;
 			case SDL_SCANCODE_RETURN:
 			case SDL_SCANCODE_SPACE:
-				if (selected == SE_TOGGLE_PREVIEW)
+				if (selected == SE_RESTORE_DEFAULTS)
+					loadDefaults = true;
+				else if (selected == SE_TOGGLE_PREVIEW)
 				{
 					previewOn = !previewOn;
 					if (previewOn)
@@ -2154,6 +2338,7 @@ void JE_shipEditor(void)
 
 			if (dir != 0)
 			{
+				bool playCursor = true;
 				if (selected == SE_ROW_SLOT)
 					slot += (dir < 0) ? (slot > 1 ? -1 : 9) : (slot < 10 ? 1 : -9);
 				else if (selected < SE_ROW_COUNT)
@@ -2162,6 +2347,11 @@ void JE_shipEditor(void)
 					const int reps = (selected == SE_ROW_ARMOR && (lastkey_mod & KMOD_SHIFT)) ? 10 : 1;
 					for (int i = 0; i < reps; ++i)
 						seStepField(slot, selected, dir);
+				}
+				else if (selected == SE_RESTORE_DEFAULTS)
+				{
+					loadDefaults = true;
+					playCursor = false;
 				}
 				else if (selected == SE_TOGGLE_PREVIEW)
 				{
@@ -2175,9 +2365,46 @@ void JE_shipEditor(void)
 					selected = selected < SE_ACT_SPRITES ? SE_ACT_SPRITES
 					         : (selected > SE_ACT_DONE ? SE_ACT_DONE : selected);
 				}
-				JE_playSampleNum(S_CURSOR);
+				if (playCursor)
+					JE_playSampleNum(S_CURSOR);
 			}
 			newkey = false;
+		}
+
+		if (selected != SE_RESTORE_DEFAULTS && defaultsArmed)
+		{
+			defaultsArmed = false;
+			notice[0] = '\0';
+		}
+		if (selected != SE_ACT_REVERT && revertArmed)
+		{
+			revertArmed = false;
+			notice[0] = '\0';
+		}
+
+		if (loadDefaults && !seConfirmAction(&defaultsArmed))
+		{
+			loadDefaults = false;
+			SDL_strlcpy(notice, "Choose Defaults again to confirm", sizeof(notice));
+			JE_playSampleNum(S_CURSOR);
+		}
+
+		if (loadDefaults)
+		{
+			if (seLoadStockDefaults())
+			{
+				forceSave = true;
+				previewStart = SDL_GetTicks();
+				previewSlot = slot;
+				previewGraphic = *seField(slot, SE_ROW_GRAPHIC);
+				SDL_strlcpy(notice, "Stock defaults loaded", sizeof(notice));
+				JE_playSampleNum(S_SELECT);
+			}
+			else
+			{
+				SDL_strlcpy(notice, "Stock newsh$.shp not found", sizeof(notice));
+				JE_playSampleNum(S_SPRING);
+			}
 		}
 
 		if (openSprites)
@@ -2198,7 +2425,7 @@ void JE_shipEditor(void)
 			{
 				seNormalizeShips();
 				forceSave = true;
-				SDL_strlcpy(notice, "Imported User.shp", sizeof(notice));
+				SDL_strlcpy(notice, "Imported User.shp; choose Done to save", sizeof(notice));
 				JE_playSampleNum(S_SELECT);
 			}
 			else
@@ -2207,6 +2434,13 @@ void JE_shipEditor(void)
 				SDL_strlcpy(notice, found ? "Invalid User.shp" : "User.shp not found", sizeof(notice));
 				JE_playSampleNum(S_SPRING);
 			}
+		}
+
+		if (revert && !seConfirmAction(&revertArmed))
+		{
+			revert = false;
+			SDL_strlcpy(notice, "Choose Revert again to confirm", sizeof(notice));
+			JE_playSampleNum(S_CURSOR);
 		}
 
 		if (revert)

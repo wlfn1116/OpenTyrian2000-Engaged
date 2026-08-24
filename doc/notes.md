@@ -502,14 +502,14 @@ interfaces that are neither loopback nor point-to-point.
 
 ### Extra ships
 
-`newsh$.shp` contains a Sprite2 blob, ten encrypted 15-byte ship records, and
-four plaintext checksums. The cipher and cell codec must round-trip the stock
-file exactly.
+The stock `newsh$.shp` and writable `custom_ships.shp` contain a Sprite2 blob,
+ten encrypted 15-byte ship records, and four plaintext checksums. The cipher
+and cell codec must round-trip the stock file exactly.
 
 `User.shp` is the DOS editor source. It has 304 presence bytes, followed by one
-12x14 cell for each set byte and then the encrypted ship table. Search the
-active data directory, the executable's `data` directory, and the executable
-directory, in that order.
+12x14 cell for each set byte and then the encrypted ship table. Match its name
+case-insensitively. Search the writable state directory, active data directory,
+the executable's `data` directory, and the executable directory, in that order.
 
 Graphic IDs are persistent:
 

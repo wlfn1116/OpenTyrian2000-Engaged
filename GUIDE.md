@@ -402,12 +402,10 @@ and Separate Arcade.
 
 ### Edit ships
 
-The Ship Editor edits ten slots in `newsh$.shp`. Slot 10 uses the 0 key. Each
-slot stores a hull, equipment, and one of eight optional custom sprite banks.
-
-Put an old `User.shp` in `data` or beside the executable. **Import** reloads it;
-**Done** writes the compiled `newsh$.shp`. Remove `User.shp` afterwards if you
-want the compiled file to load first.
+The Ship Editor edits ten slots saved in `custom_ships.shp`; slot 10 uses the 0
+key. Put `User.shp` beside the game executable or in `data`, then choose
+**Import**. Its filename is case-insensitive. **Done** writes `custom_ships.shp`
+without changing the shipped `data/newsh$.shp`.
 
 To change ship during play:
 
@@ -496,7 +494,7 @@ files in private storage that is deleted on uninstall.
 | `opentyrian.cfg` | Settings and records |
 | `opentyrian.sav` | Saves, Endless runs, and high scores |
 | `custom_weapons.cfg` | Weapon Creator library |
-| `newsh$.shp` | Compiled custom ships |
+| `custom_ships.shp` | Compiled custom ships |
 | `User.shp` | Optional DOS ShipEdit source |
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |
