@@ -244,8 +244,7 @@ Players need the same game version.
 The host's session settings temporarily replace the joiner's local choices.
 
 Rollback applies local input immediately and predicts the peer. Delay-Based
-waits for the configured delay. Raising delay can steady a high-latency link at
-the cost of input lag.
+buffers both players' inputs and adds input lag.
 
 Online games do not pause. Pressing P or changing window focus leaves play
 running.
