@@ -398,7 +398,10 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
 
+	// Result notices accept only input that begins after the transfer controls are released.
 	wait_noinput(true, true, true);
+	newkey = newmouse = false;
+	touch_ui_consume_input();
 	for (;;)
 	{
 		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
