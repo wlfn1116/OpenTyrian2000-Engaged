@@ -1165,7 +1165,7 @@ static const char *const sesNudgeHelp[] = {
 };
 
 static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
-	{ "Capture",     "Copy the selected ship's artwork into this custom bank." },
+	{ "Hull Capture", "Copy the selected ship's artwork into this custom bank." },
 	{ "Copy Center", "Copy the center pose onto this pose." },
 	{ "Flip H",      "Mirror this pose left to right." },
 	{ "Flip V",      "Mirror this pose top to bottom." },

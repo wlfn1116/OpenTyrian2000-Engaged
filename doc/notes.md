@@ -750,9 +750,13 @@ Graphic IDs are persistent:
 - Raw values above 500 use the Tyrian 2000 sheet. Values 0 and 1 select the
   two-piece Dragonwing and Nort Ship hulls. These do not fit a custom bank.
 
-Tyrian 2000's Gencore II hard-left pose is corrupt. Replace it with a mirrored
-hard-right pose only when the known `0xfe` signature is present, leaving custom
-shape packs untouched.
+Stock sprite repairs run only when the expected pixel patterns match. This
+leaves replacement shape packs untouched:
+
+- Gencore II's corrupt hard-left pose is replaced with a mirrored hard-right
+  pose only when the known `0xfe` pattern is present.
+- U-Ship cells 276, 289, 293, and 295 contain 1, 1, 2, and 7 stray `0xfe`
+  pixels. Remove them only when all four counts match.
 
 Online Campaign, Endless, and Separate Arcade exchange one file per seat through
 `PACKET_EXTRA_SHIPS`. Simulation lookups use `extraShipsFor(seat)` so both peers

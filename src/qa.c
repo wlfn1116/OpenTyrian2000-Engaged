@@ -7189,6 +7189,15 @@ static void qa_test_ship_editor_file(void)
 		         sprite2_hflip_equal(spriteSheetT2000, gr + 16, gr + 23),
 		         "Gencore II replaces its malformed hard-left pose with a clean mirror");
 	}
+	{
+		const unsigned int gr = ships[10].shipgraphic;
+		qa_check(gr == 271 &&
+		         !sprite2_has_color(spriteSheet9, gr + 5, 0xfe) &&
+		         !sprite2_has_color(spriteSheet9, gr + 18, 0xfe) &&
+		         !sprite2_has_color(spriteSheet9, gr + 22, 0xfe) &&
+		         !sprite2_has_color(spriteSheet9, gr + 24, 0xfe),
+		         "the stock U-Ship poses contain no stray white pixels");
+	}
 
 	{
 		static const JE_word legacy[] = { 233, 157, 195, 271, 81, 0, 119 };

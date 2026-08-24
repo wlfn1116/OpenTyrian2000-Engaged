@@ -740,6 +740,17 @@ bool sprite2_hflip_equal(Sprite2_array sprite2s, unsigned int index, unsigned in
 	return true;
 }
 
+bool sprite2_has_color(Sprite2_array sprite2s, unsigned int index, Uint8 color)
+{
+	Uint8 pixels[SPRITE2_CELL_PIXELS];
+	if (!sprite2_decode_cell(sprite2s, index, pixels))
+		return false;
+	for (int pixel = 0; pixel < SPRITE2_CELL_PIXELS; ++pixel)
+		if (pixels[pixel] == color)
+			return true;
+	return false;
+}
+
 static size_t sprite2_encode_cell(const Uint8 pixels[SPRITE2_CELL_PIXELS], Uint8 *encoded)
 {
 	size_t size = 0;
@@ -770,14 +781,93 @@ static size_t sprite2_encode_cell(const Uint8 pixels[SPRITE2_CELL_PIXELS], Uint8
 	return size;
 }
 
-// Repair Gencore II's hard-left pose only when the stock file's bad signature is present.
+// Rebuild the packed sheet because a replacement cell can change its encoded size.
+static bool sprite2_replace_cells(Sprite2_array *sheet, const unsigned int *destination,
+                                  const Uint8 *replacement, size_t replacementCount)
+{
+	if (sheet->data == NULL || replacementCount == 0)
+		return false;
+	const size_t tableSize = SDL_SwapLE16(((const Uint16 *)sheet->data)[0]);
+	if (tableSize == 0 || tableSize % sizeof(Uint16) != 0 || tableSize > sheet->size)
+		return false;
+	const size_t count = tableSize / sizeof(Uint16);
+	for (size_t cell = 0; cell < replacementCount; ++cell)
+		if (destination[cell] < 1 || destination[cell] > count)
+			return false;
+
+	size_t *const offsets = malloc_die((count + 1) * sizeof(*offsets));
+	for (size_t i = 0; i < count; ++i)
+		offsets[i] = SDL_SwapLE16(((const Uint16 *)sheet->data)[i]);
+	offsets[count] = sheet->size;
+	for (size_t i = 0; i < count; ++i)
+		if (offsets[i] < tableSize || offsets[i] > offsets[i + 1] || offsets[i + 1] > sheet->size)
+		{
+			free(offsets);
+			return false;
+		}
+
+	enum { MAX_ENCODED_CELL = SPRITE2_CELL_PIXELS * 2 + SPRITE2_CELL_H + 1 };
+	Uint8 *const encoded = malloc_die(replacementCount * MAX_ENCODED_CELL);
+	size_t *const encodedSize = malloc_die(replacementCount * sizeof(*encodedSize));
+	for (size_t cell = 0; cell < replacementCount; ++cell)
+		encodedSize[cell] = sprite2_encode_cell(replacement + cell * SPRITE2_CELL_PIXELS,
+		                                               encoded + cell * MAX_ENCODED_CELL);
+
+	size_t repairedSize = tableSize;
+	for (size_t i = 1; i <= count; ++i)
+	{
+		int found = -1;
+		for (size_t cell = 0; cell < replacementCount; ++cell)
+			if (destination[cell] == i)
+				found = (int)cell;
+		repairedSize += found >= 0 ? encodedSize[found] : offsets[i] - offsets[i - 1];
+	}
+	if (repairedSize > UINT16_MAX)
+	{
+		free(encodedSize);
+		free(encoded);
+		free(offsets);
+		return false;
+	}
+
+	Uint8 *const repaired = malloc_die(repairedSize);
+	size_t cursor = tableSize;
+	for (size_t i = 1; i <= count; ++i)
+	{
+		((Uint16 *)repaired)[i - 1] = SDL_SwapLE16((Uint16)cursor);
+		int found = -1;
+		for (size_t cell = 0; cell < replacementCount; ++cell)
+			if (destination[cell] == i)
+				found = (int)cell;
+		if (found >= 0)
+		{
+			memcpy(repaired + cursor, encoded + (size_t)found * MAX_ENCODED_CELL,
+			       encodedSize[found]);
+			cursor += encodedSize[found];
+		}
+		else
+		{
+			const size_t length = offsets[i] - offsets[i - 1];
+			memcpy(repaired + cursor, sheet->data + offsets[i - 1], length);
+			cursor += length;
+		}
+	}
+
+	free(encodedSize);
+	free(encoded);
+	free(offsets);
+	free(sheet->data);
+	sheet->data = repaired;
+	sheet->size = repairedSize;
+	return true;
+}
+
+// Repair Gencore II only when the stock cells match their known bad-pixel signature.
 static void repair_t2000_gencore_ii_hard_left(Sprite2_array *sheet)
 {
 	static const unsigned int destination[4] = { 77, 78, 96, 97 };
 	static const unsigned int source[4] = { 86, 85, 105, 104 };
 	Uint8 decoded[4][SPRITE2_CELL_PIXELS], mirrored[4][SPRITE2_CELL_PIXELS];
-	Uint8 encoded[4][SPRITE2_CELL_PIXELS * 2 + SPRITE2_CELL_H + 1];
-	size_t encodedSize[4];
 	int badPixels = 0, sourceBadPixels = 0;
 
 	for (uint cell = 0; cell < COUNTOF(destination); ++cell)
@@ -795,67 +885,35 @@ static void repair_t2000_gencore_ii_hard_left(Sprite2_array *sheet)
 			for (int x = 0; x < SPRITE2_CELL_W; ++x)
 				mirrored[cell][y * SPRITE2_CELL_W + x] =
 					decoded[cell][y * SPRITE2_CELL_W + (SPRITE2_CELL_W - 1 - x)];
-		encodedSize[cell] = sprite2_encode_cell(mirrored[cell], encoded[cell]);
 	}
 	if (badPixels < 32 || sourceBadPixels != 0)
 		return;
+	(void)sprite2_replace_cells(sheet, destination, &mirrored[0][0], COUNTOF(destination));
+}
 
-	const size_t tableSize = SDL_SwapLE16(((const Uint16 *)sheet->data)[0]);
-	if (tableSize == 0 || tableSize % sizeof(Uint16) != 0 || tableSize > sheet->size)
-		return;
-	const size_t count = tableSize / sizeof(Uint16);
-	size_t *const offsets = malloc_die((count + 1) * sizeof(*offsets));
-	for (size_t i = 0; i < count; ++i)
-		offsets[i] = SDL_SwapLE16(((const Uint16 *)sheet->data)[i]);
-	offsets[count] = sheet->size;
-	for (size_t i = 0; i < count; ++i)
-		if (offsets[i] < tableSize || offsets[i] > offsets[i + 1] || offsets[i + 1] > sheet->size)
-		{
-			free(offsets);
+// Clean U-Ship only when every affected cell matches its stock bad-pixel count.
+static void repair_uship_stray_pixels(Sprite2_array *sheet)
+{
+	static const unsigned int destination[4] = { 276, 289, 293, 295 };
+	static const int expectedBadPixels[4] = { 1, 1, 2, 7 };
+	Uint8 cleaned[4][SPRITE2_CELL_PIXELS];
+
+	for (uint cell = 0; cell < COUNTOF(destination); ++cell)
+	{
+		if (!sprite2_decode_cell(*sheet, destination[cell], cleaned[cell]))
 			return;
-		}
-
-	size_t repairedSize = tableSize;
-	for (size_t i = 1; i <= count; ++i)
-	{
-		int replacement = -1;
-		for (uint cell = 0; cell < COUNTOF(destination); ++cell)
-			if (destination[cell] == i)
-				replacement = (int)cell;
-		repairedSize += replacement >= 0 ? encodedSize[replacement] : offsets[i] - offsets[i - 1];
-	}
-	if (repairedSize > UINT16_MAX)
-	{
-		free(offsets);
-		return;
+		int badPixels = 0;
+		for (int pixel = 0; pixel < SPRITE2_CELL_PIXELS; ++pixel)
+			badPixels += cleaned[cell][pixel] == 0xfe;
+		if (badPixels != expectedBadPixels[cell])
+			return;
 	}
 
-	Uint8 *const repaired = malloc_die(repairedSize);
-	size_t cursor = tableSize;
-	for (size_t i = 1; i <= count; ++i)
-	{
-		((Uint16 *)repaired)[i - 1] = SDL_SwapLE16((Uint16)cursor);
-		int replacement = -1;
-		for (uint cell = 0; cell < COUNTOF(destination); ++cell)
-			if (destination[cell] == i)
-				replacement = (int)cell;
-		if (replacement >= 0)
-		{
-			memcpy(repaired + cursor, encoded[replacement], encodedSize[replacement]);
-			cursor += encodedSize[replacement];
-		}
-		else
-		{
-			const size_t length = offsets[i] - offsets[i - 1];
-			memcpy(repaired + cursor, sheet->data + offsets[i - 1], length);
-			cursor += length;
-		}
-	}
-
-	free(offsets);
-	free(sheet->data);
-	sheet->data = repaired;
-	sheet->size = repairedSize;
+	for (uint cell = 0; cell < COUNTOF(destination); ++cell)
+		for (int pixel = 0; pixel < SPRITE2_CELL_PIXELS; ++pixel)
+			if (cleaned[cell][pixel] == 0xfe)
+				cleaned[cell][pixel] = 0;
+	(void)sprite2_replace_cells(sheet, destination, &cleaned[0][0], COUNTOF(destination));
 }
 
 /* The palette bank this sprite is mostly drawn in; its "colour", for effects that want to match
@@ -2176,6 +2234,7 @@ void JE_loadMainShapeTables(const char *shpfile)
 	// player ship sprites
 	spriteSheet9.size = shpPos[i + 1] - shpPos[i];
 	JE_loadCompShapesB(&spriteSheet9 , f);
+	repair_uship_stray_pixels(&spriteSheet9);
 	i++;
 	
 	// power-up sprites

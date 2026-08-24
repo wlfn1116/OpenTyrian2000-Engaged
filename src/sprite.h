@@ -127,6 +127,7 @@ Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank 
 // Extent of the sprite's painted pixels within its 12px cell, for centring it on something else.
 bool sprite2_ink_bounds(Sprite2_array, unsigned int index, int *x0, int *y0, int *x1, int *y1);
 bool sprite2_hflip_equal(Sprite2_array, unsigned int index, unsigned int mirrored_index);
+bool sprite2_has_color(Sprite2_array, unsigned int index, Uint8 color);
 
 void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);

@@ -859,9 +859,9 @@ transparent.
 - **Mirror** reflects Paint, Fill, and Erase across the centerline.
 - The arrow buttons move the current pose by one pixel. Pixels pushed outside
   the frame are discarded.
-- **From Hull** lists each built-in hull that fits one sprite bank. **Capture**
-  copies it into the current bank. Nort Ship and Dragonwing are too wide to
-  capture but remain available under **Graphic**.
+- **From Hull** lists each built-in hull that fits one sprite bank.
+- **Hull Capture** copies the selected hull into the current bank. Nort Ship
+  and Dragonwing are too wide to capture but remain available under **Graphic**.
 - **Flip H** and **Flip V** mirror the current pose.
 - **Guides** cycles through vertical, horizontal, and combined centerlines. The
   guides are not saved in the sprite.
