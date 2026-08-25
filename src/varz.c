@@ -2412,6 +2412,18 @@ void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
 	                     (layers > 1) ? armorGaugeLayerCol[layers - 2] : 0, opacity);
 }
 
+void hud_draw_ship_hp_bars_preview(int x, int y, int along,
+                                   uint shield, uint shieldMax, uint armor, uint armorMax)
+{
+	if (along < 1 || shieldMax == 0 || armorMax == 0)
+		return;
+
+	ship_hp_bar_draw_one(0, x, y, along, false, (float)shield / (float)shieldMax,
+	                     SHIELD_GAUGE_BASE, 0, 255);
+	ship_hp_bar_draw_one(0, x, y + ENEMY_BAR_THICK, along, false, (float)armor / (float)armorMax,
+	                     armorGaugeLayerCol[0], 0, 255);
+}
+
 // Hull bounds; graphics 0 and 1 are two-piece sentinels.
 void hud_ship_hp_bar_box(uint seat, int *l, int *r, int *t, int *b)
 {

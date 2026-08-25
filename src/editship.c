@@ -546,7 +546,7 @@ static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
 	{ "Left Sidekick",  "The companion in the left bay, or None." },
 	{ "Right Sidekick", "The companion in the right bay, or None." },
 	{ "Generator",      "Recharges the shield and feeds the guns." },
-	{ "Armor",          "Hull strength, 1 to 99." },
+	{ "Armor",          "Hull strength, 1 to 30." },
 	{ "Shield",         "The shield model fitted to this ship." },
 };
 
@@ -639,7 +639,7 @@ static bool seValueOk(int row, int v)
 	case SE_ROW_GENERATOR:
 		return v >= 1 && v <= POWER_NUM;
 	case SE_ROW_ARMOR:
-		return v >= 1 && v <= 99;
+		return v >= 1 && v <= 30;
 	case SE_ROW_SHIELD:
 		return v >= 1 && v <= SHIELD_NUM;
 	}
@@ -848,7 +848,7 @@ static void seNormalizeShips(void)
 	for (int slot = 1; slot <= 10; ++slot)
 		for (int row = SE_ROW_GRAPHIC; row < SE_ROW_COUNT; ++row)
 			if (!seValueOk(row, *seField(slot, row)))
-				seStepField(slot, row, 1);
+				seStepField(slot, row, row == SE_ROW_ARMOR ? -1 : 1);
 }
 
 // The editor expands the stock Sprite2 layout into flat 12x14 cells.
@@ -2168,7 +2168,7 @@ void JE_shipEditor(void)
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
 	const int boxMid = (BOX_X0 + BOX_X1) / 2;
 	const int posesY = BOX_Y0 + 22, centerY = BOX_Y0 + 70, sideLabelsY = BOX_Y0 + 100;
-	const int itemsY = BOX_Y0 + 119, itemLabelsY = BOX_Y0 + 155;
+	const int itemsY = BOX_Y0 + 119, itemLabelsY = BOX_Y0 + 155, hpBarsY = BOX_Y0 + 167;
 	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_HI = 0xFB, C_SEL = 0xF5 };
 
 	int slot = 1;
@@ -2249,6 +2249,16 @@ void JE_shipEditor(void)
 				}
 				draw_font_hv_shadow(VGAScreen, x + 12, itemLabelsY, icons[i].tag, small_font, centered, 15, 1, false, 1);
 			}
+		}
+
+		{
+			int shieldMax = 1;
+			for (int s = 1; s <= SHIELD_NUM; ++s)
+				if (shields[s].mpwr > shieldMax)
+					shieldMax = shields[s].mpwr;
+			hud_draw_ship_hp_bars_preview(BOX_X0 + 12, hpBarsY, 112,
+			                              shields[*seField(slot, SE_ROW_SHIELD)].mpwr, (uint)shieldMax,
+			                              *seField(slot, SE_ROW_ARMOR), 30);
 		}
 
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);

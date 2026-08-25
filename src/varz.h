@@ -549,6 +549,8 @@ void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
                               uint shield, uint shieldMax, uint armor, uint armorMax);
 void hud_ship_hp_bar_box(uint seat, int *l, int *r, int *t, int *b);
 Uint8 hud_ship_hp_bar_opacity(void);
+void hud_draw_ship_hp_bars_preview(int x, int y, int along,
+                                   uint shield, uint shieldMax, uint armor, uint armorMax);
 
 // Half-full samples for the outpost preview.
 #define HUD_HP_BAR_SAMPLE_SHIELD     1
