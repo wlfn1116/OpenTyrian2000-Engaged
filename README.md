@@ -3,8 +3,8 @@
 [![build](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml)
 
 OpenTyrian2000 Engaged is a fork of
-[OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
-the DOS game Tyrian 2000.
+[OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port
+of the DOS game Tyrian 2000.
 
 This fork adds:
 
