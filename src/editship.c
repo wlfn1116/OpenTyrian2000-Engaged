@@ -626,10 +626,10 @@ static bool seValueOk(int row, int v)
 		return v >= 1 && v <= extraShipGraphicMax();
 	case SE_ROW_FRONT:
 		return v == EXTRA_SHIP_CUSTOM_PORT ||
-		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_FRONT);
+		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) != SHOP_BAY_UNKNOWN);
 	case SE_ROW_REAR:
 		return v == 0 || v == EXTRA_SHIP_CUSTOM_PORT ||
-		       (v <= PORT_NUM && shop_weapon_port_bay(v) == SHOP_BAY_REAR);
+		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) != SHOP_BAY_UNKNOWN);
 	case SE_ROW_SPECIAL:
 		// The HUD needs a valid icon for every equipped special.
 		return v == 0 || debug_special_is_safe(v);
@@ -2259,7 +2259,7 @@ void JE_shipEditor(void)
 
 		for (int r = 0; r < SE_ROW_COUNT; ++r)
 		{
-			const int ry = fieldsTop + r * row_h;
+			const int ry = fieldsTop + r * row_h + (r > SE_ROW_SLOT ? 2 : 0);
 			const bool sel = (selected == r);
 			fill_rectangle_xy(VGAScreen, panX0 + 2, ry - 1, panX1 - 2, ry + row_h - 3, sel ? C_SEL : C_PANEL);
 
@@ -2276,6 +2276,7 @@ void JE_shipEditor(void)
 			draw_font_hv_shadow(VGAScreen, valueX, ry, val, small_font, right_aligned, 15, sel ? 6 : 5, false, 1);
 		}
 
+		fill_rectangle_xy(VGAScreen, panX0 + 2, fieldsTop + row_h - 1, panX1 - 2, fieldsTop + row_h - 1, C_DIV);
 		fill_rectangle_xy(VGAScreen, panX0 + 2, defaultsTop - 5, panX1 - 2, defaultsTop - 5, C_DIV);
 
 		{
@@ -2362,8 +2363,10 @@ void JE_shipEditor(void)
 		int hover = -1;
 		if (mouse_x >= panX0 && mouse_x <= panX1)
 		{
-			if (mouse_y >= fieldsTop - 1 && mouse_y < fieldsTop + SE_ROW_COUNT * row_h)
-				hover = (mouse_y - (fieldsTop - 1)) / row_h;
+			if (mouse_y >= fieldsTop - 1 && mouse_y < fieldsTop + row_h - 1)
+				hover = SE_ROW_SLOT;
+			else if (mouse_y >= fieldsTop + row_h + 1 && mouse_y < fieldsTop + SE_ROW_COUNT * row_h + 1)
+				hover = (mouse_y - (fieldsTop + 1)) / row_h;
 			else if (mouse_y >= defaultsTop - 1 && mouse_y < defaultsTop + row_h - 2)
 				hover = SE_RESTORE_DEFAULTS;
 			else if (mouse_y >= previewTop - 1 && mouse_y < previewTop + row_h - 2)
