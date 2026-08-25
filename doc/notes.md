@@ -729,6 +729,11 @@ container advertised in `PACKET_CONNECT`. Received names must remain inside the
 container directory. The joiner checks size and hash, then runs normal `.clv`
 validation before writing the file.
 
+Custom-container sync blocks on the start screen. The guest must consume
+`PACKET_DETAILS` before entering that loop so it cannot pin the reliable queue
+head. While syncing, `network_clv_pump` drains container, shop, debug, waiting,
+and late-connect packets; `PACKET_QUIT` and `PACKET_GAME_QUIT` abort the transfer.
+
 ## Tests
 
 Runner details live in [testing/README.md](../testing/README.md). Persistent or

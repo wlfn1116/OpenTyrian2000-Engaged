@@ -2922,6 +2922,7 @@ int    network_host_custom_endless = 0;     /* CUSTOM_ENDLESS_*, host-dictated *
 #define NCL_MANIFEST_MAX    (2 + CUSTOM_EPISODE_MAX * NCL_MANIFEST_RECORD)
 
 static Uint16 network_clv_gen;
+static bool   network_clv_syncing;
 static bool   network_clv_request_seen;        // host: a container request stands...
 static char   network_clv_wanted[CUSTOM_EPISODE_FILE_LEN];  // ...for this file ("" = advertised)
 static bool   network_clv_manifest_requested;  // host
@@ -3147,6 +3148,20 @@ static void network_clv_consume(void)
 	network_update();
 }
 
+static bool network_clv_pump(void)
+{
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+		network_clv_consume();
+	while (network_shop_pump() || network_debug_sync_pump(false) || network_waiting_pump())
+		;
+	const int head = network_inbound_head();
+	if (head == PACKET_CONNECT)
+		network_update();
+	else if (head == PACKET_QUIT || head == PACKET_GAME_QUIT)
+		return false;
+	return true;
+}
+
 /* Streams one generation until acknowledged. */
 static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint32 total)
 {
@@ -3169,10 +3184,8 @@ static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint
 		service_SDL_events(false);
 		network_check();
 
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
-			network_clv_consume();
-		else if (network_inbound_head() == PACKET_CONNECT)
-			network_update();   // a late handshake retry; consume it
+		if (!network_clv_pump())
+			return false;
 
 		if (sent < chunks)
 		{
@@ -3212,7 +3225,7 @@ static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint
 }
 
 /* Serves the advertised container until the joiner confirms it. */
-bool network_custom_level_serve(void)
+static bool network_custom_level_serve_locked(void)
 {
 	if (network_host_custom_file[0] == '\0')
 		return true;
@@ -3243,10 +3256,11 @@ bool network_custom_level_serve(void)
 		service_SDL_events(false);
 		network_check();
 
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
-			network_clv_consume();
-		else if (network_inbound_head() == PACKET_CONNECT)
-			network_update();
+		if (!network_clv_pump())
+		{
+			ok = false;
+			break;
+		}
 
 		if (network_clv_request_seen)
 		{
@@ -3262,8 +3276,16 @@ bool network_custom_level_serve(void)
 	return ok;
 }
 
+bool network_custom_level_serve(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_custom_level_serve_locked();
+	network_clv_syncing = false;
+	return ok;
+}
+
 /* Fetches the advertised container unless a matching local copy exists. */
-bool network_custom_level_fetch(void)
+static bool network_custom_level_fetch_locked(void)
 {
 	if (network_host_custom_file[0] == '\0')
 		return true;
@@ -3308,10 +3330,8 @@ bool network_custom_level_fetch(void)
 			asked = true;
 		}
 
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
-			network_clv_consume();
-		else if (network_inbound_head() == PACKET_CONNECT)
-			network_update();
+		if (!network_clv_pump())
+			return false;
 
 		SDL_Delay(1);
 	}
@@ -3319,8 +3339,16 @@ bool network_custom_level_fetch(void)
 	return true;
 }
 
+bool network_custom_level_fetch(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_custom_level_fetch_locked();
+	network_clv_syncing = false;
+	return ok;
+}
+
 /* Serves the host's Custom Endless manifest and requested containers. */
-bool network_custom_endless_serve(void)
+static bool network_custom_endless_serve_locked(void)
 {
 	if (network_host_custom_endless == CUSTOM_ENDLESS_OFF)
 		return true;
@@ -3357,10 +3385,8 @@ bool network_custom_endless_serve(void)
 		service_SDL_events(false);
 		network_check();
 
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
-			network_clv_consume();
-		else if (network_inbound_head() == PACKET_CONNECT)
-			network_update();
+		if (!network_clv_pump())
+			return false;
 
 		if (network_clv_manifest_requested)
 		{
@@ -3395,8 +3421,16 @@ bool network_custom_endless_serve(void)
 	return true;
 }
 
+bool network_custom_endless_serve(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_custom_endless_serve_locked();
+	network_clv_syncing = false;
+	return ok;
+}
+
 /* Fetches the host manifest and any missing or different containers. */
-bool network_custom_endless_fetch(void)
+static bool network_custom_endless_fetch_locked(void)
 {
 	if (network_host_custom_endless == CUSTOM_ENDLESS_OFF)
 		return true;
@@ -3424,10 +3458,8 @@ bool network_custom_endless_fetch(void)
 			asked = true;
 		}
 
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
-			network_clv_consume();
-		else if (network_inbound_head() == PACKET_CONNECT)
-			network_update();
+		if (!network_clv_pump())
+			return false;
 
 		SDL_Delay(1);
 	}
@@ -3479,10 +3511,8 @@ bool network_custom_endless_fetch(void)
 				asked = true;
 			}
 
-			if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
-				network_clv_consume();
-			else if (network_inbound_head() == PACKET_CONNECT)
-				network_update();
+			if (!network_clv_pump())
+				return false;
 
 			SDL_Delay(1);
 		}
@@ -3490,9 +3520,16 @@ bool network_custom_endless_fetch(void)
 
 	// Ignore local extras by adopting the host's order.
 	customEpisodeSessionBegin(names, count, network_host_custom_endless);
-	for (int i = 0; i < 3; ++i)
-		network_clv_send_ack(NCL_GEN_ALL_DONE);
+	network_clv_send_ack(NCL_GEN_ALL_DONE);
 	return true;
+}
+
+bool network_custom_endless_fetch(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_custom_endless_fetch_locked();
+	network_clv_syncing = false;
+	return ok;
 }
 
 /* Activates the advertised container. */
@@ -4217,6 +4254,11 @@ bool network_shop_pump(void)
 		return false;
 
 	const Uint16 packetType = SDLNet_Read16(&packet_in[0]->data[0]);
+	if (packetType == PACKET_CUSTOM_LEVEL && !network_clv_syncing)
+	{
+		network_update();
+		return true;
+	}
 	if (custom_ships_multiplayer_mode() && packetType == PACKET_CUSTOM_WEAPON)
 		return network_custom_weapon_receive();
 

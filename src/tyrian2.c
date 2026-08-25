@@ -8736,6 +8736,15 @@ int networkGuestWaitRows(const char **label, const char **value)
 	return rows;
 }
 
+static void networkCustomSyncScreen(void)
+{
+	JE_clr256(VGAScreen);
+	draw_font_hv_shadow(VGAScreen, 320 / 2, 90, "Syncing custom levels...",
+	                    normal_font, centered, 15, -2, false, 2);
+	JE_showVGA();
+	fade_palette(colors, 10, 0, 255);
+}
+
 void networkStartScreen(void)
 {
 	// Lobby games are already connected. Command-line netplay and its lobby-settings
@@ -8856,11 +8865,13 @@ void networkStartScreen(void)
 			               &packet_out_temp->data[15 + SAVE_RECORD_PACKED_SIZE]);
 			network_send(19 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
 
-			// Finish container sync before entering the outpost.
+			if (customEpisodeActive() ||
+			    (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF))
+				networkCustomSyncScreen();
+
 			if (customEpisodeActive() && !network_custom_level_serve())
 				network_tyrian_halt(3, false);
 
-			// Sync the collection before publishing a run that indexes it.
 			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
 			    !network_custom_endless_serve())
 				network_tyrian_halt(3, false);
@@ -8905,11 +8916,13 @@ void networkStartScreen(void)
 			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[8]);
 			network_send(10);  // PACKET_DETAILS
 
-			// Finish container sync before either side loads the episode.
+			if (customSession ||
+			    (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF))
+				networkCustomSyncScreen();
+
 			if (customSession && !network_custom_level_serve())
 				network_tyrian_halt(3, false);
 
-			// Publish the collection before starting Custom Endless.
 			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
 			    !network_custom_endless_serve())
 				network_tyrian_halt(3, false);
@@ -9050,9 +9063,11 @@ void networkStartScreen(void)
 			const Uint32 customHash = haveCustomTail
 			                        ? SDLNet_Read32(&details_packet->data[15 + SAVE_RECORD_PACKED_SIZE]) : 0;
 
-			// Fetch the save's container before JE_loadGameRecord activates it.
+			network_update();
+
 			if (rec.customEpFile[0] != '\0')
 			{
+				networkCustomSyncScreen();
 				SDL_strlcpy(network_host_custom_file, rec.customEpFile,
 				            sizeof(network_host_custom_file));
 				network_host_custom_size = customSize;
@@ -9082,10 +9097,12 @@ void networkStartScreen(void)
 				thisPlayerNum = 3 - networkHostPlayerNum;
 			}
 
-			// Fetch the collection before receiving a run that indexes it.
-			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
-			    !network_custom_endless_fetch())
-				network_tyrian_halt(3, false);
+			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF)
+			{
+				networkCustomSyncScreen();
+				if (!network_custom_endless_fetch())
+					network_tyrian_halt(3, false);
+			}
 
 			// Same rule as the host's publish above: no run means no session.
 			if (coopEndlessMode && !networkEndlessResume(0))
@@ -9095,20 +9112,24 @@ void networkStartScreen(void)
 		}
 		else
 		{
+			network_update();
+
 			if (network_host_custom_file[0] != '\0' &&
 			    network_game_type != NETWORK_GAME_ENDLESS && !network_host_timed_battle)
 			{
-				// Download before activating the host's container.
+				networkCustomSyncScreen();
 				if (!network_custom_level_fetch() || !networkCustomEpisodeActivate())
 					network_tyrian_halt(3, false);
 			}
 			else
 			{
-				// Fetch the host's collection before building the level pool.
 				if (network_game_type == NETWORK_GAME_ENDLESS &&
-				    network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
-				    !network_custom_endless_fetch())
-					network_tyrian_halt(3, false);
+				    network_host_custom_endless != CUSTOM_ENDLESS_OFF)
+				{
+					networkCustomSyncScreen();
+					if (!network_custom_endless_fetch())
+						network_tyrian_halt(3, false);
+				}
 				JE_initEpisode(their_episode);
 			}
 			initial_episode_num = episodeNum;  // as the host does; see its branch above
@@ -9116,8 +9137,6 @@ void networkStartScreen(void)
 			initialDifficulty = difficultyLevel - networkDifficultyBump();
 		}
 		fade_black(10);
-
-		network_update();
 	}
 
 	if (!resumed)
