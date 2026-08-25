@@ -3350,9 +3350,6 @@ bool network_custom_level_fetch(void)
 /* Serves the host's Custom Endless manifest and requested containers. */
 static bool network_custom_endless_serve_locked(void)
 {
-	if (network_host_custom_endless == CUSTOM_ENDLESS_OFF)
-		return true;
-
 	customEpisodeScan();
 	const int count = customEpisodeCount();
 
@@ -3432,9 +3429,6 @@ bool network_custom_endless_serve(void)
 /* Fetches the host manifest and any missing or different containers. */
 static bool network_custom_endless_fetch_locked(void)
 {
-	if (network_host_custom_endless == CUSTOM_ENDLESS_OFF)
-		return true;
-
 	customEpisodeScan();
 
 	// Fetch the manifest first.
