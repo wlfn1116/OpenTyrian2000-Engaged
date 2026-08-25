@@ -317,25 +317,32 @@ static TouchGeometry measure(const SDL_Rect *frame, int out_w, int out_h)
 
 	g.pad_y = clampi(out_h / 14, (int)(10.f * px_per_pt), (int)(80.f * px_per_pt));
 	g.size = clampi(out_h / 7, btn_min_px, btn_max_px);
-	if (bar >= btn_min_px && bar < g.size)
-		g.size = bar;
-	g.gap = g.size / 6;
 
 	if (bar >= btn_min_px)
 	{
+		if (bar < g.size)
+			g.size = bar;
+
 		g.x_left = frame->x - pad_x - g.size;
 		g.x_right = frame->x + frame->w + pad_x;
 	}
 	else
 	{
-		// No bar to take: sit on the frame's own edges, drawn faint (see touch_ui_render).
+		// No bar to take: centre the outer rows in the letterbox band when one fits a button.
+		// Otherwise sit on the frame's own edges, drawn faint (see touch_ui_render).
+		const int band = frame->y - 2 * pad_x;
+		if (band >= btn_min_px)
+		{
+			if (band < g.size)
+				g.size = band;
+			g.pad_y = (frame->y - g.size) / 2;
+		}
+
 		g.x_left = pad_x;
 		g.x_right = out_w - pad_x - g.size;
-
-		const int band = frame->y - 2 * pad_x;
-		if (band >= btn_min_px && band < g.size)
-			g.size = band;
 	}
+
+	g.gap = g.size / 6;
 
 	return g;
 }
