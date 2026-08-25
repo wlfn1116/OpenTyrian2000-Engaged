@@ -109,7 +109,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       84           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       85           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,

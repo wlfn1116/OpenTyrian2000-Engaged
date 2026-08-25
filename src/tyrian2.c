@@ -4502,10 +4502,13 @@ start_level_first:
 		player[i].is_alive = true;
 
 	oldDifficultyLevel = difficultyLevel;
-	if (episodeNum == EPISODE_AVAILABLE)
-		difficultyLevel--;
-	if (difficultyLevel < DIFFICULTY_EASY)
-		difficultyLevel = DIFFICULTY_EASY;
+	if (difficulty_adjust_active())
+	{
+		if (episodeNum == EPISODE_AVAILABLE)
+			difficultyLevel--;
+		if (difficultyLevel < DIFFICULTY_EASY)
+			difficultyLevel = DIFFICULTY_EASY;
+	}
 
 	player[0].x = 100;
 	player[0].y = 180;
@@ -11113,7 +11116,8 @@ void JE_eventSystem(void)
 		if (eventRec[eventLoc-1].eventdat3 != 0)
 			damageRate = eventRec[eventLoc-1].eventdat3;
 
-		if (eventRec[eventLoc-1].eventdat2 == 0 || arcade_rules_active())
+		if ((eventRec[eventLoc-1].eventdat2 == 0 || arcade_rules_active())
+		    && difficulty_adjust_active())
 		{
 			difficultyLevel += eventRec[eventLoc-1].eventdat;
 			if (difficultyLevel < DIFFICULTY_EASY)
