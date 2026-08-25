@@ -4239,7 +4239,8 @@ start_level:
 		}
 	}
 
-	difficultyLevel = oldDifficultyLevel;   /*Return difficulty to normal*/
+	if (difficulty_adjust_active())
+		difficultyLevel = oldDifficultyLevel;   /*Return difficulty to normal*/
 
 	if (!play_demo)
 	{
