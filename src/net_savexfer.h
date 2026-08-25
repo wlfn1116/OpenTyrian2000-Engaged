@@ -48,6 +48,9 @@ void shipsXferUpload(void);
 bool shipsXferDownload(void);
 void weaponsXferUpload(void);
 bool weaponsXferDownload(void);
+// Custom levels are additive; a matching file name is replaced.
+void levelsXferUpload(void);
+bool levelsXferDownload(void);
 void customXferUpload(void);
 bool customXferDownload(void);
 void allXferUpload(void);

@@ -177,6 +177,12 @@ extern JE_byte chargeLaserSlot;  // option slot of the re-added Charge-Laser Can
 void JE_loadItemDat(void);
 void JE_initEpisode(JE_byte newEpisode);
 
+/* Returns the stock or active custom-episode data directory. */
+const char *JE_episodeDir(void);
+
+/* Forces the next JE_initEpisode to reload an unchanged episode number. */
+void JE_forceEpisodeReload(void);
+
 // Hand the shop sheet's 11 never-referenced 2x2 icons to the weapons/sidekicks that otherwise
 // share another item's icon (or fall back to the 167 placeholder).
 void JE_applyUnusedShopSprites(void);

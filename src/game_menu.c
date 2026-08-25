@@ -21,6 +21,7 @@
 #include "config.h"
 #include "console_platform.h"
 #include "crashlog.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "editship.h"
 #include "endless.h"
@@ -406,9 +407,18 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 	if (levelFileCount == 0)
 		return 0;
 
-	char fname[16];
-	snprintf(fname, sizeof(fname), "levels%d.dat", episode);
-	FILE *f = dir_fopen_warn(data_dir(), fname, "rb");
+	FILE *f;
+	if (customEpisodeActive() && episode == episodeNum)
+	{
+		// The active container owns this base episode's script.
+		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_SCRIPT_NAME, "rb");
+	}
+	else
+	{
+		char fname[16];
+		snprintf(fname, sizeof(fname), "levels%d.dat", episode);
+		f = dir_fopen_warn(data_dir(), fname, "rb");
+	}
 	if (f == NULL)
 		return 0;
 
@@ -494,9 +504,17 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 	if (levelFileCount == 0)
 		return;
 
-	char fname[16];
-	snprintf(fname, sizeof(fname), "levels%d.dat", episode);
-	FILE *f = dir_fopen_warn(data_dir(), fname, "rb");
+	FILE *f;
+	if (customEpisodeActive() && episode == episodeNum)
+	{
+		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_SCRIPT_NAME, "rb");
+	}
+	else
+	{
+		char fname[16];
+		snprintf(fname, sizeof(fname), "levels%d.dat", episode);
+		f = dir_fopen_warn(data_dir(), fname, "rb");
+	}
 	if (f == NULL)
 		return;
 
@@ -4441,7 +4459,7 @@ void load_cubes(void)
 
 bool load_cube(int cube_slot, int cube_index)
 {
-	FILE *f = dir_fopen_die(data_dir(), cube_file, "rb");
+	FILE *f = dir_fopen_die(JE_episodeDir(), cube_file, "rb");
 
 	char buf[256];
 

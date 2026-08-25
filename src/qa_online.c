@@ -2267,10 +2267,9 @@ static void qa_endless_jump_pick(void)
 
 #ifdef WITH_NETWORK
 
-/* ---- the joiner's wait-for-details screen -------------------------------------------- */
+/* Joiner wait screen */
 
-/* One shape through the row builder, against the drawing site's width and height rules.
- * Returns the row count. */
+/* Checks one row layout against the screen budget. */
 static int qa_guest_wait_check(const char *shape)
 {
 	const char *label[GUEST_WAIT_ROWS_CAP], *value[GUEST_WAIT_ROWS_CAP];
@@ -2298,7 +2297,7 @@ static int qa_guest_wait_check(const char *shape)
 	return rows;
 }
 
-// The widest name or seed the entry filters admit: their widest glyphs are all alphanumeric.
+// Widest accepted host name or seed.
 static void qa_guest_wait_worst(char *out, size_t len)
 {
 	int widest = -1;
@@ -2320,7 +2319,7 @@ static void qa_guest_wait_worst(char *out, size_t len)
 	out[len - 1] = '\0';
 }
 
-// Every session shape the wait screen can show, each with the widest host name the wire admits.
+// Check every session layout with the widest host name.
 static void qa_guest_wait_layout(void)
 {
 	char *const savedName = network_opponent_name;
@@ -2432,7 +2431,7 @@ static void qa_guest_wait_layout(void)
 		network_opponent_name = nameWorst;
 	}
 
-	// Individual credit with doubling, individual combo feed, full-width seed: the deepest shape.
+	// This combination produces the most rows.
 	qa_guest_wait_worst(network_endless_session_seed, sizeof(network_endless_session_seed));
 	network_host_endless_combo_shared = false;
 	coop_set_session_shared_credit(false);

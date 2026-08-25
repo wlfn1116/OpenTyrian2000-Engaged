@@ -328,8 +328,7 @@ static TouchGeometry measure(const SDL_Rect *frame, int out_w, int out_h)
 	}
 	else
 	{
-		// No bar to take: centre the outer rows in the letterbox band when one fits a button.
-		// Otherwise sit on the frame's own edges, drawn faint (see touch_ui_render).
+		// Use the letterbox band when it can hold a button; otherwise use the frame edge.
 		const int band = frame->y - 2 * pad_x;
 		if (band >= btn_min_px)
 		{

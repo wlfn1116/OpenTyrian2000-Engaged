@@ -138,7 +138,7 @@ void networkSuperArcadeEquip(Player *this_player, int ship);
  * as the one above: the unit suite pins the loadout it issues to both ships. */
 void networkSuperTyrianEquip(Player *this_player);
 
-/* The joiner's wait-for-details screen (networkStartScreen). */
+/* Joiner wait-screen layout limits. */
 #define GUEST_WAIT_ROWS_CAP 14
 #define GUEST_WAIT_TOP      42
 #define GUEST_WAIT_BOTTOM  196

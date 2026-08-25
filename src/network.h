@@ -120,6 +120,7 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_ENDLESS_JUMP  0x38    // sender, armed, level pick, len, <Endless debug block>
 #define PACKET_PLAYER_LOOK   0x39    // sender, dye, view; repeated and unacknowledged
 #define PACKET_EXTRA_SHIPS   0x3A    // owner, generation, chunk idx/count, len, <ship file chunk>
+#define PACKET_CUSTOM_LEVEL  0x3B    // Chunked *.clv transfer; see doc/notes.md.
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -183,6 +184,17 @@ static inline bool network_game_type_is_super(NetworkGameType t)
 extern NetworkGameType network_game_type;
 extern int network_host_episode;
 extern int network_host_difficulty;
+
+/* Custom container identity advertised in PACKET_CONNECT; empty means stock. */
+extern char network_host_custom_file[64];   /* CUSTOM_EPISODE_FILE_LEN */
+extern Uint32 network_host_custom_size;
+extern Uint32 network_host_custom_hash;
+
+/* Session-start custom-container transfer and activation. */
+void network_custom_level_session_reset(void);
+bool network_custom_level_serve(void);
+bool network_custom_level_fetch(void);
+bool networkCustomEpisodeActivate(void);
 
 /* Arcade's third shape, beside the Linked pair and Separate ships: both players race one of the
  * three Timed Battle levels for cash. */

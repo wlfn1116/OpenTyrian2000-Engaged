@@ -18,6 +18,7 @@
 #include "menus.h"
 
 #include "config.h"
+#include "custom_episode.h"
 #include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
@@ -318,6 +319,175 @@ bool gameplaySelect(void)
 	}
 }
 
+/* Lists installed custom episodes in a six-row window. */
+static bool customEpisodeSelect(void)
+{
+	const int count = customEpisodeCount();
+	if (count <= 0)
+		return false;
+
+	bool restart = true;
+
+	enum { CUSTOM_ROWS_MAX = 6 };
+	const int visible = MIN(count, CUSTOM_ROWS_MAX);
+	int selectedIndex = 0;
+	int scrollTop = 0;
+
+	const int xCenter = 320 / 2;
+	const int yMenuHeader = 20;
+	const int yMenuItems = 46;
+	const int dyMenuItems = 24;
+	const int hMenuItem = 13;
+	int wMenuItem[CUSTOM_ROWS_MAX] = { 0 };
+
+	for (; ; )
+	{
+		if (restart)
+		{
+			JE_loadPic(VGAScreen2, 2, false);
+			draw_font_hv_shadow(VGAScreen2, xCenter, yMenuHeader, "Custom Episodes", large_font, centered, 15, -3, false, 2);
+		}
+
+		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		// Keep the selection inside the visible window.
+		if (selectedIndex < scrollTop)
+			scrollTop = selectedIndex;
+		if (selectedIndex >= scrollTop + visible)
+			scrollTop = selectedIndex - visible + 1;
+
+		for (int row = 0; row < visible; ++row)
+		{
+			const int idx = scrollTop + row;
+			const char *const text = customEpisodeTitle(idx);
+
+			wMenuItem[row] = JE_textWidth(text, normal_font);
+			const int x = xCenter - wMenuItem[row] / 2;
+			const int y = yMenuItems + dyMenuItems * row;
+
+			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (idx == selectedIndex ? 2 : 0), false, 2);
+		}
+
+		// Mark rows above or below the window.
+		if (scrollTop > 0)
+			draw_font_hv_shadow(VGAScreen, xCenter, yMenuItems - 12, "...", normal_font, centered, 15, -5, false, 2);
+		if (scrollTop + visible < count)
+			draw_font_hv_shadow(VGAScreen, xCenter, yMenuItems + dyMenuItems * visible - 4, "...", normal_font, centered, 15, -5, false, 2);
+
+		// Show the author only when supplied.
+		if (customEpisodeAuthor(selectedIndex)[0] != '\0')
+		{
+			char byline[CUSTOM_EPISODE_TITLE_LEN + 4];
+			snprintf(byline, sizeof(byline), "by %s", customEpisodeAuthor(selectedIndex));
+			draw_font_hv_shadow(VGAScreen, xCenter, 182, byline, small_font, centered, 15, -5, false, 2);
+		}
+
+		if (restart)
+		{
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			fade_palette(colors, 10, 0, 255);
+			restart = false;
+		}
+
+		service_SDL_events(true);
+
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+
+		const bool mouseMoved = menuWaitForInput();
+
+		bool action = false;
+		bool cancel = false;
+
+		if (mouseMoved || newmouse)
+		{
+			for (int row = 0; row < visible; ++row)
+			{
+				const int xMenuItem = xCenter - wMenuItem[row] / 2;
+				if (mouse_x >= xMenuItem && mouse_x < xMenuItem + wMenuItem[row])
+				{
+					const int yMenuItem = yMenuItems + dyMenuItems * row;
+					if (mouse_y >= yMenuItem && mouse_y < yMenuItem + hMenuItem)
+					{
+						if (selectedIndex != scrollTop + row)
+						{
+							JE_playSampleNum(S_CURSOR);
+							selectedIndex = scrollTop + row;
+						}
+
+						if (newmouse && lastmouse_but == SDL_BUTTON_LEFT &&
+						    lastmouse_x >= xMenuItem && lastmouse_x < xMenuItem + wMenuItem[row] &&
+						    lastmouse_y >= yMenuItem && lastmouse_y < yMenuItem + hMenuItem)
+						{
+							action = true;
+						}
+
+						break;
+					}
+				}
+			}
+		}
+
+		if (newmouse)
+		{
+			if (lastmouse_but == SDL_BUTTON_RIGHT)
+			{
+				JE_playSampleNum(S_SPRING);
+				cancel = true;
+			}
+		}
+		else if (newkey)
+		{
+			switch (lastkey_scan)
+			{
+			case SDL_SCANCODE_UP:
+				JE_playSampleNum(S_CURSOR);
+				selectedIndex = selectedIndex == 0 ? count - 1 : selectedIndex - 1;
+				break;
+			case SDL_SCANCODE_DOWN:
+				JE_playSampleNum(S_CURSOR);
+				selectedIndex = selectedIndex == count - 1 ? 0 : selectedIndex + 1;
+				break;
+			case SDL_SCANCODE_SPACE:
+			case SDL_SCANCODE_RETURN:
+				action = true;
+				break;
+			case SDL_SCANCODE_ESCAPE:
+				JE_playSampleNum(S_SPRING);
+				cancel = true;
+				break;
+			default:
+				break;
+			}
+		}
+
+		if (action)
+		{
+			JE_playSampleNum(S_SELECT);
+			fade_black(10);
+
+			if (JE_initEpisodeCustom(selectedIndex))
+			{
+				initial_episode_num = episodeNum;
+				return true;
+			}
+
+			// Keep the picker open when extraction fails.
+			JE_playSampleNum(S_SPRING);
+			restart = true;
+		}
+
+		if (cancel)
+		{
+			fade_black(10);
+			return false;
+		}
+	}
+}
+
 bool episodeSelect(void)
 {
 	if (shopSpriteSheet.data == NULL)
@@ -325,15 +495,20 @@ bool episodeSelect(void)
 
 	bool restart = true;
 
-	const size_t menuItemsCount = EPISODE_AVAILABLE;
+	// Hide Custom when no valid container is installed.
+	customEpisodeScan();
+	const bool haveCustom = customEpisodeCount() > 0;
+	const size_t stockCount = EPISODE_AVAILABLE;
+	const size_t menuItemsCount = stockCount + (haveCustom ? 1 : 0);
 	size_t selectedIndex = 0;
 
 	const int xCenter = 320 / 2;
 	const int yMenuHeader = 20;
-	const int yMenuItems = 50;
-	const int dyMenuItems = 30;
+	// Six rows require tighter spacing.
+	const int yMenuItems = haveCustom ? 46 : 50;
+	const int dyMenuItems = haveCustom ? 24 : 30;
 	const int hMenuItem = 13;
-	int wMenuItem[EPISODE_AVAILABLE] = { 0 };
+	int wMenuItem[EPISODE_AVAILABLE + 1] = { 0 };
 
 	for (; ; )
 	{
@@ -351,14 +526,14 @@ bool episodeSelect(void)
 		// Draw menu items.
 		for (size_t i = 0; i < menuItemsCount; ++i)
 		{
-			const char* const text = episode_name[i + 1];
+			const char* const text = (i < stockCount) ? episode_name[i + 1] : "Custom";
 
 			wMenuItem[i] = JE_textWidth(text, normal_font);
 			const int x = xCenter - wMenuItem[i] / 2;
 			const int y = yMenuItems + dyMenuItems * i;
 
 			const bool selected = i == selectedIndex;
-			const bool disabled = !episodeAvail[i];
+			const bool disabled = (i < stockCount) && !episodeAvail[i];
 
 			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 		}
@@ -469,7 +644,18 @@ bool episodeSelect(void)
 
 		if (action)
 		{
-			if (episodeAvail[selectedIndex])
+			if (selectedIndex >= stockCount)
+			{
+				JE_playSampleNum(S_SELECT);
+
+				fade_black(10);
+
+				if (customEpisodeSelect())
+					return true;
+
+				restart = true;   // backed out of the Custom list; fade this menu back in
+			}
+			else if (episodeAvail[selectedIndex])
 			{
 				JE_playSampleNum(S_SELECT);
 

@@ -17,6 +17,7 @@
 #include "net_lobby.h"
 
 #include "config.h"
+#include "custom_episode.h"
 #include "endless.h"
 #include "console_platform.h"
 #include "episodes.h"
@@ -138,19 +139,64 @@ static const char *const lobbyEndlessRunModeHelp[] =
 	"Hardcore: no saving, and no second chances.",
 };
 
-static int lobbyCycleEpisode(int episode, int direction)
+/* Cycles through stock episodes, then installed custom episodes. */
+static void lobbyCycleEpisodeRow(int direction)
 {
-	for (int tries = 0; tries < EPISODE_MAX; ++tries)
+	const int customCount = customEpisodeCount();
+	const int total = EPISODE_MAX + customCount;
+
+	int ordinal;
+	if (network_host_custom_file[0] != '\0')
 	{
-		episode += direction;
-		if (episode > EPISODE_MAX)
-			episode = 1;
-		else if (episode < 1)
-			episode = EPISODE_MAX;
-		if (episodeAvail[episode - 1])
-			return episode;
+		const int current = customEpisodeFindByFile(network_host_custom_file);
+		ordinal = current >= 0 ? EPISODE_MAX + current : 0;
 	}
-	return 1;
+	else
+		ordinal = network_host_episode - 1;
+
+	for (int tries = 0; tries < total; ++tries)
+	{
+		ordinal = (ordinal + direction + total) % total;
+
+		if (ordinal < EPISODE_MAX)
+		{
+			if (!episodeAvail[ordinal])
+				continue;
+			network_host_custom_file[0] = '\0';
+			network_host_custom_size = 0;
+			network_host_custom_hash = 0;
+			network_host_episode = ordinal + 1;
+			return;
+		}
+
+		const int idx = ordinal - EPISODE_MAX;
+		Uint32 size, hash;
+		if (!customEpisodeIdentity(idx, &size, &hash))
+			continue;   // an unreadable container is not offered
+		SDL_strlcpy(network_host_custom_file, customEpisodeFile(idx),
+		            sizeof(network_host_custom_file));
+		network_host_custom_size = size;
+		network_host_custom_hash = hash;
+		// The existing episode field carries the custom episode's base.
+		network_host_episode = customEpisodeBase(idx);
+		return;
+	}
+}
+
+/* Returns the episode label shown in the lobby. */
+static const char *lobbyEpisodeValue(void)
+{
+	static char shown[28];
+	if (network_host_custom_file[0] == '\0')
+		return episode_name[network_host_episode];
+
+	const int idx = customEpisodeFindByFile(network_host_custom_file);
+	const char *const name = (idx >= 0 && customEpisodeTitle(idx)[0] != '\0')
+	                       ? customEpisodeTitle(idx) : network_host_custom_file;
+	SDL_strlcpy(shown, name, sizeof(shown));
+	if (strlen(name) >= sizeof(shown))
+		memcpy(&shown[sizeof(shown) - 4], "...", 4);
+	return shown;
 }
 
 /* The Mode row's three positions folded into the two flags a session runs on: Timed Battle is a
@@ -929,7 +975,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		                          && network_host_destruct_mode < DESTRUCT_MODES)
 		                         ? network_host_destruct_mode : 0];
 		itemValue[ITEM_EPISODE] = timedBattle ? timed_battle_name[network_host_battle_level]
-		                                      : episode_name[network_host_episode];
+		                                      : lobbyEpisodeValue();
 		itemValue[ITEM_ENDLESS] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 		itemValue[ITEM_DIFFICULTY] = variant
 		                           ? lobbyVariantValue[network_host_difficulty == DIFFICULTY_SUICIDE ? 1 : 0]
@@ -1189,7 +1235,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				network_host_battle_level = (network_host_battle_level - 1 + cycleDir
 				                             + NET_TIMED_BATTLE_LEVELS) % NET_TIMED_BATTLE_LEVELS + 1;
 			else
-				network_host_episode = lobbyCycleEpisode(network_host_episode, cycleDir);
+				lobbyCycleEpisodeRow(cycleDir);
 			break;
 
 		case ITEM_DIFFICULTY:
@@ -1366,6 +1412,16 @@ bool networkLobby(void)
 	};
 
 	NetworkHostInfo found[LOBBY_MAX_FOUND];
+
+	// Rescan before offering local containers.
+	customEpisodeScan();
+	if (network_host_custom_file[0] != '\0' &&
+	    customEpisodeFindByFile(network_host_custom_file) < 0)
+	{
+		network_host_custom_file[0] = '\0';
+		network_host_custom_size = 0;
+		network_host_custom_hash = 0;
+	}
 
 	// Pre-filled from the config so the common case is Host/Join then Enter.
 	char port_buf[8];

@@ -19,6 +19,7 @@
 
 #include "config.h"
 #include "crashlog.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "destruct.h"
 #include "editship.h"
@@ -328,6 +329,7 @@ typedef enum
 	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (tyrian2.c)
 	MENU_ITEM_GUIDED_AIM,           // weapon-table homing steers toward the enemy's screen x (shots.c)
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
+	MENU_ITEM_CLEAR_CLV,            // delete every custom episode; hidden unless some exist
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
 	MENU_ITEM_ARCADE_REAR_SCALE,    // arcade rear gun fires at the life count too
@@ -352,6 +354,8 @@ typedef enum
 	MENU_ITEM_TRANSFER_SHIPS_DOWNLOAD,
 	MENU_ITEM_TRANSFER_WEAPONS_UPLOAD,
 	MENU_ITEM_TRANSFER_WEAPONS_DOWNLOAD,
+	MENU_ITEM_TRANSFER_LEVELS_UPLOAD,
+	MENU_ITEM_TRANSFER_LEVELS_DOWNLOAD,
 	MENU_ITEM_TRANSFER_CUSTOM_UPLOAD,
 	MENU_ITEM_TRANSFER_CUSTOM_DOWNLOAD,
 	MENU_ITEM_TRANSFER_ALL_UPLOAD,
@@ -397,6 +401,7 @@ typedef enum
 	MENU_TRANSFER_SAVES,
 	MENU_TRANSFER_SHIPS,
 	MENU_TRANSFER_WEAPONS,
+	MENU_TRANSFER_LEVELS,
 	MENU_TRANSFER_CUSTOM,
 	MENU_TRANSFER_ALL,
 	MENU_ARCADE,
@@ -413,10 +418,13 @@ typedef struct
 	const char *(*getPickerItem)(size_t i, char *buffer, size_t bufferSize);
 } MenuItem;
 
-// Central visibility filter for setup rows; currently all rows are visible.
-static bool isMenuItemVisible(MenuItemId id)
+static bool isMenuItemVisible(const MenuItem *item)
 {
-	(void)id;
+	// Invalid containers still keep Clear visible.
+	if (item->id == MENU_ITEM_SUBMENU && item->submenu == MENU_TRANSFER_LEVELS)
+		return customEpisodeCount() > 0;
+	if (item->id == MENU_ITEM_CLEAR_CLV)
+		return customEpisodeAnyPresent();
 	return true;
 }
 
@@ -850,6 +858,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
 				{ MENU_ITEM_GUIDED_AIM, "Guided Aim:", "Guided shots steer to where enemies are drawn." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
+				// Hidden when no container or directory exists.
+				{ MENU_ITEM_CLEAR_CLV, "Clear .clv", "Delete every custom episode file and its folder." },
 				{ MENU_ITEM_SUBMENU, "Arcade Modes...", "Tweaks for the arcade and Super Arcade modes.", MENU_ARCADE_MODES },
 				MENU_DONE_ROW
 			},
@@ -968,6 +978,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "All Saves...", "Copy every save slot.", MENU_TRANSFER_SAVES },
 				{ MENU_ITEM_SUBMENU, "Custom Ships...", "Replace only the compiled custom ships.", MENU_TRANSFER_SHIPS },
 				{ MENU_ITEM_SUBMENU, "Custom Weapons...", "Replace only the complete custom-weapon library.", MENU_TRANSFER_WEAPONS },
+				// Hidden when no valid custom episode is installed.
+				{ MENU_ITEM_SUBMENU, "Custom Levels...", "Copy the installed custom episodes.", MENU_TRANSFER_LEVELS },
 				{ MENU_ITEM_SUBMENU, "Custom Data...", "Copy custom ships and the complete weapon library.", MENU_TRANSFER_CUSTOM },
 				{ MENU_ITEM_SUBMENU, "Transfer All...", "Replace every save and all custom creations at once.", MENU_TRANSFER_ALL },
 				MENU_DONE_ROW
@@ -1002,6 +1014,14 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_TRANSFER_WEAPONS_UPLOAD, "Upload", "Send only the complete custom-weapon library." },
 				{ MENU_ITEM_TRANSFER_WEAPONS_DOWNLOAD, "Download", "Replace only the receiver's custom weapons." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_TRANSFER_LEVELS] = {
+			.header = "Custom Levels Transfer",
+			.items = {
+				{ MENU_ITEM_TRANSFER_LEVELS_UPLOAD, "Upload", "Send every installed custom episode." },
+				{ MENU_ITEM_TRANSFER_LEVELS_DOWNLOAD, "Download", "Add the sender's custom episodes to this device." },
 				MENU_DONE_ROW
 			},
 		},
@@ -1121,7 +1141,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		MenuItem visibleItems[COUNTOF(menu->items)];
 		size_t menuItemsCount = 0;
 		for (size_t i = 0; i + 1 < COUNTOF(visibleItems) && menu->items[i].id != (MenuItemId)-1; ++i)
-			if (isMenuItemVisible(menu->items[i].id))
+			if (isMenuItemVisible(&menu->items[i]))
 				visibleItems[menuItemsCount++] = menu->items[i];
 		visibleItems[menuItemsCount].id = (MenuItemId)-1;
 
@@ -1781,6 +1801,24 @@ static bool runOptionsMenu(MenuId startMenu)
 					restart = true;
 					break;
 				}
+				case MENU_ITEM_TRANSFER_LEVELS_UPLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					levelsXferUpload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_TRANSFER_LEVELS_DOWNLOAD:
+				{
+					JE_playSampleNum(S_SELECT);
+					fade_black(10);
+					levelsXferDownload();
+					set_menu_centered(true);
+					restart = true;
+					break;
+				}
 				case MENU_ITEM_TRANSFER_CUSTOM_UPLOAD:
 				{
 					JE_playSampleNum(S_SELECT);
@@ -1930,6 +1968,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					logsCleared = crashlog_clear_logs() ? LOGS_CLEAR_DONE : LOGS_CLEAR_ABSENT;
 					JE_playSampleNum(logsCleared == LOGS_CLEAR_DONE ? S_SELECT : S_CLICK);
+					break;
+				}
+				case MENU_ITEM_CLEAR_CLV:
+				{
+					// The visibility filter hides this row after a successful clear.
+					customEpisodeClearAll();
+					JE_playSampleNum(S_SELECT);
 					break;
 				}
 				case MENU_ITEM_XMAS:
@@ -2234,6 +2279,7 @@ int main(int argc, char *argv[])
 	}
 
 	JE_scanForEpisodes();
+	customEpisodeScan();   // Migrate loose containers and build the index.
 
 	init_video();
 	init_keyboard();

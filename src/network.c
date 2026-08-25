@@ -35,6 +35,7 @@
 #include "config.h"
 #include "console_platform.h"
 #include "crashlog.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "editship.h"
 #include "destruct_rollback.h"
@@ -109,12 +110,10 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       86           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       87           /* Custom-episode connect block. */
 #define NET_PORT          1333         // UDP
 
-// PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
-// game type, episode, difficulty, the host's simulation settings, its Endless lobby block, its
-// Destruct lobby block, and finally the player name.
+// PACKET_CONNECT offsets after its four-byte packet header.
 #define NET_CONNECT_GAME_TYPE 12
 #define NET_CONNECT_EPISODE   14
 #define NET_CONNECT_DIFFICULTY 16
@@ -124,7 +123,10 @@ bool network_interface_carries_lan(unsigned int flags)
 #define NET_CONNECT_ENDLESS_SIZE (4 + NET_ENDLESS_SEED_MAX)
 #define NET_CONNECT_DESTRUCT  (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
 #define NET_CONNECT_DESTRUCT_SIZE 5   // battle mode, Uint32 terrain seed
-#define NET_CONNECT_NAME      (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
+// Padded *.clv name, u32 size, and u32 hash; zeroed for stock episodes.
+#define NET_CONNECT_CUSTOM    (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
+#define NET_CONNECT_CUSTOM_SIZE (CUSTOM_EPISODE_FILE_LEN + 8)
+#define NET_CONNECT_NAME      (NET_CONNECT_CUSTOM + NET_CONNECT_CUSTOM_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
@@ -659,6 +661,7 @@ static int network_recv_one(void)
 					case PACKET_SHOP_SYNC:
 					case PACKET_CUSTOM_WEAPON:
 					case PACKET_EXTRA_SHIPS:
+					case PACKET_CUSTOM_LEVEL:
 					// Every packet the Endless co-op channel carries: the run transfer on resume, the
 					// death-prompt choice, and the "I have left the level" notice.
 					case PACKET_ENDLESS_RUN:
@@ -1254,6 +1257,17 @@ static void send_connect_packet(Uint16 episodes_local)
 	       NET_ENDLESS_SEED_MAX);
 	packet_out_temp->data[NET_CONNECT_DESTRUCT] = (Uint8)network_host_destruct_mode;
 	SDLNet_Write32(network_destruct_session_seed, &packet_out_temp->data[NET_CONNECT_DESTRUCT + 1]);
+	// Stock sessions leave this block zeroed.
+	memset(&packet_out_temp->data[NET_CONNECT_CUSTOM], 0, NET_CONNECT_CUSTOM_SIZE);
+	if (network_host_custom_file[0] != '\0')
+	{
+		memcpy(&packet_out_temp->data[NET_CONNECT_CUSTOM], network_host_custom_file,
+		       strlen(network_host_custom_file));
+		SDLNet_Write32(network_host_custom_size,
+		               &packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN]);
+		SDLNet_Write32(network_host_custom_hash,
+		               &packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 4]);
+	}
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
 	network_send(NET_CONNECT_NAME + name_len + 1);
@@ -1265,6 +1279,7 @@ int network_connect(void)
 {
 	network_settings_apply_session_speed();
 	netStyleSessionReset();
+	network_custom_level_session_reset();
 
 	const bool listening = network_from_lobby && network_is_host;
 
@@ -1427,6 +1442,23 @@ connect_again:
 
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
 			network_endless_adopt(&packet_in[0]->data[NET_CONNECT_ENDLESS]);
+
+			// Reject path-like names before storing the host's selection.
+			{
+				char customFile[CUSTOM_EPISODE_FILE_LEN];
+				memcpy(customFile, &packet_in[0]->data[NET_CONNECT_CUSTOM], CUSTOM_EPISODE_FILE_LEN);
+				customFile[CUSTOM_EPISODE_FILE_LEN - 1] = '\0';
+				if (customFile[0] != '\0' && !customEpisodeFileNameValid(customFile))
+				{
+					fprintf(stderr, "error: host sent an unusable custom episode name\n");
+					network_tyrian_halt(5, true);
+				}
+				memcpy(network_host_custom_file, customFile, sizeof(network_host_custom_file));
+				network_host_custom_size = SDLNet_Read32(
+					&packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN]);
+				network_host_custom_hash = SDLNet_Read32(
+					&packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 4]);
+			}
 
 			// The Destruct block. The mode indexes battle-mode tables on both machines, so a
 			// corrupt byte is clamped rather than trusted; any seed value is a playable seed.
@@ -1591,8 +1623,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	{
 		fprintf(stderr, "network test: session halt: %s\n", err_msg[err]);
 		fflush(stderr);
-		/* As the production pump below: a just-queued QUIT needs its retransmits, or one lost
-		 * datagram leaves the partner to the dead-link timeout. */
+		/* Give a queued QUIT time to retransmit. */
 		if (attempt_sync)
 		{
 			const Uint32 flushUntil = SDL_GetTicks() + 1500;
@@ -2855,6 +2886,293 @@ void network_extra_ships_publish(void)
 		network_ships_out_hash = hash;
 
 	free(stream);
+}
+
+/* Session-start custom-container sync. See doc/notes.md#custom-episode-containers. */
+
+char   network_host_custom_file[64] = "";   /* CUSTOM_EPISODE_FILE_LEN; empty = stock */
+Uint32 network_host_custom_size = 0;
+Uint32 network_host_custom_hash = 0;
+
+#define NCL_REQUEST 0xFFFF
+#define NCL_TRANSFER_MS 90000   /* whole-container deadline; a slow link, not a hang */
+#define NCL_RESEND_MS   15000   /* restream when a full pass went unacknowledged     */
+
+static Uint16 network_clv_gen;
+static bool   network_clv_request_seen;
+static bool   network_clv_peer_done;
+
+static Uint16 network_clv_in_gen;
+static Uint32 network_clv_in_count;
+static Uint32 network_clv_in_have;
+static size_t network_clv_in_len;
+static Uint8 *network_clv_in_buf;
+static Uint8 *network_clv_in_seen;
+static bool   network_clv_in_done;
+
+static void network_clv_in_reset(void)
+{
+	network_clv_in_count = 0;
+	network_clv_in_have = 0;
+	network_clv_in_len = 0;
+	free(network_clv_in_buf);
+	free(network_clv_in_seen);
+	network_clv_in_buf = NULL;
+	network_clv_in_seen = NULL;
+}
+
+void network_custom_level_session_reset(void)
+{
+	network_clv_request_seen = false;
+	network_clv_peer_done = false;
+	network_clv_in_done = false;
+	network_clv_in_reset();
+}
+
+static void network_clv_send_simple(Uint16 count, Uint16 gen)
+{
+	network_prepare(PACKET_CUSTOM_LEVEL);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = 0;
+	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(count, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+	network_send(NCW_HDR);
+}
+
+static void network_clv_consume(void)
+{
+	const int len = packet_in[0]->len;
+	if (len < NCW_HDR)
+	{
+		network_update();
+		return;
+	}
+
+	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+	if (sender < 1 || sender > 2 || sender == thisPlayerNum)
+	{
+		network_update();
+		return;
+	}
+
+	if (count == NCL_REQUEST)
+	{
+		if (network_is_host)
+			network_clv_request_seen = true;
+		network_update();
+		return;
+	}
+
+	if (count == 0)
+	{
+		network_clv_peer_done = true;
+		network_update();
+		return;
+	}
+
+	// Only the joiner assembles the advertised container.
+	if (network_is_host || network_host_custom_file[0] == '\0' ||
+	    chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
+	    (Uint64)count * NCW_PAYLOAD > (Uint64)network_host_custom_size + NCW_PAYLOAD)
+	{
+		network_update();
+		return;
+	}
+
+	if (network_clv_in_buf == NULL || network_clv_in_gen != gen || network_clv_in_count != count)
+	{
+		network_clv_in_reset();
+		network_clv_in_buf = calloc((size_t)count, NCW_PAYLOAD);
+		network_clv_in_seen = calloc((size_t)count, 1);
+		if (network_clv_in_buf == NULL || network_clv_in_seen == NULL)
+		{
+			network_clv_in_reset();
+			network_update();
+			return;
+		}
+		network_clv_in_gen = gen;
+		network_clv_in_count = count;
+	}
+
+	memcpy(network_clv_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	if (chunk == count - 1)
+		network_clv_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
+	if (!network_clv_in_seen[chunk])
+	{
+		network_clv_in_seen[chunk] = 1;
+		++network_clv_in_have;
+	}
+
+	if (network_clv_in_have >= count && network_clv_in_len > 0)
+	{
+		Uint32 hash = 2166136261u;
+		for (size_t i = 0; i < network_clv_in_len; ++i)
+		{
+			hash ^= network_clv_in_buf[i];
+			hash *= 16777619u;
+		}
+		if (hash == 0)
+			hash = 1;
+
+		if (network_clv_in_len == network_host_custom_size && hash == network_host_custom_hash &&
+		    customEpisodeSaveDownloaded(network_host_custom_file,
+		                                network_clv_in_buf, (Uint32)network_clv_in_len) >= 0)
+		{
+			network_clv_in_done = true;
+			network_clv_send_simple(0, gen);
+		}
+		else
+		{
+			// Wait for the host's next generation after rejecting this one.
+			crashlog_netlog_line("CUSTOM LEVEL REFUSED",
+			                     "the downloaded container did not match the host's advertisement");
+		}
+		network_clv_in_reset();
+	}
+
+	network_update();
+}
+
+/* Serves the advertised container until the joiner confirms it. */
+bool network_custom_level_serve(void)
+{
+	if (network_host_custom_file[0] == '\0')
+		return true;
+
+	customEpisodeScan();
+	const int idx = customEpisodeFindByFile(network_host_custom_file);
+	Uint32 total = 0;
+	Uint8 *const stream = idx >= 0 ? customEpisodeReadWhole(idx, &total) : NULL;
+	if (stream == NULL || total == 0)
+	{
+		free(stream);
+		return false;
+	}
+
+	const Uint32 chunks = (total + NCW_PAYLOAD - 1) / NCW_PAYLOAD;
+	Uint16 gen = ++network_clv_gen;
+	Uint32 sent = 0;
+	const Uint32 started = SDL_GetTicks();
+	Uint32 passDoneAt = 0;
+
+	while (!network_clv_peer_done)
+	{
+		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
+		{
+			free(stream);
+			return false;
+		}
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+			network_clv_consume();
+		else if (network_inbound_head() == PACKET_CONNECT)
+			network_update();   // a late handshake retry; consume it
+
+		if (network_clv_request_seen && sent < chunks)
+		{
+			// Leave half the reliable queue available while streaming.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN((size_t)total - from, (size_t)NCW_PAYLOAD);
+
+				network_prepare(PACKET_CUSTOM_LEVEL);
+				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+				packet_out_temp->data[NCW_OWNER + 1] = 0;
+				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
+				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
+				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				if (++sent >= chunks)
+					passDoneAt = SDL_GetTicks();
+			}
+		}
+		else if (sent >= chunks && passDoneAt != 0 &&
+		         SDL_GetTicks() - passDoneAt >= NCL_RESEND_MS)
+		{
+			// Retry an unconfirmed stream with a new generation.
+			gen = ++network_clv_gen;
+			sent = 0;
+			passDoneAt = 0;
+		}
+
+		SDL_Delay(1);
+	}
+
+	free(stream);
+	return true;
+}
+
+/* Fetches the advertised container unless a matching local copy exists. */
+bool network_custom_level_fetch(void)
+{
+	if (network_host_custom_file[0] == '\0')
+		return true;
+
+	customEpisodeScan();
+	const int idx = customEpisodeFindByFile(network_host_custom_file);
+	if (idx >= 0)
+	{
+		Uint32 size, hash;
+		if (customEpisodeIdentity(idx, &size, &hash) &&
+		    size == network_host_custom_size && hash == network_host_custom_hash)
+		{
+			network_clv_send_simple(0, 0);
+			return true;
+		}
+	}
+
+	const Uint32 started = SDL_GetTicks();
+	Uint32 askedAt = 0;
+	bool asked = false;
+
+	while (!network_clv_in_done)
+	{
+		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		// Repeat in case the host reset its transfer state.
+		if (!asked || SDL_GetTicks() - askedAt >= 3000)
+		{
+			network_clv_send_simple(NCL_REQUEST, 0);
+			askedAt = SDL_GetTicks();
+			asked = true;
+		}
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+			network_clv_consume();
+		else if (network_inbound_head() == PACKET_CONNECT)
+			network_update();
+
+		SDL_Delay(1);
+	}
+
+	return true;
+}
+
+/* Activates the advertised container. */
+bool networkCustomEpisodeActivate(void)
+{
+	customEpisodeScan();
+	const int idx = customEpisodeFindByFile(network_host_custom_file);
+	return idx >= 0 && JE_initEpisodeCustom(idx);
 }
 
 /* Endless run transfer. Same chunked shape as the custom weapon exchange above, and for the same

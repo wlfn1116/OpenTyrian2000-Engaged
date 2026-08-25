@@ -17,6 +17,8 @@
  */
 #include "lvllib.h"
 
+#include "custom_episode.h"
+#include "episodes.h"
 #include "file.h"
 #include "opentyr.h"
 #include "varz.h"
@@ -28,7 +30,7 @@ JE_word lvlNum;
 
 void JE_analyzeLevel(void)
 {
-	FILE *f = dir_fopen_die(data_dir(), levelFile, "rb");
+	FILE *f = dir_fopen_die(JE_episodeDir(), levelFile, "rb");
 	
 	fread_u16_die(&lvlNum, 1, f);
 	if (lvlNum < 3 || lvlNum >= COUNTOF(lvlPos) || lvlNum % 2 == 0)
@@ -52,9 +54,18 @@ unsigned int JE_levelFileCount(int episode)
 	if (episode < 1 || episode > 9)
 		return 0;
 
-	char filename[13];
-	snprintf(filename, sizeof(filename), "tyrian%d.lvl", episode);
-	FILE *f = dir_fopen_warn(data_dir(), filename, "rb");
+	FILE *f;
+	if (customEpisodeActive() && episode == episodeNum)
+	{
+		// The active container owns this base episode's levels.
+		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_LVL_NAME, "rb");
+	}
+	else
+	{
+		char filename[13];
+		snprintf(filename, sizeof(filename), "tyrian%d.lvl", episode);
+		f = dir_fopen_warn(data_dir(), filename, "rb");
+	}
 	if (f == NULL)
 		return 0;
 

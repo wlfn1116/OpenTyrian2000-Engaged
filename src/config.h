@@ -107,6 +107,8 @@ typedef struct
 	JE_byte       viewOpacity[2];
 	JE_byte       viewShipOpacity[2];
 	JE_byte       viewHpBars[2];
+	/* Custom-episode file name; empty for stock games. */
+	char          customEpFile[64];  /* CUSTOM_EPISODE_FILE_LEN */
 } JE_SaveFileType;
 
 typedef JE_SaveFileType JE_SaveFilesType[SAVE_FILES_NUM]; /* [1..savefilesnum] */
@@ -497,8 +499,8 @@ void JE_loadGame(JE_byte slot);
 // record received from the host.  twoP tells it which loadout layout the record uses.
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 
-// Fixed little-endian packed form of a save record, used by the network resume handshake.
-#define SAVE_RECORD_PACKED_SIZE 97
+// Fixed little-endian save record. NET_VERSION 87 added the 64-byte container name.
+#define SAVE_RECORD_PACKED_SIZE 161
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
 bool save_record_is_coop(const JE_SaveFileType *rec);

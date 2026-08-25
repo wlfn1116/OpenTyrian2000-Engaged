@@ -24,6 +24,7 @@ It covers:
 
 - rollback snapshots, restore fixups, and malformed wire state
 - every supported Endless save version and migration
+- custom-episode activation, save identity, and transfer envelopes
 - custom weapon serialization and capacity limits
 - modifier, perk, course, and economy invariants
 - Arcade lives, hull, rear-gun, and HUD geometry

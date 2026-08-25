@@ -21,6 +21,7 @@
 #include "backgrnd.h"
 #include "config.h"
 #include "crashlog.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "editship.h"
 #include "endless.h"
@@ -7237,7 +7238,7 @@ static void animate_picture_wipe(WipeKind kind, const Uint8 *pic_buffer)
 	}
 }
 
-// E5 SAVARA cannon towers hang below the spawn anchor and pop in on-screen; backdate each group so it scrolls in whole.
+// Backdate E5 SAVARA cannon groups so their low sprites scroll in together.
 static void event_backdate_savara_cannons(void)
 {
 	if (episodeNum != 5 || lvlFileNum != 4)
@@ -7334,7 +7335,7 @@ new_game:
 	{
 		do
 		{
-			FILE *ep_f = dir_fopen_die(data_dir(), episode_file, "rb");
+			FILE *ep_f = dir_fopen_die(JE_episodeDir(), episode_file, "rb");
 			const long ep_end = ftell_eof(ep_f);  // guard the scans below against reading past EOF
 
 			jumpSection = false;
@@ -7967,7 +7968,7 @@ new_game:
 		return;
 	}
 
-	FILE* level_f = dir_fopen_die(data_dir(), levelFile, "rb");
+	FILE* level_f = dir_fopen_die(JE_episodeDir(), levelFile, "rb");
 	if (fseek(level_f, lvlPos[(lvlFileNum - 1) * 2], SEEK_SET) != 0)
 	{
 		fprintf(stderr, "error: failed to seek to episode %u level file %u\n",
@@ -8624,8 +8625,7 @@ static void networkTimedBattleReady(void)
 	fade_black(10);
 }
 
-/* Build the joiner's wait-screen rows from the adopted session state. Public so the unit suite
- * can hold every shape to the GUEST_WAIT budget. Returns the row count. */
+/* Builds the joiner's wait-screen rows. Also used by layout tests. */
 int networkGuestWaitRows(const char **label, const char **value)
 {
 	const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
@@ -8643,21 +8643,34 @@ int networkGuestWaitRows(const char **label, const char **value)
 	case NETWORK_GAME_CAMPAIGN:     value[rows++] = "Campaign";     break;
 	case NETWORK_GAME_SUPERTYRIAN:  value[rows++] = "SuperTyrian";  break;
 	case NETWORK_GAME_SUPERARCADE:  value[rows++] = "Super Arcade"; break;
-	// Destruct never reaches this screen, so the remainder is Arcade in one of its three shapes.
+	// Destruct never reaches this screen; the remaining cases are Arcade.
 	default:  value[rows++] = timedBattleMode ? "Timed Battle" : "Arcade";  break;
 	}
 	if (timedBattleMode)
 	{
-		// Same rebadge the host's own Mode/Level pair wears in the lobby.
+		// Match the lobby's Mode/Level labels.
 		label[rows] = "Level";
 		value[rows++] = timed_battle_name[timeBattleSelection];
 	}
 	else if (!endless)
 	{
 		label[rows] = "Episode";
-		value[rows++] = episode_name[network_host_episode];
+		if (network_host_custom_file[0] != '\0')
+		{
+			// Fall back to the advertised file name before download.
+			static char customShown[28];
+			const int idx = customEpisodeFindByFile(network_host_custom_file);
+			const char *const name = (idx >= 0 && customEpisodeTitle(idx)[0] != '\0')
+			                       ? customEpisodeTitle(idx) : network_host_custom_file;
+			SDL_strlcpy(customShown, name, sizeof(customShown));
+			if (strlen(name) >= sizeof(customShown))
+				memcpy(&customShown[sizeof(customShown) - 4], "...", 4);
+			value[rows++] = customShown;
+		}
+		else
+			value[rows++] = episode_name[network_host_episode];
 	}
-	// SuperTyrian has no ladder; the same field carries which of its two variants this is.
+	// SuperTyrian uses this field for its two variants.
 	label[rows] = superTyrianGame ? "Variant" : "Difficulty";
 	value[rows++] = superTyrianGame
 	              ? (network_host_difficulty == DIFFICULTY_SUICIDE ? "Scrollock" : "Standard")
@@ -8697,19 +8710,18 @@ int networkGuestWaitRows(const char **label, const char **value)
 	}
 	else
 	{
-		// Campaign gives both slots the same kind of ship, so there is nothing to say.
+		// Campaign gives both slots the same ship type.
 		label[rows] = "You Fly";
 		value[rows++] = thisPlayerNum == 2 ? "Dragonwing" : "Silver Ship";
 	}
 	label[rows] = "Game Speed";
-	// Adopted from the host's settings block, which clamps it; belt and braces, since
-	// anything out of range here would index gameSpeedText[] off its ends.
+	// Clamp again before indexing the display table.
 	value[rows++] = gameSpeedText[MIN(MAX(gameSpeed, 1), 5) - 1];
 	label[rows] = "Netcode";
 	value[rows++] = nrb_session_mode() ? "Rollback" : "Delay-Based";
 	if (nrb_session_mode())
 	{
-		// Lockstep never runs the compare that arms it, so it has no answer to give.
+		// Lockstep has no desync-recovery state.
 		label[rows] = "Desync Recovery";
 		value[rows++] = nrb_session_recovery() ? "On" : "Off";
 	}
@@ -8805,13 +8817,41 @@ void networkStartScreen(void)
 			networkHostPlayerNum = save_slot_online_player((JE_byte)resumeSlot);
 			thisPlayerNum = networkHostPlayerNum;
 
+			// A resumed save overrides the lobby's custom-episode selection.
+			if (customEpisodeActive())
+			{
+				customEpisodeScan();
+				const int customIdx = customEpisodeFindByFile(customEpisodeActiveFile());
+				SDL_strlcpy(network_host_custom_file, customEpisodeActiveFile(),
+				            sizeof(network_host_custom_file));
+				if (customIdx < 0 ||
+				    !customEpisodeIdentity(customIdx, &network_host_custom_size,
+				                           &network_host_custom_hash))
+					network_tyrian_halt(3, false);
+			}
+			else
+			{
+				network_host_custom_file[0] = '\0';
+				network_host_custom_size = 0;
+				network_host_custom_hash = 0;
+			}
+
 			network_prepare(PACKET_DETAILS);
 			SDLNet_Write16(network_game_type, &packet_out_temp->data[4]);
 			SDLNet_Write16(episodeNum, &packet_out_temp->data[6]);
 			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[8]);
 			save_record_pack(&packet_out_temp->data[10], &saveFiles[resumeSlot - 1]);
 			packet_out_temp->data[10 + SAVE_RECORD_PACKED_SIZE] = (Uint8)networkHostPlayerNum;
-			network_send(11 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
+			// A stock resume sends a zeroed custom-container identity.
+			SDLNet_Write32(network_host_custom_size,
+			               &packet_out_temp->data[11 + SAVE_RECORD_PACKED_SIZE]);
+			SDLNet_Write32(network_host_custom_hash,
+			               &packet_out_temp->data[15 + SAVE_RECORD_PACKED_SIZE]);
+			network_send(19 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
+
+			// Finish container sync before entering the outpost.
+			if (customEpisodeActive() && !network_custom_level_serve())
+				network_tyrian_halt(3, false);
 
 			// The save record carries the two loadouts; the Endless run behind them is a record of its
 			// own, so it follows on the reliable channel before either machine plays a tick.
@@ -8822,11 +8862,22 @@ void networkStartScreen(void)
 		}
 		else if (resumeSlot == 0)
 		{
+			const bool customSession = network_host_custom_file[0] != '\0' &&
+			                           !coopEndlessMode && !timedBattleMode;
 			// Endless traverses episodes as it deepens, so it always opens on the first one, and a
 			// battle level is reached through the episode that holds it (the ']T' jump list).
-			JE_initEpisode(coopEndlessMode ? 1
-			               : timedBattleMode ? (JE_byte)network_timed_battle_episode(timeBattleSelection)
-			               : network_host_episode);
+			if (customSession)
+			{
+				// The selected file may have disappeared since the lobby scan.
+				if (!networkCustomEpisodeActivate())
+					network_tyrian_halt(3, false);
+			}
+			else
+			{
+				JE_initEpisode(coopEndlessMode ? 1
+				               : timedBattleMode ? (JE_byte)network_timed_battle_episode(timeBattleSelection)
+				               : network_host_episode);
+			}
 			/* A lobby row picked the episode, so the episode-select menu that normally records
 			 * where a run began never ran. The co-op Campaign board and the save record both
 			 * read it, and a value left over from an earlier game names the wrong episode. */
@@ -8841,6 +8892,10 @@ void networkStartScreen(void)
 			SDLNet_Write16(episodeNum, &packet_out_temp->data[6]);
 			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[8]);
 			network_send(10);  // PACKET_DETAILS
+
+			// Finish container sync before either side loads the episode.
+			if (customSession && !network_custom_level_serve())
+				network_tyrian_halt(3, false);
 		}
 		else
 		{
@@ -8874,8 +8929,7 @@ void networkStartScreen(void)
 			const int xLabel = LEGACY_WIDTH / 2 - blockW / 2;
 			const int xValue = xLabel + blockW;
 
-			// Centre the list, the waiting line and the Esc hint together under the title, which
-			// is large-font and reaches y=40.
+			// Centre the rows, status, and Esc hint below the title.
 			const int dyRow = guest_wait_row_h(rows);
 			const int blockH = rows * dyRow + guest_wait_gap(rows)
 			                   + GUEST_WAIT_LINE_H + GUEST_WAIT_HINT_H;
@@ -8912,8 +8966,7 @@ void networkStartScreen(void)
 			if (!output_vsync)
 				limit_render_fps();
 
-			// Leaving must tell the host, which is still in its own menus; checked before the
-			// details packet so a cancel beats a game that is only just starting.
+			// Process cancel before a newly arrived start packet.
 			if ((newkey && lastkey_scan == SDL_SCANCODE_ESCAPE) || qa_net_guest_esc)
 			{
 				if (qa_net_guest_esc)
@@ -8971,20 +9024,45 @@ void networkStartScreen(void)
 			rec.input1 = inputDevice[0];
 			rec.input2 = inputDevice[1];
 
+			// Read the tail before the download loop consumes this packet.
+			const uint hostSeat = details_packet->len > 10 + SAVE_RECORD_PACKED_SIZE
+			                    ? details_packet->data[10 + SAVE_RECORD_PACKED_SIZE] : 0;
+			const bool haveCustomTail = details_packet->len >= 19 + SAVE_RECORD_PACKED_SIZE;
+			const Uint32 customSize = haveCustomTail
+			                        ? SDLNet_Read32(&details_packet->data[11 + SAVE_RECORD_PACKED_SIZE]) : 0;
+			const Uint32 customHash = haveCustomTail
+			                        ? SDLNet_Read32(&details_packet->data[15 + SAVE_RECORD_PACKED_SIZE]) : 0;
+
+			// Fetch the save's container before JE_loadGameRecord activates it.
+			if (rec.customEpFile[0] != '\0')
+			{
+				SDL_strlcpy(network_host_custom_file, rec.customEpFile,
+				            sizeof(network_host_custom_file));
+				network_host_custom_size = customSize;
+				network_host_custom_hash = customHash;
+				if (customSize == 0 || !network_custom_level_fetch())
+					network_tyrian_halt(3, false);
+			}
+			else
+			{
+				network_host_custom_file[0] = '\0';
+				network_host_custom_size = 0;
+				network_host_custom_hash = 0;
+			}
+
 			gameJustLoaded = true;
 			JE_loadGameRecord(&rec, true);
+			// A local fallback to the base episode would desync online play.
+			if (customEpisodeActive() != (rec.customEpFile[0] != '\0'))
+				network_tyrian_halt(3, false);
 			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 
 			// The host took back the seat it saved in, so this machine flies the other one.
-			if (details_packet->len > 10 + SAVE_RECORD_PACKED_SIZE)
+			if (hostSeat == 1 || hostSeat == 2)
 			{
-				const uint hostSeat = details_packet->data[10 + SAVE_RECORD_PACKED_SIZE];
-				if (hostSeat == 1 || hostSeat == 2)
-				{
-					networkHostPlayerNum = hostSeat;
-					thisPlayerNum = 3 - networkHostPlayerNum;
-				}
+				networkHostPlayerNum = hostSeat;
+				thisPlayerNum = 3 - networkHostPlayerNum;
 			}
 
 			// Same rule as the host's publish above: no run means no session.
@@ -8995,7 +9073,15 @@ void networkStartScreen(void)
 		}
 		else
 		{
-			JE_initEpisode(their_episode);
+			if (network_host_custom_file[0] != '\0' &&
+			    network_game_type != NETWORK_GAME_ENDLESS && !network_host_timed_battle)
+			{
+				// Download before activating the host's container.
+				if (!network_custom_level_fetch() || !networkCustomEpisodeActivate())
+					network_tyrian_halt(3, false);
+			}
+			else
+				JE_initEpisode(their_episode);
 			initial_episode_num = episodeNum;  // as the host does; see its branch above
 			difficultyLevel = their_difficulty;
 			initialDifficulty = difficultyLevel - networkDifficultyBump();

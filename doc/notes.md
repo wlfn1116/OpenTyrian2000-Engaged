@@ -380,6 +380,9 @@ either peer resumes. Rendering, audio, and local controls stay local.
 a packet, deterministic rule, field meaning, offset, or registered simulation
 layout. Readers validate lengths and clamp received enums before indexing.
 
+Version 87 added the 72-byte custom-episode identity to `PACKET_CONNECT`: a
+64-byte file name, byte size, and FNV-1a hash. Stock sessions zero the block.
+
 Keep persistent and wire enums append-only. Version history belongs in Git; this
 file records only current constraints.
 
@@ -469,8 +472,9 @@ new epoch each round.
 ### Online saves
 
 Online saves use slots 12 through 22. Slot 22 is the read-only `LAST LEVEL`
-backup. `save_record_pack` and `save_record_unpack` define the 97-byte wire
-record.
+backup. `save_record_pack` and `save_record_unpack` define the 161-byte wire
+record. It was 97 bytes through `NET_VERSION` 86; version 87 appended the
+64-byte custom-episode file name.
 
 A save writes only to the local machine. The peer acknowledgement supplies the
 other outpost half. Preserve player numbers on resume and restore both co-op mode
@@ -488,11 +492,20 @@ time. Later episodes, repeats, and deaths do not replace it.
   and name.
 - All Saves replaces slots and Endless runs but keeps high scores and custom
   content.
-- Custom Data replaces only the marked ship or weapon content.
+- Custom Levels adds `.clv` files and replaces matching names.
+- Custom Data replaces ships and weapons. It also adds custom levels when the
+  sender has any.
 - Transfer All replaces saves, scores, seats, ships, and weapons as one
-  transaction.
-- Roll back the destination if adoption fails.
+  transaction, then adds any custom levels.
+- Roll back replaced saves, ships, and weapons if adoption fails. Custom levels
+  already added remain installed.
 - Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
+
+Custom-level transfer uses transfer version 7 and an `OTCL` version 1 payload.
+Each record is a 64-byte padded name, a big-endian 32-bit length, and the file
+bytes. A bundle holds at most 64 files and 12 MiB of container data. Custom Data
+uses its version 2 envelope when no levels exist and version 3 when an `OTCL`
+part is present. Transfer All version 2 embeds that Custom Data envelope.
 
 iOS has no multicast entitlement, so direct push must work without discovery.
 On platforms with `getifaddrs`, advertise only active broadcast-capable IPv4
@@ -635,6 +648,53 @@ Format traps:
 
 Use each dump tree's `index.csv` to find the decoder, engine loader, references,
 and output for a data file.
+
+### Custom-episode containers
+
+Tyrian 2000 Atlas writes one little-endian `.clv` file per custom episode. The
+160-byte `CLV1` header is fixed:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | Four-byte `CLV1` magic |
+| 4 | 64-byte NUL-terminated title |
+| 68 | 64-byte NUL-terminated author |
+| 132 | One-byte base episode, 1 through 5 |
+| 133 | Three reserved bytes |
+| 136 | Level offset and length, two 32-bit values |
+| 144 | Script offset and length, two 32-bit values |
+| 152 | Datacube offset and length, two 32-bit values |
+| 160 | Section data |
+
+The level section uses the episode 4/5 layout: its item and enemy tables follow
+the last level. The script matches `levelsN.dat`; the datacube section matches
+`cubetxtN.dat` and may be empty. A blank title falls back to the file name.
+
+The loader accepts files from 160 bytes through 16 MiB. Level and script
+sections must be non-empty and every non-empty section must stay within the
+file. The level section's opening 16-bit offset count must be odd and between 3
+and 42. An invalid base episode is treated as episode 1.
+
+The base episode selects number-gated engine rules; it does not select stock
+data. On activation, the sections are extracted as `custom.lvl`, `custom.lev`,
+and `custom.cub` in `custom_levels`. Switching between stock and custom data
+forces a reload even when their episode number is the same. A rescan never
+changes the active episode.
+
+At startup and before episode selection, loose `.clv` files in the data and user
+directories move into `custom_levels`. A same-named file already there wins.
+Cross-volume moves fall back to copy-and-delete, and partial copies are removed.
+The directory is created only for a write.
+
+Local saves store the container's file name in `custom_episode`. Missing files
+lock the load row. The session host advertises the name, size, and FNV-1a hash;
+the joiner reuses an exact local match or downloads the container before loading
+the episode or save.
+
+`PACKET_CUSTOM_LEVEL` uses the common chunk header. A count of `0xffff` requests
+the container, zero acknowledges a matching or stored copy, and any other count
+describes a data stream. The joiner checks the advertised size and hash, then
+runs the normal container validation before writing the file.
 
 ## Tests
 

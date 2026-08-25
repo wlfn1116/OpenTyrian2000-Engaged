@@ -22,6 +22,7 @@
 #include "crashlog.h"
 #include "editship.h"
 #include "endless.h"
+#include "custom_episode.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -951,6 +952,10 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 			// Upload accepts every non-empty save type.
 			const bool typeLocked = !saving && !uploadPick && !disabled &&
 			                      !save_type_compatible(saveFile, slot, net2p);
+			// Uploads do not require the local custom container.
+			const bool customLocked = !saving && !uploadPick && !disabled &&
+			                      saveFile->customEpFile[0] != '\0' &&
+			                      customEpisodeFindByFile(saveFile->customEpFile) < 0;
 
 			char buffer[22];
 
@@ -963,7 +968,7 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 			}
 			else
 			{
-				const int bright = selected ? 6 : ((epLocked || typeLocked) ? 0 : 2);
+				const int bright = selected ? 6 : ((epLocked || typeLocked || customLocked) ? 0 : 2);
 
 				JE_textShade(VGAScreen, xMenuItemName, y, saveFile->name, 13, bright, FULL_SHADE);
 
@@ -973,6 +978,8 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 				// An Endless run's episode field is only its current zone's source level.
 				if (endlessSlotHasRun(slot))
 					SDL_strlcpy(buffer, "Endless", sizeof buffer);
+				else if (saveFile->customEpFile[0] != '\0')
+					SDL_strlcpy(buffer, "Custom", sizeof buffer);
 				else
 					snprintf(buffer, sizeof buffer, "%s %u", miscTextB[1], saveFile->episode);
 				JE_textShade(VGAScreen, xMenuItemEpisode, y, buffer, 5, bright, FULL_SHADE);
@@ -1230,6 +1237,8 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 
 				if (saveFile->level == 0 ||  // "EMPTY SLOT"
 				    (net2p && (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1])) ||
+				    (saveFile->customEpFile[0] != '\0' &&
+				     customEpisodeFindByFile(saveFile->customEpFile) < 0) ||
 				    !save_type_compatible(saveFile, (JE_byte)(saveFileIndex + 1), net2p))
 				{
 					JE_playSampleNum(S_CLINK);
@@ -1349,7 +1358,9 @@ void JE_nextEpisode(void)
 {
 	strcpy(lastLevelName, "Completed");
 
-	if (episodeNum == initial_episode_num && !gameHasRepeated && !isNetworkGame && !constantPlay && !endlessMode)
+	// The base episode does not own a custom run's high score.
+	if (episodeNum == initial_episode_num && !gameHasRepeated && !isNetworkGame && !constantPlay &&
+	    !endlessMode && !customEpisodeActive())
 	{
 		JE_highScoreCheck();
 	}
@@ -1419,7 +1430,9 @@ void JE_nextEpisode(void)
 	JE_clr256(VGAScreen);
 	memcpy(colors, palettes[6-1], sizeof(colors));
 
-	JE_dString(VGAScreen, JE_fontCenter(episode_name[episodeNum], SMALL_FONT_SHAPES), 130, episode_name[episodeNum], SMALL_FONT_SHAPES);
+	const char *episodeBanner = customEpisodeActive()
+		? customEpisodeActiveTitle() : episode_name[episodeNum];
+	JE_dString(VGAScreen, JE_fontCenter(episodeBanner, SMALL_FONT_SHAPES), 130, episodeBanner, SMALL_FONT_SHAPES);
 	JE_dString(VGAScreen, JE_fontCenter(miscText[5-1], SMALL_FONT_SHAPES), 185, miscText[5-1], SMALL_FONT_SHAPES);
 
 	const bool waitForEpisodeBanner = !constantPlay && qa_net_gameplay_ticks == 0;
@@ -11170,7 +11183,7 @@ static void JE_getLevelName(int levelNum, char *out, size_t outSize)
 		return;
 	out[0] = '\0';
 
-	FILE *f = dir_fopen(data_dir(), episode_file, "rb");
+	FILE *f = dir_fopen(JE_episodeDir(), episode_file, "rb");
 	if (f == NULL)
 		return;
 

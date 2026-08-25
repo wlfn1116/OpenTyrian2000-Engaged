@@ -21,6 +21,7 @@
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"       // endlessDebugConfigLoad/Save ([endless_debug] section)
+#include "custom_episode.h"
 #include "episodes.h"
 #include "file.h"
 #include "helptext.h"      // DESTRUCT_MODES bounds the persisted battle mode
@@ -276,6 +277,10 @@ void coopCampaignScoreNote(void)
 {
 	const int e = initial_episode_num - 1;
 	if (!coopCampaignMode || constantPlay || e < 0 || e >= COOP_CAMPAIGN_SCORE_EPISODES)
+		return;
+
+	// The base episode does not own a custom run's co-op score.
+	if (customEpisodeActive())
 		return;
 
 	// Only the episode the run started in, played once: a later episode or a repeat carries cash
@@ -1544,6 +1549,12 @@ void JE_saveGame(JE_byte slot, const char *name)
 		saveFiles[slot-1].episode = episodeNum;
 	}
 
+	// Stock saves leave this field empty.
+	memset(saveFiles[slot-1].customEpFile, 0, sizeof(saveFiles[slot-1].customEpFile));
+	if (customEpisodeActive())
+		SDL_strlcpy(saveFiles[slot-1].customEpFile, customEpisodeActiveFile(),
+		            sizeof(saveFiles[slot-1].customEpFile));
+
 	saveFiles[slot-1].difficulty = difficultyLevel;
 	saveFiles[slot-1].secretHint = secretHint;
 	saveFiles[slot - 1].input1 = inputDevice[0];
@@ -1719,6 +1730,20 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	int episode = rec->episode;
 
 	memcpy(&levelName, &rec->levelName, sizeof(levelName));
+
+	// Custom saves resume before stock "Completed" rollover is handled.
+	if (rec->customEpFile[0] != '\0')
+	{
+		customEpisodeScan();
+		const int customIndex = customEpisodeFindByFile(rec->customEpFile);
+		if (customIndex >= 0 && JE_initEpisodeCustom(customIndex))
+		{
+			saveLevel = mainLevel;
+			memcpy(&lastLevelName, &levelName, sizeof(levelName));
+			return;
+		}
+		fprintf(stderr, "custom episode: save wants missing '%s'\n", rec->customEpFile);
+	}
 
 	if (strcmp(levelName, "Completed") == 0)
 	{
@@ -1980,6 +2005,9 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 	config_set_int_option(section, "level", rec->level);
 	config_set_string_option(section, "level_name", rec->levelName);
 	config_set_int_option(section, "episode", rec->episode);
+	// Slot sections are rebuilt, so stock saves omit this key.
+	if (rec->customEpFile[0] != '\0')
+		config_set_string_option(section, "custom_episode", rec->customEpFile);
 	config_set_int_option(section, "difficulty", rec->difficulty);
 	config_set_int_option(section, "initial_difficulty", rec->initialDifficulty);
 	config_set_int_option(section, "game_has_repeated", rec->gameHasRepeated ? 1 : 0);
@@ -2053,6 +2081,7 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 	rec->level = (JE_word)save_get_int(section, "level", 0);
 	save_get_string(section, "level_name", rec->levelName, sizeof(rec->levelName));
 	rec->episode = (JE_byte)save_get_int(section, "episode", 1);
+	save_get_string(section, "custom_episode", rec->customEpFile, sizeof(rec->customEpFile));
 	// The two difficulties index name tables; a hand edit past the last one reads as Normal.
 	const int difficulty = save_get_int(section, "difficulty", DIFFICULTY_NORMAL);
 	rec->difficulty = (JE_byte)((difficulty < DIFFICULTY_WIMP || difficulty > DIFFICULTY_10)
@@ -2823,6 +2852,10 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 		*p++ = rec->viewHpBars[i];
 	}
 
+	// All zero for a stock save.
+	memcpy(p, rec->customEpFile, sizeof(rec->customEpFile));
+	p += sizeof(rec->customEpFile);
+
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }
 
@@ -2877,6 +2910,13 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 		rec->viewShipOpacity[i] = *p++;
 		rec->viewHpBars[i] = *p++;
 	}
+
+	memcpy(rec->customEpFile, p, sizeof(rec->customEpFile));
+	p += sizeof(rec->customEpFile);
+	rec->customEpFile[sizeof(rec->customEpFile) - 1] = '\0';
+	// Reject paths received over the network.
+	if (rec->customEpFile[0] != '\0' && !customEpisodeFileNameValid(rec->customEpFile))
+		rec->customEpFile[0] = '\0';
 
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }

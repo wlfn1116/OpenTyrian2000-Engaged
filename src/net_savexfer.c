@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "crashlog.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "editship.h"
 #include "endless.h"
@@ -49,13 +50,14 @@
 // Separate from the game-session port.
 #define SAVE_XFER_PORT   1332
 
-// Keep single-save transfers on version 1. Each bulk choice uses a distinct version.
-#define SAVE_XFER_VERSION              1
+// Transfer kinds have independent protocol versions.
+#define SAVE_XFER_VERSION              2
 #define CUSTOM_XFER_TRANSPORT_VERSION  2
 #define ALL_XFER_TRANSPORT_VERSION     3
 #define SHIPS_XFER_TRANSPORT_VERSION   4
 #define WEAPONS_XFER_TRANSPORT_VERSION 5
 #define SAVES_XFER_TRANSPORT_VERSION   6
+#define LEVELS_XFER_TRANSPORT_VERSION  7
 
 // Fixed-offset, little-endian header. The save record and Endless text follow it.
 #define SX_MAGIC         0    /* 4: "OTSV"                                              */
@@ -84,21 +86,39 @@ static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
 static const Uint8 ss_magic[4] = { 'O', 'T', 'S', 'A' };
 
-// Custom Data carries compiled ships, the weapon library, and its enabled flag.
+// OTCL records contain a padded file name, u32 length, and container bytes.
+#define LX_MAGIC       0    /* 4: "OTCL"                  */
+#define LX_VERSION     4    /* 2: LEVELS_XFER_VERSION      */
+#define LX_COUNT       6    /* 2: file records that follow */
+#define LX_DATA        8
+#define LX_RECORD_HDR  (CUSTOM_EPISODE_FILE_LEN + 4)
+#define LX_FILES_MAX   CUSTOM_EPISODE_MAX
+#define LX_DATA_MAX    (12u * 1024u * 1024u)   /* the u16 chunk counter caps a stream near 20 MiB */
+#define LX_MAX         (LX_DATA + (size_t)LX_FILES_MAX * LX_RECORD_HDR + LX_DATA_MAX)
+
+#define LEVELS_XFER_VERSION 1
+
+static const Uint8 lx_magic[4] = { 'O', 'T', 'C', 'L' };
+
+// Custom Data v3 adds an OTCL payload; v2 remains valid without custom levels.
 #define CX_MAGIC          0    /* 4: "OTCD"                                      */
-#define CX_VERSION        4    /* 2: CUSTOM_XFER_VERSION                         */
+#define CX_VERSION        4    /* 2: 2, or 3 when custom levels ride along       */
 #define CX_FLAGS          6    /* 1: bit 0 = custom weapons enabled              */
 #define CX_RESERVED       7    /* 1                                              */
 #define CX_WEAPONS_LEN    8    /* 4                                              */
 #define CX_SHIPS_LEN     12    /* 4                                              */
-#define CX_DATA          16
-#define CX_MAX           (CX_DATA + CUSTOM_WEAPON_LIBRARY_WIRE_MAX + EXTRA_SHIPS_WIRE_MAX)
+#define CX_LEVELS_LEN    16    /* 4: version-3 envelopes only                    */
+#define CX_DATA_V2       16
+#define CX_DATA_V3       20
+#define CX_MAX           (CX_DATA_V3 + CUSTOM_WEAPON_LIBRARY_WIRE_MAX + EXTRA_SHIPS_WIRE_MAX + LX_MAX)
 
 #define CUSTOM_XFER_VERSION       2
+#define CUSTOM_XFER_VERSION_LEVELS 3
 #define CX_FLAG_WEAPONS_ENABLED   0x01
 #define CX_PART_WEAPONS           0x02
 #define CX_PART_SHIPS             0x04
-#define CX_PART_MASK              (CX_PART_WEAPONS | CX_PART_SHIPS)
+#define CX_PART_LEVELS            0x08
+#define CX_PART_MASK              (CX_PART_WEAPONS | CX_PART_SHIPS | CX_PART_LEVELS)
 
 static const Uint8 cx_magic[4] = { 'O', 'T', 'C', 'D' };
 
@@ -123,6 +143,7 @@ typedef enum
 	XFER_SAVES,
 	XFER_SHIPS,
 	XFER_WEAPONS,
+	XFER_LEVELS,
 	XFER_CUSTOM,
 	XFER_ALL,
 }
@@ -150,6 +171,7 @@ XferKind;
 #define SXR_LEN       45
 
 #define SXR_FLAG_ENDLESS  0x02
+#define SXR_FLAG_CUSTOM   0x04    /* the offered save lives in a custom episode */
 
 #define SX_MAX_OFFERS      8
 #define SX_SEARCH_MS    1500
@@ -181,6 +203,7 @@ static const char sxNoSaveThere       [] = "That address is not sharing a save."
 static const char sxNoSavesThere      [] = "No save slots at that address.";
 static const char sxNoShipsThere      [] = "No custom ships at that address.";
 static const char sxNoWeaponsThere    [] = "No custom weapons at that address.";
+static const char sxNoLevelsThere     [] = "No custom levels at that address.";
 static const char sxNoCustomThere     [] = "No custom data at that address.";
 static const char sxNoAllThere        [] = "No complete data at that address.";
 static const char sxNeedAddress       [] = "Enter an address.";
@@ -193,6 +216,7 @@ static const char *xferUploadTitle(XferKind kind)
 		case XFER_SAVES:   return "Upload All Saves";
 		case XFER_SHIPS:   return "Upload Custom Ships";
 		case XFER_WEAPONS: return "Upload Custom Weapons";
+		case XFER_LEVELS:  return "Upload Custom Levels";
 		case XFER_CUSTOM:  return "Upload Custom Data";
 		case XFER_ALL:     return "Upload All Data";
 	}
@@ -207,6 +231,7 @@ static const char *xferDownloadTitle(XferKind kind)
 		case XFER_SAVES:   return "Download All Saves";
 		case XFER_SHIPS:   return "Download Custom Ships";
 		case XFER_WEAPONS: return "Download Custom Weapons";
+		case XFER_LEVELS:  return "Download Custom Levels";
 		case XFER_CUSTOM:  return "Download Custom Data";
 		case XFER_ALL:     return "Download All Data";
 	}
@@ -221,6 +246,7 @@ static const char *xferOfferedName(XferKind kind)
 		case XFER_SAVES:   return "All saves";
 		case XFER_SHIPS:   return "Custom ships";
 		case XFER_WEAPONS: return "Custom weapons";
+		case XFER_LEVELS:  return "Custom levels";
 		case XFER_CUSTOM:  return "Custom ships and weapons";
 		case XFER_ALL:     return "All saves and custom data";
 	}
@@ -241,6 +267,7 @@ static Uint16 xferTransportVersion(XferKind kind)
 		case XFER_SAVES:   return SAVES_XFER_TRANSPORT_VERSION;
 		case XFER_SHIPS:   return SHIPS_XFER_TRANSPORT_VERSION;
 		case XFER_WEAPONS: return WEAPONS_XFER_TRANSPORT_VERSION;
+		case XFER_LEVELS:  return LEVELS_XFER_TRANSPORT_VERSION;
 		case XFER_CUSTOM:  return CUSTOM_XFER_TRANSPORT_VERSION;
 		case XFER_ALL:     return ALL_XFER_TRANSPORT_VERSION;
 	}
@@ -250,7 +277,7 @@ static Uint16 xferTransportVersion(XferKind kind)
 static size_t xferMaxPayload(XferKind kind)
 {
 	return kind == XFER_SAVE ? SX_MAX : kind == XFER_SAVES ? SS_MAX
-	       : kind == XFER_ALL ? AX_MAX : CX_MAX;
+	       : kind == XFER_LEVELS ? LX_MAX : kind == XFER_ALL ? AX_MAX : CX_MAX;
 }
 
 static bool xferCarriesWeapons(XferKind kind)
@@ -277,6 +304,7 @@ static const char *xferNoOfferLine(XferKind kind)
 		case XFER_SAVES:   return sxNoSavesThere;
 		case XFER_SHIPS:   return sxNoShipsThere;
 		case XFER_WEAPONS: return sxNoWeaponsThere;
+		case XFER_LEVELS:  return sxNoLevelsThere;
 		case XFER_CUSTOM:  return sxNoCustomThere;
 		case XFER_ALL:     return sxNoAllThere;
 	}
@@ -398,7 +426,7 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 	saveXferPresent();
 	fade_palette(colors, 10, 0, 255);
 
-	// Result notices accept only input that begins after the transfer controls are released.
+	// Ignore the input that dismissed the transfer screen.
 	wait_noinput(true, true, true);
 	newkey = newmouse = false;
 	touch_ui_consume_input();
@@ -513,14 +541,97 @@ static bool savesXferUnpack(const Uint8 *buf, size_t len)
 	return adopted;
 }
 
+/* Packs all installed containers, or returns zero when none exist. */
+static size_t levelsXferPack(Uint8 *out)
+{
+	if (out == NULL)
+		return 0;
+
+	customEpisodeScan();
+	const int count = customEpisodeCount();
+	if (count <= 0)
+		return 0;
+
+	memcpy(&out[LX_MAGIC], lx_magic, sizeof(lx_magic));
+	SDLNet_Write16(LEVELS_XFER_VERSION, &out[LX_VERSION]);
+
+	size_t at = LX_DATA;
+	Uint16 packed = 0;
+	for (int i = 0; i < count && packed < LX_FILES_MAX; ++i)
+	{
+		Uint32 dataLen = 0;
+		Uint8 *const data = customEpisodeReadWhole(i, &dataLen);
+		if (data == NULL)
+			continue;
+		if (at + LX_RECORD_HDR + dataLen > LX_MAX)
+		{
+			// Skip whole files instead of truncating the stream.
+			fprintf(stderr, "custom episode: transfer full, leaving out '%s'\n",
+			        customEpisodeFile(i));
+			free(data);
+			continue;
+		}
+
+		memset(&out[at], 0, CUSTOM_EPISODE_FILE_LEN);
+		SDL_strlcpy((char *)&out[at], customEpisodeFile(i), CUSTOM_EPISODE_FILE_LEN);
+		SDLNet_Write32(dataLen, &out[at + CUSTOM_EPISODE_FILE_LEN]);
+		memcpy(&out[at + LX_RECORD_HDR], data, dataLen);
+		free(data);
+
+		at += LX_RECORD_HDR + dataLen;
+		++packed;
+	}
+
+	if (packed == 0)
+		return 0;
+	SDLNet_Write16(packed, &out[LX_COUNT]);
+	return at;
+}
+
+/* Stores valid containers from a well-formed stream. */
+static bool levelsXferUnpack(const Uint8 *buf, size_t len)
+{
+	if (buf == NULL || len < LX_DATA || memcmp(&buf[LX_MAGIC], lx_magic, sizeof(lx_magic)) != 0 ||
+	    SDLNet_Read16(&buf[LX_VERSION]) != LEVELS_XFER_VERSION)
+		return false;
+
+	const Uint16 count = SDLNet_Read16(&buf[LX_COUNT]);
+	if (count == 0 || count > LX_FILES_MAX)
+		return false;
+
+	size_t at = LX_DATA;
+	for (Uint16 i = 0; i < count; ++i)
+	{
+		if (len - at < LX_RECORD_HDR)
+			return false;
+
+		char name[CUSTOM_EPISODE_FILE_LEN];
+		memcpy(name, &buf[at], CUSTOM_EPISODE_FILE_LEN);
+		name[CUSTOM_EPISODE_FILE_LEN - 1] = '\0';
+		const Uint32 dataLen = SDLNet_Read32(&buf[at + CUSTOM_EPISODE_FILE_LEN]);
+		if (dataLen > len - at - LX_RECORD_HDR)
+			return false;
+
+		if (customEpisodeSaveDownloaded(name, &buf[at + LX_RECORD_HDR], dataLen) < 0)
+			fprintf(stderr, "custom episode: received '%s' was not adoptable\n", name);
+
+		at += LX_RECORD_HDR + dataLen;
+	}
+	return at == len;
+}
+
 static size_t customXferPackParts(Uint8 *out, Uint8 parts)
 {
 	parts &= CX_PART_MASK;
 	if (out == NULL || parts == 0)
 		return 0;
 
+	const bool withLevels = (parts & CX_PART_LEVELS) != 0;
+	const size_t dataOff = withLevels ? CX_DATA_V3 : CX_DATA_V2;
+
 	memcpy(&out[CX_MAGIC], cx_magic, sizeof(cx_magic));
-	SDLNet_Write16(CUSTOM_XFER_VERSION, &out[CX_VERSION]);
+	SDLNet_Write16(withLevels ? CUSTOM_XFER_VERSION_LEVELS : CUSTOM_XFER_VERSION,
+	               &out[CX_VERSION]);
 	out[CX_FLAGS] = parts;
 	if ((parts & CX_PART_WEAPONS) && customWeaponEnabled)
 		out[CX_FLAGS] |= CX_FLAG_WEAPONS_ENABLED;
@@ -529,7 +640,7 @@ static size_t customXferPackParts(Uint8 *out, Uint8 parts)
 	size_t weaponsLen = 0;
 	if (parts & CX_PART_WEAPONS)
 	{
-		weaponsLen = customWeaponSerializeLibrary(&out[CX_DATA],
+		weaponsLen = customWeaponSerializeLibrary(&out[dataOff],
 		                                                CUSTOM_WEAPON_LIBRARY_WIRE_MAX);
 		if (weaponsLen == 0 || weaponsLen > UINT32_MAX)
 			return 0;
@@ -538,54 +649,88 @@ static size_t customXferPackParts(Uint8 *out, Uint8 parts)
 	size_t shipsLen = 0;
 	if (parts & CX_PART_SHIPS)
 	{
-		shipsLen = extraShipsSerializeUser(&out[CX_DATA + weaponsLen], EXTRA_SHIPS_WIRE_MAX);
+		shipsLen = extraShipsSerializeUser(&out[dataOff + weaponsLen], EXTRA_SHIPS_WIRE_MAX);
 		if (shipsLen == 0 || shipsLen > UINT32_MAX)
 			return 0;
 	}
 
+	size_t levelsLen = 0;
+	if (withLevels)
+	{
+		levelsLen = levelsXferPack(&out[dataOff + weaponsLen + shipsLen]);
+		if (levelsLen == 0)
+			return 0;
+		SDLNet_Write32((Uint32)levelsLen, &out[CX_LEVELS_LEN]);
+	}
+
 	SDLNet_Write32((Uint32)weaponsLen, &out[CX_WEAPONS_LEN]);
 	SDLNet_Write32((Uint32)shipsLen, &out[CX_SHIPS_LEN]);
-	return CX_DATA + weaponsLen + shipsLen;
+	return dataOff + weaponsLen + shipsLen + levelsLen;
 }
 
 static size_t customXferPack(Uint8 *out)
 {
-	return customXferPackParts(out, CX_PART_MASK);
+	customEpisodeScan();
+	const Uint8 parts = (Uint8)(CX_PART_WEAPONS | CX_PART_SHIPS |
+	                            (customEpisodeCount() > 0 ? CX_PART_LEVELS : 0));
+	return customXferPackParts(out, parts);
 }
 
-static bool customXferParts(const Uint8 *buf, size_t len, Uint8 expectedParts,
+/* Validates the required ship/weapon parts and optional levels part. */
+static bool customXferParts(const Uint8 *buf, size_t len, Uint8 requiredParts,
                             const Uint8 **weapons, size_t *weaponsLen,
-                            const Uint8 **ships, size_t *shipsLen)
+                            const Uint8 **ships, size_t *shipsLen,
+                            const Uint8 **levels, size_t *levelsLen)
 {
-	if (buf == NULL || len < CX_DATA || memcmp(&buf[CX_MAGIC], cx_magic, sizeof(cx_magic)) != 0 ||
-	    SDLNet_Read16(&buf[CX_VERSION]) != CUSTOM_XFER_VERSION || buf[CX_RESERVED] != 0)
+	*levels = NULL;
+	*levelsLen = 0;
+
+	if (buf == NULL || len < CX_DATA_V2 || memcmp(&buf[CX_MAGIC], cx_magic, sizeof(cx_magic)) != 0 ||
+	    buf[CX_RESERVED] != 0)
+		return false;
+
+	const Uint16 version = SDLNet_Read16(&buf[CX_VERSION]);
+	if (version != CUSTOM_XFER_VERSION && version != CUSTOM_XFER_VERSION_LEVELS)
+		return false;
+	const bool withLevels = version == CUSTOM_XFER_VERSION_LEVELS;
+	const size_t dataOff = withLevels ? CX_DATA_V3 : CX_DATA_V2;
+	if (len < dataOff)
 		return false;
 
 	const Uint8 flags = buf[CX_FLAGS];
 	const Uint8 parts = flags & CX_PART_MASK;
-	if (parts != expectedParts || (flags & ~(CX_FLAG_WEAPONS_ENABLED | CX_PART_MASK)) != 0 ||
+	const Uint8 requiredHalves = requiredParts & (CX_PART_WEAPONS | CX_PART_SHIPS);
+	if ((parts & (CX_PART_WEAPONS | CX_PART_SHIPS)) != requiredHalves ||
+	    ((parts & CX_PART_LEVELS) != 0) != withLevels ||
+	    (withLevels && requiredHalves != (CX_PART_WEAPONS | CX_PART_SHIPS)) ||
+	    (flags & ~(CX_FLAG_WEAPONS_ENABLED | CX_PART_MASK)) != 0 ||
 	    (!(parts & CX_PART_WEAPONS) && (flags & CX_FLAG_WEAPONS_ENABLED)))
 		return false;
 
 	*weaponsLen = SDLNet_Read32(&buf[CX_WEAPONS_LEN]);
 	*shipsLen = SDLNet_Read32(&buf[CX_SHIPS_LEN]);
+	*levelsLen = withLevels ? SDLNet_Read32(&buf[CX_LEVELS_LEN]) : 0;
 	if (((parts & CX_PART_WEAPONS) ? (*weaponsLen == 0 || *weaponsLen > CUSTOM_WEAPON_LIBRARY_WIRE_MAX)
 	                              : *weaponsLen != 0) ||
 	    ((parts & CX_PART_SHIPS) ? (*shipsLen == 0 || *shipsLen > EXTRA_SHIPS_WIRE_MAX)
 	                            : *shipsLen != 0) ||
-	    *weaponsLen > len - CX_DATA || *shipsLen != len - CX_DATA - *weaponsLen)
+	    (withLevels && (*levelsLen == 0 || *levelsLen > LX_MAX)) ||
+	    *weaponsLen > len - dataOff || *shipsLen > len - dataOff - *weaponsLen ||
+	    *levelsLen != len - dataOff - *weaponsLen - *shipsLen)
 		return false;
 
-	*weapons = (parts & CX_PART_WEAPONS) ? &buf[CX_DATA] : NULL;
-	*ships = (parts & CX_PART_SHIPS) ? &buf[CX_DATA + *weaponsLen] : NULL;
+	*weapons = (parts & CX_PART_WEAPONS) ? &buf[dataOff] : NULL;
+	*ships = (parts & CX_PART_SHIPS) ? &buf[dataOff + *weaponsLen] : NULL;
+	*levels = withLevels ? &buf[dataOff + *weaponsLen + *shipsLen] : NULL;
 	return !(parts & CX_PART_SHIPS) || extraShipsPayloadValid(*ships, *shipsLen);
 }
 
 static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 {
-	const Uint8 *weapons, *ships;
-	size_t weaponsLen, shipsLen;
-	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen))
+	const Uint8 *weapons, *ships, *levels;
+	size_t weaponsLen, shipsLen, levelsLen;
+	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen,
+	                     &levels, &levelsLen))
 		return false;
 
 	if (parts & CX_PART_WEAPONS)
@@ -597,6 +742,10 @@ static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 	if ((parts & CX_PART_SHIPS) && !extraShipsAdoptLocal(ships, shipsLen))
 		return false;
 
+	// Levels are additive and do not share the ship/weapon transaction.
+	if (levels != NULL && !levelsXferUnpack(levels, levelsLen))
+		return false;
+
 	// Weapon adoption writes its library and the active design and toggle in opentyrian.cfg.
 	return !(parts & CX_PART_WEAPONS) ||
 	       (customWeaponLibrarySave() && save_opentyrian_config());
@@ -604,13 +753,16 @@ static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 
 static bool customXferUnpackParts(const Uint8 *buf, size_t len, Uint8 parts)
 {
-	const Uint8 *weapons, *ships;
-	size_t weaponsLen, shipsLen;
-	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen))
+	const Uint8 *weapons, *ships, *levels;
+	size_t weaponsLen, shipsLen, levelsLen;
+	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen,
+	                     &levels, &levelsLen))
 		return false;
 
+	// Only replaced ship and weapon data can be rolled back.
+	const Uint8 rollbackParts = (Uint8)(buf[CX_FLAGS] & (CX_PART_WEAPONS | CX_PART_SHIPS));
 	Uint8 *const oldCustom = malloc(CX_MAX);
-	const size_t oldCustomLen = oldCustom != NULL ? customXferPackParts(oldCustom, parts) : 0;
+	const size_t oldCustomLen = oldCustom != NULL ? customXferPackParts(oldCustom, rollbackParts) : 0;
 	if (oldCustomLen == 0)
 	{
 		free(oldCustom);
@@ -619,14 +771,14 @@ static bool customXferUnpackParts(const Uint8 *buf, size_t len, Uint8 parts)
 
 	const bool adopted = customXferApply(buf, len, parts);
 	if (!adopted)
-		(void)customXferApply(oldCustom, oldCustomLen, parts);
+		(void)customXferApply(oldCustom, oldCustomLen, rollbackParts);
 	free(oldCustom);
 	return adopted;
 }
 
 static bool customXferUnpack(const Uint8 *buf, size_t len)
 {
-	return customXferUnpackParts(buf, len, CX_PART_MASK);
+	return customXferUnpackParts(buf, len, CX_PART_WEAPONS | CX_PART_SHIPS);
 }
 
 static size_t allXferPack(Uint8 *out)
@@ -689,6 +841,7 @@ static size_t xferPack(XferKind kind, Uint8 *out, JE_byte slot)
 		case XFER_SAVES:   return savesXferPack(out);
 		case XFER_SHIPS:   return customXferPackParts(out, CX_PART_SHIPS);
 		case XFER_WEAPONS: return customXferPackParts(out, CX_PART_WEAPONS);
+		case XFER_LEVELS:  return levelsXferPack(out);
 		case XFER_CUSTOM:  return customXferPack(out);
 		case XFER_ALL:     return allXferPack(out);
 	}
@@ -703,6 +856,7 @@ static bool xferUnpack(XferKind kind, const Uint8 *buf, size_t len)
 		case XFER_SAVES:   return savesXferUnpack(buf, len);
 		case XFER_SHIPS:   return customXferUnpackParts(buf, len, CX_PART_SHIPS);
 		case XFER_WEAPONS: return customXferUnpackParts(buf, len, CX_PART_WEAPONS);
+		case XFER_LEVELS:  return levelsXferUnpack(buf, len);
 		case XFER_CUSTOM:  return customXferUnpack(buf, len);
 		case XFER_ALL:     return allXferUnpack(buf, len);
 	}
@@ -755,7 +909,8 @@ static void saveXferFillReply(XferKind kind, Uint8 *data, JE_byte slot)
 	if (kind == XFER_SAVE)
 	{
 		data[SXR_FLAGS] = (Uint8)((slot > 11 ? SX_FLAG_TWO_PLAYER : 0)
-		                        | (endlessSlotHasRun(slot) ? SXR_FLAG_ENDLESS : 0));
+		                        | (endlessSlotHasRun(slot) ? SXR_FLAG_ENDLESS : 0)
+		                        | (saveFiles[slot - 1].customEpFile[0] != '\0' ? SXR_FLAG_CUSTOM : 0));
 		data[SXR_EPISODE] = saveFiles[slot - 1].episode;
 		SDL_strlcpy((char *)&data[SXR_LEVEL], saveFiles[slot - 1].levelName, 11);
 		saveXferTrimName((char *)&data[SXR_SAVE], 15, saveFiles[slot - 1].name);
@@ -1057,6 +1212,7 @@ static void xferUpload(XferKind kind, JE_byte slot)
 			case XFER_SAVES:   sentLine = "All save slots were sent."; break;
 			case XFER_SHIPS:   sentLine = "The custom ships were sent."; break;
 			case XFER_WEAPONS: sentLine = "The custom weapons were sent."; break;
+			case XFER_LEVELS:  sentLine = "The custom levels were sent."; break;
 			case XFER_CUSTOM:  sentLine = "The custom data was sent."; break;
 			case XFER_ALL:     sentLine = "All player data was sent."; break;
 			default:           sentLine = "The data was sent."; break;
@@ -1087,6 +1243,11 @@ void shipsXferUpload(void)
 void weaponsXferUpload(void)
 {
 	xferUpload(XFER_WEAPONS, 0);
+}
+
+void levelsXferUpload(void)
+{
+	xferUpload(XFER_LEVELS, 0);
 }
 
 void customXferUpload(void)
@@ -1221,6 +1382,8 @@ static void saveXferOfferLine(XferKind kind, char *line, size_t size, const Save
 	char where[32];
 	if ((o->flags & SXR_FLAG_ENDLESS) != 0)
 		SDL_strlcpy(where, "Endless", sizeof(where));
+	else if ((o->flags & SXR_FLAG_CUSTOM) != 0)
+		SDL_strlcpy(where, "Custom", sizeof(where));
 	else
 		snprintf(where, sizeof(where), "Episode %u", o->episode);
 
@@ -1639,6 +1802,14 @@ bool weaponsXferDownload(void)
 	return got;
 }
 
+bool levelsXferDownload(void)
+{
+	const bool got = xferDownload(XFER_LEVELS);
+	if (got)
+		saveXferNotice("Download Custom Levels", "Custom levels received.", NULL);
+	return got;
+}
+
 bool customXferDownload(void)
 {
 	const bool got = xferDownload(XFER_CUSTOM);
@@ -1709,11 +1880,12 @@ void qa_test_save_transfer(void)
 		         "...nor one that carries no broadcast");
 	}
 
-	qa_check(SX_ENDLESS == 109 && SXR_LEN == 45 && SXC_HDR == 12,
+	qa_check(SX_ENDLESS == 173 && SXR_LEN == 45 && SXC_HDR == 12,
 	         "save-transfer wire offsets retain their protocol widths");
-	qa_check(CX_DATA == 16 && xferPacketType(XFER_CUSTOM, PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK,
+	qa_check(CX_DATA_V2 == 16 && CX_DATA_V3 == 20 &&
+	         xferPacketType(XFER_CUSTOM, PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK,
 	         "custom-data transfer retains its envelope and distinct packet family");
-	const XferKind bulkKinds[] = { XFER_SAVES, XFER_SHIPS, XFER_WEAPONS, XFER_CUSTOM, XFER_ALL };
+	const XferKind bulkKinds[] = { XFER_SAVES, XFER_SHIPS, XFER_WEAPONS, XFER_LEVELS, XFER_CUSTOM, XFER_ALL };
 	bool bulkKindsSeparated = true;
 	for (unsigned i = 0; i < COUNTOF(bulkKinds); ++i)
 	{
@@ -1722,7 +1894,30 @@ void qa_test_save_transfer(void)
 			bulkKindsSeparated &= xferTransportVersion(bulkKinds[i]) != xferTransportVersion(bulkKinds[j]);
 	}
 	qa_check(bulkKindsSeparated,
-	         "All Saves, Ships, Weapons, Custom Data, and Transfer All cannot negotiate with one another");
+	         "All Saves, Ships, Weapons, Levels, Custom Data, and Transfer All cannot negotiate with one another");
+
+	// No installed containers means no OTCL payload.
+	{
+		customEpisodeScan();
+		Uint8 *const levelsPayload = malloc(LX_MAX);
+		const size_t levelsTotal = levelsPayload != NULL ? levelsXferPack(levelsPayload) : 0;
+		if (customEpisodeCount() == 0)
+		{
+			qa_check(levelsTotal == 0,
+			         "a machine without custom levels offers nothing to transfer");
+		}
+		else
+		{
+			qa_check(levelsTotal > LX_DATA &&
+			         SDLNet_Read16(&levelsPayload[LX_COUNT]) == (Uint16)customEpisodeCount(),
+			         "the custom-levels envelope carries every installed container");
+			levelsPayload[LX_MAGIC] ^= 0xff;
+			qa_check(!levelsXferUnpack(levelsPayload, levelsTotal),
+			         "custom levels without the transfer magic are refused before adoption");
+			levelsPayload[LX_MAGIC] ^= 0xff;
+		}
+		free(levelsPayload);
+	}
 
 	Uint8 *const customPayload = malloc(CX_MAX);
 	Uint8 *const shipsPayload = malloc(CX_MAX);
@@ -1732,20 +1927,27 @@ void qa_test_save_transfer(void)
 	                        ? customXferPackParts(shipsPayload, CX_PART_SHIPS) : 0;
 	const size_t weaponsTotal = weaponsPayload != NULL
 	                          ? customXferPackParts(weaponsPayload, CX_PART_WEAPONS) : 0;
-	qa_check(customTotal > CX_DATA, "custom ships and the complete weapon library pack together");
-	qa_check(shipsTotal > CX_DATA && SDLNet_Read32(&shipsPayload[CX_WEAPONS_LEN]) == 0 &&
-	         SDLNet_Read32(&shipsPayload[CX_SHIPS_LEN]) == shipsTotal - CX_DATA,
+	qa_check(customTotal > CX_DATA_V2, "custom ships and the complete weapon library pack together");
+	qa_check(shipsTotal > CX_DATA_V2 && SDLNet_Read32(&shipsPayload[CX_WEAPONS_LEN]) == 0 &&
+	         SDLNet_Read32(&shipsPayload[CX_SHIPS_LEN]) == shipsTotal - CX_DATA_V2,
 	         "Custom Ships carries the ship file without a weapon library");
-	qa_check(weaponsTotal > CX_DATA && SDLNet_Read32(&weaponsPayload[CX_SHIPS_LEN]) == 0 &&
-	         SDLNet_Read32(&weaponsPayload[CX_WEAPONS_LEN]) == weaponsTotal - CX_DATA,
+	qa_check(weaponsTotal > CX_DATA_V2 && SDLNet_Read32(&weaponsPayload[CX_SHIPS_LEN]) == 0 &&
+	         SDLNet_Read32(&weaponsPayload[CX_WEAPONS_LEN]) == weaponsTotal - CX_DATA_V2,
 	         "Custom Weapons carries the complete library without a ship file");
-	if (customTotal > CX_DATA)
+	if (customTotal > CX_DATA_V2)
 	{
+		// Custom Data v3 is used only when it carries levels.
+		const bool withLevels =
+			SDLNet_Read16(&customPayload[CX_VERSION]) == CUSTOM_XFER_VERSION_LEVELS;
+		const size_t dataOff = withLevels ? CX_DATA_V3 : CX_DATA_V2;
 		const size_t weaponsLen = SDLNet_Read32(&customPayload[CX_WEAPONS_LEN]);
 		const size_t shipsLen = SDLNet_Read32(&customPayload[CX_SHIPS_LEN]);
+		const size_t levelsLen = withLevels ? SDLNet_Read32(&customPayload[CX_LEVELS_LEN]) : 0;
+		qa_check(withLevels == (customEpisodeCount() > 0),
+		         "the custom-data envelope carries levels exactly when some are installed");
 		qa_check(weaponsLen > 4 && shipsLen >= 6 + sizeof(JE_ShipsType) &&
-		         CX_DATA + weaponsLen + shipsLen == customTotal,
-		         "the custom-data envelope delimits both content sets exactly");
+		         dataOff + weaponsLen + shipsLen + levelsLen == customTotal,
+		         "the custom-data envelope delimits its content sets exactly");
 		customPayload[CX_MAGIC] ^= 0xff;
 		qa_check(!customXferUnpack(customPayload, customTotal),
 		         "custom data without the transfer magic is refused before adoption");
@@ -1757,7 +1959,7 @@ void qa_test_save_transfer(void)
 	const size_t beforeLen = before != NULL
 	                       ? customWeaponSerializeLibrary(before, CUSTOM_WEAPON_LIBRARY_WIRE_MAX) : 0;
 	const bool enabledBefore = customWeaponEnabled;
-	const bool shipsAdopted = shipsTotal > CX_DATA &&
+	const bool shipsAdopted = shipsTotal > CX_DATA_V2 &&
 	                          customXferUnpackParts(shipsPayload, shipsTotal, CX_PART_SHIPS);
 	const size_t afterLen = after != NULL
 	                      ? customWeaponSerializeLibrary(after, CUSTOM_WEAPON_LIBRARY_WIRE_MAX) : 0;
@@ -1771,7 +1973,7 @@ void qa_test_save_transfer(void)
 	Uint8 *const shipsAfter = malloc(EXTRA_SHIPS_WIRE_MAX);
 	const size_t shipsBeforeLen = shipsBefore != NULL
 	                            ? extraShipsSerializeUser(shipsBefore, EXTRA_SHIPS_WIRE_MAX) : 0;
-	const bool weaponsAdopted = weaponsTotal > CX_DATA &&
+	const bool weaponsAdopted = weaponsTotal > CX_DATA_V2 &&
 	                            customXferUnpackParts(weaponsPayload, weaponsTotal, CX_PART_WEAPONS);
 	const size_t shipsAfterLen = shipsAfter != NULL
 	                           ? extraShipsSerializeUser(shipsAfter, EXTRA_SHIPS_WIRE_MAX) : 0;
@@ -1908,7 +2110,7 @@ void qa_test_save_transfer(void)
 	{
 		const size_t savesLen = SDLNet_Read32(&allPayload[AX_SAVES_LEN]);
 		const size_t customLen = SDLNet_Read32(&allPayload[AX_CUSTOM_LEN]);
-		qa_check(savesLen > 0 && savesLen <= AX_SAVES_MAX && customLen > CX_DATA &&
+		qa_check(savesLen > 0 && savesLen <= AX_SAVES_MAX && customLen > CX_DATA_V2 &&
 		         AX_DATA + savesLen + customLen == allTotal,
 		         "the Transfer All envelope delimits saves and custom data exactly");
 

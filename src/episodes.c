@@ -20,6 +20,7 @@
 #include "episodes.h"
 
 #include "config.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "endless.h"
 #include "file.h"
@@ -54,6 +55,19 @@ JE_boolean bonusLevel;
 
 /* Tells if the game jumped back to Episode 1 */
 JE_boolean jumpBackToEpisode1;
+
+/* Reload when a custom and stock episode share the same base number. */
+static JE_boolean episodeForceReload = false;
+
+void JE_forceEpisodeReload(void)
+{
+	episodeForceReload = true;
+}
+
+const char *JE_episodeDir(void)
+{
+	return customEpisodeActive() ? custom_episode_dir() : data_dir();
+}
 
 // Re-adds the cut-from-Tyrian-2000 "Charge-Laser Cannon", a 5-stage DOS charge sidekick
 // (sprites survive in spriteSheet9); values below are verbatim from the DOS LVLs.
@@ -750,7 +764,8 @@ void JE_loadItemDat(void)
 {
 	FILE *f = NULL;
 	
-	if (episodeNum <= 3)
+	// Custom containers always use the episode 4/5 embedded item-table layout.
+	if (episodeNum <= 3 && !customEpisodeActive())
 	{
 		f = dir_fopen_die(data_dir(), "tyrian.hdt", "rb");
 		fread_s32_die(&episode1DataLoc, 1, f);
@@ -759,7 +774,7 @@ void JE_loadItemDat(void)
 	else
 	{
 		// episode 4 stores item data in the level file
-		f = dir_fopen_die(data_dir(), levelFile, "rb");
+		f = dir_fopen_die(JE_episodeDir(), levelFile, "rb");
 		fseek(f, lvlPos[lvlNum-1], SEEK_SET);
 	}
 
@@ -1006,7 +1021,11 @@ void JE_applyItemDataSettings(void)
 
 void JE_initEpisode(JE_byte newEpisode)
 {
-	if (newEpisode == episodeNum)
+	// Only JE_initEpisodeCustom's inner call may retain custom mode.
+	if (customEpisodeActive() && !customEpisodeActivating())
+		customEpisodeDeactivate();  // Force a stock-file reload.
+
+	if (newEpisode == episodeNum && !episodeForceReload)
 	{
 		// Same episode: the item data isn't reloaded, but the settings baked into it may have
 		// changed in the menu since.
@@ -1014,12 +1033,23 @@ void JE_initEpisode(JE_byte newEpisode)
 		return;
 	}
 
+	episodeForceReload = false;
 	episodeNum = newEpisode;
-	
-	snprintf(levelFile,    sizeof(levelFile),    "tyrian%hhu.lvl",  episodeNum);
-	snprintf(cube_file,    sizeof(cube_file),    "cubetxt%hhu.dat", episodeNum);
-	snprintf(episode_file, sizeof(episode_file), "levels%hhu.dat",  episodeNum);
-	
+
+	if (customEpisodeActive())
+	{
+		// episodeNum remains the base used by episode-specific rules.
+		snprintf(levelFile,    sizeof(levelFile),    "%s", CUSTOM_EP_LVL_NAME);
+		snprintf(cube_file,    sizeof(cube_file),    "%s", CUSTOM_EP_CUBES_NAME);
+		snprintf(episode_file, sizeof(episode_file), "%s", CUSTOM_EP_SCRIPT_NAME);
+	}
+	else
+	{
+		snprintf(levelFile,    sizeof(levelFile),    "tyrian%hhu.lvl",  episodeNum);
+		snprintf(cube_file,    sizeof(cube_file),    "cubetxt%hhu.dat", episodeNum);
+		snprintf(episode_file, sizeof(episode_file), "levels%hhu.dat",  episodeNum);
+	}
+
 	JE_analyzeLevel();
 	JE_loadItemDat();
 }
@@ -1037,9 +1067,17 @@ void JE_scanForEpisodes(void)
 unsigned int JE_findNextEpisode(void)
 {
 	unsigned int newEpisode = episodeNum;
-	
+
 	jumpBackToEpisode1 = false;
-	
+
+	if (customEpisodeActive())
+	{
+		// Custom episodes repeat after their credits instead of entering stock content.
+		jumpBackToEpisode1 = true;
+		gameHasRepeated = true;
+		return episodeNum;
+	}
+
 	while (true)
 	{
 		newEpisode++;

@@ -1656,7 +1656,7 @@ static void qa_test_fixed_pool_layout(void)
 	         && RL_ID_SIDEKICK_BASE + 4 <= RL_ID_LINKGUN_BASE
 	         && RL_ID_LINKGUN_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
-	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 97
+	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 161
 #ifdef WITH_NETWORK
 	         && NETWORK_SETTINGS_SIZE == 48
 #endif
@@ -1694,15 +1694,18 @@ static void qa_test_save_record_wire(void)
 	src.viewOpacity[0] = NET_OPACITY_MIN; src.viewOpacity[1] = NET_OPACITY_FULL;
 	src.viewShipOpacity[0] = 0; src.viewShipOpacity[1] = 1;
 	src.viewHpBars[0] = NET_HP_BARS_ALWAYS; src.viewHpBars[1] = NET_HP_BARS_ON_HIT;
+	strcpy(src.customEpFile, "qa_wire.clv");
 
 	memset(guarded, 0xa5, sizeof(guarded));
 	save_record_pack(packed, &src);
 	qa_check(guarded[0] == 0xa5 && guarded[sizeof(guarded) - 1] == 0xa5,
-	         "save-record packing writes exactly its fixed 97-byte frame");
+	         "save-record packing writes exactly its fixed frame");
 	save_record_unpack(&dst, packed);
 	save_record_pack(repacked, &dst);
 	qa_check(memcmp(packed, repacked, sizeof(repacked)) == 0,
 	         "network save record pack/unpack round-trips every serialized field");
+	qa_check(strcmp(dst.customEpFile, "qa_wire.clv") == 0,
+	         "network save record carries the custom-episode container name");
 	qa_check(dst.score == src.score && dst.score2 == src.score2 && dst.dualShipTag == src.dualShipTag,
 	         "network save record carries 64-bit wallets and the dual-ship tag");
 	qa_check(save_record_is_coop(&dst),
@@ -1721,10 +1724,13 @@ static void qa_test_save_record_wire(void)
 	/* Hostile fixed-width strings still have to become safe C strings on receipt. */
 	memset(packed + 46, 'L', 11);
 	memset(packed + 57, 'N', 15);
+	memset(packed + SAVE_RECORD_PACKED_SIZE - 64, 'C', 64);   // a shapeless custom name
 	save_record_unpack(&dst, packed);
 	qa_check(dst.levelName[sizeof(dst.levelName) - 1] == '\0'
 	         && dst.name[sizeof(dst.name) - 1] == '\0',
 	         "network save record terminates unterminated peer strings");
+	qa_check(dst.customEpFile[0] == '\0',
+	         "a custom-episode name that is not a plain *.clv file name is dropped on receipt");
 }
 
 // The seat a resume hands back. Restored afterwards: these ride the player's own configuration.
@@ -8583,6 +8589,7 @@ int qa_run_unit_suite(void)
 #ifdef WITH_MIDI
 	qa_test_lds_midi_detune();
 #endif
+	qa_test_custom_episode();
 	qa_test_enhancement_presets();  // keep last: it leaves the enhancement settings where it put them
 
 	printf("1..%u\n", qa_checks);
