@@ -262,7 +262,7 @@ static const EndlessRareInjection endlessRareInjections[] = {
 	// Overload: Overclock cranked way up.
 	RARE_SCHED(2, 17, endlessOverloadThemes, true),
 	// Warp Speed is a separate high-scroll threat.
-	RARE_FIXED(3, 15, ENDLESS_MOD_WARP, true),
+	RARE_FIXED(3, 13, ENDLESS_MOD_WARP, true),
 	// Hostile Turbodrive and Overdrive turn kill streaks into jammed guns and
 	// for Evil Overdrive weaker shots too. One schedule feeds all three mirrors, so the window is
 	// the cadence of "some evil sector"; each individual bit lands at about a third of it.
@@ -282,8 +282,8 @@ static const EndlessRareInjection endlessRareInjections[] = {
 	// The rare themes carrying neither Apex nor Legion (the 5+-danger pure combos).
 	RARE_PICK(9, 50, endlessRareThemes, 0, ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION, true),
 	// Dead Generator disables shield recharge and starves the main gun.
-	RARE_SCHED(10, 64, endlessDeadgenThemes, true),
-	RARE_SCHED(11, 40, endlessTwinSeekThemes, true),
+	RARE_SCHED(10, 55, endlessDeadgenThemes, true),
+	RARE_SCHED(11, 25, endlessTwinSeekThemes, true),
 	RARE_DEEP(12, 110, endlessHunterThemes, 45, false),
 	RARE_DEEP(13, 140, endlessTrueAimThemes, 120, false),
 	RARE_DEEP(14, 200, endlessKillshotThemes, 180, false),

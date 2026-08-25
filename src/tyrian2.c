@@ -7237,6 +7237,54 @@ static void animate_picture_wipe(WipeKind kind, const Uint8 *pic_buffer)
 	}
 }
 
+// E5 SAVARA cannon towers hang below the spawn anchor and pop in on-screen; backdate each group so it scrolls in whole.
+static void event_backdate_savara_cannons(void)
+{
+	if (episodeNum != 5 || lvlFileNum != 4)
+		return;
+
+	for (JE_word i = 0; i < maxEvent; ++i)
+	{
+		if (eventRec[i].eventtype != 6 || eventRec[i].eventdat5 <= 0)
+			continue;
+
+		const JE_word time = eventRec[i].eventtime;
+		const JE_byte link = eventRec[i].eventdat4;
+
+		int shift = 0;
+		for (JE_word j = 0; j < maxEvent; ++j)
+		{
+			if (eventRec[j].eventtype == 6 && eventRec[j].eventtime == time &&
+			    eventRec[j].eventdat4 == link && eventRec[j].eventdat5 > shift)
+				shift = eventRec[j].eventdat5;
+		}
+		if (time <= (JE_word)shift)
+			continue;
+
+		for (JE_word j = 0; j < maxEvent; ++j)
+		{
+			if (eventRec[j].eventtype == 6 && eventRec[j].eventtime == time &&
+			    eventRec[j].eventdat4 == link)
+			{
+				eventRec[j].eventtime -= shift;
+				eventRec[j].eventdat5 -= shift;
+			}
+		}
+	}
+
+	for (JE_word i = 1; i < maxEvent; ++i)
+	{
+		const struct JE_EventRecType moved = eventRec[i];
+		JE_word j = i;
+		while (j > 0 && eventRec[j - 1].eventtime > moved.eventtime)
+		{
+			eventRec[j] = eventRec[j - 1];
+			--j;
+		}
+		eventRec[j] = moved;
+	}
+}
+
 /* --- Load Level/Map Data --- */
 void JE_loadMap(void)
 {
@@ -7969,6 +8017,7 @@ new_game:
 		fread_u8_die( &eventRec[x].eventdat4, 1, level_f);
 	}
 	eventRec[x].eventtime = 65500;  /* Sentinel event. */
+	event_backdate_savara_cannons();
 
 	/* Map shape lookup table; each map follows its level data. */
 	for (temp = 0; temp < 3; temp++)
