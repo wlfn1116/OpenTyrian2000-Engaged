@@ -162,6 +162,23 @@ Shuffle rules consume deterministic bags:
 - Publish the live cursor online. A disagreeing peer re-anchors to the charting
   player's cursor before dealing again.
 
+Custom Endless has three pool modes:
+
+| Mode | Pool |
+| --- | --- |
+| Off | Stock episodes only |
+| Mixed | Stock episodes, then custom episodes |
+| Custom Only | Custom episodes, with stock fallback if none are safe |
+
+The setting is effective only when containers exist. It is saved as
+`custom_endless` only when non-zero, and Clear `.clv` resets it. The pool holds
+at most 640 entries before duplicate sections are removed.
+
+Custom episodes use extended IDs beginning at 6. Courses, sortie snapshots, and
+level-bag anchors keep these IDs instead of the container's base episode. The
+IDs are positions in the current file-name-sorted collection, so changing that
+order can retarget IDs held by a local saved run.
+
 ### Combat
 
 - Scale raw damage before `enemy_hp_divisor100` spends it.
@@ -380,8 +397,13 @@ either peer resumes. Rendering, audio, and local controls stay local.
 a packet, deterministic rule, field meaning, offset, or registered simulation
 layout. Readers validate lengths and clamp received enums before indexing.
 
-Version 87 added the 72-byte custom-episode identity to `PACKET_CONNECT`: a
-64-byte file name, byte size, and FNV-1a hash. Stock sessions zero the block.
+Version 87 introduced the custom-episode identity in `PACKET_CONNECT`. The
+current block is 76 bytes: a 64-byte file name, byte size, FNV-1a hash, Custom
+Endless mode, and three reserved bytes. Sessions with neither feature zero it.
+
+The Custom Endless tail extended the original 72-byte version-87 block. It needs
+a new `NET_VERSION` before interoperating with builds that use the shorter
+layout.
 
 Keep persistent and wire enums append-only. Version history belongs in Git; this
 file records only current constraints.
@@ -692,9 +714,20 @@ the joiner reuses an exact local match or downloads the container before loading
 the episode or save.
 
 `PACKET_CUSTOM_LEVEL` uses the common chunk header. A count of `0xffff` requests
-the container, zero acknowledges a matching or stored copy, and any other count
-describes a data stream. The joiner checks the advertised size and hash, then
-runs the normal container validation before writing the file.
+data, zero acknowledges a stream generation, and any other count describes a
+data stream. Payload kind 0 is a container; kind 1 is a Custom Endless manifest.
+Generation `0xffff` acknowledges that the entire collection is settled.
+
+A manifest starts with a 16-bit count, followed by up to 64 records. Each record
+contains a 64-byte file name, 32-bit size, and 32-bit FNV-1a hash. The host sends
+its complete file-name-sorted collection. The joiner reuses exact matches,
+downloads missing or different files, and adopts the host's order. Local extras
+remain installed but do not enter that session's pool.
+
+Container requests may name a manifest entry; an empty name requests the
+container advertised in `PACKET_CONNECT`. Received names must remain inside the
+container directory. The joiner checks size and hash, then runs normal `.clv`
+validation before writing the file.
 
 ## Tests
 

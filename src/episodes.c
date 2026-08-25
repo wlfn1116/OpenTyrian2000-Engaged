@@ -1054,6 +1054,33 @@ void JE_initEpisode(JE_byte newEpisode)
 	JE_loadItemDat();
 }
 
+/* Extended episode IDs preserve custom identity in Endless state. */
+
+int JE_currentEpisodeId(void)
+{
+	const int custom = customEpisodeIdFromLocal(customEpisodeCurrent());
+	return custom >= 0 ? CUSTOM_EPISODE_ID_BASE + custom : episodeNum;
+}
+
+void JE_initEpisodeId(int id)
+{
+	if (id == JE_currentEpisodeId())
+		return;
+
+	if (id >= CUSTOM_EPISODE_ID_BASE)
+	{
+		const int local = customEpisodeIdToLocal(id - CUSTOM_EPISODE_ID_BASE);
+		if (local < 0 || !JE_initEpisodeCustom(local))
+		{
+			// JE_loadMap handles any level number that is invalid in the fallback episode.
+			fprintf(stderr, "custom episode: id %d is not installed; falling back to episode 1\n", id);
+			JE_initEpisode(1);
+		}
+	}
+	else
+		JE_initEpisode((JE_byte)id);
+}
+
 void JE_scanForEpisodes(void)
 {
 	for (int i = 0; i < EPISODE_MAX; ++i)

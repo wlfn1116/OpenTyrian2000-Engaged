@@ -8679,6 +8679,13 @@ int networkGuestWaitRows(const char **label, const char **value)
 	{
 		label[rows] = "Run Mode";
 		value[rows++] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
+		if (network_host_custom_endless != CUSTOM_ENDLESS_OFF)
+		{
+			// The host supplies this value with its collection.
+			label[rows] = "Custom Levels";
+			value[rows++] = network_host_custom_endless == CUSTOM_ENDLESS_ONLY
+			              ? "Custom Only" : "Mixed";
+		}
 		label[rows] = "Base Level";
 		value[rows++] = endlessBaseLevelRuleName(network_host_endless_base_rule);
 		label[rows] = "Charts Course";
@@ -8853,6 +8860,11 @@ void networkStartScreen(void)
 			if (customEpisodeActive() && !network_custom_level_serve())
 				network_tyrian_halt(3, false);
 
+			// Sync the collection before publishing a run that indexes it.
+			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
+			    !network_custom_endless_serve())
+				network_tyrian_halt(3, false);
+
 			// The save record carries the two loadouts; the Endless run behind them is a record of its
 			// own, so it follows on the reliable channel before either machine plays a tick.
 			if (coopEndlessMode && !networkEndlessResume((JE_byte)resumeSlot))
@@ -8895,6 +8907,11 @@ void networkStartScreen(void)
 
 			// Finish container sync before either side loads the episode.
 			if (customSession && !network_custom_level_serve())
+				network_tyrian_halt(3, false);
+
+			// Publish the collection before starting Custom Endless.
+			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
+			    !network_custom_endless_serve())
 				network_tyrian_halt(3, false);
 		}
 		else
@@ -9065,6 +9082,11 @@ void networkStartScreen(void)
 				thisPlayerNum = 3 - networkHostPlayerNum;
 			}
 
+			// Fetch the collection before receiving a run that indexes it.
+			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
+			    !network_custom_endless_fetch())
+				network_tyrian_halt(3, false);
+
 			// Same rule as the host's publish above: no run means no session.
 			if (coopEndlessMode && !networkEndlessResume(0))
 				network_tyrian_halt(3, false);
@@ -9081,7 +9103,14 @@ void networkStartScreen(void)
 					network_tyrian_halt(3, false);
 			}
 			else
+			{
+				// Fetch the host's collection before building the level pool.
+				if (network_game_type == NETWORK_GAME_ENDLESS &&
+				    network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
+				    !network_custom_endless_fetch())
+					network_tyrian_halt(3, false);
 				JE_initEpisode(their_episode);
+			}
 			initial_episode_num = episodeNum;  // as the host does; see its branch above
 			difficultyLevel = their_difficulty;
 			initialDifficulty = difficultyLevel - networkDifficultyBump();

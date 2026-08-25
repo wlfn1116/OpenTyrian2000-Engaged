@@ -51,6 +51,10 @@ void JE_analyzeLevel(void)
 
 unsigned int JE_levelFileCount(int episode)
 {
+	// Count an extended ID without activating its container.
+	if (episode >= CUSTOM_EPISODE_ID_BASE)
+		return customEpisodeLevelCount(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE));
+
 	if (episode < 1 || episode > 9)
 		return 0;
 

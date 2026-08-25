@@ -125,7 +125,8 @@ bool network_interface_carries_lan(unsigned int flags)
 #define NET_CONNECT_DESTRUCT_SIZE 5   // battle mode, Uint32 terrain seed
 // Padded *.clv name, u32 size, and u32 hash; zeroed for stock episodes.
 #define NET_CONNECT_CUSTOM    (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
-#define NET_CONNECT_CUSTOM_SIZE (CUSTOM_EPISODE_FILE_LEN + 8)
+// Name[64], u32 size, u32 hash, mode byte, and three reserved bytes.
+#define NET_CONNECT_CUSTOM_SIZE (CUSTOM_EPISODE_FILE_LEN + 12)
 #define NET_CONNECT_NAME      (NET_CONNECT_CUSTOM + NET_CONNECT_CUSTOM_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
@@ -1257,7 +1258,12 @@ static void send_connect_packet(Uint16 episodes_local)
 	       NET_ENDLESS_SEED_MAX);
 	packet_out_temp->data[NET_CONNECT_DESTRUCT] = (Uint8)network_host_destruct_mode;
 	SDLNet_Write32(network_destruct_session_seed, &packet_out_temp->data[NET_CONNECT_DESTRUCT + 1]);
-	// Stock sessions leave this block zeroed.
+	// Only the lobby host authors the Custom Endless field.
+	if (network_from_lobby && network_is_host)
+		network_host_custom_endless =
+			(customEpisodeCount() > 0 &&
+			 (customEndlessMode == CUSTOM_ENDLESS_MIXED || customEndlessMode == CUSTOM_ENDLESS_ONLY))
+			? customEndlessMode : CUSTOM_ENDLESS_OFF;
 	memset(&packet_out_temp->data[NET_CONNECT_CUSTOM], 0, NET_CONNECT_CUSTOM_SIZE);
 	if (network_host_custom_file[0] != '\0')
 	{
@@ -1268,6 +1274,8 @@ static void send_connect_packet(Uint16 episodes_local)
 		SDLNet_Write32(network_host_custom_hash,
 		               &packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 4]);
 	}
+	packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 8] =
+		(Uint8)network_host_custom_endless;
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
 	network_send(NET_CONNECT_NAME + name_len + 1);
@@ -1458,6 +1466,12 @@ connect_again:
 					&packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN]);
 				network_host_custom_hash = SDLNet_Read32(
 					&packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 4]);
+				// Invalid modes read as Off.
+				const int customEndless =
+					packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 8];
+				network_host_custom_endless =
+					(customEndless == CUSTOM_ENDLESS_MIXED || customEndless == CUSTOM_ENDLESS_ONLY)
+					? customEndless : CUSTOM_ENDLESS_OFF;
 			}
 
 			// The Destruct block. The mode indexes battle-mode tables on both machines, so a
@@ -1731,6 +1745,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	{
 		network_shutdown();
 
+		customEpisodeSessionEnd();   // an offline game must read the local collection again
 		isNetworkGame = false;
 		network_from_lobby = false;
 		network_is_host = false;
@@ -2888,27 +2903,47 @@ void network_extra_ships_publish(void)
 	free(stream);
 }
 
-/* Session-start custom-container sync. See doc/notes.md#custom-episode-containers. */
+/* Container and manifest sync; see doc/notes.md#custom-episode-containers. */
 
 char   network_host_custom_file[64] = "";   /* CUSTOM_EPISODE_FILE_LEN; empty = stock */
 Uint32 network_host_custom_size = 0;
 Uint32 network_host_custom_hash = 0;
+int    network_host_custom_endless = 0;     /* CUSTOM_ENDLESS_*, host-dictated */
 
-#define NCL_REQUEST 0xFFFF
-#define NCL_TRANSFER_MS 90000   /* whole-container deadline; a slow link, not a hang */
-#define NCL_RESEND_MS   15000   /* restream when a full pass went unacknowledged     */
+#define NCL_REQUEST       0xFFFF
+#define NCL_GEN_ALL_DONE  0xFFFF
+#define NCL_TRANSFER_MS   90000   /* per-stream deadline; a slow link, not a hang */
+#define NCL_RESEND_MS     15000   /* restream when a full pass went unacknowledged */
+
+#define NCL_KIND_CONTAINER 0
+#define NCL_KIND_MANIFEST  1
+
+#define NCL_MANIFEST_RECORD (CUSTOM_EPISODE_FILE_LEN + 8)
+#define NCL_MANIFEST_MAX    (2 + CUSTOM_EPISODE_MAX * NCL_MANIFEST_RECORD)
 
 static Uint16 network_clv_gen;
-static bool   network_clv_request_seen;
-static bool   network_clv_peer_done;
+static bool   network_clv_request_seen;        // host: a container request stands...
+static char   network_clv_wanted[CUSTOM_EPISODE_FILE_LEN];  // ...for this file ("" = advertised)
+static bool   network_clv_manifest_requested;  // host
+static bool   network_clv_peer_done;           // host: the running stream was confirmed
+static bool   network_clv_all_done;            // host: the peer settled the whole collection
 
+// Expected identity for the guest's current download.
+static char   network_clv_expect_name[CUSTOM_EPISODE_FILE_LEN];
+static Uint32 network_clv_expect_size;
+static Uint32 network_clv_expect_hash;
+
+static Uint8  network_clv_in_kind;
 static Uint16 network_clv_in_gen;
 static Uint32 network_clv_in_count;
 static Uint32 network_clv_in_have;
 static size_t network_clv_in_len;
 static Uint8 *network_clv_in_buf;
 static Uint8 *network_clv_in_seen;
-static bool   network_clv_in_done;
+static bool   network_clv_in_done;             // guest: the expected container is stored
+
+static Uint8  network_clv_manifest[NCL_MANIFEST_MAX];
+static size_t network_clv_manifest_len;        // 0 = none received yet
 
 static void network_clv_in_reset(void)
 {
@@ -2924,21 +2959,59 @@ static void network_clv_in_reset(void)
 void network_custom_level_session_reset(void)
 {
 	network_clv_request_seen = false;
+	network_clv_manifest_requested = false;
 	network_clv_peer_done = false;
+	network_clv_all_done = false;
 	network_clv_in_done = false;
+	network_clv_wanted[0] = '\0';
+	network_clv_expect_name[0] = '\0';
+	network_clv_expect_size = 0;
+	network_clv_expect_hash = 0;
+	network_clv_manifest_len = 0;
 	network_clv_in_reset();
+	customEpisodeSessionEnd();
 }
 
-static void network_clv_send_simple(Uint16 count, Uint16 gen)
+static void network_clv_send_ack(Uint16 gen)
 {
 	network_prepare(PACKET_CUSTOM_LEVEL);
 	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
-	packet_out_temp->data[NCW_OWNER + 1] = 0;
+	packet_out_temp->data[NCW_OWNER + 1] = NCL_KIND_CONTAINER;
 	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
 	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
-	SDLNet_Write16(count, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_COUNT]);
 	SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
 	network_send(NCW_HDR);
+}
+
+/* Requests a manifest or a named container; NULL means the advertised one. */
+static void network_clv_send_request(Uint8 kind, const char *name)
+{
+	size_t plen = (name != NULL) ? strlen(name) : 0;
+	if (plen >= CUSTOM_EPISODE_FILE_LEN)
+		plen = CUSTOM_EPISODE_FILE_LEN - 1;
+
+	network_prepare(PACKET_CUSTOM_LEVEL);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = kind;
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(NCL_REQUEST, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+	if (plen > 0)
+		memcpy(&packet_out_temp->data[NCW_HDR], name, plen);
+	network_send(NCW_HDR + (int)plen);
+}
+
+static Uint32 network_clv_hash(const Uint8 *data, size_t len)
+{
+	Uint32 hash = 2166136261u;
+	for (size_t i = 0; i < len; ++i)
+	{
+		hash ^= data[i];
+		hash *= 16777619u;
+	}
+	return hash != 0 ? hash : 1;
 }
 
 static void network_clv_consume(void)
@@ -2951,12 +3024,14 @@ static void network_clv_consume(void)
 	}
 
 	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint8  kind   = packet_in[0]->data[NCW_OWNER + 1];
 	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
 	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
 	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
 	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
 
-	if (sender < 1 || sender > 2 || sender == thisPlayerNum)
+	if (sender < 1 || sender > 2 || sender == thisPlayerNum ||
+	    (kind != NCL_KIND_CONTAINER && kind != NCL_KIND_MANIFEST))
 	{
 		network_update();
 		return;
@@ -2965,28 +3040,54 @@ static void network_clv_consume(void)
 	if (count == NCL_REQUEST)
 	{
 		if (network_is_host)
-			network_clv_request_seen = true;
+		{
+			if (kind == NCL_KIND_MANIFEST)
+				network_clv_manifest_requested = true;
+			else
+			{
+				// Ignore names that could escape the container directory.
+				char name[CUSTOM_EPISODE_FILE_LEN];
+				const size_t n = MIN((size_t)plen, sizeof(name) - 1);
+				if ((Uint32)len >= NCW_HDR + n)
+				{
+					memcpy(name, &packet_in[0]->data[NCW_HDR], n);
+					name[n] = '\0';
+					if (name[0] == '\0' || customEpisodeFileNameValid(name))
+					{
+						SDL_strlcpy(network_clv_wanted, name, sizeof(network_clv_wanted));
+						network_clv_request_seen = true;
+					}
+				}
+			}
+		}
 		network_update();
 		return;
 	}
 
 	if (count == 0)
 	{
-		network_clv_peer_done = true;
+		if (gen == NCL_GEN_ALL_DONE)
+			network_clv_all_done = true;
+		else
+			network_clv_peer_done = true;
 		network_update();
 		return;
 	}
 
-	// Only the joiner assembles the advertised container.
-	if (network_is_host || network_host_custom_file[0] == '\0' ||
+	// Only the joiner assembles streams, within the advertised bound.
+	const Uint64 bound = kind == NCL_KIND_MANIFEST
+	                   ? (Uint64)NCL_MANIFEST_MAX
+	                   : (Uint64)network_clv_expect_size;
+	if (network_is_host || bound == 0 ||
 	    chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
-	    (Uint64)count * NCW_PAYLOAD > (Uint64)network_host_custom_size + NCW_PAYLOAD)
+	    (Uint64)count * NCW_PAYLOAD > bound + NCW_PAYLOAD)
 	{
 		network_update();
 		return;
 	}
 
-	if (network_clv_in_buf == NULL || network_clv_in_gen != gen || network_clv_in_count != count)
+	if (network_clv_in_buf == NULL || network_clv_in_gen != gen ||
+	    network_clv_in_count != count || network_clv_in_kind != kind)
 	{
 		network_clv_in_reset();
 		network_clv_in_buf = calloc((size_t)count, NCW_PAYLOAD);
@@ -2997,6 +3098,7 @@ static void network_clv_consume(void)
 			network_update();
 			return;
 		}
+		network_clv_in_kind = kind;
 		network_clv_in_gen = gen;
 		network_clv_in_count = count;
 	}
@@ -3012,21 +3114,26 @@ static void network_clv_consume(void)
 
 	if (network_clv_in_have >= count && network_clv_in_len > 0)
 	{
-		Uint32 hash = 2166136261u;
-		for (size_t i = 0; i < network_clv_in_len; ++i)
+		if (kind == NCL_KIND_MANIFEST)
 		{
-			hash ^= network_clv_in_buf[i];
-			hash *= 16777619u;
+			const size_t mlen = network_clv_in_len;
+			const Uint32 mcount = mlen >= 2 ? SDLNet_Read16(&network_clv_in_buf[0]) : 0xffffu;
+			if (mcount <= CUSTOM_EPISODE_MAX && mlen == 2 + (size_t)mcount * NCL_MANIFEST_RECORD)
+			{
+				memcpy(network_clv_manifest, network_clv_in_buf, mlen);
+				network_clv_manifest_len = mlen;
+				network_clv_send_ack(gen);
+			}
+			else
+				crashlog_netlog_line("CUSTOM LEVEL REFUSED", "the collection manifest did not parse");
 		}
-		if (hash == 0)
-			hash = 1;
-
-		if (network_clv_in_len == network_host_custom_size && hash == network_host_custom_hash &&
-		    customEpisodeSaveDownloaded(network_host_custom_file,
-		                                network_clv_in_buf, (Uint32)network_clv_in_len) >= 0)
+		else if (network_clv_in_len == network_clv_expect_size &&
+		         network_clv_hash(network_clv_in_buf, network_clv_in_len) == network_clv_expect_hash &&
+		         customEpisodeSaveDownloaded(network_clv_expect_name,
+		                                     network_clv_in_buf, (Uint32)network_clv_in_len) >= 0)
 		{
 			network_clv_in_done = true;
-			network_clv_send_simple(0, gen);
+			network_clv_send_ack(gen);
 		}
 		else
 		{
@@ -3038,6 +3145,70 @@ static void network_clv_consume(void)
 	}
 
 	network_update();
+}
+
+/* Streams one generation until acknowledged. */
+static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint32 total)
+{
+	const Uint32 chunks = (total + NCW_PAYLOAD - 1) / NCW_PAYLOAD;
+	Uint16 gen = ++network_clv_gen;
+	if (gen == NCL_GEN_ALL_DONE)
+		gen = ++network_clv_gen;
+	Uint32 sent = 0;
+	const Uint32 started = SDL_GetTicks();
+	Uint32 passDoneAt = 0;
+
+	network_clv_peer_done = false;
+
+	while (!network_clv_peer_done)
+	{
+		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+			network_clv_consume();
+		else if (network_inbound_head() == PACKET_CONNECT)
+			network_update();   // a late handshake retry; consume it
+
+		if (sent < chunks)
+		{
+			// Leave half the reliable queue available while streaming.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN((size_t)total - from, (size_t)NCW_PAYLOAD);
+
+				network_prepare(PACKET_CUSTOM_LEVEL);
+				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+				packet_out_temp->data[NCW_OWNER + 1] = kind;
+				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
+				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
+				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				if (++sent >= chunks)
+					passDoneAt = SDL_GetTicks();
+			}
+		}
+		else if (passDoneAt != 0 && SDL_GetTicks() - passDoneAt >= NCL_RESEND_MS)
+		{
+			// Retry an unconfirmed stream with a new generation.
+			gen = ++network_clv_gen;
+			if (gen == NCL_GEN_ALL_DONE)
+				gen = ++network_clv_gen;
+			sent = 0;
+			passDoneAt = 0;
+		}
+
+		SDL_Delay(1);
+	}
+
+	return true;
 }
 
 /* Serves the advertised container until the joiner confirms it. */
@@ -3056,18 +3227,16 @@ bool network_custom_level_serve(void)
 		return false;
 	}
 
-	const Uint32 chunks = (total + NCW_PAYLOAD - 1) / NCW_PAYLOAD;
-	Uint16 gen = ++network_clv_gen;
-	Uint32 sent = 0;
 	const Uint32 started = SDL_GetTicks();
-	Uint32 passDoneAt = 0;
+	bool ok = true;
 
+	// Wait for the joiner to confirm or request the container.
 	while (!network_clv_peer_done)
 	{
 		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
 		{
-			free(stream);
-			return false;
+			ok = false;
+			break;
 		}
 
 		watchdog_heartbeat();
@@ -3077,43 +3246,20 @@ bool network_custom_level_serve(void)
 		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
 			network_clv_consume();
 		else if (network_inbound_head() == PACKET_CONNECT)
-			network_update();   // a late handshake retry; consume it
+			network_update();
 
-		if (network_clv_request_seen && sent < chunks)
+		if (network_clv_request_seen)
 		{
-			// Leave half the reliable queue available while streaming.
-			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
-			{
-				const size_t from = (size_t)sent * NCW_PAYLOAD;
-				const size_t plen = MIN((size_t)total - from, (size_t)NCW_PAYLOAD);
-
-				network_prepare(PACKET_CUSTOM_LEVEL);
-				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
-				packet_out_temp->data[NCW_OWNER + 1] = 0;
-				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
-				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
-				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
-				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
-				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
-				network_send(NCW_HDR + (int)plen);
-				if (++sent >= chunks)
-					passDoneAt = SDL_GetTicks();
-			}
-		}
-		else if (sent >= chunks && passDoneAt != 0 &&
-		         SDL_GetTicks() - passDoneAt >= NCL_RESEND_MS)
-		{
-			// Retry an unconfirmed stream with a new generation.
-			gen = ++network_clv_gen;
-			sent = 0;
-			passDoneAt = 0;
+			network_clv_request_seen = false;
+			ok = network_clv_stream_until_acked(NCL_KIND_CONTAINER, stream, total);
+			break;
 		}
 
 		SDL_Delay(1);
 	}
 
 	free(stream);
-	return true;
+	return ok;
 }
 
 /* Fetches the advertised container unless a matching local copy exists. */
@@ -3130,10 +3276,16 @@ bool network_custom_level_fetch(void)
 		if (customEpisodeIdentity(idx, &size, &hash) &&
 		    size == network_host_custom_size && hash == network_host_custom_hash)
 		{
-			network_clv_send_simple(0, 0);
+			network_clv_send_ack(0);
 			return true;
 		}
 	}
+
+	SDL_strlcpy(network_clv_expect_name, network_host_custom_file,
+	            sizeof(network_clv_expect_name));
+	network_clv_expect_size = network_host_custom_size;
+	network_clv_expect_hash = network_host_custom_hash;
+	network_clv_in_done = false;
 
 	const Uint32 started = SDL_GetTicks();
 	Uint32 askedAt = 0;
@@ -3151,7 +3303,7 @@ bool network_custom_level_fetch(void)
 		// Repeat in case the host reset its transfer state.
 		if (!asked || SDL_GetTicks() - askedAt >= 3000)
 		{
-			network_clv_send_simple(NCL_REQUEST, 0);
+			network_clv_send_request(NCL_KIND_CONTAINER, NULL);
 			askedAt = SDL_GetTicks();
 			asked = true;
 		}
@@ -3164,6 +3316,182 @@ bool network_custom_level_fetch(void)
 		SDL_Delay(1);
 	}
 
+	return true;
+}
+
+/* Serves the host's Custom Endless manifest and requested containers. */
+bool network_custom_endless_serve(void)
+{
+	if (network_host_custom_endless == CUSTOM_ENDLESS_OFF)
+		return true;
+
+	customEpisodeScan();
+	const int count = customEpisodeCount();
+
+	static char names[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+	Uint8 manifest[NCL_MANIFEST_MAX];
+	SDLNet_Write16((Uint16)count, &manifest[0]);
+	size_t mlen = 2;
+	for (int i = 0; i < count; ++i)
+	{
+		Uint32 size, hash;
+		if (!customEpisodeIdentity(i, &size, &hash))
+			return false;
+		SDL_strlcpy(names[i], customEpisodeFile(i), sizeof(names[i]));
+		memset(&manifest[mlen], 0, CUSTOM_EPISODE_FILE_LEN);
+		memcpy(&manifest[mlen], names[i], strlen(names[i]));
+		SDLNet_Write32(size, &manifest[mlen + CUSTOM_EPISODE_FILE_LEN]);
+		SDLNet_Write32(hash, &manifest[mlen + CUSTOM_EPISODE_FILE_LEN + 4]);
+		mlen += NCL_MANIFEST_RECORD;
+	}
+
+	// Bound the full collection exchange as well as each stream.
+	const Uint32 started = SDL_GetTicks();
+
+	while (!network_clv_all_done)
+	{
+		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS * 8u || !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+			network_clv_consume();
+		else if (network_inbound_head() == PACKET_CONNECT)
+			network_update();
+
+		if (network_clv_manifest_requested)
+		{
+			network_clv_manifest_requested = false;
+			if (!network_clv_stream_until_acked(NCL_KIND_MANIFEST, manifest, (Uint32)mlen))
+				return false;
+		}
+
+		if (network_clv_request_seen)
+		{
+			network_clv_request_seen = false;
+			const char *const want = network_clv_wanted[0] != '\0'
+			                       ? network_clv_wanted : network_host_custom_file;
+			const int idx = customEpisodeFindByFile(want);
+			Uint32 total = 0;
+			Uint8 *const bytes = idx >= 0 ? customEpisodeReadWhole(idx, &total) : NULL;
+			if (bytes == NULL || total == 0)
+			{
+				free(bytes);
+				return false;   // The peer requested a file outside the manifest.
+			}
+			const bool sentOk = network_clv_stream_until_acked(NCL_KIND_CONTAINER, bytes, total);
+			free(bytes);
+			if (!sentOk)
+				return false;
+		}
+
+		SDL_Delay(1);
+	}
+
+	customEpisodeSessionBegin(names, count, network_host_custom_endless);
+	return true;
+}
+
+/* Fetches the host manifest and any missing or different containers. */
+bool network_custom_endless_fetch(void)
+{
+	if (network_host_custom_endless == CUSTOM_ENDLESS_OFF)
+		return true;
+
+	customEpisodeScan();
+
+	// Fetch the manifest first.
+	network_clv_manifest_len = 0;
+	Uint32 started = SDL_GetTicks();
+	Uint32 askedAt = 0;
+	bool asked = false;
+	while (network_clv_manifest_len == 0)
+	{
+		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (!asked || SDL_GetTicks() - askedAt >= 3000)
+		{
+			network_clv_send_request(NCL_KIND_MANIFEST, NULL);
+			askedAt = SDL_GetTicks();
+			asked = true;
+		}
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+			network_clv_consume();
+		else if (network_inbound_head() == PACKET_CONNECT)
+			network_update();
+
+		SDL_Delay(1);
+	}
+
+	// Fetch every missing or different container named by the manifest.
+	const int count = (int)SDLNet_Read16(&network_clv_manifest[0]);
+	static char names[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+	for (int i = 0; i < count; ++i)
+	{
+		const Uint8 *const rec = &network_clv_manifest[2 + (size_t)i * NCL_MANIFEST_RECORD];
+		memcpy(names[i], rec, CUSTOM_EPISODE_FILE_LEN);
+		names[i][CUSTOM_EPISODE_FILE_LEN - 1] = '\0';
+		if (!customEpisodeFileNameValid(names[i]))
+			return false;   // Reject an invalid manifest name.
+		const Uint32 wantSize = SDLNet_Read32(&rec[CUSTOM_EPISODE_FILE_LEN]);
+		const Uint32 wantHash = SDLNet_Read32(&rec[CUSTOM_EPISODE_FILE_LEN + 4]);
+
+		const int local = customEpisodeFindByFile(names[i]);
+		if (local >= 0)
+		{
+			Uint32 size, hash;
+			if (customEpisodeIdentity(local, &size, &hash) &&
+			    size == wantSize && hash == wantHash)
+				continue;   // Reuse an identical local file.
+		}
+
+		SDL_strlcpy(network_clv_expect_name, names[i], sizeof(network_clv_expect_name));
+		network_clv_expect_size = wantSize;
+		network_clv_expect_hash = wantHash;
+		network_clv_in_done = false;
+		network_clv_in_reset();
+
+		started = SDL_GetTicks();
+		askedAt = 0;
+		asked = false;
+		while (!network_clv_in_done)
+		{
+			if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
+				return false;
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			if (!asked || SDL_GetTicks() - askedAt >= 3000)
+			{
+				network_clv_send_request(NCL_KIND_CONTAINER, names[i]);
+				askedAt = SDL_GetTicks();
+				asked = true;
+			}
+
+			if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+				network_clv_consume();
+			else if (network_inbound_head() == PACKET_CONNECT)
+				network_update();
+
+			SDL_Delay(1);
+		}
+	}
+
+	// Ignore local extras by adopting the host's order.
+	customEpisodeSessionBegin(names, count, network_host_custom_endless);
+	for (int i = 0; i < 3; ++i)
+		network_clv_send_ack(NCL_GEN_ALL_DONE);
 	return true;
 }
 

@@ -704,7 +704,7 @@ static void endlessGatherCourseLevels(int wantCourses)
 
 	if (endlessCourseCnt == 0)  // fallback: guarantee at least one course
 	{
-		int ep = episodeNum;
+		int ep = JE_currentEpisodeId();
 		JE_byte sec = FIRST_LEVEL, file = 0;
 		endlessRandomSafeLevel(&ep, &sec, &file);
 		endlessCourseEp[0] = ep;
@@ -1514,8 +1514,7 @@ JE_byte endlessSelectCourse(int i)
 		endlessSortiePreLongCon[p]   = endlessLongCon[p];
 	}
 
-	if (endlessCourseEp[i] != episodeNum)
-		JE_initEpisode(endlessCourseEp[i]);  // load that episode's data (arsenal is shared)
+	JE_initEpisodeId(endlessCourseEp[i]);  // load that episode's data (arsenal is shared)
 	forcedLvlFileNum = endlessCourseFile[i];  // load this course's exact level file (see JE_loadMap)
 	// Apply the same Sabotage pass used to price and colour the course card, then hand each
 	// player their own effect mask: what they bought for themselves boosts them alone.

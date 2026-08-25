@@ -183,6 +183,10 @@ const char *JE_episodeDir(void);
 /* Forces the next JE_initEpisode to reload an unchanged episode number. */
 void JE_forceEpisodeReload(void);
 
+/* Loads stock or extended custom episode IDs; missing custom IDs fall back to 1. */
+int JE_currentEpisodeId(void);
+void JE_initEpisodeId(int id);
+
 // Hand the shop sheet's 11 never-referenced 2x2 icons to the weapons/sidekicks that otherwise
 // share another item's icon (or fall back to the 167 placeholder).
 void JE_applyUnusedShopSprites(void);

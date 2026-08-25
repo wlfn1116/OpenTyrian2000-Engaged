@@ -10,6 +10,7 @@
 #include "config.h"    // get_user_directory
 #include "episodes.h"  // JE_initEpisode, episodeNum, JE_forceEpisodeReload
 #include "file.h"      // data_dir, malloc_die
+#include "network.h"   // isNetworkGame
 #include "lvllib.h"    // lvlNum, JE_levelFileCount
 #include "qa.h"
 
@@ -29,6 +30,8 @@
 #endif
 
 #ifdef _WIN32
+// Keep windows.h from dragging in the old winsock.h behind SDL_net's winsock2.h.
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
 #include <dirent.h>
@@ -345,6 +348,8 @@ void customEpisodeClearAll(void)
 
 	entryCount = 0;
 	anyPresentCheckedAt = 0;
+	// Clearing the files also clears their Endless-pool setting.
+	customEndlessMode = CUSTOM_ENDLESS_OFF;
 }
 
 void customEpisodeScan(void)
@@ -443,6 +448,143 @@ int customEpisodeFindByFile(const char *fileName)
 		if (SDL_strcasecmp(entries[i].file, fileName) == 0)
 			return i;
 	return -1;
+}
+
+/* Local Custom Endless setting; see doc/notes.md. */
+int customEndlessMode = CUSTOM_ENDLESS_OFF;
+
+/* Host-ordered collection used by both peers; -1 selects the local list. */
+static char sessionNames[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+static int  sessionCount = -1;
+static int  sessionMode = CUSTOM_ENDLESS_OFF;
+
+void customEpisodeSessionBegin(const char names[][CUSTOM_EPISODE_FILE_LEN], int count, int mode)
+{
+	if (count < 0)
+		count = 0;
+	if (count > CUSTOM_EPISODE_MAX)
+		count = CUSTOM_EPISODE_MAX;
+	for (int i = 0; i < count; ++i)
+		SDL_strlcpy(sessionNames[i], names[i], CUSTOM_EPISODE_FILE_LEN);
+	sessionCount = count;
+	sessionMode = mode;
+}
+
+void customEpisodeSessionEnd(void)
+{
+	sessionCount = -1;
+	sessionMode = CUSTOM_ENDLESS_OFF;
+}
+
+bool customEpisodeSessionActive(void)
+{
+	return sessionCount >= 0;
+}
+
+int customEpisodeIdCount(void)
+{
+	return sessionCount >= 0 ? sessionCount : entryCount;
+}
+
+int customEpisodeIdToLocal(int idIndex)
+{
+	if (sessionCount < 0)
+		return (idIndex >= 0 && idIndex < entryCount) ? idIndex : -1;
+	if (idIndex < 0 || idIndex >= sessionCount)
+		return -1;
+	return customEpisodeFindByFile(sessionNames[idIndex]);
+}
+
+int customEpisodeIdFromLocal(int localIndex)
+{
+	if (localIndex < 0 || localIndex >= entryCount)
+		return -1;
+	if (sessionCount < 0)
+		return localIndex;
+	for (int i = 0; i < sessionCount; ++i)
+		if (SDL_strcasecmp(sessionNames[i], entries[localIndex].file) == 0)
+			return i;
+	return -1;
+}
+
+int customEndlessEffectiveMode(void)
+{
+	// A session list overrides local files and settings.
+	if (sessionCount >= 0)
+		return sessionCount > 0 &&
+		       (sessionMode == CUSTOM_ENDLESS_MIXED || sessionMode == CUSTOM_ENDLESS_ONLY)
+		     ? sessionMode : CUSTOM_ENDLESS_OFF;
+	// Online play waits for a host session list before enabling custom levels.
+	if (isNetworkGame || entryCount == 0)
+		return CUSTOM_ENDLESS_OFF;
+	return (customEndlessMode == CUSTOM_ENDLESS_MIXED || customEndlessMode == CUSTOM_ENDLESS_ONLY)
+	     ? customEndlessMode : CUSTOM_ENDLESS_OFF;
+}
+
+/* Opens an inactive container at the start of its script section. */
+FILE *customEpisodeOpenScript(int index, long *endOut)
+{
+	if (index < 0 || index >= entryCount)
+		return NULL;
+
+	char path[600];
+	snprintf(path, sizeof(path), "%s/%s", custom_episode_dir(), entries[index].file);
+	FILE *f = fopen(path, "rb");
+	if (f == NULL)
+		return NULL;
+
+	fseek(f, 0, SEEK_END);
+	const long size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	Uint8 hbuf[CLV_HEADER_SIZE];
+	ClvHeader h;
+	if (size < CLV_HEADER_SIZE ||
+	    fread(hbuf, 1, CLV_HEADER_SIZE, f) != CLV_HEADER_SIZE ||
+	    !clv_parse_header(hbuf, (Uint32)size, &h) ||
+	    fseek(f, (long)h.scrOff, SEEK_SET) != 0)
+	{
+		fclose(f);
+		return NULL;
+	}
+
+	*endOut = (long)h.scrOff + (long)h.scrLen;
+	return f;
+}
+
+unsigned int customEpisodeLevelCount(int index)
+{
+	if (index < 0 || index >= entryCount)
+		return 0;
+
+	char path[600];
+	snprintf(path, sizeof(path), "%s/%s", custom_episode_dir(), entries[index].file);
+	FILE *f = fopen(path, "rb");
+	if (f == NULL)
+		return 0;
+
+	fseek(f, 0, SEEK_END);
+	const long size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	Uint8 hbuf[CLV_HEADER_SIZE];
+	ClvHeader h;
+	Uint8 b[2];
+	unsigned int lvlNumWord = 0;
+	if (size >= CLV_HEADER_SIZE &&
+	    fread(hbuf, 1, CLV_HEADER_SIZE, f) == CLV_HEADER_SIZE &&
+	    clv_parse_header(hbuf, (Uint32)size, &h) &&
+	    fseek(f, (long)h.lvlOff, SEEK_SET) == 0 &&
+	    fread(b, 1, 2, f) == 2)
+	{
+		lvlNumWord = b[0] | (b[1] << 8);
+	}
+	fclose(f);
+
+	// Match the scanner's level-count validation.
+	if (lvlNumWord < 3 || lvlNumWord >= 43 || lvlNumWord % 2 == 0)
+		return 0;
+	return lvlNumWord / 2;
 }
 
 bool customEpisodeActive(void)

@@ -408,7 +408,13 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 		return 0;
 
 	FILE *f;
-	if (customEpisodeActive() && episode == episodeNum)
+	long end = 0;
+	if (episode >= CUSTOM_EPISODE_ID_BASE)
+	{
+		// Extended IDs can read an inactive container's script.
+		f = customEpisodeOpenScript(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE), &end);
+	}
+	else if (customEpisodeActive() && episode == episodeNum)
 	{
 		// The active container owns this base episode's script.
 		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_SCRIPT_NAME, "rb");
@@ -421,10 +427,11 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 	}
 	if (f == NULL)
 		return 0;
+	if (end == 0)
+		end = ftell_eof(f);
 
 	JE_word section = 0;
 	bool sectionUnsafe = false;  // a mode-switch command seen since the last '*'
-	long end = ftell_eof(f);
 	char s[256];
 	uint n = 0;
 
@@ -505,7 +512,12 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 		return;
 
 	FILE *f;
-	if (customEpisodeActive() && episode == episodeNum)
+	long end = 0;
+	if (episode >= CUSTOM_EPISODE_ID_BASE)
+	{
+		f = customEpisodeOpenScript(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE), &end);
+	}
+	else if (customEpisodeActive() && episode == episodeNum)
 	{
 		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_SCRIPT_NAME, "rb");
 	}
@@ -517,9 +529,10 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 	}
 	if (f == NULL)
 		return;
+	if (end == 0)
+		end = ftell_eof(f);
 
 	JE_word sec = 0;
-	long end = ftell_eof(f);
 	char s[256];
 
 	while (ftell(f) < end)

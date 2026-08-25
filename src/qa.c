@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "crashlog.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "destruct.h"
 #include "destruct_rollback.h"
@@ -8482,6 +8483,89 @@ static void qa_test_save_fixtures(void)
 	memcpy(t2kHighScores, savedBoards, sizeof(savedBoards));
 }
 
+/* Exercises each Custom Endless pool through the public shuffle. */
+static void qa_test_custom_endless_pool(void)
+{
+	const int savedMode = customEndlessMode;
+	int ep;
+	JE_byte sec, file;
+
+	customEpisodeScan();
+	if (customEpisodeCount() == 0)
+	{
+		customEndlessMode = CUSTOM_ENDLESS_ONLY;
+		bool ok = true, sawCustom = false;
+		for (int p = 0; p < 40 && ok; ++p)
+		{
+			ok = endlessShuffleSafeLevel(p, &ep, &sec, &file);
+			sawCustom |= ep >= CUSTOM_EPISODE_ID_BASE;
+		}
+		qa_check(ok && !sawCustom,
+		         "without containers the Endless pool is stock whatever the setting says");
+		customEndlessMode = savedMode;
+		return;
+	}
+
+	customEndlessMode = CUSTOM_ENDLESS_OFF;
+	bool ok = true, sawCustom = false;
+	for (int p = 0; p < 40 && ok; ++p)
+	{
+		ok = endlessShuffleSafeLevel(p, &ep, &sec, &file);
+		sawCustom |= ep >= CUSTOM_EPISODE_ID_BASE;
+	}
+	qa_check(ok && !sawCustom, "Custom Endless Off keeps the pool stock");
+
+	customEndlessMode = CUSTOM_ENDLESS_MIXED;
+	bool sawStock = false;
+	sawCustom = false;
+	for (int p = 0; p < 200 && ok; ++p)
+	{
+		ok = endlessShuffleSafeLevel(p, &ep, &sec, &file);
+		if (ep >= CUSTOM_EPISODE_ID_BASE)
+			sawCustom = true;
+		else
+			sawStock = true;
+	}
+	qa_check(ok && sawStock && sawCustom,
+	         "Custom Endless Mixed pools stock and custom levels together");
+
+	customEndlessMode = CUSTOM_ENDLESS_ONLY;
+	sawStock = false;
+	sawCustom = false;
+	for (int p = 0; p < 40 && ok; ++p)
+	{
+		ok = endlessShuffleSafeLevel(p, &ep, &sec, &file);
+		if (ep >= CUSTOM_EPISODE_ID_BASE)
+			sawCustom = true;
+		else
+			sawStock = true;
+	}
+	qa_check(ok && sawCustom && !sawStock,
+	         "Custom Endless Custom Only draws the containers' levels alone");
+
+	// A host session list overrides the local setting and collection.
+	{
+		char sessionName[1][CUSTOM_EPISODE_FILE_LEN];
+		SDL_strlcpy(sessionName[0], customEpisodeFile(0), CUSTOM_EPISODE_FILE_LEN);
+		customEndlessMode = CUSTOM_ENDLESS_OFF;
+		customEpisodeSessionBegin(sessionName, 1, CUSTOM_ENDLESS_ONLY);
+		bool sOk = true, sStock = false, sCustom = false;
+		for (int p = 0; p < 40 && sOk; ++p)
+		{
+			sOk = endlessShuffleSafeLevel(p, &ep, &sec, &file);
+			if (ep >= CUSTOM_EPISODE_ID_BASE)
+				sCustom = true;
+			else
+				sStock = true;
+		}
+		customEpisodeSessionEnd();
+		qa_check(sOk && sCustom && !sStock,
+		         "a session list overrides the local setting and answers the pool's ids");
+	}
+
+	customEndlessMode = savedMode;
+}
+
 int qa_run_unit_suite(void)
 {
 	qa_checks = qa_failures = 0;
@@ -8590,6 +8674,7 @@ int qa_run_unit_suite(void)
 	qa_test_lds_midi_detune();
 #endif
 	qa_test_custom_episode();
+	qa_test_custom_endless_pool();
 	qa_test_enhancement_presets();  // keep last: it leaves the enhancement settings where it put them
 
 	printf("1..%u\n", qa_checks);

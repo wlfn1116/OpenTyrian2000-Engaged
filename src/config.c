@@ -863,6 +863,12 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "enemy_bar_position", &enemyBarPosition);
 		config_get_int_option(section, "enemy_bar_opacity", &enemyBarOpacity);
 
+		// The missing key means Off.
+		int custom_endless = CUSTOM_ENDLESS_OFF;
+		config_get_int_option(section, "custom_endless", &custom_endless);
+		customEndlessMode = (custom_endless >= CUSTOM_ENDLESS_OFF && custom_endless < CUSTOM_ENDLESS_MODES)
+		                  ? custom_endless : CUSTOM_ENDLESS_OFF;
+
 		int smooth_motion_enabled = smoothMotion ? 1 : 0;
 		config_get_int_option(section, "smooth_motion", &smooth_motion_enabled);
 		smoothMotion = (smooth_motion_enabled != 0);
@@ -1325,6 +1331,11 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "enemy_bar_layout", enemyBarLayout);
 	config_set_int_option(section, "enemy_bar_position", enemyBarPosition);
 	config_set_int_option(section, "enemy_bar_opacity", enemyBarOpacity);
+	// Omit the default so clearing custom episodes removes the key.
+	if (customEndlessMode != CUSTOM_ENDLESS_OFF)
+		config_set_int_option(section, "custom_endless", customEndlessMode);
+	else
+		config_remove_option(section, "custom_endless");
 	config_set_int_option(section, "smooth_motion", smoothMotion ? 1 : 0);
 	config_set_int_option(section, "extra_sparks", extraSparks ? 1 : 0);
 	config_set_int_option(section, "extra_parallax", extraParallax ? 1 : 0);

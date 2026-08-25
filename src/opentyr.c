@@ -165,6 +165,9 @@ static const char *const zicaLengthNames[] = { "Short", "Long" };
 // Indexed by the SUPER_SPARKS_* enum (config.h).
 static const char *const sparkModeNames[] = { "Auto", "On", "Off" };
 
+// Indexed by the CUSTOM_ENDLESS_* enum (custom_episode.h).
+static const char *const customEndlessNames[] = { "Off", "Mixed", "Custom Only" };
+
 NAME_PICKER(bossBarStyle, bossBarStyleNames)
 NAME_PICKER(bossBarLayout, bossBarLayoutNames)
 NAME_PICKER(bossBarTwo, bossBarTwoNames)
@@ -175,6 +178,7 @@ NAME_PICKER(gaugeGrad, gaugeGradNames)
 NAME_PICKER(episode, episodeNames)
 NAME_PICKER(zicaLength, zicaLengthNames)
 NAME_PICKER(sparkMode, sparkModeNames)
+NAME_PICKER(customEndless, customEndlessNames)
 
 /* Enhancements: preset picker. Indexed by EnhancementPreset, so all three entries appear;
  * Custom is where hand edits land and has no values of its own, so the picker grays it,
@@ -329,6 +333,7 @@ typedef enum
 	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (tyrian2.c)
 	MENU_ITEM_GUIDED_AIM,           // weapon-table homing steers toward the enemy's screen x (shots.c)
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
+	MENU_ITEM_CUSTOM_ENDLESS,       // custom episodes in the Endless pool; hidden unless some exist
 	MENU_ITEM_CLEAR_CLV,            // delete every custom episode; hidden unless some exist
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
@@ -423,6 +428,8 @@ static bool isMenuItemVisible(const MenuItem *item)
 	// Invalid containers still keep Clear visible.
 	if (item->id == MENU_ITEM_SUBMENU && item->submenu == MENU_TRANSFER_LEVELS)
 		return customEpisodeCount() > 0;
+	if (item->id == MENU_ITEM_CUSTOM_ENDLESS)
+		return customEpisodeCount() > 0;
 	if (item->id == MENU_ITEM_CLEAR_CLV)
 		return customEpisodeAnyPresent();
 	return true;
@@ -466,6 +473,7 @@ static int *menuItemIntSetting(MenuItemId id)
 	case MENU_ITEM_ZICA_BASE:        return &zicaLaserBase;
 	case MENU_ITEM_ZICA_LENGTH:      return &zicaLaserLength;
 	case MENU_ITEM_WALLOP_BOLT:      return &wallopSecondBolt;
+	case MENU_ITEM_CUSTOM_ENDLESS:   return &customEndlessMode;
 	default:                         return NULL;
 	}
 }
@@ -858,7 +866,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
 				{ MENU_ITEM_GUIDED_AIM, "Guided Aim:", "Guided shots steer to where enemies are drawn." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
-				// Hidden when no container or directory exists.
+				// Hidden with Clear while no custom episodes exist.
+				{ MENU_ITEM_CUSTOM_ENDLESS, "Custom Endless:", "Offline Endless draws levels from custom episodes.",
+				  .getPickerItemsCount = customEndlessCount, .getPickerItem = customEndlessItem },
 				{ MENU_ITEM_CLEAR_CLV, "Clear .clv", "Delete every custom episode file and its folder." },
 				{ MENU_ITEM_SUBMENU, "Arcade Modes...", "Tweaks for the arcade and Super Arcade modes.", MENU_ARCADE_MODES },
 				MENU_DONE_ROW

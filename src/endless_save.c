@@ -2196,7 +2196,7 @@ void endlessCaptureSortie(void)
 	// this mask and then cleared the purchase it came from, so nothing else can re-derive it.
 	memcpy(endlessSortiePlayerModsV, endlessPlayerMods, sizeof(endlessSortiePlayerModsV));
 	endlessSortieSec   = mainLevel;           // committed section
-	endlessSortieEp    = episodeNum;          // committed episode
+	endlessSortieEp    = JE_currentEpisodeId();  // committed episode (extended id)
 	endlessSortieFile  = lvlFileNum;          // committed level file
 	endlessSortieHave  = true;
 }
@@ -2226,8 +2226,8 @@ void endlessRestoreSortie(void)
 
 	// The restored stock is item ids, so reload the tables it was drawn against before the outpost
 	// redraws. Both branches below reselect an episode when they relaunch.
-	if (outpostEp != 0 && outpostEp != episodeNum)
-		JE_initEpisode(outpostEp);
+	if (outpostEp != 0)
+		JE_initEpisodeId(outpostEp);
 
 	if (endlessHardcore())
 	{
@@ -2298,8 +2298,7 @@ int endlessSortiePayoutMille(void)
 void endlessArmLockedRelaunch(void)
 {
 	// Re-arm directly so course-selection one-shots do not run twice.
-	if (endlessSortieEp != episodeNum)
-		JE_initEpisode((JE_byte)endlessSortieEp);  // set level fields after this reset
+	JE_initEpisodeId(endlessSortieEp);  // set level fields after this reset
 	endlessActiveMods = endlessSortieModsV;
 	mainLevel = endlessSortieSec;
 	if (endlessSortieFile != 0)

@@ -4,6 +4,7 @@
 #include "endless_internal.h"
 
 #include "config.h"
+#include "custom_episode.h"
 #include "custom_weapon.h"
 #include "episodes.h"
 #include "game_menu.h"
@@ -89,28 +90,55 @@ void endlessPreloadBanks(void)
 	}
 }
 
-// The Endless-safe levels of every installed episode, in episode and section order. That order is
-// what the bag shuffles, so it has to depend on the install alone.
+// Pool order is deterministic from installed episodes and the Custom Endless setting.
 typedef struct { int ep; JE_byte sec, file; } EndlessLevelPoolEntry;
-#define ENDLESS_LEVEL_POOL_MAX (EPISODE_MAX * 64)
+#define ENDLESS_LEVEL_POOL_MAX ((EPISODE_MAX + 5) * 64)
 
-static int endlessBuildLevelPool(EndlessLevelPoolEntry *pool, int max)
+// JE_getLevelSections applies the same safety filter to stock and custom scripts.
+static int endlessAppendEpisodeLevels(EndlessLevelPoolEntry *pool, int max, int npool, int ep)
 {
-	int npool = 0;
+	JE_byte secs[64], files[64];
+	const uint n = JE_getLevelSections(ep, secs, files, COUNTOF(secs));
+	for (uint i = 0; i < n && npool < max; ++i)
+	{
+		pool[npool].ep   = ep;
+		pool[npool].sec  = secs[i];
+		pool[npool].file = files[i];
+		++npool;
+	}
+	return npool;
+}
+
+static int endlessAppendStockLevels(EndlessLevelPoolEntry *pool, int max, int npool)
+{
 	for (int e = 1; e <= EPISODE_MAX && npool < max; ++e)
 	{
 		if (!episodeAvail[e - 1])
 			continue;
-		JE_byte secs[64], files[64];
-		const uint n = JE_getLevelSections(e, secs, files, COUNTOF(secs));
-		for (uint i = 0; i < n && npool < max; ++i)
-		{
-			pool[npool].ep   = e;
-			pool[npool].sec  = secs[i];
-			pool[npool].file = files[i];
-			++npool;
-		}
+		npool = endlessAppendEpisodeLevels(pool, max, npool, e);
 	}
+	return npool;
+}
+
+static int endlessBuildLevelPool(EndlessLevelPoolEntry *pool, int max)
+{
+	const int customMode = customEndlessEffectiveMode();
+	int npool = 0;
+
+	if (customMode != CUSTOM_ENDLESS_ONLY)
+		npool = endlessAppendStockLevels(pool, max, npool);
+
+	if (customMode != CUSTOM_ENDLESS_OFF)
+	{
+		// Session IDs index the host's collection order.
+		for (int c = 0; c < customEpisodeIdCount() && npool < max; ++c)
+			npool = endlessAppendEpisodeLevels(pool, max, npool, CUSTOM_EPISODE_ID_BASE + c);
+
+		// Fall back to stock when Custom Only produces an empty pool.
+		if (customMode == CUSTOM_ENDLESS_ONLY && npool == 0)
+			npool = endlessAppendStockLevels(pool, max, npool);
+	}
+
 	return npool;
 }
 
@@ -240,8 +268,7 @@ JE_byte endlessPickNextLevel(void)
 		return FIRST_LEVEL;
 	}
 
-	if (ep != episodeNum)
-		JE_initEpisode(ep);
+	JE_initEpisodeId(ep);
 	forcedLvlFileNum = file;
 	return sec;
 }
@@ -331,11 +358,12 @@ void endlessRegenerateLevel(void)
 	endlessPrevBaseEp  = endlessBaseEp;
 	endlessPrevBaseLvl = endlessBaseLvl;
 	SDL_strlcpy(endlessBaseName, levelName, sizeof(endlessBaseName));
-	endlessBaseEp  = episodeNum;
+	// Keep custom episodes distinct from their base episode.
+	endlessBaseEp  = JE_currentEpisodeId();
 	endlessBaseLvl = mainLevel;
 
 	// Add the base level to the anti-repeat history.
-	endlessRecordRecentLevel(episodeNum, mainLevel);
+	endlessRecordRecentLevel(endlessBaseEp, mainLevel);
 
 	// Endless has no datacubes; random level cube data is unsafe.
 	snprintf(levelName, sizeof(levelName), "ZONE %d", endlessRunDepth + 1);

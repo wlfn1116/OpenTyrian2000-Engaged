@@ -189,11 +189,16 @@ extern int network_host_difficulty;
 extern char network_host_custom_file[64];   /* CUSTOM_EPISODE_FILE_LEN */
 extern Uint32 network_host_custom_size;
 extern Uint32 network_host_custom_hash;
+/* Host-authored Custom Endless mode from PACKET_CONNECT. */
+extern int network_host_custom_endless;
 
 /* Session-start custom-container transfer and activation. */
 void network_custom_level_session_reset(void);
 bool network_custom_level_serve(void);
 bool network_custom_level_fetch(void);
+/* Synchronizes the host's Custom Endless collection and order. */
+bool network_custom_endless_serve(void);
+bool network_custom_endless_fetch(void);
 bool networkCustomEpisodeActivate(void);
 
 /* Arcade's third shape, beside the Linked pair and Separate ships: both players race one of the
