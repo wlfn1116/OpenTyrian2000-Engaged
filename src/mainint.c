@@ -8475,6 +8475,7 @@ void JE_inGameDisplays(void)
 		const int barX = rightX - bw;
 		const int barY0 = vga_height - 28 + yBase - yShift;
 		const int barY1 = vga_height - 26 + yBase - yShift;
+		rl_mark_overlay_rect(barX, barY0, rightX - barX + 1, barY1 - barY0 + 1);
 		fill_rectangle_xy(VGAScreen, barX, barY0, rightX, barY1, bank * 16 + 2);  // dark track
 		// Fill with a very weak vertical gradient within the buff's palette bank: brightest on the
 		// top row, one shade darker per row down the bar's 3px height; a subtle top-to-bottom shade.
