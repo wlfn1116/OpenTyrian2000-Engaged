@@ -42,7 +42,11 @@ const char *const scaling_mode_names[ScalingMode_MAX] = {
 };
 
 int fullscreen_display;
-bool output_vsync = false;  // present in sync with the display's refresh rate (off by default)
+#ifdef __APPLE__
+bool output_vsync = true;
+#else
+bool output_vsync = false;
+#endif
 ScalingMode scaling_mode = SCALE_WIDESCREEN;  // fill the screen at true 16:9 by default
 
 // Sub-pixel supersampling factor; 0 = Auto (follow the scaler). See video.h.
