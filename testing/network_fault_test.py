@@ -108,8 +108,14 @@ def run_device_transfer(executable: Path, data_dir: Path, kind: str,
 CLV_FIXTURES = ("clv_ep1.clv", "clv_ep2.clv", "clv_ep3.clv")
 
 
+def peer_user_dir(user_dir: str) -> Path:
+    if os.name == "nt":
+        return Path(user_dir)
+    return Path(user_dir) / "opentyrian2000"
+
+
 def clv_dir(user_dir: str) -> Path:
-    return Path(user_dir) / "custom_levels"
+    return peer_user_dir(user_dir) / "custom_levels"
 
 
 def install_clv(user_dir: str, names, fixture_dir: Path) -> None:
@@ -656,8 +662,8 @@ def main() -> int:
                     deadline_s=deadline_s)
 
                 # Remove a different dependency from each peer.
-                (clv_dir(host_dir) / b).unlink()
-                (clv_dir(join_dir) / c).unlink()
+                (clv_dir(host_dir) / b).unlink(missing_ok=True)
+                (clv_dir(join_dir) / c).unlink(missing_ok=True)
                 print(f"custom levels: before resume host has {sorted(clv_present(host_dir))}, "
                       f"joiner has {sorted(clv_present(join_dir))}")
 
@@ -729,9 +735,9 @@ def main() -> int:
                                          {a, b, c}, fixture_dir)
 
             # Swap roles after deleting different dependencies on each peer.
-            (clv_dir(one_dir) / b).unlink()
-            (clv_dir(one_dir) / c).unlink()
-            (clv_dir(two_dir) / a).unlink()
+            (clv_dir(one_dir) / b).unlink(missing_ok=True)
+            (clv_dir(one_dir) / c).unlink(missing_ok=True)
+            (clv_dir(two_dir) / a).unlink(missing_ok=True)
             print(f"custom levels: split before the role swap - "
                   f"new joiner {sorted(clv_present(one_dir))}, "
                   f"new host {sorted(clv_present(two_dir))}")
@@ -747,8 +753,8 @@ def main() -> int:
                                          {a, b, c}, fixture_dir)
 
             # Remove one dependency from both peers; resume must fail.
-            (clv_dir(one_dir) / b).unlink()
-            (clv_dir(two_dir) / b).unlink()
+            (clv_dir(one_dir) / b).unlink(missing_ok=True)
+            (clv_dir(two_dir) / b).unlink(missing_ok=True)
             print(f"custom levels: one container lost everywhere - "
                   f"{sorted(clv_present(two_dir))} and {sorted(clv_present(one_dir))}")
             r, t = stage("4: a needed container lost on both", resume, two_dir, one_dir)
