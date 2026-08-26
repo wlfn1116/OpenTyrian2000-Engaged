@@ -199,6 +199,9 @@ bool network_custom_level_fetch(void);
 /* Synchronizes the host's Custom Endless collection and order. */
 bool network_custom_endless_serve(void);
 bool network_custom_endless_fetch(void);
+/* Reconciles save dependencies both ways. A negative mode skips session setup. */
+bool network_custom_required_serve(char names[][64], int count, int sessionMode);
+bool network_custom_required_fetch(int sessionMode);
 bool networkCustomEpisodeActivate(void);
 
 /* Arcade's third shape, beside the Linked pair and Separate ships: both players race one of the
@@ -342,6 +345,8 @@ void network_state_reset(void);
 
 int network_connect(void);
 OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync);
+#define NET_HALT_CUSTOM_SYNC 8
+const char *network_halt_message(unsigned int err);
 
 int network_init(void);
 

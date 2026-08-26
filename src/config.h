@@ -109,6 +109,8 @@ typedef struct
 	JE_byte       viewHpBars[2];
 	/* Custom-episode file name; empty for stock games. */
 	char          customEpFile[64];  /* CUSTOM_EPISODE_FILE_LEN */
+	/* Colon-separated Custom Endless dependencies; empty for other saves. */
+	char          customCollection[4096];  /* CUSTOM_EPISODE_COLLECTION_LEN */
 } JE_SaveFileType;
 
 typedef JE_SaveFileType JE_SaveFilesType[SAVE_FILES_NUM]; /* [1..savefilesnum] */

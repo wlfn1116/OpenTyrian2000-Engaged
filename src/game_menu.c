@@ -2629,6 +2629,11 @@ void JE_itemScreen(void)
 				/* Highlight if current selection */
 				temp2 = (x - min + 2 == curSel[curMenu]) ? 15 : 28;
 
+				const bool slotLocked = x < max && !performSave && saveFiles[x-2].level > 0 &&
+				                        save_custom_locked(&saveFiles[x-2]);
+				if (slotLocked && temp2 == 28)
+					temp2 = 24;
+
 				/* Write save game slot */
 				if (x == max)
 					strcpy(tempStr, miscText[6-1]);
@@ -2644,7 +2649,7 @@ void JE_itemScreen(void)
 				if (x < max) /* x == max isn't a save slot */
 				{
 					/* Highlight if current selection */
-					temp2 = (x - min + 2 == curSel[curMenu]) ? 252 : 250;
+					temp2 = (x - min + 2 == curSel[curMenu]) ? 252 : (slotLocked ? 248 : 250);
 
 					if (saveFiles[x-2].level == 0)
 					{
@@ -2658,6 +2663,8 @@ void JE_itemScreen(void)
 
 						if (endlessSlotHasRun((JE_byte)(x - 1)))
 							SDL_strlcpy(buf, "End", sizeof buf);
+						else if (saveFiles[x-2].customEpFile[0] != '\0')
+							SDL_strlcpy(buf, "CLv", sizeof buf);
 						else
 							snprintf(buf, sizeof buf, "%s%d",
 							         miscTextB[1-1], saveFiles[x-2].episode);

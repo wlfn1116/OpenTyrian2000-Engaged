@@ -857,6 +857,12 @@ bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p)
 	return !coop && !save_record_is_dual_arcade(rec);
 }
 
+bool save_custom_locked(const JE_SaveFileType *rec)
+{
+	return !isNetworkGame &&
+	       customEpisodeSaveDepsMissing(rec->customEpFile, rec->customCollection);
+}
+
 // These are separate keyboard rows but share the bottom line on screen.
 enum
 {
@@ -954,8 +960,7 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 			                      !save_type_compatible(saveFile, slot, net2p);
 			// Uploads do not require the local custom container.
 			const bool customLocked = !saving && !uploadPick && !disabled &&
-			                      saveFile->customEpFile[0] != '\0' &&
-			                      customEpisodeFindByFile(saveFile->customEpFile) < 0;
+			                      save_custom_locked(saveFile);
 
 			char buffer[22];
 
@@ -1237,8 +1242,7 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 
 				if (saveFile->level == 0 ||  // "EMPTY SLOT"
 				    (net2p && (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1])) ||
-				    (saveFile->customEpFile[0] != '\0' &&
-				     customEpisodeFindByFile(saveFile->customEpFile) < 0) ||
+				    save_custom_locked(saveFile) ||
 				    !save_type_compatible(saveFile, (JE_byte)(saveFileIndex + 1), net2p))
 				{
 					JE_playSampleNum(S_CLINK);
@@ -7464,10 +7468,17 @@ void JE_operation(JE_byte slot)
 	{
 		if (saveFiles[slot-1].level > 0)
 		{
-			gameJustLoaded = true;
-			JE_loadGame(slot);
-			endlessLoadSlot(slot);  // if this slot holds an endless run, re-enter endless mode + restore it
-			gameLoaded = true;
+			if (save_custom_locked(&saveFiles[slot-1]))
+			{
+				JE_playSampleNum(S_CLINK);
+			}
+			else
+			{
+				gameJustLoaded = true;
+				JE_loadGame(slot);
+				endlessLoadSlot(slot);  // if this slot holds an endless run, re-enter endless mode + restore it
+				gameLoaded = true;
+			}
 		}
 	}
 	else if (slot % 11 != 0)

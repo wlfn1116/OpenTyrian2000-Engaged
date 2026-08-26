@@ -51,7 +51,7 @@
 #define SAVE_XFER_PORT   1332
 
 // Transfer kinds have independent protocol versions.
-#define SAVE_XFER_VERSION              2
+#define SAVE_XFER_VERSION              3
 #define CUSTOM_XFER_TRANSPORT_VERSION  2
 #define ALL_XFER_TRANSPORT_VERSION     3
 #define SHIPS_XFER_TRANSPORT_VERSION   4
@@ -59,7 +59,7 @@
 #define SAVES_XFER_TRANSPORT_VERSION   6
 #define LEVELS_XFER_TRANSPORT_VERSION  7
 
-// Fixed-offset, little-endian header. The save record and Endless text follow it.
+// Fixed-offset envelope. The save record is little-endian; Endless text follows it.
 #define SX_MAGIC         0    /* 4: "OTSV"                                              */
 #define SX_VERSION       4    /* 2: SAVE_XFER_VERSION                                   */
 #define SX_FLAGS         6    /* 1: bit 0 set for a two-player slot                     */
@@ -67,7 +67,7 @@
 #define SX_ENDLESS_LEN   8    /* 4: Endless record bytes that follow, 0 for none        */
 #define SX_RECORD       12    /* SAVE_RECORD_PACKED_SIZE                                */
 #define SX_ENDLESS      (SX_RECORD + SAVE_RECORD_PACKED_SIZE)
-#define SX_MAX          (SX_ENDLESS + ENDLESS_RUN_WIRE_MAX)
+#define SX_MAX          (SX_ENDLESS + ENDLESS_RUN_WIRE_MAX + 2 + 4096)
 
 #define SX_FLAG_TWO_PLAYER  0x01
 
@@ -464,7 +464,12 @@ static size_t saveXferPack(Uint8 *out, JE_byte slot)
 
 	SDLNet_Write32((Uint32)endlessLen, &out[SX_ENDLESS_LEN]);
 
-	return SX_ENDLESS + endlessLen;
+	// Dependencies live outside the packed save record.
+	const size_t colLen = strlen(saveFiles[slot - 1].customCollection);
+	SDLNet_Write16((Uint16)colLen, &out[SX_ENDLESS + endlessLen]);
+	memcpy(&out[SX_ENDLESS + endlessLen + 2], saveFiles[slot - 1].customCollection, colLen);
+
+	return SX_ENDLESS + endlessLen + 2 + colLen;
 }
 
 static bool saveXferUnpack(const Uint8 *buf, size_t len)
@@ -477,13 +482,20 @@ static bool saveXferUnpack(const Uint8 *buf, size_t len)
 		return false;
 
 	const Uint32 endlessLen = SDLNet_Read32(&buf[SX_ENDLESS_LEN]);
-	if (endlessLen > ENDLESS_RUN_WIRE_MAX || SX_ENDLESS + (size_t)endlessLen != len)
+	if (endlessLen > ENDLESS_RUN_WIRE_MAX || SX_ENDLESS + (size_t)endlessLen + 2 > len)
 		return false;
 
 	JE_SaveFileType rec;
 	save_record_unpack(&rec, &buf[SX_RECORD]);
 	if (rec.level == 0)
 		return false;   // an empty record is nothing to write
+
+	const size_t colAt = SX_ENDLESS + endlessLen;
+	const size_t colLen = SDLNet_Read16(&buf[colAt]);
+	if (colLen >= sizeof(rec.customCollection) || colAt + 2 + colLen != len)
+		return false;
+	memcpy(rec.customCollection, &buf[colAt + 2], colLen);
+	rec.customCollection[colLen] = '\0';
 
 	save_xfer_pending.valid = true;
 	save_xfer_pending.twoPlayer = (buf[SX_FLAGS] & SX_FLAG_TWO_PLAYER) != 0;

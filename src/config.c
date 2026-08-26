@@ -1566,6 +1566,12 @@ void JE_saveGame(JE_byte slot, const char *name)
 		SDL_strlcpy(saveFiles[slot-1].customEpFile, customEpisodeActiveFile(),
 		            sizeof(saveFiles[slot-1].customEpFile));
 
+	memset(saveFiles[slot-1].customCollection, 0, sizeof(saveFiles[slot-1].customCollection));
+	if (endlessMode &&
+	    (customEpisodeSessionActive() || customEndlessEffectiveMode() != CUSTOM_ENDLESS_OFF))
+		customEpisodeCollectionString(saveFiles[slot-1].customCollection,
+		                              sizeof(saveFiles[slot-1].customCollection));
+
 	saveFiles[slot-1].difficulty = difficultyLevel;
 	saveFiles[slot-1].secretHint = secretHint;
 	saveFiles[slot - 1].input1 = inputDevice[0];
@@ -1741,6 +1747,19 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	int episode = rec->episode;
 
 	memcpy(&levelName, &rec->levelName, sizeof(levelName));
+
+	if (rec->customCollection[0] != '\0' && !isNetworkGame)
+	{
+		customEpisodeScan();
+		char names[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+		const int count = customEpisodeCollectionNames(rec->customCollection, names,
+		                                               CUSTOM_EPISODE_MAX);
+		if (count > 0 && !customEpisodeCollectionMissing(rec->customCollection))
+			customEpisodeSessionBegin(names, count,
+				(customEndlessMode == CUSTOM_ENDLESS_MIXED ||
+				 customEndlessMode == CUSTOM_ENDLESS_ONLY)
+				? customEndlessMode : CUSTOM_ENDLESS_OFF);
+	}
 
 	// Custom saves resume before stock "Completed" rollover is handled.
 	if (rec->customEpFile[0] != '\0')
@@ -2019,6 +2038,8 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 	// Slot sections are rebuilt, so stock saves omit this key.
 	if (rec->customEpFile[0] != '\0')
 		config_set_string_option(section, "custom_episode", rec->customEpFile);
+	if (rec->customCollection[0] != '\0')
+		config_set_string_option(section, "custom_collection", rec->customCollection);
 	config_set_int_option(section, "difficulty", rec->difficulty);
 	config_set_int_option(section, "initial_difficulty", rec->initialDifficulty);
 	config_set_int_option(section, "game_has_repeated", rec->gameHasRepeated ? 1 : 0);
@@ -2093,6 +2114,7 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 	save_get_string(section, "level_name", rec->levelName, sizeof(rec->levelName));
 	rec->episode = (JE_byte)save_get_int(section, "episode", 1);
 	save_get_string(section, "custom_episode", rec->customEpFile, sizeof(rec->customEpFile));
+	save_get_string(section, "custom_collection", rec->customCollection, sizeof(rec->customCollection));
 	// The two difficulties index name tables; a hand edit past the last one reads as Normal.
 	const int difficulty = save_get_int(section, "difficulty", DIFFICULTY_NORMAL);
 	rec->difficulty = (JE_byte)((difficulty < DIFFICULTY_WIMP || difficulty > DIFFICULTY_10)

@@ -8833,33 +8833,44 @@ void networkStartScreen(void)
 			networkHostPlayerNum = save_slot_online_player((JE_byte)resumeSlot);
 			thisPlayerNum = networkHostPlayerNum;
 
-			// A resumed save overrides the lobby's custom-episode selection.
-			if (customEpisodeActive())
+			customEpisodeScan();
+			const JE_SaveFileType *const resumeRec = &saveFiles[resumeSlot - 1];
+
+			static char required[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+			int requiredCount = 0;
+			if (coopEndlessMode)
 			{
-				customEpisodeScan();
-				const int customIdx = customEpisodeFindByFile(customEpisodeActiveFile());
-				SDL_strlcpy(network_host_custom_file, customEpisodeActiveFile(),
-				            sizeof(network_host_custom_file));
-				if (customIdx < 0 ||
-				    !customEpisodeIdentity(customIdx, &network_host_custom_size,
-				                           &network_host_custom_hash))
-					network_tyrian_halt(3, false);
+				requiredCount = customEpisodeCollectionNames(resumeRec->customCollection,
+				                                             required, CUSTOM_EPISODE_MAX);
+				if (requiredCount == 0)
+					for (int i = 0; i < customEpisodeCount() && requiredCount < CUSTOM_EPISODE_MAX; ++i)
+						SDL_strlcpy(required[requiredCount++], customEpisodeFile(i),
+						            CUSTOM_EPISODE_FILE_LEN);
 			}
-			else
+			if (resumeRec->customEpFile[0] != '\0')
 			{
-				network_host_custom_file[0] = '\0';
-				network_host_custom_size = 0;
-				network_host_custom_hash = 0;
+				bool listed = false;
+				for (int i = 0; i < requiredCount && !listed; ++i)
+					listed = SDL_strcasecmp(required[i], resumeRec->customEpFile) == 0;
+				if (!listed && requiredCount < CUSTOM_EPISODE_MAX)
+					SDL_strlcpy(required[requiredCount++], resumeRec->customEpFile,
+					            CUSTOM_EPISODE_FILE_LEN);
 			}
 
-			customEpisodeScan();
-			const JE_byte resumeCustomList = (JE_byte)((coopEndlessMode && customEpisodeCount() > 0) ? 1 : 0);
-			if (resumeCustomList != 0)
-				network_host_custom_endless =
-					(customEndlessMode == CUSTOM_ENDLESS_MIXED || customEndlessMode == CUSTOM_ENDLESS_ONLY)
-					? customEndlessMode : CUSTOM_ENDLESS_OFF;
-			else if (coopEndlessMode)
-				network_host_custom_endless = CUSTOM_ENDLESS_OFF;
+			SDL_strlcpy(network_host_custom_file, resumeRec->customEpFile,
+			            sizeof(network_host_custom_file));
+			network_host_custom_size = 0;
+			network_host_custom_hash = 0;
+			{
+				const int haveIdx = customEpisodeFindByFile(network_host_custom_file);
+				if (haveIdx >= 0)
+					customEpisodeIdentity(haveIdx, &network_host_custom_size,
+					                      &network_host_custom_hash);
+			}
+			network_host_custom_endless =
+				(coopEndlessMode &&
+				 (customEndlessMode == CUSTOM_ENDLESS_MIXED || customEndlessMode == CUSTOM_ENDLESS_ONLY))
+				? customEndlessMode : CUSTOM_ENDLESS_OFF;
 
 			network_prepare(PACKET_DETAILS);
 			SDLNet_Write16(network_game_type, &packet_out_temp->data[4]);
@@ -8874,19 +8885,25 @@ void networkStartScreen(void)
 			               &packet_out_temp->data[11 + CUSTOM_EPISODE_FILE_LEN + SAVE_RECORD_PACKED_SIZE]);
 			SDLNet_Write32(network_host_custom_hash,
 			               &packet_out_temp->data[15 + CUSTOM_EPISODE_FILE_LEN + SAVE_RECORD_PACKED_SIZE]);
-			packet_out_temp->data[19 + CUSTOM_EPISODE_FILE_LEN + SAVE_RECORD_PACKED_SIZE] = resumeCustomList;
+			packet_out_temp->data[19 + CUSTOM_EPISODE_FILE_LEN + SAVE_RECORD_PACKED_SIZE] =
+				(JE_byte)(requiredCount > 0 ? 1 : 0);
 			packet_out_temp->data[20 + CUSTOM_EPISODE_FILE_LEN + SAVE_RECORD_PACKED_SIZE] =
 				(JE_byte)network_host_custom_endless;
 			network_send(21 + CUSTOM_EPISODE_FILE_LEN + SAVE_RECORD_PACKED_SIZE);
 
-			if (customEpisodeActive() || resumeCustomList != 0)
+			if (requiredCount > 0)
+			{
 				networkCustomSyncScreen();
-
-			if (customEpisodeActive() && !network_custom_level_serve())
-				network_tyrian_halt(3, false);
-
-			if (resumeCustomList != 0 && !network_custom_endless_serve())
-				network_tyrian_halt(3, false);
+				if (!network_custom_required_serve(required, requiredCount,
+				        coopEndlessMode ? network_host_custom_endless : -1))
+					network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
+				if (resumeRec->customEpFile[0] != '\0' && !customEpisodeActive())
+				{
+					JE_loadGame((JE_byte)resumeSlot);
+					if (!customEpisodeActive())
+						network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
+				}
+			}
 
 			// The save record carries the two loadouts; the Endless run behind them is a record of its
 			// own, so it follows on the reliable channel before either machine plays a tick.
@@ -8905,7 +8922,7 @@ void networkStartScreen(void)
 			{
 				// The selected file may have disappeared since the lobby scan.
 				if (!networkCustomEpisodeActivate())
-					network_tyrian_halt(3, false);
+					network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
 			}
 			else
 			{
@@ -8933,11 +8950,11 @@ void networkStartScreen(void)
 				networkCustomSyncScreen();
 
 			if (customSession && !network_custom_level_serve())
-				network_tyrian_halt(3, false);
+				network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
 
 			if (coopEndlessMode && network_host_custom_endless != CUSTOM_ENDLESS_OFF &&
 			    !network_custom_endless_serve())
-				network_tyrian_halt(3, false);
+				network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
 		}
 		else
 		{
@@ -9088,54 +9105,46 @@ void networkStartScreen(void)
 
 			network_update();
 
-			if (tailName[0] != '\0' && !customEpisodeFileNameValid(tailName))
-			{
-				fprintf(stderr, "error: host sent an unusable custom episode name\n");
-				network_tyrian_halt(3, false);
-			}
-
-			memset(rec.customEpFile, 0, sizeof(rec.customEpFile));
-			if (tailName[0] != '\0')
-			{
-				networkCustomSyncScreen();
-				SDL_strlcpy(rec.customEpFile, tailName, sizeof(rec.customEpFile));
-				SDL_strlcpy(network_host_custom_file, tailName,
-				            sizeof(network_host_custom_file));
-				network_host_custom_size = customSize;
-				network_host_custom_hash = customHash;
-				if (customSize == 0 || !network_custom_level_fetch())
-					network_tyrian_halt(3, false);
-			}
-			else
-			{
-				network_host_custom_file[0] = '\0';
-				network_host_custom_size = 0;
-				network_host_custom_hash = 0;
-			}
-
-			gameJustLoaded = true;
-			JE_loadGameRecord(&rec, true);
-			if (customEpisodeActive() != (tailName[0] != '\0'))
-				network_tyrian_halt(3, false);
-			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
-			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
-
-			// The host took back the seat it saved in, so this machine flies the other one.
+			// Restore the host's saved seat; the joiner takes the other one.
 			if (hostSeat == 1 || hostSeat == 2)
 			{
 				networkHostPlayerNum = hostSeat;
 				thisPlayerNum = 3 - networkHostPlayerNum;
 			}
 
-			if (coopEndlessMode && tailList)
+			if (tailName[0] != '\0' && !customEpisodeFileNameValid(tailName))
 			{
-				network_host_custom_endless =
-					(tailMode == CUSTOM_ENDLESS_MIXED || tailMode == CUSTOM_ENDLESS_ONLY)
-					? tailMode : CUSTOM_ENDLESS_OFF;
-				networkCustomSyncScreen();
-				if (!network_custom_endless_fetch())
-					network_tyrian_halt(3, false);
+				fprintf(stderr, "error: host sent an unusable custom episode name\n");
+				network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
 			}
+
+			memset(rec.customEpFile, 0, sizeof(rec.customEpFile));
+			if (tailName[0] != '\0')
+				SDL_strlcpy(rec.customEpFile, tailName, sizeof(rec.customEpFile));
+			SDL_strlcpy(network_host_custom_file, tailName,
+			            sizeof(network_host_custom_file));
+			network_host_custom_size = customSize;
+			network_host_custom_hash = customHash;
+			network_host_custom_endless =
+				(network_game_type == NETWORK_GAME_ENDLESS &&
+				 (tailMode == CUSTOM_ENDLESS_MIXED || tailMode == CUSTOM_ENDLESS_ONLY))
+				? tailMode : CUSTOM_ENDLESS_OFF;
+
+			if (tailList)
+			{
+				networkCustomSyncScreen();
+				if (!network_custom_required_fetch(
+				        network_game_type == NETWORK_GAME_ENDLESS
+				        ? network_host_custom_endless : -1))
+					network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
+			}
+
+			gameJustLoaded = true;
+			JE_loadGameRecord(&rec, true);
+			if (customEpisodeActive() != (tailName[0] != '\0'))
+				network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
+			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
+			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 
 			// Same rule as the host's publish above: no run means no session.
 			if (coopEndlessMode && !networkEndlessResume(0))
@@ -9152,7 +9161,7 @@ void networkStartScreen(void)
 			{
 				networkCustomSyncScreen();
 				if (!network_custom_level_fetch() || !networkCustomEpisodeActivate())
-					network_tyrian_halt(3, false);
+					network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
 			}
 			else
 			{
@@ -9161,7 +9170,7 @@ void networkStartScreen(void)
 				{
 					networkCustomSyncScreen();
 					if (!network_custom_endless_fetch())
-						network_tyrian_halt(3, false);
+						network_tyrian_halt(NET_HALT_CUSTOM_SYNC, false);
 				}
 				JE_initEpisode(their_episode);
 			}
@@ -9927,6 +9936,8 @@ bool newEndlessGame(void)
 	wait_noinput(true, true, true);
 
 	// Endless always starts at episode 1; the run traverses episodes as it deepens.
+	if (!isNetworkGame)
+		customEpisodeSessionEnd();
 	JE_initEpisode(1);
 	initial_episode_num = episodeNum;
 

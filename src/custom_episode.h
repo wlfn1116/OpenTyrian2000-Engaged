@@ -38,6 +38,13 @@ int customEpisodeIdCount(void);           /* Entries visible to Endless. */
 int customEpisodeIdToLocal(int idIndex);  /* -1 if not installed locally. */
 int customEpisodeIdFromLocal(int localIndex);
 
+#define CUSTOM_EPISODE_COLLECTION_LEN (CUSTOM_EPISODE_MAX * CUSTOM_EPISODE_FILE_LEN)
+size_t customEpisodeCollectionString(char *out, size_t cap);
+int customEpisodeCollectionNames(const char *joined,
+                                 char names[][CUSTOM_EPISODE_FILE_LEN], int max);
+bool customEpisodeCollectionMissing(const char *joined);
+bool customEpisodeSaveDepsMissing(const char *epFile, const char *collection);
+
 /* Extracted file names; all fit the engine's char[13] buffers. */
 #define CUSTOM_EP_LVL_NAME    "custom.lvl"
 #define CUSTOM_EP_SCRIPT_NAME "custom.lev"

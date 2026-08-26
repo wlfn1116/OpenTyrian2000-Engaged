@@ -1732,6 +1732,31 @@ static void qa_test_save_record_wire(void)
 	         "network save record terminates unterminated peer strings");
 	qa_check(dst.customEpFile[0] == '\0',
 	         "a custom-episode name that is not a plain *.clv file name is dropped on receipt");
+
+	{
+		const JE_boolean savedNet = isNetworkGame;
+		JE_SaveFileType probe;
+		memset(&probe, 0, sizeof(probe));
+		probe.level = 1;
+
+		isNetworkGame = false;
+		const bool plainOffline = save_custom_locked(&probe);
+		strcpy(probe.customEpFile, "qa_absent.clv");
+		const bool missingOffline = save_custom_locked(&probe);
+		isNetworkGame = true;
+		const bool missingOnline = save_custom_locked(&probe);
+		memset(probe.customEpFile, 0, sizeof(probe.customEpFile));
+		strcpy(probe.customCollection, "qa_absent.clv");
+		isNetworkGame = false;
+		const bool collectionOffline = save_custom_locked(&probe);
+		isNetworkGame = true;
+		const bool collectionOnline = save_custom_locked(&probe);
+
+		isNetworkGame = savedNet;
+		qa_check(!plainOffline && missingOffline && collectionOffline
+		         && !missingOnline && !collectionOnline,
+		         "a save needing an absent container locks offline but stays open to peer sync");
+	}
 }
 
 // The seat a resume hands back. Restored afterwards: these ride the player's own configuration.
@@ -6012,6 +6037,19 @@ static void qa_test_network_settings(void)
 	int savedExpert[NETWORK_EXPERT_SLOTS];
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		savedExpert[i] = *expertSettings[i].value;
+	{
+		int margin = 320, codes = 0;
+		for (const char *msg; (msg = network_halt_message((unsigned int)codes)) != NULL; ++codes)
+		{
+			const int center = JE_fontCenter(msg, SMALL_FONT_SHAPES);
+			if (center < margin)
+				margin = center;
+		}
+		qa_check(margin >= 8 && codes > NET_HALT_CUSTOM_SYNC,
+		         "every network halt reason fits the disconnect screen");
+		printf("# halt screen: %d reasons, tightest side margin %dpx\n", codes, margin);
+	}
+
 	/* SDLNet_Read/Write16/32 require naturally aligned storage. Keep guard bytes around an
 	 * aligned payload instead of making the alignment itself part of this bounds test. */
 	union {

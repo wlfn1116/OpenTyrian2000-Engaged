@@ -176,8 +176,12 @@ at most 640 entries before duplicate sections are removed.
 
 Custom episodes use extended IDs beginning at 6. Courses, sortie snapshots, and
 level-bag anchors keep these IDs instead of the container's base episode. The
-IDs are positions in the current file-name-sorted collection, so changing that
-order can retarget IDs held by a local saved run.
+IDs are positions in the active collection.
+
+Custom Endless saves preserve that order in `custom_collection`. An offline
+load restores the list only when every named container is installed. Older
+saves without the field use the current file-name order, which can retarget a
+stored extended ID.
 
 ### Combat
 
@@ -397,13 +401,14 @@ either peer resumes. Rendering, audio, and local controls stay local.
 a packet, deterministic rule, field meaning, offset, or registered simulation
 layout. Readers validate lengths and clamp received enums before indexing.
 
-Version 87 introduced the custom-episode identity in `PACKET_CONNECT`. The
-current block is 76 bytes: a 64-byte file name, byte size, FNV-1a hash, Custom
-Endless mode, and three reserved bytes. Sessions with neither feature zero it.
+Version 87 introduced a 72-byte custom-episode identity in `PACKET_CONNECT`.
+Version 88 extended it to 76 bytes: a 64-byte file name, 32-bit byte length,
+32-bit FNV-1a hash, Custom Endless mode, and three reserved bytes. Sessions with
+neither feature zero the block.
 
-The Custom Endless tail extended the original 72-byte version-87 block. It needs
-a new `NET_VERSION` before interoperating with builds that use the shorter
-layout.
+Version 88 also added offer and failure meanings to `PACKET_CUSTOM_LEVEL`. Its
+resume flag in `PACKET_DETAILS` now announces a required-set exchange instead
+of the host's local collection.
 
 Keep persistent and wire enums append-only. Version history belongs in Git; this
 file records only current constraints.
@@ -502,6 +507,12 @@ A save writes only to the local machine. The peer acknowledgement supplies the
 other outpost half. Preserve player numbers on resume and restore both co-op mode
 flags after `JE_loadGameRecord`.
 
+For a resumed custom run, the host builds an ordered required set from
+`custom_collection`, then adds `custom_episode` if needed. An older Endless save
+without a collection falls back to every container installed on the host. The
+sync can pull a missing required file from either peer; it fails if neither has
+one. Only Endless resumes install the resulting list as the session pool.
+
 Record co-op Campaign only when its starting episode is completed for the first
 time. Later episodes, repeats, and deaths do not replace it.
 
@@ -510,8 +521,8 @@ time. Later episodes, repeats, and deaths do not replace it.
 `net_savexfer.c` uses blocking UDP port 1332 outside live game sessions.
 
 - Single saves and bulk transfers use separate packet families.
-- A single save carries its page and online seat; the receiver chooses the slot
-  and name.
+- A single save carries its page, online seat, Endless record, and custom
+  dependencies; the receiver chooses the slot and name.
 - All Saves replaces slots and Endless runs but keeps high scores and custom
   content.
 - Custom Levels adds `.clv` files and replaces matching names.
@@ -522,6 +533,11 @@ time. Later episodes, repeats, and deaths do not replace it.
 - Roll back replaced saves, ships, and weapons if adoption fails. Custom levels
   already added remain installed.
 - Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
+
+The single-save `OTSV` payload uses version 3. After its fixed header and
+161-byte save record come the Endless bytes, a 16-bit dependency length, and
+the colon-separated dependency string. Version 2 ended after the Endless
+bytes.
 
 Custom-level transfer uses transfer version 7 and an `OTCL` version 1 payload.
 Each record is a 64-byte padded name, a big-endian 32-bit length, and the file
@@ -708,26 +724,43 @@ directories move into `custom_levels`. A same-named file already there wins.
 Cross-volume moves fall back to copy-and-delete, and partial copies are removed.
 The directory is created only for a write.
 
-Local saves store the container's file name in `custom_episode`. Missing files
-lock the load row. The session host advertises the name, size, and FNV-1a hash;
-the joiner reuses an exact local match or downloads the container before loading
-the episode or save.
+Local saves store the active container in `custom_episode`. Custom Endless saves
+also store their ordered container names in `custom_collection`, separated by
+colons. Valid container names cannot contain a colon, and the field holds at
+most 64 names in 4095 bytes.
 
-`PACKET_CUSTOM_LEVEL` uses the common chunk header. A count of `0xffff` requests
-data, zero acknowledges a stream generation, and any other count describes a
-data stream. Payload kind 0 is a container; kind 1 is a Custom Endless manifest.
-Generation `0xffff` acknowledges that the entire collection is settled.
+Offline load rows lock when `custom_episode` or a collection member is missing.
+Online rows stay available so the peers can reconcile the files. The advertised
+identity is the file name, size, and FNV-1a hash.
+
+`PACKET_CUSTOM_LEVEL` uses the common chunk header. Count values have these
+meanings:
+
+| Count | Meaning |
+| ---: | --- |
+| `0x0000` | Acknowledge a stream generation |
+| `0xfffe` | Offer a named container |
+| `0xffff` | Request a manifest or container |
+| Other | Number of chunks in a data stream |
+
+Payload kind 0 is a container; kind 1 is a manifest. An offer contains a
+64-byte file name, 32-bit size, and 32-bit FNV-1a hash. Generation `0xffff`
+acknowledges a settled required set; generation `0xfffe` reports failure.
 
 A manifest starts with a 16-bit count, followed by up to 64 records. Each record
-contains a 64-byte file name, 32-bit size, and 32-bit FNV-1a hash. The host sends
-its complete file-name-sorted collection. The joiner reuses exact matches,
-downloads missing or different files, and adopts the host's order. Local extras
-remain installed but do not enter that session's pool.
+contains a 64-byte file name, 32-bit size, and 32-bit FNV-1a hash. New sessions
+use the host's complete file-name-sorted collection. Resumes use the save's
+ordered dependencies.
+
+A zero size and hash means the host lacks that required file. The joiner must
+offer a local copy, which the host then requests. For nonzero identities, the
+joiner reuses an exact match or downloads the host's copy. Local extras remain
+installed but do not enter the session pool.
 
 Container requests may name a manifest entry; an empty name requests the
 container advertised in `PACKET_CONNECT`. Received names must remain inside the
-container directory. The joiner checks size and hash, then runs normal `.clv`
-validation before writing the file.
+container directory. The receiving peer checks size and hash, then runs normal
+`.clv` validation before writing the file.
 
 Custom-container sync blocks on the start screen. The guest must consume
 `PACKET_DETAILS` before entering that loop so it cannot pin the reliable queue

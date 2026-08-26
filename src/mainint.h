@@ -133,6 +133,7 @@ void JE_saveTransferDownload(void);
 /* Which sessions may load a given record. The save pages show an incompatible slot dimmed and
  * unselectable rather than hiding it. */
 bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p);
+bool save_custom_locked(const JE_SaveFileType *rec);
 void JE_operation(JE_byte slot);
 void JE_inGameDisplays(void);
 // Debug perf readout, drawn onto the finished frame by the present loop so nothing overdraws it.

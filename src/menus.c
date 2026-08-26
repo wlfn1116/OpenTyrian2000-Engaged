@@ -1077,6 +1077,9 @@ bool networkDisconnectSavePrompt(const char *message)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
+	wait_noinput(true, true, true);
+	newkey = newmouse = false;
+
 	bool restart = true;
 	size_t selectedIndex = 0;
 

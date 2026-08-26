@@ -350,6 +350,7 @@ void customEpisodeClearAll(void)
 	anyPresentCheckedAt = 0;
 	// Clearing the files also clears their Endless-pool setting.
 	customEndlessMode = CUSTOM_ENDLESS_OFF;
+	customEpisodeSessionEnd();
 }
 
 void customEpisodeScan(void)
@@ -505,6 +506,75 @@ int customEpisodeIdFromLocal(int localIndex)
 		if (SDL_strcasecmp(sessionNames[i], entries[localIndex].file) == 0)
 			return i;
 	return -1;
+}
+
+size_t customEpisodeCollectionString(char *out, size_t cap)
+{
+	if (cap == 0)
+		return 0;
+	out[0] = '\0';
+	size_t at = 0;
+	const int count = customEpisodeIdCount();
+	for (int i = 0; i < count; ++i)
+	{
+		const int local = customEpisodeIdToLocal(i);
+		const char *const name = local >= 0
+		                       ? entries[local].file
+		                       : (sessionCount >= 0 ? sessionNames[i] : "");
+		if (name[0] == '\0')
+			continue;
+		const size_t len = strlen(name);
+		if (at + len + 2 > cap)
+			break;
+		if (at > 0)
+			out[at++] = ':';
+		memcpy(&out[at], name, len);
+		at += len;
+		out[at] = '\0';
+	}
+	return at;
+}
+
+int customEpisodeCollectionNames(const char *joined,
+                                 char names[][CUSTOM_EPISODE_FILE_LEN], int max)
+{
+	int count = 0;
+	if (joined == NULL)
+		return 0;
+	const char *p = joined;
+	while (*p != '\0' && count < max)
+	{
+		const char *const sep = strchr(p, ':');
+		const size_t len = sep != NULL ? (size_t)(sep - p) : strlen(p);
+		if (len > 0 && len < CUSTOM_EPISODE_FILE_LEN)
+		{
+			memcpy(names[count], p, len);
+			names[count][len] = '\0';
+			if (customEpisodeFileNameValid(names[count]))
+				++count;
+		}
+		if (sep == NULL)
+			break;
+		p = sep + 1;
+	}
+	return count;
+}
+
+bool customEpisodeCollectionMissing(const char *joined)
+{
+	char names[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+	const int count = customEpisodeCollectionNames(joined, names, CUSTOM_EPISODE_MAX);
+	for (int i = 0; i < count; ++i)
+		if (customEpisodeFindByFile(names[i]) < 0)
+			return true;
+	return false;
+}
+
+bool customEpisodeSaveDepsMissing(const char *epFile, const char *collection)
+{
+	if (epFile[0] != '\0' && customEpisodeFindByFile(epFile) < 0)
+		return true;
+	return collection[0] != '\0' && customEpisodeCollectionMissing(collection);
 }
 
 int customEndlessEffectiveMode(void)
@@ -805,6 +875,23 @@ void qa_test_custom_episode(void)
 	qa_check(customEpisodeIdentity(0, &size, &hash) &&
 	         size == customEpisodeSize(0) && hash != 0,
 	         "a container's transfer identity is readable and sized right");
+
+	{
+		char joined[CUSTOM_EPISODE_COLLECTION_LEN];
+		const size_t jlen = customEpisodeCollectionString(joined, sizeof(joined));
+		char parsedNames[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+		const int parsed = customEpisodeCollectionNames(joined, parsedNames, CUSTOM_EPISODE_MAX);
+		qa_check(jlen > 0 && parsed == customEpisodeCount() &&
+		         SDL_strcasecmp(parsedNames[0], customEpisodeFile(0)) == 0 &&
+		         !customEpisodeCollectionMissing(joined) &&
+		         customEpisodeCollectionMissing("gone_forever.clv"),
+		         "a save's collection string round-trips and flags missing containers");
+		qa_check(!customEpisodeSaveDepsMissing("", "") &&
+		         !customEpisodeSaveDepsMissing(customEpisodeFile(0), joined) &&
+		         customEpisodeSaveDepsMissing("gone_forever.clv", "") &&
+		         customEpisodeSaveDepsMissing("", "gone_forever.clv"),
+		         "a save's dependency lock fires on either missing field and never on stock saves");
+	}
 
 	// Restore the first fixture after testing Clear.
 	char keptName[CUSTOM_EPISODE_FILE_LEN];
