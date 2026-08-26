@@ -86,34 +86,39 @@ static const Uint8 sx_magic[4] = { 'O', 'T', 'S', 'V' };
 
 static const Uint8 ss_magic[4] = { 'O', 'T', 'S', 'A' };
 
-// OTCL records contain a padded file name, u32 length, and container bytes.
+/* OTCL v2 sends one container per payload. */
 #define LX_MAGIC       0    /* 4: "OTCL"                  */
 #define LX_VERSION     4    /* 2: LEVELS_XFER_VERSION      */
 #define LX_COUNT       6    /* 2: file records that follow */
-#define LX_DATA        8
+#define LX_PART        8    /* 2: 0-based index in the sequence */
+#define LX_PARTS      10    /* 2: containers in the sequence    */
+#define LX_DATA       12
 #define LX_RECORD_HDR  (CUSTOM_EPISODE_FILE_LEN + 4)
 #define LX_FILES_MAX   CUSTOM_EPISODE_MAX
-#define LX_DATA_MAX    (12u * 1024u * 1024u)   /* the u16 chunk counter caps a stream near 20 MiB */
-#define LX_MAX         (LX_DATA + (size_t)LX_FILES_MAX * LX_RECORD_HDR + LX_DATA_MAX)
+#define LX_MAX         (LX_DATA + LX_RECORD_HDR + (size_t)CUSTOM_EPISODE_BYTES_MAX)
 
-#define LEVELS_XFER_VERSION 1
+#define LEVELS_XFER_VERSION 2
+
+/* Number of container parts still expected. */
+static int xfer_level_parts_pending;
 
 static const Uint8 lx_magic[4] = { 'O', 'T', 'C', 'L' };
 
-// Custom Data v3 adds an OTCL payload; v2 remains valid without custom levels.
+// Custom Data v2 has no levels; v4 announces following OTCL parts.
 #define CX_MAGIC          0    /* 4: "OTCD"                                      */
-#define CX_VERSION        4    /* 2: 2, or 3 when custom levels ride along       */
+#define CX_VERSION        4    /* 2: 2, or 4 when custom levels follow           */
 #define CX_FLAGS          6    /* 1: bit 0 = custom weapons enabled              */
 #define CX_RESERVED       7    /* 1                                              */
 #define CX_WEAPONS_LEN    8    /* 4                                              */
 #define CX_SHIPS_LEN     12    /* 4                                              */
-#define CX_LEVELS_LEN    16    /* 4: version-3 envelopes only                    */
+#define CX_LEVELS_LEN    16    /* 4: version-4 envelopes only                    */
 #define CX_DATA_V2       16
 #define CX_DATA_V3       20
-#define CX_MAX           (CX_DATA_V3 + CUSTOM_WEAPON_LIBRARY_WIRE_MAX + EXTRA_SHIPS_WIRE_MAX + LX_MAX)
+#define CX_MAX           (CX_DATA_V3 + CUSTOM_WEAPON_LIBRARY_WIRE_MAX + EXTRA_SHIPS_WIRE_MAX)
 
 #define CUSTOM_XFER_VERSION       2
-#define CUSTOM_XFER_VERSION_LEVELS 3
+/* Version 3 embedded OTCL data; version 4 announces following parts. */
+#define CUSTOM_XFER_VERSION_LEVELS 4
 #define CX_FLAG_WEAPONS_ENABLED   0x01
 #define CX_PART_WEAPONS           0x02
 #define CX_PART_SHIPS             0x04
@@ -134,6 +139,8 @@ static const Uint8 cx_magic[4] = { 'O', 'T', 'C', 'D' };
 #define AX_MAX           (AX_DATA + AX_SAVES_MAX + CX_MAX)
 
 #define ALL_XFER_VERSION 2
+/* Version 3 contains a multipart Custom Data envelope. */
+#define ALL_XFER_VERSION_LEVELS 3
 
 static const Uint8 ax_magic[4] = { 'O', 'T', 'A', 'L' };
 
@@ -185,6 +192,7 @@ XferKind;
 #define SX_LINE_MAX_PX 300
 
 static const char sxWaitingForDownload[] = "Waiting for a receiver...";
+static const char sxCannotBeFound     [] = "In use: send to an address instead.";
 static const char sxUploadKeys        [] = "Enter to custom send, Esc to cancel";
 static const char sxSending           [] = "Sending...";
 static const char sxThisMachine       [] = "This machine:";
@@ -274,10 +282,17 @@ static Uint16 xferTransportVersion(XferKind kind)
 	return 0;
 }
 
+static bool xferCarriesLevels(XferKind kind)
+{
+	return kind == XFER_LEVELS || kind == XFER_CUSTOM || kind == XFER_ALL;
+}
+
+/* Level-carrying kinds share one buffer for envelopes and parts. */
 static size_t xferMaxPayload(XferKind kind)
 {
-	return kind == XFER_SAVE ? SX_MAX : kind == XFER_SAVES ? SS_MAX
-	       : kind == XFER_LEVELS ? LX_MAX : kind == XFER_ALL ? AX_MAX : CX_MAX;
+	const size_t envelope = kind == XFER_SAVE ? SX_MAX : kind == XFER_SAVES ? SS_MAX
+	                        : kind == XFER_LEVELS ? LX_MAX : kind == XFER_ALL ? AX_MAX : CX_MAX;
+	return xferCarriesLevels(kind) && envelope < LX_MAX ? LX_MAX : envelope;
 }
 
 static bool xferCarriesWeapons(XferKind kind)
@@ -413,6 +428,15 @@ static void saveXferTrimName(char *dst, size_t size, const char *src)
 
 static void saveXferNotice(const char *title, const char *line1, const char *line2)
 {
+	// Headless transfer tests cannot dismiss notices.
+	if (qa_xfer_auto)
+	{
+		fprintf(stderr, "xfer test: %s: %s%s%s\n", title, line1,
+		        line2 != NULL ? " " : "", line2 != NULL ? line2 : "");
+		fflush(stderr);
+		return;
+	}
+
 	saveXferBackdrop(title);
 	saveXferRestore();
 
@@ -553,51 +577,42 @@ static bool savesXferUnpack(const Uint8 *buf, size_t len)
 	return adopted;
 }
 
-/* Packs all installed containers, or returns zero when none exist. */
-static size_t levelsXferPack(Uint8 *out)
+static int levelsXferPartCount(void)
 {
-	if (out == NULL)
-		return 0;
-
 	customEpisodeScan();
 	const int count = customEpisodeCount();
-	if (count <= 0)
+	return count < LX_FILES_MAX ? count : LX_FILES_MAX;
+}
+
+static size_t levelsXferPackPart(Uint8 *out, int part)
+{
+	const int parts = levelsXferPartCount();
+	if (out == NULL || part < 0 || part >= parts)
 		return 0;
+
+	Uint32 dataLen = 0;
+	Uint8 *const data = customEpisodeReadWhole(part, &dataLen);
+	if (data == NULL)
+		return 0;
+	if (dataLen == 0 || dataLen > CUSTOM_EPISODE_BYTES_MAX)
+	{
+		free(data);
+		return 0;
+	}
 
 	memcpy(&out[LX_MAGIC], lx_magic, sizeof(lx_magic));
 	SDLNet_Write16(LEVELS_XFER_VERSION, &out[LX_VERSION]);
+	SDLNet_Write16(1, &out[LX_COUNT]);
+	SDLNet_Write16((Uint16)part, &out[LX_PART]);
+	SDLNet_Write16((Uint16)parts, &out[LX_PARTS]);
 
-	size_t at = LX_DATA;
-	Uint16 packed = 0;
-	for (int i = 0; i < count && packed < LX_FILES_MAX; ++i)
-	{
-		Uint32 dataLen = 0;
-		Uint8 *const data = customEpisodeReadWhole(i, &dataLen);
-		if (data == NULL)
-			continue;
-		if (at + LX_RECORD_HDR + dataLen > LX_MAX)
-		{
-			// Skip whole files instead of truncating the stream.
-			fprintf(stderr, "custom episode: transfer full, leaving out '%s'\n",
-			        customEpisodeFile(i));
-			free(data);
-			continue;
-		}
+	memset(&out[LX_DATA], 0, CUSTOM_EPISODE_FILE_LEN);
+	SDL_strlcpy((char *)&out[LX_DATA], customEpisodeFile(part), CUSTOM_EPISODE_FILE_LEN);
+	SDLNet_Write32(dataLen, &out[LX_DATA + CUSTOM_EPISODE_FILE_LEN]);
+	memcpy(&out[LX_DATA + LX_RECORD_HDR], data, dataLen);
+	free(data);
 
-		memset(&out[at], 0, CUSTOM_EPISODE_FILE_LEN);
-		SDL_strlcpy((char *)&out[at], customEpisodeFile(i), CUSTOM_EPISODE_FILE_LEN);
-		SDLNet_Write32(dataLen, &out[at + CUSTOM_EPISODE_FILE_LEN]);
-		memcpy(&out[at + LX_RECORD_HDR], data, dataLen);
-		free(data);
-
-		at += LX_RECORD_HDR + dataLen;
-		++packed;
-	}
-
-	if (packed == 0)
-		return 0;
-	SDLNet_Write16(packed, &out[LX_COUNT]);
-	return at;
+	return LX_DATA + LX_RECORD_HDR + dataLen;
 }
 
 /* Stores valid containers from a well-formed stream. */
@@ -608,7 +623,10 @@ static bool levelsXferUnpack(const Uint8 *buf, size_t len)
 		return false;
 
 	const Uint16 count = SDLNet_Read16(&buf[LX_COUNT]);
-	if (count == 0 || count > LX_FILES_MAX)
+	const Uint16 part = SDLNet_Read16(&buf[LX_PART]);
+	const Uint16 parts = SDLNet_Read16(&buf[LX_PARTS]);
+	if (count == 0 || count > LX_FILES_MAX ||
+	    parts == 0 || parts > LX_FILES_MAX || part >= parts)
 		return false;
 
 	size_t at = LX_DATA;
@@ -629,7 +647,11 @@ static bool levelsXferUnpack(const Uint8 *buf, size_t len)
 
 		at += LX_RECORD_HDR + dataLen;
 	}
-	return at == len;
+	if (at != len)
+		return false;
+
+	xfer_level_parts_pending = parts - part - 1;
+	return true;
 }
 
 static size_t customXferPackParts(Uint8 *out, Uint8 parts)
@@ -666,18 +688,17 @@ static size_t customXferPackParts(Uint8 *out, Uint8 parts)
 			return 0;
 	}
 
-	size_t levelsLen = 0;
 	if (withLevels)
 	{
-		levelsLen = levelsXferPack(&out[dataOff + weaponsLen + shipsLen]);
-		if (levelsLen == 0)
+		const int levelParts = levelsXferPartCount();
+		if (levelParts <= 0)
 			return 0;
-		SDLNet_Write32((Uint32)levelsLen, &out[CX_LEVELS_LEN]);
+		SDLNet_Write32((Uint32)levelParts, &out[CX_LEVELS_LEN]);
 	}
 
 	SDLNet_Write32((Uint32)weaponsLen, &out[CX_WEAPONS_LEN]);
 	SDLNet_Write32((Uint32)shipsLen, &out[CX_SHIPS_LEN]);
-	return dataOff + weaponsLen + shipsLen + levelsLen;
+	return dataOff + weaponsLen + shipsLen;
 }
 
 static size_t customXferPack(Uint8 *out)
@@ -692,10 +713,9 @@ static size_t customXferPack(Uint8 *out)
 static bool customXferParts(const Uint8 *buf, size_t len, Uint8 requiredParts,
                             const Uint8 **weapons, size_t *weaponsLen,
                             const Uint8 **ships, size_t *shipsLen,
-                            const Uint8 **levels, size_t *levelsLen)
+                            int *levelParts)
 {
-	*levels = NULL;
-	*levelsLen = 0;
+	*levelParts = 0;
 
 	if (buf == NULL || len < CX_DATA_V2 || memcmp(&buf[CX_MAGIC], cx_magic, sizeof(cx_magic)) != 0 ||
 	    buf[CX_RESERVED] != 0)
@@ -721,28 +741,28 @@ static bool customXferParts(const Uint8 *buf, size_t len, Uint8 requiredParts,
 
 	*weaponsLen = SDLNet_Read32(&buf[CX_WEAPONS_LEN]);
 	*shipsLen = SDLNet_Read32(&buf[CX_SHIPS_LEN]);
-	*levelsLen = withLevels ? SDLNet_Read32(&buf[CX_LEVELS_LEN]) : 0;
+	const Uint32 declaredParts = withLevels ? SDLNet_Read32(&buf[CX_LEVELS_LEN]) : 0;
 	if (((parts & CX_PART_WEAPONS) ? (*weaponsLen == 0 || *weaponsLen > CUSTOM_WEAPON_LIBRARY_WIRE_MAX)
 	                              : *weaponsLen != 0) ||
 	    ((parts & CX_PART_SHIPS) ? (*shipsLen == 0 || *shipsLen > EXTRA_SHIPS_WIRE_MAX)
 	                            : *shipsLen != 0) ||
-	    (withLevels && (*levelsLen == 0 || *levelsLen > LX_MAX)) ||
+	    (withLevels && (declaredParts == 0 || declaredParts > LX_FILES_MAX)) ||
 	    *weaponsLen > len - dataOff || *shipsLen > len - dataOff - *weaponsLen ||
-	    *levelsLen != len - dataOff - *weaponsLen - *shipsLen)
+	    len != dataOff + *weaponsLen + *shipsLen)
 		return false;
 
 	*weapons = (parts & CX_PART_WEAPONS) ? &buf[dataOff] : NULL;
 	*ships = (parts & CX_PART_SHIPS) ? &buf[dataOff + *weaponsLen] : NULL;
-	*levels = withLevels ? &buf[dataOff + *weaponsLen + *shipsLen] : NULL;
+	*levelParts = (int)declaredParts;
 	return !(parts & CX_PART_SHIPS) || extraShipsPayloadValid(*ships, *shipsLen);
 }
 
 static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 {
-	const Uint8 *weapons, *ships, *levels;
-	size_t weaponsLen, shipsLen, levelsLen;
-	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen,
-	                     &levels, &levelsLen))
+	const Uint8 *weapons, *ships;
+	size_t weaponsLen, shipsLen;
+	int levelParts;
+	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen, &levelParts))
 		return false;
 
 	if (parts & CX_PART_WEAPONS)
@@ -754,9 +774,8 @@ static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 	if ((parts & CX_PART_SHIPS) && !extraShipsAdoptLocal(ships, shipsLen))
 		return false;
 
-	// Levels are additive and do not share the ship/weapon transaction.
-	if (levels != NULL && !levelsXferUnpack(levels, levelsLen))
-		return false;
+	// Container parts follow the envelope and are applied additively.
+	xfer_level_parts_pending = levelParts;
 
 	// Weapon adoption writes its library and the active design and toggle in opentyrian.cfg.
 	return !(parts & CX_PART_WEAPONS) ||
@@ -765,10 +784,10 @@ static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 
 static bool customXferUnpackParts(const Uint8 *buf, size_t len, Uint8 parts)
 {
-	const Uint8 *weapons, *ships, *levels;
-	size_t weaponsLen, shipsLen, levelsLen;
-	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen,
-	                     &levels, &levelsLen))
+	const Uint8 *weapons, *ships;
+	size_t weaponsLen, shipsLen;
+	int levelParts;
+	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen, &levelParts))
 		return false;
 
 	// Only replaced ship and weapon data can be rolled back.
@@ -799,7 +818,6 @@ static size_t allXferPack(Uint8 *out)
 		return 0;
 
 	memcpy(&out[AX_MAGIC], ax_magic, sizeof(ax_magic));
-	SDLNet_Write16(ALL_XFER_VERSION, &out[AX_VERSION]);
 	out[AX_RESERVED] = out[AX_RESERVED + 1] = 0;
 
 	const size_t savesLen = save_file_serialize(&out[AX_DATA], AX_SAVES_MAX);
@@ -810,6 +828,11 @@ static size_t allXferPack(Uint8 *out)
 	if (customLen == 0 || customLen > UINT32_MAX)
 		return 0;
 
+	// The outer version must agree with the nested Custom Data layout.
+	const bool withLevels =
+		SDLNet_Read16(&out[AX_DATA + savesLen + CX_VERSION]) == CUSTOM_XFER_VERSION_LEVELS;
+	SDLNet_Write16(withLevels ? ALL_XFER_VERSION_LEVELS : ALL_XFER_VERSION, &out[AX_VERSION]);
+
 	SDLNet_Write32((Uint32)savesLen, &out[AX_SAVES_LEN]);
 	SDLNet_Write32((Uint32)customLen, &out[AX_CUSTOM_LEN]);
 	return AX_DATA + savesLen + customLen;
@@ -817,14 +840,24 @@ static size_t allXferPack(Uint8 *out)
 
 static bool allXferUnpack(const Uint8 *buf, size_t len)
 {
-	if (buf == NULL || len < AX_DATA || memcmp(&buf[AX_MAGIC], ax_magic, sizeof(ax_magic)) != 0 ||
-	    SDLNet_Read16(&buf[AX_VERSION]) != ALL_XFER_VERSION)
+	if (buf == NULL || len < AX_DATA || memcmp(&buf[AX_MAGIC], ax_magic, sizeof(ax_magic)) != 0)
+		return false;
+
+	const Uint16 version = SDLNet_Read16(&buf[AX_VERSION]);
+	if (version != ALL_XFER_VERSION && version != ALL_XFER_VERSION_LEVELS)
 		return false;
 
 	const size_t savesLen = SDLNet_Read32(&buf[AX_SAVES_LEN]);
 	const size_t customLen = SDLNet_Read32(&buf[AX_CUSTOM_LEN]);
 	if (savesLen == 0 || savesLen > AX_SAVES_MAX || customLen == 0 || customLen > CX_MAX ||
 	    savesLen > len - AX_DATA || customLen != len - AX_DATA - savesLen)
+		return false;
+
+	// Reject an outer/nested version mismatch.
+	const bool declaresLevels = version == ALL_XFER_VERSION_LEVELS;
+	const bool carriesLevels = customLen >= CX_DATA_V2 &&
+		SDLNet_Read16(&buf[AX_DATA + savesLen + CX_VERSION]) == CUSTOM_XFER_VERSION_LEVELS;
+	if (declaresLevels != carriesLevels)
 		return false;
 
 	// Keep a snapshot so Transfer All cannot leave saves and custom data out of sync.
@@ -853,7 +886,7 @@ static size_t xferPack(XferKind kind, Uint8 *out, JE_byte slot)
 		case XFER_SAVES:   return savesXferPack(out);
 		case XFER_SHIPS:   return customXferPackParts(out, CX_PART_SHIPS);
 		case XFER_WEAPONS: return customXferPackParts(out, CX_PART_WEAPONS);
-		case XFER_LEVELS:  return levelsXferPack(out);
+		case XFER_LEVELS:  return levelsXferPackPart(out, 0);
 		case XFER_CUSTOM:  return customXferPack(out);
 		case XFER_ALL:     return allXferPack(out);
 	}
@@ -911,12 +944,19 @@ bool saveXferPendingApply(JE_byte slot, const char *name)
 
 /* Socket */
 
-static void saveXferFillReply(XferKind kind, Uint8 *data, JE_byte slot)
+/* Returns the bound port advertised in transfer replies. */
+static Uint16 saveXferLocalPort(UDPsocket sock)
+{
+	const IPaddress *const bound = sock != NULL ? SDLNet_UDP_GetPeerAddress(sock, -1) : NULL;
+	return (bound != NULL && bound->port != 0) ? SDL_SwapBE16(bound->port) : SAVE_XFER_PORT;
+}
+
+static void saveXferFillReply(XferKind kind, Uint8 *data, JE_byte slot, Uint16 replyPort)
 {
 	memset(data, 0, SXR_LEN);
 	SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_REPLY), &data[SXR_TYPE]);
 	SDLNet_Write16(xferTransportVersion(kind), &data[SXR_VERSION]);
-	SDLNet_Write16(SAVE_XFER_PORT,     &data[SXR_PORT]);
+	SDLNet_Write16(replyPort,          &data[SXR_PORT]);
 
 	if (kind == XFER_SAVE)
 	{
@@ -1063,13 +1103,18 @@ static bool saveXferSendPayload(XferKind kind, UDPsocket sock, UDPpacket *out, U
 }
 
 // `note` is a transient status line under the addresses.
+/* False when the discovery port is unavailable. */
+static bool xferUploadFindable = true;
+
 static void saveXferUploadScreen(const char *saveName, const char *note)
 {
 	saveXferRestore();
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 60, saveName, normal_font, centered, 15, -1, false, 2);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 82, sxWaitingForDownload,
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 82,
+	                    xferUploadFindable ? sxWaitingForDownload : sxCannotBeFound,
 	                    normal_font, centered, 15, -2, false, 2);
-	saveXferDrawLocalAddresses(110);
+	if (xferUploadFindable)
+		saveXferDrawLocalAddresses(110);
 	if (note != NULL)
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 156, note, normal_font, centered, 15, -3, false, 2);
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 172, sxUploadKeys,
@@ -1077,13 +1122,36 @@ static void saveXferUploadScreen(const char *saveName, const char *note)
 	saveXferPresent();
 }
 
+/* Sends the envelope and every announced container part. */
+static bool saveXferSendCollection(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
+                                   const IPaddress *to, Uint8 *payload, size_t total,
+                                   Uint16 *gen, bool *cancelled)
+{
+	if (!saveXferSendPayload(kind, sock, out, in, to, payload, total, ++(*gen), cancelled))
+		return false;
+
+	// Custom Levels starts with part 0; bundles start with their envelope.
+	const int levelParts = xferCarriesLevels(kind) ? levelsXferPartCount() : 0;
+	for (int part = (kind == XFER_LEVELS) ? 1 : 0; part < levelParts && !*cancelled; ++part)
+	{
+		const size_t partLen = levelsXferPackPart(payload, part);
+		if (partLen == 0 ||
+		    !saveXferSendPayload(kind, sock, out, in, to, payload, partLen, ++(*gen), cancelled))
+			return false;
+	}
+	return !*cancelled;
+}
+
 // Push to a receiver that cannot discover or initiate the transfer itself.
 static bool saveXferSendToAddress(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
-                                  const Uint8 *payload, size_t total, Uint16 gen,
+                                  Uint8 *payload, size_t total, Uint16 *gen,
                                   const char *saveName, bool *cancelled)
 {
-	if (!networkTextEntry(xferUploadTitle(kind), "Send to address:", save_xfer_address,
-	                      sizeof(save_xfer_address), networkFilterAddress, false))
+	// Tests bypass address entry.
+	if (qa_xfer_host != NULL)
+		SDL_strlcpy(save_xfer_address, qa_xfer_host, sizeof(save_xfer_address));
+	else if (!networkTextEntry(xferUploadTitle(kind), "Send to address:", save_xfer_address,
+	                           sizeof(save_xfer_address), networkFilterAddress, false))
 	{
 		*cancelled = true;
 		return false;
@@ -1106,7 +1174,7 @@ static bool saveXferSendToAddress(XferKind kind, UDPsocket sock, UDPpacket *out,
 	saveXferBackdrop(xferUploadTitle(kind));
 	saveXferUploadScreen(saveName, sxSending);
 
-	return saveXferSendPayload(kind, sock, out, in, &to, payload, total, gen, cancelled);
+	return saveXferSendCollection(kind, sock, out, in, &to, payload, total, gen, cancelled);
 }
 
 static void xferUpload(XferKind kind, JE_byte slot)
@@ -1130,7 +1198,12 @@ static void xferUpload(XferKind kind, JE_byte slot)
 		return;
 	}
 
-	UDPsocket sock = SDLNet_UDP_Open(SAVE_XFER_PORT);
+	/* Fall back to an ephemeral port when discovery port 1332 is busy. */
+	// Headless push leaves port 1332 to its local receiver.
+	UDPsocket sock = qa_xfer_push ? SDLNet_UDP_Open(0) : SDLNet_UDP_Open(SAVE_XFER_PORT);
+	const bool listening = sock != NULL && !qa_xfer_push;
+	if (sock == NULL)
+		sock = SDLNet_UDP_Open(0);
 	UDPpacket *const out = sock ? SDLNet_AllocPacket(NET_PACKET_SIZE) : NULL;
 	UDPpacket *const in = out ? SDLNet_AllocPacket(NET_PACKET_SIZE) : NULL;
 	if (in == NULL)
@@ -1139,10 +1212,12 @@ static void xferUpload(XferKind kind, JE_byte slot)
 		if (sock) SDLNet_UDP_Close(sock);
 		SDLNet_Quit();
 		free(payload);
-		saveXferNotice(title, "Could not open the transfer port.",
-		               "Another copy may already be sharing.");
+		saveXferNotice(title, "Could not open a transfer socket.", NULL);
 		return;
 	}
+	xferUploadFindable = listening;
+	if (!listening)
+		saveXferLog("the transfer port is busy; this machine can send but not be found", NULL);
 
 	char offeredName[40];
 	if (kind == XFER_SAVE)
@@ -1164,13 +1239,26 @@ static void xferUpload(XferKind kind, JE_byte slot)
 	char asked[64];
 	asked[0] = '\0';
 
-	while (!sent && !cancelled)
+	// Bound the wait when no player can cancel it.
+	const Uint32 waitStarted = SDL_GetTicks();
+
+	// Headless push skips the upload wait.
+	if (qa_xfer_push)
+		push = true;
+
+	while (!push && !sent && !cancelled)
 	{
+		if (qa_xfer_auto && SDL_GetTicks() - waitStarted >= 60000)
+		{
+			fprintf(stderr, "xfer test: no receiver pulled within the deadline\n");
+			cancelled = true;
+			break;
+		}
 		while (SDLNet_UDP_Recv(sock, in) > 0)
 		{
 			if (saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_OFFER), 4))
 			{
-				saveXferFillReply(kind, out->data, slot);
+				saveXferFillReply(kind, out->data, slot, saveXferLocalPort(sock));
 				saveXferSendTo(sock, out, &in->address, SXR_LEN);
 
 				// Show that the probe arrived even if the reply cannot get back.
@@ -1182,7 +1270,8 @@ static void xferUpload(XferKind kind, JE_byte slot)
 			else if (saveXferIsOurs(in, kind, xferPacketType(kind, PACKET_SAVE_PULL), 4))
 			{
 				const IPaddress puller = in->address;
-				sent = saveXferSendPayload(kind, sock, out, in, &puller, payload, total, ++gen, &cancelled);
+				sent = saveXferSendCollection(kind, sock, out, in, &puller, payload, total,
+				                              &gen, &cancelled);
 				break;
 			}
 		}
@@ -1204,7 +1293,7 @@ static void xferUpload(XferKind kind, JE_byte slot)
 	}
 
 	if (push)
-		sent = saveXferSendToAddress(kind, sock, out, in, payload, total, ++gen, offeredName, &cancelled);
+		sent = saveXferSendToAddress(kind, sock, out, in, payload, total, &gen, offeredName, &cancelled);
 
 	SDLNet_FreePacket(in);
 	SDLNet_FreePacket(out);
@@ -1411,6 +1500,22 @@ static void saveXferOfferLine(XferKind kind, char *line, size_t size, const Save
 static const SaveXferOffer *saveXferPickOffer(XferKind kind, UDPsocket sock, UDPpacket *out, UDPpacket *in,
                                               SaveXferOffer *offers, int count, bool *waitForPush)
 {
+	// Headless tests use a direct address or the first discovered offer.
+	if (qa_xfer_auto)
+	{
+		// Push tests wait on port 1332; pull tests probe the supplied address.
+		*waitForPush = qa_xfer_push;
+		if (qa_xfer_push)
+			return NULL;
+		if (qa_xfer_host != NULL)
+		{
+			static SaveXferOffer direct;
+			return saveXferProbeAddress(kind, sock, out, in, qa_xfer_host, &direct)
+			     ? &direct : NULL;
+		}
+		return count > 0 ? &offers[0] : NULL;
+	}
+
 	const int typedRow = count;
 	const int waitRow = count + 1;
 	const int rows = count + 2;
@@ -1592,13 +1697,14 @@ static bool saveXferReceivePayload(XferKind kind, UDPsocket sock, UDPpacket *out
 	Uint32 started = SDL_GetTicks();
 	Uint32 askedAt = 0;
 	bool asked = false;
+	bool sequencing = false;
 
 	while (!complete)
 	{
-		if ((asking || have > 0) && SDL_GetTicks() - started >= SX_TRANSFER_MS)
+		if ((asking || sequencing || have > 0) && SDL_GetTicks() - started >= SX_TRANSFER_MS)
 			break;
 
-		if (asking && (!asked || (have == 0 && SDL_GetTicks() - askedAt >= SX_PULL_MS)))
+		if (asking && !sequencing && (!asked || (have == 0 && SDL_GetTicks() - askedAt >= SX_PULL_MS)))
 		{
 			anySent |= saveXferSendTo(sock, out, &to, 4);
 			askedAt = SDL_GetTicks();
@@ -1654,8 +1760,14 @@ static bool saveXferReceivePayload(XferKind kind, UDPsocket sock, UDPpacket *out
 
 			if (have >= count && total > 0)
 			{
-				done = total <= xferMaxPayload(kind) && xferUnpack(kind, buf, total);
-				complete = true;
+				// A resent envelope may arrive between container parts.
+				const bool levelPart = total >= LX_DATA &&
+				                       memcmp(&buf[LX_MAGIC], lx_magic, sizeof(lx_magic)) == 0;
+				xfer_level_parts_pending = 0;
+				const bool okPart = total <= xferMaxPayload(kind) &&
+				                    (levelPart && kind != XFER_LEVELS
+				                     ? levelsXferUnpack(buf, total)
+				                     : xferUnpack(kind, buf, total));
 
 				// Ack a complete invalid payload; resending the same bytes cannot repair it.
 				SDLNet_Write16(xferPacketType(kind, PACKET_SAVE_ACK), &in->data[0]);
@@ -1663,6 +1775,24 @@ static bool saveXferReceivePayload(XferKind kind, UDPsocket sock, UDPpacket *out
 				SDLNet_Write16((Uint16)gen,       &in->data[4]);
 				for (int i = 0; i < 3; ++i)
 					saveXferSendTo(sock, in, &to, 6);
+
+				if (okPart && xfer_level_parts_pending > 0)
+				{
+					// Later parts are pushed without another pull.
+					sequencing = true;
+					free(buf);
+					free(seen);
+					buf = NULL;
+					seen = NULL;
+					have = 0;
+					count = 0;
+					total = 0;
+					started = SDL_GetTicks();
+					break;
+				}
+
+				done = okPart;
+				complete = true;
 				break;
 			}
 		}
@@ -1856,7 +1986,7 @@ void qa_test_save_transfer(void)
 {
 	// The font is proportional, so source length does not prove these lines fit.
 	static const char *const centred[] = {
-		sxWaitingForDownload, sxUploadKeys, sxSending, sxThisMachine, sxSearching,
+		sxWaitingForDownload, sxCannotBeFound, sxUploadKeys, sxSending, sxThisMachine, sxSearching,
 		sxNothingAnswered, sxDownloadKeys, sxRowTypedAddress, sxRowWaitForSender,
 		sxAskingAddress, sxDownloading, sxWaitingForSender, sxSendHere, sxCancelKey,
 		sxAnyButton, sxNoSaveThere, sxNoShipsThere, sxNoWeaponsThere, sxNoCustomThere,
@@ -1912,17 +2042,78 @@ void qa_test_save_transfer(void)
 	{
 		customEpisodeScan();
 		Uint8 *const levelsPayload = malloc(LX_MAX);
-		const size_t levelsTotal = levelsPayload != NULL ? levelsXferPack(levelsPayload) : 0;
+		const size_t levelsTotal = levelsPayload != NULL ? levelsXferPackPart(levelsPayload, 0) : 0;
 		if (customEpisodeCount() == 0)
 		{
-			qa_check(levelsTotal == 0,
+			qa_check(levelsTotal == 0 && levelsXferPartCount() == 0,
 			         "a machine without custom levels offers nothing to transfer");
 		}
 		else
 		{
-			qa_check(levelsTotal > LX_DATA &&
-			         SDLNet_Read16(&levelsPayload[LX_COUNT]) == (Uint16)customEpisodeCount(),
-			         "the custom-levels envelope carries every installed container");
+			const int parts = levelsXferPartCount();
+			qa_check(levelsTotal > LX_DATA && parts == customEpisodeCount() &&
+			         SDLNet_Read16(&levelsPayload[LX_COUNT]) == 1 &&
+			         SDLNet_Read16(&levelsPayload[LX_PARTS]) == (Uint16)parts,
+			         "each container travels as its own part of the collection");
+
+			xfer_level_parts_pending = -1;
+			qa_check(levelsXferUnpack(levelsPayload, levelsTotal) &&
+			         xfer_level_parts_pending == parts - 1,
+			         "unpacking a part reports how many containers are still outstanding");
+
+			bool everyPart = true;
+			bool countdownWalks = true;
+			for (int i = 0; i < parts; ++i)
+			{
+				const size_t partLen = levelsXferPackPart(levelsPayload, i);
+				everyPart &= partLen > LX_DATA && partLen <= LX_MAX &&
+				             SDLNet_Read16(&levelsPayload[LX_PART]) == (Uint16)i;
+				xfer_level_parts_pending = -1;
+				countdownWalks &= partLen != 0 && levelsXferUnpack(levelsPayload, partLen) &&
+				                  xfer_level_parts_pending == parts - i - 1 &&
+				                  (xfer_level_parts_pending == 0) == (i == parts - 1);
+			}
+			qa_check(everyPart, "every installed container packs within one part");
+			qa_check(countdownWalks,
+			         "a receiver keeps listening until the last container of the collection");
+
+			// Verify idempotent adoption and replacement.
+			{
+				const size_t samePart = levelsXferPackPart(levelsPayload, 0);
+				const Uint8 *const body = &levelsPayload[LX_DATA + LX_RECORD_HDR];
+				const Uint32 bodyLen = SDLNet_Read32(&levelsPayload[LX_DATA + CUSTOM_EPISODE_FILE_LEN]);
+				const char *const name = (const char *)&levelsPayload[LX_DATA];
+
+				qa_check(samePart != 0 && customEpisodeContentMatches(name, body, bodyLen),
+				         "an installed container matches the copy a sender would offer");
+
+				const unsigned int before = customEpisodeWriteCount();
+				const int reSaved = customEpisodeSaveDownloaded(name, body, bodyLen);
+				qa_check(reSaved >= 0 && customEpisodeWriteCount() == before,
+				         "receiving a container both machines already share rewrites nothing");
+
+				Uint8 *const altered = malloc(bodyLen);
+				if (altered != NULL)
+				{
+					memcpy(altered, body, bodyLen);
+					altered[4] ^= 0x20;   // a title byte: different content, identical layout
+					qa_check(!customEpisodeContentMatches(name, altered, bodyLen),
+					         "a container that differs is not mistaken for the installed copy");
+
+					const unsigned int beforeAlt = customEpisodeWriteCount();
+					const int replaced = customEpisodeSaveDownloaded(name, altered, bodyLen);
+					qa_check(replaced >= 0 && customEpisodeWriteCount() == beforeAlt + 1 &&
+					         customEpisodeContentMatches(name, altered, bodyLen),
+					         "a container that differs overwrites the installed copy");
+
+					// Restore the fixture for later tests.
+					qa_check(customEpisodeSaveDownloaded(name, body, bodyLen) >= 0 &&
+					         customEpisodeContentMatches(name, body, bodyLen),
+					         "restoring the original container overwrites the altered one");
+					free(altered);
+				}
+			}
+
 			levelsPayload[LX_MAGIC] ^= 0xff;
 			qa_check(!levelsXferUnpack(levelsPayload, levelsTotal),
 			         "custom levels without the transfer magic are refused before adoption");
@@ -1948,17 +2139,19 @@ void qa_test_save_transfer(void)
 	         "Custom Weapons carries the complete library without a ship file");
 	if (customTotal > CX_DATA_V2)
 	{
-		// Custom Data v3 is used only when it carries levels.
+		// Custom Data v4 is used only when it carries levels.
 		const bool withLevels =
 			SDLNet_Read16(&customPayload[CX_VERSION]) == CUSTOM_XFER_VERSION_LEVELS;
 		const size_t dataOff = withLevels ? CX_DATA_V3 : CX_DATA_V2;
 		const size_t weaponsLen = SDLNet_Read32(&customPayload[CX_WEAPONS_LEN]);
 		const size_t shipsLen = SDLNet_Read32(&customPayload[CX_SHIPS_LEN]);
-		const size_t levelsLen = withLevels ? SDLNet_Read32(&customPayload[CX_LEVELS_LEN]) : 0;
+		const size_t levelParts = withLevels ? SDLNet_Read32(&customPayload[CX_LEVELS_LEN]) : 0;
 		qa_check(withLevels == (customEpisodeCount() > 0),
 		         "the custom-data envelope carries levels exactly when some are installed");
+		qa_check(levelParts == (size_t)levelsXferPartCount(),
+		         "the custom-data envelope names every container that follows it");
 		qa_check(weaponsLen > 4 && shipsLen >= 6 + sizeof(JE_ShipsType) &&
-		         dataOff + weaponsLen + shipsLen + levelsLen == customTotal,
+		         dataOff + weaponsLen + shipsLen == customTotal,
 		         "the custom-data envelope delimits its content sets exactly");
 		customPayload[CX_MAGIC] ^= 0xff;
 		qa_check(!customXferUnpack(customPayload, customTotal),
@@ -2137,6 +2330,85 @@ void qa_test_save_transfer(void)
 		allPayload[AX_MAGIC] ^= 0xff;
 	}
 	free(allPayload);
+
+	// Level-carrying bulk kinds must consume the full part sequence.
+	if (customEpisodeCount() > 0)
+	{
+		const int parts = levelsXferPartCount();
+		Uint8 *const envelope = malloc(xferMaxPayload(XFER_ALL));
+		Uint8 *const part = malloc(LX_MAX);
+
+		const struct { XferKind kind; const char *label; } sequenced[] = {
+			{ XFER_LEVELS, "Custom Levels" },
+			{ XFER_CUSTOM, "Custom Data" },
+			{ XFER_ALL,    "Transfer All" },
+		};
+
+		for (size_t k = 0; envelope != NULL && part != NULL && k < COUNTOF(sequenced); ++k)
+		{
+			const XferKind kind = sequenced[k].kind;
+			char label[96];
+
+			xfer_level_parts_pending = -1;
+			const size_t total = xferPack(kind, envelope, p2Slot);
+			const bool envelopeOk = total != 0 && total <= xferMaxPayload(kind) &&
+			                        xferUnpack(kind, envelope, total);
+
+			// Custom Levels starts with part 0; bundles start with their envelope.
+			const int expectAfterEnvelope = kind == XFER_LEVELS ? parts - 1 : parts;
+			snprintf(label, sizeof(label), "%s announces the %d containers that follow it",
+			         sequenced[k].label, expectAfterEnvelope);
+			qa_check(envelopeOk && xfer_level_parts_pending == expectAfterEnvelope, label);
+
+			bool walked = true;
+			for (int i = parts - expectAfterEnvelope; i < parts; ++i)
+			{
+				const size_t partLen = levelsXferPackPart(part, i);
+				xfer_level_parts_pending = -1;
+				walked &= partLen != 0 && levelsXferUnpack(part, partLen) &&
+				          xfer_level_parts_pending == parts - i - 1;
+			}
+			snprintf(label, sizeof(label), "%s streams the collection to the last container",
+			         sequenced[k].label);
+			qa_check(walked && xfer_level_parts_pending == 0, label);
+
+			// Multipart envelopes reject their superseded version.
+			if (kind == XFER_CUSTOM || kind == XFER_ALL)
+			{
+				const size_t versionAt = kind == XFER_CUSTOM
+				                       ? (size_t)CX_VERSION
+				                       : (size_t)AX_VERSION;
+				const Uint16 saw = SDLNet_Read16(&envelope[versionAt]);
+				const Uint16 want = kind == XFER_CUSTOM ? CUSTOM_XFER_VERSION_LEVELS
+				                                        : ALL_XFER_VERSION_LEVELS;
+				snprintf(label, sizeof(label), "%s announces itself as the multipart layout",
+				         sequenced[k].label);
+				qa_check(saw == want, label);
+
+				SDLNet_Write16(want - 1, &envelope[versionAt]);
+				snprintf(label, sizeof(label), "%s refuses the layout its version replaced",
+				         sequenced[k].label);
+				qa_check(!xferUnpack(kind, envelope, total), label);
+				SDLNet_Write16(want, &envelope[versionAt]);
+			}
+		}
+
+		free(envelope);
+		free(part);
+	}
+
+	{
+		const size_t streamMax = (size_t)UINT16_MAX * SXC_PAYLOAD;
+		qa_check(LX_MAX >= LX_DATA + LX_RECORD_HDR + (size_t)CUSTOM_EPISODE_BYTES_MAX,
+		         "a part holds any single container the loader accepts");
+		qa_check(xferMaxPayload(XFER_ALL) <= streamMax &&
+		         xferMaxPayload(XFER_CUSTOM) <= streamMax &&
+		         xferMaxPayload(XFER_LEVELS) <= streamMax,
+		         "every transfer payload still fits inside its chunk counter");
+		printf("# transfer ceilings: all=%zu custom=%zu part=%zu stream=%zu\n",
+		       xferMaxPayload(XFER_ALL), xferMaxPayload(XFER_CUSTOM),
+		       (size_t)LX_MAX, streamMax);
+	}
 
 	saveFiles[p2Slot - 1] = savedP2;
 	save_slot_set_online_player(p2Slot, savedP2Seat);

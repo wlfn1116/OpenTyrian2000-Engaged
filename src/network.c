@@ -1638,8 +1638,12 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	if (err >= COUNTOF(err_msg))
 		err = 0;
 
+	// Exercise the disconnect-save prompt when requested.
+	const bool qa_takes_the_offer = qa_net_disconnect_save > 0 && err != 0 &&
+	                                network_session_saveable && network_bailout_armed;
+
 	// Test peers report the halt and exit nonzero because no player can dismiss this screen.
-	if (qa_net_rounds > 0 || qa_net_gameplay_ticks > 0)
+	if ((qa_net_rounds > 0 || qa_net_gameplay_ticks > 0) && !qa_takes_the_offer)
 	{
 		fprintf(stderr, "network test: session halt: %s\n", err_msg[err]);
 		fflush(stderr);
@@ -1692,10 +1696,23 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 			// The load clears the mode flag before the slot's Endless half is read back, so read it
 			// first; without this the re-save keeps no run at all.
 			const bool was_endless = endlessMode;
+			// The checkpoint load derives co-op flags; preserve the live session modes.
+			const JE_boolean was_coop_campaign = coopCampaignMode;
+			const JE_boolean was_coop_endless = coopEndlessMode;
 			JE_loadGameRecord(&saveFiles[22 - 1], true);
+			coopCampaignMode = was_coop_campaign;
+			coopEndlessMode = was_coop_endless;
 			if (was_endless)
 				endlessLoadSlot(22);
 			JE_loadScreen(true, true);
+		}
+
+		if (qa_takes_the_offer)
+		{
+			fprintf(stderr, "net gameplay: host kept the session in slot %d\n",
+			        qa_net_disconnect_save);
+			fflush(stderr);
+			exit(0);
 		}
 	}
 	else
@@ -2922,10 +2939,14 @@ int    network_host_custom_endless = 0;     /* CUSTOM_ENDLESS_*, host-dictated *
 #define NCL_REQUEST       0xFFFF
 #define NCL_OFFER         0xFFFE
 #define NCL_GEN_FAILED    0xFFFE
-#define NCL_CONTAINER_MAX (16u * 1024u * 1024u)
+#define NCL_CONTAINER_MAX CUSTOM_EPISODE_BYTES_MAX
 #define NCL_GEN_ALL_DONE  0xFFFF
 #define NCL_TRANSFER_MS   90000   /* per-stream deadline; a slow link, not a hang */
 #define NCL_RESEND_MS     15000   /* restream when a full pass went unacknowledged */
+
+/* Stream counts must remain below NCL_OFFER. */
+SDL_COMPILE_TIME_ASSERT(ncl_container_fits,
+                        NCL_CONTAINER_MAX <= (Uint32)(NCL_OFFER - 1) * NCW_PAYLOAD);
 
 #define NCL_KIND_CONTAINER 0
 #define NCL_KIND_MANIFEST  1
@@ -2956,6 +2977,7 @@ static Uint8  network_clv_in_kind;
 static Uint16 network_clv_in_gen;
 static Uint32 network_clv_in_count;
 static Uint32 network_clv_in_have;
+static Uint32 network_clv_in_arrived;   // Last chunk time; retry only after silence.
 static size_t network_clv_in_len;
 static Uint8 *network_clv_in_buf;
 static Uint8 *network_clv_in_seen;
@@ -3172,6 +3194,7 @@ static void network_clv_consume(void)
 	}
 
 	memcpy(network_clv_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	network_clv_in_arrived = SDL_GetTicks();
 	if (chunk == count - 1)
 		network_clv_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
 	if (!network_clv_in_seen[chunk])
@@ -3244,6 +3267,9 @@ static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint
 
 	while (!network_clv_peer_done)
 	{
+		// Completion supersedes a late stream request.
+		if (network_clv_all_done)
+			return true;
 		if (network_clv_failed || SDL_GetTicks() - started >= NCL_TRANSFER_MS ||
 		    !network_peer_alive())
 			return false;
@@ -3452,12 +3478,19 @@ static bool network_clv_serve_required(char names[][CUSTOM_EPISODE_FILE_LEN], in
 		if (!network_clv_pump())
 			return false;
 
+		// Ignore requests queued before completion.
+		if (network_clv_all_done)
+			break;
+
 		if (network_clv_manifest_requested)
 		{
 			network_clv_manifest_requested = false;
 			if (!network_clv_stream_until_acked(NCL_KIND_MANIFEST, manifest, (Uint32)mlen))
 				return false;
 		}
+
+		if (network_clv_all_done)
+			break;
 
 		if (network_clv_request_seen)
 		{
@@ -3638,6 +3671,7 @@ static bool network_clv_fetch_required(int sessionMode)
 		network_clv_in_done = false;
 		network_clv_in_reset();
 		started = SDL_GetTicks();
+		network_clv_in_arrived = 0;
 		askedAt = 0;
 		asked = false;
 		while (!network_clv_in_done)
@@ -3650,7 +3684,9 @@ static bool network_clv_fetch_required(int sessionMode)
 			service_SDL_events(false);
 			network_check();
 
-			if (!asked || SDL_GetTicks() - askedAt >= 3000)
+			// Retry only after the stream goes quiet.
+			const Uint32 quietSince = network_clv_in_arrived != 0 ? network_clv_in_arrived : askedAt;
+			if (!asked || SDL_GetTicks() - quietSince >= 3000)
 			{
 				network_clv_send_request(NCL_KIND_CONTAINER, names[i]);
 				askedAt = SDL_GetTicks();

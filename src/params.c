@@ -86,6 +86,14 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 317, 0,   "test-net-arcade-separate", false },
 		{ 318, 0,   "test-net-scrollock", false },
 		{ 321, 0,   "test-net-guest-esc", false },
+		{ 322, 0,   "test-net-custom-endless", true },
+		{ 323, 0,   "test-net-custom-episode", true },
+		{ 324, 0,   "test-xfer-send", true },
+		{ 325, 0,   "test-xfer-recv", true },
+		{ 326, 0,   "test-xfer-host", true },
+		{ 329, 0,   "test-xfer-push", false },
+		{ 327, 0,   "test-net-outpost-quit", false },
+		{ 328, 0,   "test-net-disconnect-save", true },
 		{ 319, 0,   "test-destruct-ticks", true },
 
 		{ 0, 0, NULL, false}
@@ -303,6 +311,32 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 321:
 			qa_net_guest_esc = true;
+			break;
+		case 322:
+			qa_net_custom_endless = atoi(option.arg);
+			break;
+		case 323:
+			qa_net_custom_episode = option.arg;
+			break;
+		case 324:
+			qa_xfer_send = option.arg;
+			qa_xfer_auto = true;
+			break;
+		case 325:
+			qa_xfer_recv = option.arg;
+			qa_xfer_auto = true;
+			break;
+		case 326:
+			qa_xfer_host = option.arg;
+			break;
+		case 329:
+			qa_xfer_push = true;
+			break;
+		case 327:
+			qa_net_outpost_quit = true;
+			break;
+		case 328:
+			qa_net_disconnect_save = atoi(option.arg);
 			break;
 		case 319:
 			qa_destruct_selftest_ticks = strtoul(option.arg, NULL, 10);

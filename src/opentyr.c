@@ -2356,6 +2356,14 @@ int main(int argc, char *argv[])
 		return result;
 	}
 
+	if (qa_xfer_send != NULL || qa_xfer_recv != NULL)
+	{
+		const int result = qa_run_xfer();
+		JE_tyrianShutdown(false);
+		SDL_Quit();
+		return result;
+	}
+
 	if (qa_replay_demo != 0)
 	{
 		const int result = qa_run_replay_fixture();
@@ -2449,6 +2457,28 @@ int main(int argc, char *argv[])
 	{
 		network_is_host = thisPlayerNum == 1;
 		networkHostPlayerNum = 1;
+	}
+
+	/* Mirror the lobby's custom-content settings for wire tests. */
+	if (isNetworkGame && qa_net_custom_endless >= 0 &&
+	    qa_net_custom_endless < CUSTOM_ENDLESS_MODES)
+		customEndlessMode = qa_net_custom_endless;
+	if (isNetworkGame && qa_net_custom_episode != NULL && network_is_host)
+	{
+		customEpisodeScan();
+		const int idx = customEpisodeFindByFile(qa_net_custom_episode);
+		Uint32 size, hash;
+		if (idx < 0 || !customEpisodeIdentity(idx, &size, &hash))
+		{
+			fprintf(stderr, "network test: custom episode '%s' is not installed here\n",
+			        qa_net_custom_episode);
+			exit(1);
+		}
+		SDL_strlcpy(network_host_custom_file, customEpisodeFile(idx),
+		            sizeof(network_host_custom_file));
+		network_host_custom_size = size;
+		network_host_custom_hash = hash;
+		network_host_episode = customEpisodeBase(idx);
 	}
 #endif
 

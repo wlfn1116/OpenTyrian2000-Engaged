@@ -17,6 +17,7 @@
 #include "mainint.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "net_savexfer.h"
 #include "net_style.h"
 #include "network.h"
 #include "nortvars.h"
@@ -60,6 +61,64 @@ int qa_net_resume_slot = 0;
 int qa_net_loadout = 0;
 unsigned long qa_net_menu_frame = 0;
 int qa_net_game_type = -1;
+bool qa_net_outpost_quit = false;
+int qa_net_disconnect_save = 0;
+const char *qa_xfer_send = NULL;
+const char *qa_xfer_recv = NULL;
+bool qa_xfer_auto = false;
+const char *qa_xfer_host = NULL;
+bool qa_xfer_push = false;
+
+/* Runs one Transfer-menu wire path without interactive menus. */
+int qa_run_xfer(void)
+{
+	const char *const which = qa_xfer_send != NULL ? qa_xfer_send : qa_xfer_recv;
+	const bool sending = qa_xfer_send != NULL;
+	if (which == NULL)
+		return 2;
+
+	customEpisodeScan();
+	const int before = customEpisodeCount();
+
+	static const struct
+	{
+		const char *name;
+		void (*send)(void);
+		bool (*recv)(void);
+	} kinds[] = {
+		{ "levels",  levelsXferUpload,  levelsXferDownload  },
+		{ "custom",  customXferUpload,  customXferDownload  },
+		{ "all",     allXferUpload,     allXferDownload     },
+		{ "ships",   shipsXferUpload,   shipsXferDownload   },
+		{ "weapons", weaponsXferUpload, weaponsXferDownload },
+		{ "saves",   savesXferUpload,   savesXferDownload   },
+	};
+
+	for (size_t i = 0; i < COUNTOF(kinds); ++i)
+	{
+		if (SDL_strcasecmp(which, kinds[i].name) != 0)
+			continue;
+
+		bool ok = true;
+		if (sending)
+			kinds[i].send();
+		else
+			ok = kinds[i].recv();
+
+		customEpisodeScan();
+		fprintf(stderr, "xfer test: %s %s %s containers %d -> %d\n",
+		        sending ? "send" : "recv", kinds[i].name, ok ? "ok" : "FAILED",
+		        before, customEpisodeCount());
+		fflush(stderr);
+		return ok ? 0 : 1;
+	}
+
+	fprintf(stderr, "xfer test: unknown transfer kind '%s'\n", which);
+	return 2;
+}
+
+int qa_net_custom_endless = -1;
+const char *qa_net_custom_episode = NULL;
 int qa_net_zones = 0;
 int qa_net_zones_cleared = 0;
 bool qa_net_lobby_settings = false;

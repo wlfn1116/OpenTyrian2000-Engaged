@@ -886,6 +886,22 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer and arrow sprites
 
+	// Test saves must use the two-player page to retain both ships.
+	if (saving && qa_net_disconnect_save > 0)
+	{
+		if (net2p && (qa_net_disconnect_save <= LOAD_SLOT_ROWS ||
+		              qa_net_disconnect_save % LOAD_SLOT_ROWS == 0))
+		{
+			fprintf(stderr, "net gameplay: slot %d is not a two-player save slot\n",
+			        qa_net_disconnect_save);
+			fflush(stderr);
+			exit(2);
+		}
+		performSave = true;
+		JE_operation((JE_byte)qa_net_disconnect_save);
+		return qa_net_disconnect_save;
+	}
+
 	bool restart = true;
 
 	const bool xferSaving = saving && saveXferPending() != NULL;
@@ -7491,6 +7507,15 @@ void JE_operation(JE_byte slot)
 		memcpy(stemp, nameSeed, MIN(strlen(nameSeed), (size_t)14));
 		temp = strlen(stemp);
 		while (stemp[temp-1] == ' ' && --temp) { }  // trim the trailing pad spaces
+
+		// Tests bypass the name and confirmation dialogs.
+		if (qa_net_disconnect_save > 0)
+		{
+			SDL_strlcpy(stemp, "DISCONNECT", sizeof(stemp));
+			save_slot_commit(slot, stemp);
+			mouseSetRelative(op_was_relative);
+			return;
+		}
 
 #ifdef PLATFORM_HANDHELD
 		// No physical keyboard here: get the name from the software keyboard and fill the field

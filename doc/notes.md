@@ -507,6 +507,10 @@ A save writes only to the local machine. The peer acknowledgement supplies the
 other outpost half. Preserve player numbers on resume and restore both co-op mode
 flags after `JE_loadGameRecord`.
 
+Disconnect recovery reloads the `LAST LEVEL` checkpoint before opening the save
+picker. Preserve the live co-op flags across that load or the new slot drops the
+departed player's state.
+
 For a resumed custom run, the host builds an ordered required set from
 `custom_collection`, then adds `custom_episode` if needed. An older Endless save
 without a collection falls back to every container installed on the host. The
@@ -525,13 +529,15 @@ time. Later episodes, repeats, and deaths do not replace it.
   dependencies; the receiver chooses the slot and name.
 - All Saves replaces slots and Endless runs but keeps high scores and custom
   content.
-- Custom Levels adds `.clv` files and replaces matching names.
+- Custom Levels adds `.clv` files and replaces differing copies with the same
+  name. Exact byte matches are left untouched.
 - Custom Data replaces ships and weapons. It also adds custom levels when the
   sender has any.
 - Transfer All replaces saves, scores, seats, ships, and weapons as one
   transaction, then adds any custom levels.
-- Roll back replaced saves, ships, and weapons if adoption fails. Custom levels
-  already added remain installed.
+- Roll back replaced saves, ships, and weapons when their envelope fails. A
+  later container-part failure does not undo an accepted envelope or earlier
+  container additions.
 - Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
 
 The single-save `OTSV` payload uses version 3. After its fixed header and
@@ -539,13 +545,39 @@ The single-save `OTSV` payload uses version 3. After its fixed header and
 the colon-separated dependency string. Version 2 ended after the Endless
 bytes.
 
-Custom-level transfer uses transfer version 7 and an `OTCL` version 1 payload.
-Each record is a 64-byte padded name, a big-endian 32-bit length, and the file
-bytes. A bundle holds at most 64 files and 12 MiB of container data. Custom Data
-uses its version 2 envelope when no levels exist and version 3 when an `OTCL`
-part is present. Transfer All version 2 embeds that Custom Data envelope.
+Custom-level transfer negotiates transfer-kind version 7 and uses `OTCL`
+version 2. Multi-byte envelope fields use network byte order:
 
-iOS has no multicast entitlement, so direct push must work without discovery.
+| Offset | Field |
+| ---: | --- |
+| 0 | Four-byte `OTCL` magic |
+| 4 | 16-bit version, currently 2 |
+| 6 | 16-bit record count; the sender writes 1 |
+| 8 | 16-bit zero-based part index |
+| 10 | 16-bit total part count |
+| 12 | Container record |
+
+A record is a 64-byte padded name, 32-bit length, and the container bytes. A
+collection has at most 64 parts. Each part carries one container of up to 16
+MiB, so there is no longer a 12 MiB limit on the complete collection.
+
+Custom Data version 2 has no container parts. Version 4 stores the number of
+following `OTCL` parts in `CX_LEVELS_LEN`. Version 3 used the same field for the
+length of embedded `OTCL` data and is rejected.
+
+Transfer All version 2 contains Custom Data version 2. Transfer All version 3
+contains Custom Data version 4, and the outer and nested versions must agree.
+Custom Levels begins with part 0. Custom Data and Transfer All send every part
+after their envelope.
+
+Pulled and direct-push transfers use the same multipart sender. iOS has no
+multicast entitlement, so direct push must work without discovery.
+
+Port 1332 is used for discovery and passive receive. An uploader falls back to
+an ephemeral port when 1332 is busy and can still send to a typed address. Its
+reply advertises the port it actually bound. A passive receiver cannot start if
+port 1332 is unavailable.
+
 On platforms with `getifaddrs`, advertise only active broadcast-capable IPv4
 interfaces that are neither loopback nor point-to-point.
 
@@ -724,6 +756,10 @@ directories move into `custom_levels`. A same-named file already there wins.
 Cross-volume moves fall back to copy-and-delete, and partial copies are removed.
 The directory is created only for a write.
 
+With no containers installed, custom-content menu rows stay hidden and a stored
+`custom_endless` value has no effect. Read-only scans must not create the
+directory.
+
 Local saves store the active container in `custom_episode`. Custom Endless saves
 also store their ordered container names in `custom_collection`, separated by
 colons. Valid container names cannot contain a colon, and the field holds at
@@ -762,10 +798,19 @@ container advertised in `PACKET_CONNECT`. Received names must remain inside the
 container directory. The receiving peer checks size and hash, then runs normal
 `.clv` validation before writing the file.
 
+After validation, an arriving container is compared byte for byte with an
+installed file of the same name. An exact match keeps the existing file and
+timestamp; different contents replace it.
+
 Custom-container sync blocks on the start screen. The guest must consume
 `PACKET_DETAILS` before entering that loop so it cannot pin the reliable queue
 head. While syncing, `network_clv_pump` drains container, shop, debug, waiting,
 and late-connect packets; `PACKET_QUIT` and `PACKET_GAME_QUIT` abort the transfer.
+
+Stream chunk counts stay below the `0xfffe` offer sentinel; the 16 MiB container
+ceiling fits within that range. A settled required set supersedes late queued
+requests. Retry a named-container request only after no chunk has arrived for
+three seconds.
 
 ## Tests
 

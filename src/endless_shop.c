@@ -13,6 +13,7 @@
 #include "mainint.h"
 #include "musmast.h"
 #include "network.h"
+#include "qa.h"
 #include "palette.h"
 #include "player.h"
 #include "sprite.h"

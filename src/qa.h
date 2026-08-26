@@ -49,6 +49,21 @@ extern int qa_net_game_type;
 /* Multi-level gameplay runs: fly until this many levels/zones have been CLEARED (each level is
  * ended by script at QA_NET_ZONE_END_FRAME), then report the session verdict at the next
  * outpost. 0 keeps the plain bounded flight that reports at the tick limit. */
+/* Headless device-transfer controls. */
+extern const char *qa_xfer_send;   /* kind name, NULL unless sending */
+extern const char *qa_xfer_recv;   /* kind name, NULL unless receiving */
+extern bool qa_xfer_auto;          /* take the first offer instead of picking from the list */
+extern const char *qa_xfer_host;   /* ask this address directly instead of broadcasting */
+extern bool qa_xfer_push;          /* sender pushes to that address; receiver waits for it */
+int qa_run_xfer(void);
+
+/* Headless outpost-disconnect controls. */
+extern bool qa_net_outpost_quit;
+extern int qa_net_disconnect_save;   /* destination slot, 0 to leave the dialog alone */
+
+/* Lobby custom-content values used by wire tests. */
+extern int qa_net_custom_endless;          /* CUSTOM_ENDLESS_*, -1 to leave alone */
+extern const char *qa_net_custom_episode;  /* container file name, NULL for stock */
 extern int qa_net_zones;
 extern int qa_net_zones_cleared;
 #define QA_NET_ZONE_END_FRAME 500

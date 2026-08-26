@@ -16,6 +16,9 @@
 #define CUSTOM_EPISODE_TITLE_LEN 64
 #define CUSTOM_EPISODE_FILE_LEN  64
 
+/* Shared loader and transfer ceiling. */
+#define CUSTOM_EPISODE_BYTES_MAX (16u * 1024u * 1024u)
+
 /* Extended IDs keep custom episodes distinct in Endless state. */
 #define CUSTOM_EPISODE_ID_BASE   6   /* EPISODE_MAX + 1 */
 
@@ -79,9 +82,11 @@ bool JE_initEpisodeCustom(int index);
 /* Leaves custom mode and forces the next stock episode load. */
 void customEpisodeDeactivate(void);
 
-/* Whole-container transfer helpers. SaveDownloaded returns the list index. */
+/* SaveDownloaded preserves identical files and returns the list index. */
 Uint8 *customEpisodeReadWhole(int index, Uint32 *lenOut);
 int customEpisodeSaveDownloaded(const char *fileName, const Uint8 *data, Uint32 len);
+bool customEpisodeContentMatches(const char *fileName, const Uint8 *data, Uint32 len);
+unsigned int customEpisodeWriteCount(void);
 
 /* Accepts a plain *.clv file name without path components. */
 bool customEpisodeFileNameValid(const char *name);

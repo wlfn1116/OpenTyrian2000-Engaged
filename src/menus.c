@@ -1077,6 +1077,14 @@ bool networkDisconnectSavePrompt(const char *message)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
+	// Tests accept the disconnect-save offer.
+	if (qa_net_disconnect_save > 0)
+	{
+		fprintf(stderr, "net gameplay: host takes the disconnect offer (%s)\n", message);
+		fflush(stderr);
+		return true;
+	}
+
 	wait_noinput(true, true, true);
 	newkey = newmouse = false;
 

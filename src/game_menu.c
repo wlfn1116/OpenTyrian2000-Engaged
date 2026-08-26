@@ -1892,6 +1892,16 @@ static bool shopCampaignRendezvous(void)
 				        peerDeparted ? " (peer already departed)" : "");
 				fflush(stderr);
 			}
+			// Leave only after the peer has published its outpost checkpoint.
+			if (qa_net_outpost_quit && !network_is_host && !peerDeparted &&
+			    network_session_saveable)
+			{
+				fprintf(stderr, "net gameplay: joiner leaves from the outpost\n");
+				fflush(stderr);
+				network_prepare(PACKET_QUIT);
+				network_send(4);
+				network_tyrian_halt(0, true);   // does not return
+			}
 			return true;
 		}
 

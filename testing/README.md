@@ -90,9 +90,19 @@ run.
 | 20 | timed-battle-finish | Guest dismissal retires both result screens before teardown |
 | 21 | endless-resume | The joiner receives a run, both peers resume in the outpost, and player numbers remain stable |
 | 22 | guest-esc | The joiner cancels the pre-game wait screen and both peers end the session cleanly |
+| 23 | custom-endless-converge | The host pool reaches the joiner without removing local extras |
+| 24 | custom-resume-converge | Split save dependencies are restored in both directions |
+| 25 | custom-episode-converge | Campaign start transfers the selected container |
+| 26 | custom-lifecycle | A collection survives role swaps and rejects incomplete resumes |
+| 27 | custom-device-transfer | Level-carrying Transfer items stream complete collections by pull and direct push |
+| 28 | custom-disconnect-save | A disconnect save keeps both players and re-hosts cleanly |
 
 Each peer runs in its own temporary directory. The runner drains output while
 the processes run so a full pipe cannot stall network service.
+
+`fixtures/clv_ep1.clv` through `clv_ep3.clv` are distinct valid containers used
+by scenarios 23 through 28. Keep their names and bytes stable; the tests compare
+their identities and complete contents.
 
 ## Save fixtures
 

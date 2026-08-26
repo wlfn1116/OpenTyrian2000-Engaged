@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import heapq
 import os
 import re
@@ -43,7 +44,129 @@ SCENARIOS = (
     (20, "timed-battle-finish", 0, 120, True),
     (21, "endless-resume", 0, 300, True),
     (22, "guest-esc", 0, 90, True),
+    (23, "custom-endless-converge", 0, 300, True),
+    (24, "custom-resume-converge", 0, 300, True),
+    (25, "custom-episode-converge", 0, 120, True),
+    (26, "custom-lifecycle", 0, 300, True),
+    (27, "custom-device-transfer", 0, 240, True),
+    (28, "custom-disconnect-save", 0, 300, True),
 )
+
+
+def run_device_transfer(executable: Path, data_dir: Path, kind: str,
+                        send_dir: str, recv_dir: str, timeout_s: int,
+                        expect_fail: bool = False, push: bool = False) -> tuple[int, str]:
+    """Run a real Transfer-menu exchange between two local processes."""
+    base = [str(executable), "--no-sound", "--no-joystick", "--no-xmas",
+            "--data", str(data_dir)]
+    env = os.environ.copy()
+    env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    send_env, recv_env = env.copy(), env.copy()
+    send_env["XDG_CONFIG_HOME"] = send_dir
+    recv_env["XDG_CONFIG_HOME"] = recv_dir
+
+    # Start the peer that owns port 1332 first.
+    send_args = base + ["--test-xfer-send", kind]
+    recv_args = base + ["--test-xfer-recv", kind]
+    if push:
+        send_args += ["--test-xfer-push", "--test-xfer-host", "127.0.0.1"]
+        recv_args += ["--test-xfer-push"]
+        first, second = ("receiver", recv_args, recv_env, recv_dir), \
+                        ("sender", send_args, send_env, send_dir)
+    else:
+        recv_args += ["--test-xfer-host", "127.0.0.1"]
+        first, second = ("sender", send_args, send_env, send_dir), \
+                        ("receiver", recv_args, recv_env, recv_dir)
+
+    procs = {}
+    procs[first[0]] = subprocess.Popen(first[1], env=first[2], cwd=first[3],
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # Passive receive binds port 1332 after discovery times out.
+    time.sleep(4.0 if push else 1.5)
+    procs[second[0]] = subprocess.Popen(second[1], env=second[2], cwd=second[3],
+                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    sender, receiver = procs["sender"], procs["receiver"]
+
+    transcript = ""
+    status = 0
+    for who, proc in (("receiver", receiver), ("sender", sender)):
+        try:
+            out = proc.communicate(timeout=timeout_s)[0]
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out = proc.communicate()[0]
+            print(f"custom levels: the transfer {who} had to be killed")
+            status = 1
+        transcript += f"--- {who} ---\n{out}"
+        if proc.returncode != 0:
+            if not expect_fail:
+                print(f"custom levels: the transfer {who} exited {proc.returncode}")
+            status = 1
+    return status, transcript
+
+# Three valid containers with distinct contents and identities.
+CLV_FIXTURES = ("clv_ep1.clv", "clv_ep2.clv", "clv_ep3.clv")
+
+
+def clv_dir(user_dir: str) -> Path:
+    return Path(user_dir) / "custom_levels"
+
+
+def install_clv(user_dir: str, names, fixture_dir: Path) -> None:
+    """Install exactly these fixtures for one peer."""
+    target = clv_dir(user_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    for stale in target.glob("*.clv"):
+        stale.unlink()
+    for name in names:
+        shutil.copyfile(fixture_dir / name, target / name)
+
+
+def clv_present(user_dir: str) -> set[str]:
+    target = clv_dir(user_dir)
+    return {p.name for p in target.glob("*.clv")} if target.is_dir() else set()
+
+
+def clv_digest(user_dir: str, name: str) -> str | None:
+    path = clv_dir(user_dir) / name
+    if not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def report_refusal(label: str, transcript: str, result: int) -> int:
+    """Require a missing dependency set to stop the session."""
+    refused = "Unable to synchronize custom levels." in transcript
+    played = "NET GAMEPLAY PASS" in transcript
+    if result == 0 and played:
+        print(f"custom levels: {label} FAILED - the pair played without the containers")
+        return 1
+    if not refused:
+        print(f"custom levels: {label} FAILED - stopped, but not for the missing containers")
+        return 1
+    print(f"custom levels: {label} refused the session, as it should")
+    return 0
+
+
+def report_convergence(label: str, host_dir: str, join_dir: str, expect: set[str],
+                       fixture_dir: Path) -> int:
+    """Require both peers to hold exact copies of the expected fixtures."""
+    problems = []
+    for who, where in (("host", host_dir), ("joiner", join_dir)):
+        have = clv_present(where)
+        if have != expect:
+            problems.append(f"{who} holds {sorted(have)}, expected {sorted(expect)}")
+        for name in sorted(have & expect):
+            want = hashlib.sha256((fixture_dir / name).read_bytes()).hexdigest()
+            if clv_digest(where, name) != want:
+                problems.append(f"{who}'s copy of {name} does not match the original")
+    if problems:
+        print(f"custom levels: {label} FAILED")
+        for problem in problems:
+            print(f"  {problem}")
+        return 1
+    print(f"custom levels: {label} converged on {sorted(expect)}")
+    return 0
 
 
 def run_scenario(
@@ -484,6 +607,322 @@ def main() -> int:
                 injected[key] += value
             result = 1 if (r1 or r2) else 0
             transcript = f"[stage 1: play and save]\n{t1}[stage 2: resume]\n{t2}"
+        elif scenario in (23, 24, 25):
+            fixture_dir = executable.parent / "testing" / "fixtures"
+            missing = [n for n in CLV_FIXTURES if not (fixture_dir / n).is_file()]
+            if missing:
+                print(f"network fault test: missing container fixtures {missing}")
+                return 2
+
+            host_dir = tempfile.mkdtemp(prefix="otnet_host_")
+            join_dir = tempfile.mkdtemp(prefix="otnet_join_")
+            a, b, c = CLV_FIXTURES
+
+            if scenario == 23:
+                # The host's pool is authoritative; the joiner's extra remains installed.
+                install_clv(host_dir, (a, b), fixture_dir)
+                install_clv(join_dir, (a, c), fixture_dir)
+                common = ["--test-net-gameplay-ticks", "1000000", "--test-net-game-type", "2",
+                          "--test-net-zones", "1", "--test-net-lobby-settings",
+                          "--test-net-custom-endless", "2"]
+                r1, t1, injected = run_scenario(
+                    executable, data_dir, base_port, scenario, rounds,
+                    extra_common=common, host_dir=host_dir, join_dir=join_dir,
+                    deadline_s=deadline_s)
+                result = r1
+                transcript = f"[custom-only endless, split collections]\n{t1}"
+                if clv_present(host_dir) != {a, b}:
+                    print(f"custom levels: host collection changed to "
+                          f"{sorted(clv_present(host_dir))}, expected {sorted({a, b})}")
+                    result = 1
+                joiner = clv_present(join_dir)
+                if not {a, b, c} <= joiner:
+                    print(f"custom levels: joiner holds {sorted(joiner)}, "
+                          f"expected at least {sorted({a, b, c})}")
+                    result = 1
+                else:
+                    print(f"custom levels: joiner took the host's collection, kept its own "
+                          f"({sorted(joiner)})")
+            elif scenario == 24:
+                # Resume a saved dependency set split across the two peers.
+                install_clv(host_dir, (a, b, c), fixture_dir)
+                install_clv(join_dir, (a, b, c), fixture_dir)
+                common = ["--test-net-gameplay-ticks", "1000000", "--test-net-game-type", "2",
+                          "--test-net-zones", "1", "--test-net-lobby-settings",
+                          "--test-net-custom-endless", "1"]
+                r1, t1, injected = run_scenario(
+                    executable, data_dir, base_port, scenario, rounds,
+                    extra_common=common, host_dir=host_dir, join_dir=join_dir,
+                    deadline_s=deadline_s)
+
+                # Remove a different dependency from each peer.
+                (clv_dir(host_dir) / b).unlink()
+                (clv_dir(join_dir) / c).unlink()
+                print(f"custom levels: before resume host has {sorted(clv_present(host_dir))}, "
+                      f"joiner has {sorted(clv_present(join_dir))}")
+
+                r2, t2, inj2 = run_scenario(
+                    executable, data_dir, base_port + 4, scenario, rounds,
+                    extra_common=common + ["--test-net-resume-slot", "22"],
+                    host_dir=host_dir, join_dir=join_dir, deadline_s=deadline_s)
+                for key, value in inj2.items():
+                    injected[key] += value
+                result = 1 if (r1 or r2) else 0
+                transcript = f"[stage 1: mixed endless run]\n{t1}[stage 2: split resume]\n{t2}"
+                result |= report_convergence("split resume", host_dir, join_dir,
+                                             {a, b, c}, fixture_dir)
+            else:
+                # Campaign start downloads its selected container.
+                install_clv(host_dir, (a, b), fixture_dir)
+                install_clv(join_dir, (a,), fixture_dir)
+                common = ["--test-net-gameplay-ticks", "700", "--test-net-game-type", "1",
+                          "--test-net-lobby-settings", "--test-net-custom-episode", b]
+                r1, t1, injected = run_scenario(
+                    executable, data_dir, base_port, scenario, rounds,
+                    extra_common=common, host_dir=host_dir, join_dir=join_dir,
+                    deadline_s=deadline_s)
+                result = r1
+                transcript = f"[campaign on a custom episode]\n{t1}"
+                result |= report_convergence("campaign episode", host_dir, join_dir,
+                                             {a, b}, fixture_dir)
+
+            for scratch in (host_dir, join_dir):
+                shutil.rmtree(scratch, ignore_errors=True)
+        elif scenario == 26:
+            # Follow one collection through convergence, resumes, and refusal cases.
+            fixture_dir = executable.parent / "testing" / "fixtures"
+            missing = [n for n in CLV_FIXTURES if not (fixture_dir / n).is_file()]
+            if missing:
+                print(f"network fault test: missing container fixtures {missing}")
+                return 2
+
+            one_dir = tempfile.mkdtemp(prefix="otnet_one_")
+            two_dir = tempfile.mkdtemp(prefix="otnet_two_")
+            a, b, c = CLV_FIXTURES
+            endless = ["--test-net-gameplay-ticks", "1000000", "--test-net-game-type", "2",
+                       "--test-net-zones", "1", "--test-net-lobby-settings",
+                       "--test-net-custom-endless", "2"]
+            resume = endless + ["--test-net-resume-slot", "22"]
+            result = 0
+            transcript = ""
+            injected = dict(loss=0, duplication=0, reordering=0, delay=0, pause=0)
+            port = base_port
+
+            def stage(title, extra, host_at, join_at):
+                """Run another stage in the same two user directories."""
+                nonlocal result, transcript, injected, port
+                r, t, inj = run_scenario(
+                    executable, data_dir, port, scenario, rounds, extra_common=extra,
+                    host_dir=host_at, join_dir=join_at, deadline_s=deadline_s)
+                port += 4
+                for key, value in inj.items():
+                    injected[key] += value
+                transcript += f"[{title}]\n{t}"
+                return r, t
+
+            # Start with three host files and one joiner file.
+            install_clv(one_dir, (a, b, c), fixture_dir)
+            install_clv(two_dir, (a,), fixture_dir)
+            r, _ = stage("1: uneven start, host authors three", endless, one_dir, two_dir)
+            result |= r
+            result |= report_convergence("uneven start", one_dir, two_dir,
+                                         {a, b, c}, fixture_dir)
+
+            # Swap roles after deleting different dependencies on each peer.
+            (clv_dir(one_dir) / b).unlink()
+            (clv_dir(one_dir) / c).unlink()
+            (clv_dir(two_dir) / a).unlink()
+            print(f"custom levels: split before the role swap - "
+                  f"new joiner {sorted(clv_present(one_dir))}, "
+                  f"new host {sorted(clv_present(two_dir))}")
+            r, _ = stage("2: role swap over a split collection", resume, two_dir, one_dir)
+            result |= r
+            result |= report_convergence("role swap resume", one_dir, two_dir,
+                                         {a, b, c}, fixture_dir)
+
+            # Re-host the restored save without deleting anything.
+            r, _ = stage("3: clean re-host of the same save", resume, two_dir, one_dir)
+            result |= r
+            result |= report_convergence("clean re-host", one_dir, two_dir,
+                                         {a, b, c}, fixture_dir)
+
+            # Remove one dependency from both peers; resume must fail.
+            (clv_dir(one_dir) / b).unlink()
+            (clv_dir(two_dir) / b).unlink()
+            print(f"custom levels: one container lost everywhere - "
+                  f"{sorted(clv_present(two_dir))} and {sorted(clv_present(one_dir))}")
+            r, t = stage("4: a needed container lost on both", resume, two_dir, one_dir)
+            result |= report_refusal("a save missing one container", t, r)
+
+            # Remove every container from both peers; resume must fail.
+            for where in (one_dir, two_dir):
+                for stale in clv_dir(where).glob("*.clv"):
+                    stale.unlink()
+            r, t = stage("5: nothing left anywhere", resume, two_dir, one_dir)
+            result |= report_refusal("a save with no containers left", t, r)
+
+            for scratch in (one_dir, two_dir):
+                shutil.rmtree(scratch, ignore_errors=True)
+        elif scenario == 27:
+            # Exercise each level-carrying Transfer item over its own UDP socket.
+            fixture_dir = executable.parent / "testing" / "fixtures"
+            missing = [n for n in CLV_FIXTURES if not (fixture_dir / n).is_file()]
+            if missing:
+                print(f"network fault test: missing container fixtures {missing}")
+                return 2
+
+            a, b, c = CLV_FIXTURES
+            result = 0
+            transcript = ""
+            injected = dict(loss=0, duplication=0, reordering=0, delay=0, pause=0)
+
+            # The receiver starts with one shared file and two missing files.
+            for kind, label in (("levels", "Custom Levels"),
+                                ("custom", "Custom Data"),
+                                ("all", "Transfer All")):
+                send_dir = tempfile.mkdtemp(prefix="otxfer_send_")
+                recv_dir = tempfile.mkdtemp(prefix="otxfer_recv_")
+                install_clv(send_dir, (a, b, c), fixture_dir)
+                install_clv(recv_dir, (a,), fixture_dir)
+                shared_before = clv_digest(recv_dir, a)
+
+                r, t = run_device_transfer(executable, data_dir, kind,
+                                           send_dir, recv_dir, deadline_s)
+                transcript += f"[{label}]\n{t}"
+                result |= r
+
+                got = clv_present(recv_dir)
+                if got != {a, b, c}:
+                    print(f"custom levels: {label} left the receiver with {sorted(got)}, "
+                          f"expected {sorted({a, b, c})}")
+                    result = 1
+                else:
+                    mismatched = [n for n in sorted(got)
+                                  if clv_digest(recv_dir, n)
+                                  != hashlib.sha256((fixture_dir / n).read_bytes()).hexdigest()]
+                    if mismatched:
+                        print(f"custom levels: {label} corrupted {mismatched}")
+                        result = 1
+                    elif clv_digest(recv_dir, a) != shared_before:
+                        print(f"custom levels: {label} rewrote the container both machines "
+                              f"already shared")
+                        result = 1
+                    else:
+                        print(f"custom levels: {label} carried the whole collection "
+                              f"({sorted(got)})")
+
+                # Repeat by direct push to cover the shared multipart sender.
+                push_send = tempfile.mkdtemp(prefix="otxfer_psend_")
+                push_recv = tempfile.mkdtemp(prefix="otxfer_precv_")
+                install_clv(push_send, (a, b, c), fixture_dir)
+                install_clv(push_recv, (a,), fixture_dir)
+                r4, t4 = run_device_transfer(executable, data_dir, kind,
+                                             push_send, push_recv, deadline_s, push=True)
+                transcript += f"[{label} pushed to a waiting receiver]\n{t4}"
+                result |= r4
+                pushed = clv_present(push_recv)
+                if pushed != {a, b, c}:
+                    print(f"custom levels: {label} pushed only {sorted(pushed)}, "
+                          f"expected {sorted({a, b, c})}")
+                    result = 1
+                else:
+                    print(f"custom levels: {label} pushed the whole collection "
+                          f"({sorted(pushed)})")
+                for scratch in (push_send, push_recv):
+                    shutil.rmtree(scratch, ignore_errors=True)
+
+                # Empty Custom Data and Transfer All runs must not create the folder.
+                if kind in ("custom", "all"):
+                    bare_send = tempfile.mkdtemp(prefix="otxfer_bare_s_")
+                    bare_recv = tempfile.mkdtemp(prefix="otxfer_bare_r_")
+                    r3, t3 = run_device_transfer(executable, data_dir, kind,
+                                                 bare_send, bare_recv, deadline_s)
+                    transcript += f"[{label} with no containers anywhere]\n{t3}"
+                    strays = [w for w in (bare_send, bare_recv) if clv_dir(w).exists()]
+                    if r3 != 0:
+                        print(f"custom levels: {label} failed between two machines that have "
+                              f"no containers")
+                        result = 1
+                    elif strays:
+                        print(f"custom levels: {label} created a custom_levels folder with no "
+                              f"containers in play")
+                        result = 1
+                    else:
+                        print(f"custom levels: {label} still works, and stays invisible, with "
+                              f"no containers anywhere")
+                    for scratch in (bare_send, bare_recv):
+                        shutil.rmtree(scratch, ignore_errors=True)
+
+                # Custom Levels cannot be offered from an empty collection.
+                if kind == "levels":
+                    empty_dir = tempfile.mkdtemp(prefix="otxfer_none_")
+                    clv_dir(empty_dir).mkdir(parents=True, exist_ok=True)
+                    r2, t2 = run_device_transfer(executable, data_dir, kind,
+                                                 empty_dir, recv_dir, 90, expect_fail=True)
+                    transcript += f"[{label} with nothing installed]\n{t2}"
+                    if r2 == 0:
+                        print("custom levels: a machine with no containers still offered a "
+                              "transfer")
+                        result = 1
+                    else:
+                        print("custom levels: a machine with no containers offers nothing, "
+                              "as it should")
+                    shutil.rmtree(empty_dir, ignore_errors=True)
+
+                for scratch in (send_dir, recv_dir):
+                    shutil.rmtree(scratch, ignore_errors=True)
+        elif scenario == 28:
+            # Save after the joiner leaves the outpost, then resume that save.
+            fixture_dir = executable.parent / "testing" / "fixtures"
+            missing = [n for n in CLV_FIXTURES if not (fixture_dir / n).is_file()]
+            if missing:
+                print(f"network fault test: missing container fixtures {missing}")
+                return 2
+
+            host_dir = tempfile.mkdtemp(prefix="otnet_host_")
+            join_dir = tempfile.mkdtemp(prefix="otnet_join_")
+            a, b, c = CLV_FIXTURES
+            kept_slot = 15   # the two-player page; only it records both players
+            endless = ["--test-net-gameplay-ticks", "1000000", "--test-net-game-type", "2",
+                       "--test-net-zones", "1", "--test-net-lobby-settings",
+                       "--test-net-custom-endless", "2"]
+
+            install_clv(host_dir, (a, b, c), fixture_dir)
+            install_clv(join_dir, (a,), fixture_dir)
+
+            r1, t1, injected = run_scenario(
+                executable, data_dir, base_port, scenario, rounds,
+                extra_common=endless + ["--test-net-outpost-quit",
+                                        "--test-net-disconnect-save", str(kept_slot)],
+                host_dir=host_dir, join_dir=join_dir, deadline_s=deadline_s)
+            transcript = f"[stage 1: the joiner leaves the outpost]\n{t1}"
+
+            result = 0
+            if "host takes the disconnect offer" not in t1:
+                print("custom levels: the host was never offered the interrupted session")
+                result = 1
+            if "host kept the session in slot" not in t1:
+                print("custom levels: the host never wrote the disconnect save")
+                result = 1
+            result |= report_convergence("disconnect save", host_dir, join_dir,
+                                         {a, b, c}, fixture_dir)
+
+            # Resume without deleting any dependencies.
+            r2, t2, inj2 = run_scenario(
+                executable, data_dir, base_port + 4, scenario, rounds,
+                extra_common=endless + ["--test-net-resume-slot", str(kept_slot)],
+                host_dir=host_dir, join_dir=join_dir, deadline_s=deadline_s)
+            for key, value in inj2.items():
+                injected[key] += value
+            transcript += f"[stage 2: re-host from the disconnect save]\n{t2}"
+            result |= r2
+            result |= report_convergence("re-host after disconnect", host_dir, join_dir,
+                                         {a, b, c}, fixture_dir)
+            if r2 == 0:
+                print(f"custom levels: the disconnect save in slot {kept_slot} re-hosted cleanly")
+
+            for scratch in (host_dir, join_dir):
+                shutil.rmtree(scratch, ignore_errors=True)
         else:
             result, transcript, injected = run_scenario(
                 executable, data_dir, base_port, scenario, rounds, deadline_s=deadline_s

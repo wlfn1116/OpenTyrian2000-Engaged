@@ -38,7 +38,7 @@
 #endif
 
 #define CLV_HEADER_SIZE 160
-#define CLV_MAX_BYTES   (16 * 1024 * 1024)  // Real episodes are about 1 MiB.
+#define CLV_MAX_BYTES   CUSTOM_EPISODE_BYTES_MAX
 
 typedef struct
 {
@@ -59,6 +59,7 @@ typedef struct
 
 static CustomEpisodeEntry entries[CUSTOM_EPISODE_MAX];
 static int entryCount = 0;
+static unsigned int containerWrites = 0;
 
 /* A rescan must not change the active episode. */
 static bool activeFlag = false;
@@ -857,6 +858,24 @@ void qa_test_custom_episode(void)
 		qa_check(!customEpisodeActive() && customEpisodeActiveTitle()[0] == '\0' &&
 		         customEpisodeCurrent() == -1,
 		         "no custom episodes installed means no custom state anywhere");
+
+		qa_check(customEpisodeCount() == 0 && !customEpisodeAnyPresent(),
+		         "with no container present nothing offers a custom-level row");
+
+		const int savedMode = customEndlessMode;
+		customEndlessMode = CUSTOM_ENDLESS_ONLY;
+		const bool modeStaysOff = customEndlessEffectiveMode() == CUSTOM_ENDLESS_OFF &&
+		                          customEpisodeIdCount() == 0;
+		customEndlessMode = savedMode;
+		qa_check(modeStaysOff,
+		         "with no container present Endless cannot be switched onto custom levels");
+
+		struct stat st;
+		qa_check(stat(custom_episode_dir(), &st) != 0,
+		         "scanning for containers leaves no custom_levels folder behind");
+
+		qa_check(SDL_strcasecmp(JE_episodeDir(), custom_episode_dir()) != 0,
+		         "with no container present the engine reads its ordinary episode files");
 		return;
 	}
 
@@ -918,6 +937,41 @@ void qa_test_custom_episode(void)
 	         "an ordinary episode init drops custom mode and reloads stock data");
 }
 
+bool customEpisodeContentMatches(const char *fileName, const Uint8 *data, Uint32 len)
+{
+	if (!customEpisodeFileNameValid(fileName) || data == NULL)
+		return false;
+
+	char path[600];
+	snprintf(path, sizeof(path), "%s/%s", custom_episode_dir(), fileName);
+	FILE *f = fopen(path, "rb");
+	if (f == NULL)
+		return false;
+
+	fseek(f, 0, SEEK_END);
+	const long size = ftell(f);
+	bool same = size >= 0 && (Uint32)size == len;
+	if (same)
+	{
+		fseek(f, 0, SEEK_SET);
+		Uint8 chunk[4096];
+		Uint32 at = 0;
+		while (same && at < len)
+		{
+			const size_t want = MIN((size_t)(len - at), sizeof(chunk));
+			same = fread(chunk, 1, want, f) == want && memcmp(chunk, data + at, want) == 0;
+			at += (Uint32)want;
+		}
+	}
+	fclose(f);
+	return same;
+}
+
+unsigned int customEpisodeWriteCount(void)
+{
+	return containerWrites;
+}
+
 int customEpisodeSaveDownloaded(const char *fileName, const Uint8 *data, Uint32 len)
 {
 	ClvHeader h;
@@ -931,9 +985,18 @@ int customEpisodeSaveDownloaded(const char *fileName, const Uint8 *data, Uint32 
 	if (h.lvlLen < 2 || lvlNum < 3 || lvlNum >= 43 || lvlNum % 2 == 0)
 		return -1;
 
+	// Preserve an identical file and its timestamp.
+	if (customEpisodeContentMatches(fileName, data, len))
+	{
+		const int existing = customEpisodeFindByFile(fileName);
+		if (existing >= 0)
+			return existing;
+	}
+
 	char path[600];
 	snprintf(path, sizeof(path), "%s/%s", custom_episode_dir(), fileName);
 	custom_episode_dir_ensure();
+	++containerWrites;
 	FILE *f = fopen(path, "wb");
 	if (f == NULL)
 		return -1;
