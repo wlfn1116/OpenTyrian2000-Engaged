@@ -16,7 +16,8 @@ This fork adds:
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows x86-64;
 - Android (8.0+), iOS (13.0+), macOS (11.0+), Nintendo Switch and PlayStation Vita ports;
-- save and custom-data transfers between platforms.
+- save and custom-data transfers between platforms;
+- [Tyrian2000Atlas](https://github.com/wlfn1116/Tyrian2000Atlas) integration.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
@@ -64,8 +65,8 @@ See [Touch controls](GUIDE.md#touch-controls).
 
 ## Online play
 
-Open **Online Multiplayer** from the main menu. A host can be found over
-LAN or joined by address. The default port is UDP 1333.
+Open **Online Multiplayer** from the main menu. A host can be found
+over LAN or joined by address. The default port is UDP 1333.
 
 Players can mix Windows, macOS, Linux, Android, iOS, Switch, and Vita builds
 when both copies use the same game version. Rollback is the default netcode;
@@ -155,5 +156,6 @@ GNU General Public License, version 3 or later.
 
 Related projects:
 
+- [Tyrian2000Atlas](https://github.com/wlfn1116/Tyrian2000Atlas)
 - [OpenTyrian2000](https://github.com/KScl/opentyrian2000)
 - [OpenTyrian](https://github.com/opentyrian/opentyrian)
