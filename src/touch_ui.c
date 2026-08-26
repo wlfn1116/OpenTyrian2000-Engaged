@@ -781,7 +781,8 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	}
 
 	int out_w = 0, out_h = 0;
-	if (SDL_GetRendererOutputSize(renderer, &out_w, &out_h) != 0 || out_w <= 0 || out_h <= 0)
+	video_output_size(&out_w, &out_h);
+	if (out_w <= 0 || out_h <= 0)
 	{
 		layout_valid = false;
 		return;
