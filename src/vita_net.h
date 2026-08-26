@@ -53,6 +53,8 @@ void SDLNet_UDP_Close(UDPsocket sock);
 // Point `channel` at `address` (network byte order). Returns the channel, or -1.
 int SDLNet_UDP_Bind(UDPsocket sock, int channel, const IPaddress *address);
 
+IPaddress *SDLNet_UDP_GetPeerAddress(UDPsocket sock, int channel);
+
 // A non-negative channel uses its bound address; -1 uses packet->address.
 int SDLNet_UDP_Send(UDPsocket sock, int channel, UDPpacket *packet);
 

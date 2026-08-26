@@ -28,6 +28,7 @@ static void *net_pool = NULL;
 struct UDPsocket_s
 {
 	int fd;
+	IPaddress local_addr;
 	IPaddress channel_addr[SDLNET_MAX_UDPCHANNELS];
 	bool channel_bound[SDLNET_MAX_UDPCHANNELS];
 };
@@ -220,6 +221,17 @@ UDPsocket SDLNet_UDP_Open(Uint16 port)
 		return NULL;
 	}
 
+	sock->local_addr.port = SDL_SwapBE16(port);
+
+	SceNetSockaddrIn bound;
+	unsigned int boundlen = sizeof(bound);
+	memset(&bound, 0, sizeof(bound));
+	if (!sce_failed(sceNetGetsockname(sock->fd, (SceNetSockaddr *)&bound, &boundlen)))
+	{
+		sock->local_addr.host = bound.sin_addr.s_addr;
+		sock->local_addr.port = bound.sin_port;
+	}
+
 	// Non-blocking so SDLNet_UDP_Recv can answer "nothing waiting", and broadcast-capable so
 	// LAN discovery can probe. Both are best-effort in SDL_net too, so neither is fatal.
 	const int one = 1;
@@ -249,6 +261,20 @@ int SDLNet_UDP_Bind(UDPsocket sock, int channel, const IPaddress *address)
 	sock->channel_addr[channel] = *address;
 	sock->channel_bound[channel] = true;
 	return channel;
+}
+
+IPaddress *SDLNet_UDP_GetPeerAddress(UDPsocket sock, int channel)
+{
+	if (sock == NULL)
+		return NULL;
+
+	if (channel < 0)
+		return &sock->local_addr;
+
+	if (channel >= SDLNET_MAX_UDPCHANNELS || !sock->channel_bound[channel])
+		return NULL;
+
+	return &sock->channel_addr[channel];
 }
 
 int SDLNet_UDP_Send(UDPsocket sock, int channel, UDPpacket *packet)
