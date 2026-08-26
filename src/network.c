@@ -3260,8 +3260,9 @@ static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint
 	while (gen == NCL_GEN_ALL_DONE || gen == NCL_GEN_FAILED)
 		gen = ++network_clv_gen;
 	Uint32 sent = 0;
-	const Uint32 started = SDL_GetTicks();
+	Uint32 progressAt = SDL_GetTicks();
 	Uint32 passDoneAt = 0;
+	int passes = 0;
 
 	network_clv_peer_done = false;
 
@@ -3270,7 +3271,7 @@ static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint
 		// Completion supersedes a late stream request.
 		if (network_clv_all_done)
 			return true;
-		if (network_clv_failed || SDL_GetTicks() - started >= NCL_TRANSFER_MS ||
+		if (network_clv_failed || SDL_GetTicks() - progressAt >= NCL_TRANSFER_MS ||
 		    !network_peer_alive())
 			return false;
 
@@ -3298,18 +3299,22 @@ static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint
 				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
 				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
 				network_send(NCW_HDR + (int)plen);
+				progressAt = SDL_GetTicks();
 				if (++sent >= chunks)
-					passDoneAt = SDL_GetTicks();
+					passDoneAt = progressAt;
 			}
 		}
 		else if (passDoneAt != 0 && SDL_GetTicks() - passDoneAt >= NCL_RESEND_MS)
 		{
 			// Retry an unconfirmed stream with a new generation.
+			if (++passes >= NCW_ATTEMPTS)
+				return false;
 			gen = ++network_clv_gen;
 			while (gen == NCL_GEN_ALL_DONE || gen == NCL_GEN_FAILED)
 				gen = ++network_clv_gen;
 			sent = 0;
 			passDoneAt = 0;
+			progressAt = SDL_GetTicks();
 		}
 
 		SDL_Delay(1);
@@ -3403,13 +3408,22 @@ static bool network_custom_level_fetch_locked(void)
 	network_clv_expect_hash = network_host_custom_hash;
 	network_clv_in_done = false;
 
-	const Uint32 started = SDL_GetTicks();
+	network_clv_in_arrived = 0;
+	Uint32 notedArrival = 0;
+	Uint32 progressAt = SDL_GetTicks();
 	Uint32 askedAt = 0;
 	bool asked = false;
 
 	while (!network_clv_in_done)
 	{
-		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
+		if (network_clv_in_arrived != notedArrival)
+		{
+			notedArrival = network_clv_in_arrived;
+			progressAt = notedArrival;
+			askedAt = notedArrival;
+		}
+
+		if (SDL_GetTicks() - progressAt >= NCL_TRANSFER_MS || !network_peer_alive())
 			return false;
 
 		watchdog_heartbeat();
@@ -3526,12 +3540,21 @@ static bool network_clv_serve_required(char names[][CUSTOM_EPISODE_FILE_LEN], in
 				network_clv_expect_hash = network_clv_offer_hash;
 				network_clv_in_done = false;
 				network_clv_in_reset();
+				network_clv_in_arrived = 0;
 				network_clv_send_request(NCL_KIND_CONTAINER, network_clv_offer_name);
-				const Uint32 pullStarted = SDL_GetTicks();
+				Uint32 pullNoted = 0;
+				Uint32 pullProgressAt = SDL_GetTicks();
 				Uint32 pullAskedAt = SDL_GetTicks();
 				while (!network_clv_in_done)
 				{
-					if (network_clv_failed || SDL_GetTicks() - pullStarted >= NCL_TRANSFER_MS ||
+					if (network_clv_in_arrived != pullNoted)
+					{
+						pullNoted = network_clv_in_arrived;
+						pullProgressAt = pullNoted;
+						pullAskedAt = pullNoted;
+					}
+					if (network_clv_failed ||
+					    SDL_GetTicks() - pullProgressAt >= NCL_TRANSFER_MS ||
 					    !network_peer_alive())
 						return false;
 					watchdog_heartbeat();
@@ -3670,13 +3693,21 @@ static bool network_clv_fetch_required(int sessionMode)
 		network_clv_expect_hash = wantHash;
 		network_clv_in_done = false;
 		network_clv_in_reset();
-		started = SDL_GetTicks();
 		network_clv_in_arrived = 0;
+		Uint32 notedArrival = 0;
+		Uint32 progressAt = SDL_GetTicks();
 		askedAt = 0;
 		asked = false;
 		while (!network_clv_in_done)
 		{
-			if (network_clv_failed || SDL_GetTicks() - started >= NCL_TRANSFER_MS ||
+			if (network_clv_in_arrived != notedArrival)
+			{
+				notedArrival = network_clv_in_arrived;
+				progressAt = notedArrival;
+				askedAt = notedArrival;
+			}
+
+			if (network_clv_failed || SDL_GetTicks() - progressAt >= NCL_TRANSFER_MS ||
 			    !network_peer_alive())
 				return false;
 
@@ -3685,8 +3716,7 @@ static bool network_clv_fetch_required(int sessionMode)
 			network_check();
 
 			// Retry only after the stream goes quiet.
-			const Uint32 quietSince = network_clv_in_arrived != 0 ? network_clv_in_arrived : askedAt;
-			if (!asked || SDL_GetTicks() - quietSince >= 3000)
+			if (!asked || SDL_GetTicks() - askedAt >= 3000)
 			{
 				network_clv_send_request(NCL_KIND_CONTAINER, names[i]);
 				askedAt = SDL_GetTicks();

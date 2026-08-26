@@ -44,12 +44,12 @@ SCENARIOS = (
     (20, "timed-battle-finish", 0, 120, True),
     (21, "endless-resume", 0, 300, True),
     (22, "guest-esc", 0, 90, True),
-    (23, "custom-endless-converge", 0, 300, True),
-    (24, "custom-resume-converge", 0, 300, True),
+    (23, "custom-endless-converge", 0, 480, True),
+    (24, "custom-resume-converge", 0, 480, True),
     (25, "custom-episode-converge", 0, 120, True),
-    (26, "custom-lifecycle", 0, 300, True),
+    (26, "custom-lifecycle", 0, 480, True),
     (27, "custom-device-transfer", 0, 240, True),
-    (28, "custom-disconnect-save", 0, 300, True),
+    (28, "custom-disconnect-save", 0, 480, True),
 )
 
 
