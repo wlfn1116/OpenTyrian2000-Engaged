@@ -1197,20 +1197,33 @@ bool JE_captureHullListSelfTest(void)
 	return count == uniqueCompatible;
 }
 
-static bool seCaptureBank(int bank, int sourceShip)
+static bool seCaptureHull(int bank, int sourceShip, int first, int last)
 {
 	Sprite2_array *sheet;
 	JE_word base;
 	if (!seCaptureHullInfo(sourceShip, &sheet, &base))
 		return false;
 
-	for (int frame = 1; frame <= SE_FRAMES; ++frame)
+	for (int frame = first; frame <= last; ++frame)
 		for (int corner = 0; corner < 4; ++corner)
 		{
 			const unsigned src = seHullCellIndex(base, frame, corner);
 			seDecodeCell(sheet, src, seCells[seCellIndex(bank, frame, corner)]);
 		}
 	return true;
+}
+
+static int seCustomSourceBank(int index, int bank)
+{
+	return (index + 1 < bank) ? index + 1 : index + 2;
+}
+
+static void seCaptureCustom(int bank, int sourceBank, int first, int last)
+{
+	for (int frame = first; frame <= last; ++frame)
+		for (int corner = 0; corner < 4; ++corner)
+			memcpy(seCells[seCellIndex(bank, frame, corner)],
+			       seCells[seCellIndex(sourceBank, frame, corner)], SE_CELL_BYTES);
 }
 
 // Round-trip a worst-case cell and every loaded cell.
@@ -1266,6 +1279,29 @@ static void seFlipFrame(int bank, int frame, bool vertical)
 	for (int y = 0; y < SE_FRAME_H; ++y)
 		for (int x = 0; x < SE_FRAME_W; ++x)
 			*seFramePx(bank, frame, x, y) = tmp[y * SE_FRAME_W + x];
+}
+
+static void seFoldFrame(int bank, int frame, bool vertical, bool fromFar)
+{
+	if (vertical)
+	{
+		for (int y = 0; y < SE_FRAME_H / 2; ++y)
+			for (int x = 0; x < SE_FRAME_W; ++x)
+			{
+				const int src = fromFar ? SE_FRAME_H - 1 - y : y;
+				const int dst = fromFar ? y : SE_FRAME_H - 1 - y;
+				*seFramePx(bank, frame, x, dst) = *seFramePx(bank, frame, x, src);
+			}
+		return;
+	}
+
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		for (int x = 0; x < SE_FRAME_W / 2; ++x)
+		{
+			const int src = fromFar ? SE_FRAME_W - 1 - x : x;
+			const int dst = fromFar ? x : SE_FRAME_W - 1 - x;
+			*seFramePx(bank, frame, dst, y) = *seFramePx(bank, frame, src, y);
+		}
 }
 
 static void seNudgeFrame(int bank, int frame, int dx, int dy)
@@ -1418,19 +1454,37 @@ enum
 	SES_ACT_COUNT = SES_NAV_COUNT - SES_ACT_CAPTURE,
 };
 
-enum { SES_TOOL_PAINT, SES_TOOL_FILL, SES_TOOL_PICK, SES_TOOL_ERASE, SES_TOOL_COUNT };
+enum
+{
+	SES_TOOL_PAINT, SES_TOOL_FILL, SES_TOOL_PICK, SES_TOOL_ERASE, SES_TOOL_SHADE, SES_TOOL_COLORIZE,
+	SES_TOOL_COUNT,
+};
 enum { SES_GUIDES_OFF, SES_GUIDES_VERTICAL, SES_GUIDES_HORIZONTAL, SES_GUIDES_BOTH, SES_GUIDES_COUNT };
+enum { SES_FLIP_H, SES_FLIP_V, SES_FOLD_L, SES_FOLD_R, SES_FOLD_U, SES_FOLD_D, SES_FLIP_COUNT };
 
-static const char *const sesToolName[SES_TOOL_COUNT] = { "Paint", "Fill", "Pick", "Erase" };
+static const char *const sesToolName[SES_TOOL_COUNT] = {
+	"Paint", "Fill", "Pick", "Erase", "Shade", "Colorize"
+};
+static const char *const sesToolHelp[SES_TOOL_COUNT] = {
+	"Draw with the chosen color. Right-click erases.",
+	"Flood the area you touch with the chosen color.",
+	"Copy the color you click, then return to Paint.",
+	"Rub out pixels wherever you draw.",
+	"Step a pixel lighter. Right-click steps it darker.",
+	"Recolor a whole pose into one palette row.",
+};
 static const char *const sesGuidesName[SES_GUIDES_COUNT] = { "Off", "Vertical", "Horizontal", "Both" };
+static const char *const sesFlipName[SES_FLIP_COUNT] = {
+	"Flip H", "Flip V", "Fold L", "Fold R", "Fold U", "Fold D"
+};
 
 static const struct { const char *label, *help; } sesRows[SES_ROW_COUNT] = {
 	{ "Custom Bank", "Choose which of your eight custom hull drawings to edit." },
 	{ "Pose",        "Choose one of the five turning views." },
-	{ "Tool",        "Choose what happens when you draw. Pick copies a color." },
+	{ "Tool",        "Choose what happens when you draw." },
 	{ "Mirror",      "Draw on both sides of the ship at once." },
 	{ "Guides",      "Show centerlines on the large drawing area." },
-	{ "From Hull",   "Choose a ship whose artwork you want to copy." },
+	{ "Copy From",   "Choose a ship or custom bank to copy artwork from." },
 };
 
 static const char *const sesPaletteHelp[] = {
@@ -1446,9 +1500,9 @@ static const char *const sesNudgeHelp[] = {
 };
 
 static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
-	{ "Hull Capture", "Copy the selected ship's artwork into this custom bank." },
+	{ "Capture All", "Copy the chosen artwork in. Left/Right picks how much." },
 	{ "Copy",        "Copy the chosen pose onto this one. Left/Right chooses." },
-	{ "Flip H",      "Mirror this pose. Left/Right chooses the axis." },
+	{ "Flip H",      "Mirror or fold this pose. Left/Right chooses." },
 	{ "Undo",        "Take back or redo an edit. Also Ctrl+Z and Ctrl+Y." },
 	{ "Clear",       "Erase this pose or every pose. Left/Right chooses." },
 	{ "Revert",      "Undo changes to this custom bank." },
@@ -1483,8 +1537,34 @@ static void seFloodFill(int bank, int frame, int sx, int sy, JE_byte to)
 	}
 }
 
+enum { SE_STROKE_COLOR, SE_STROKE_LIGHTEN, SE_STROKE_DARKEN };
+
+static void seShadePx(int bank, int frame, int x, int y, bool darker)
+{
+	JE_byte *const px = seFramePx(bank, frame, x, y);
+	if (*px == 0)
+		return;
+
+	const int high = *px & 0xf0, low = *px & 0x0f;
+	const int minShade = (high == 0) ? 1 : 0;
+	int shade = darker ? low - 1 : low + 1;
+	if (shade < minShade)
+		shade = minShade;
+	else if (shade > 15)
+		shade = 15;
+	*px = (JE_byte)(high | shade);
+}
+
+static void seStrokePx(int bank, int frame, int x, int y, JE_byte c, int op)
+{
+	if (op == SE_STROKE_COLOR)
+		*seFramePx(bank, frame, x, y) = c;
+	else
+		seShadePx(bank, frame, x, y, op == SE_STROKE_DARKEN);
+}
+
 // Join pointer samples so fast strokes do not leave gaps.
-static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_byte c)
+static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_byte c, int op)
 {
 	const int dx = (x1 > x0) ? x1 - x0 : x0 - x1;
 	const int dy = (y1 > y0) ? y0 - y1 : y1 - y0;  // negative magnitude, per Bresenham
@@ -1494,7 +1574,7 @@ static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_b
 
 	for (;;)
 	{
-		*seFramePx(bank, frame, x0, y0) = c;
+		seStrokePx(bank, frame, x0, y0, c, op);
 		if (x0 == x1 && y0 == y1)
 			break;
 		const int e2 = 2 * err;
@@ -1511,8 +1591,24 @@ static void seStrokeTo(int bank, int frame, int x0, int y0, int x1, int y1, JE_b
 	}
 }
 
+static void seColorizeFrame(int bank, int frame, int row)
+{
+	const JE_byte high = (JE_byte)((row & 0x0f) << 4);
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		for (int x = 0; x < SE_FRAME_W; ++x)
+		{
+			JE_byte *const px = seFramePx(bank, frame, x, y);
+			if (*px == 0)
+				continue;
+
+			const JE_byte dyed = (JE_byte)(high | (*px & 0x0f));
+			*px = (dyed == 0) ? 1 : dyed;
+		}
+}
+
 // Pick selects the color and returns to Paint.
-static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool, bool mirror)
+static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool, bool mirror,
+                        bool darken)
 {
 	const int mirrorX = SE_FRAME_W - 1 - x;
 	switch (*tool)
@@ -1531,6 +1627,14 @@ static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool
 		if (mirror)
 			*seFramePx(bank, frame, mirrorX, y) = 0;
 		break;
+	case SES_TOOL_COLORIZE:
+		seColorizeFrame(bank, frame, *color >> 4);
+		break;
+	case SES_TOOL_SHADE:
+		seShadePx(bank, frame, x, y, darken);
+		if (mirror)
+			seShadePx(bank, frame, mirrorX, y, darken);
+		break;
 	default:
 		*seFramePx(bank, frame, x, y) = (JE_byte)*color;
 		if (mirror)
@@ -1539,14 +1643,40 @@ static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool
 	}
 }
 
+static void seTouchColor(JE_byte *recent, int *count, JE_byte c)
+{
+	int i = 0;
+	while (i < *count && recent[i] != c)
+		++i;
+	if (i == *count)
+		++*count;
+	else
+		memmove(&recent[i], &recent[i + 1], (size_t)(*count - 1 - i));
+	recent[*count - 1] = c;
+}
+
+static int seCycleTool(int tool, int dir, int *paletteTarget)
+{
+	tool = (tool + SES_TOOL_COUNT + dir) % SES_TOOL_COUNT;
+	if (tool == SES_TOOL_COLORIZE)
+		*paletteTarget = SES_PAL_COLOR;
+	return tool;
+}
+
+static int seColorStep(int tool, bool wholeRow)
+{
+	return (tool == SES_TOOL_COLORIZE || wholeRow) ? 16 : 1;
+}
+
 static void seSpriteEditor(int bank)
 {
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
 	enum { CANV_X = 28, CANV_Y = 22, CANV_SCALE = 4 };
-	enum { STRIP_X = 12, STRIP_Y = 147 };
+	enum { STRIP_X = 12, STRIP_Y = 151 };
 	enum { PAL_X = 199, PAL_Y = 75, PAL_CELL = 4 };
 	enum { PAL_BTN_Y = 81, PAL_BTN_SIZE = 32, PAL_COL_X = 160, PAL_BG_X = 272 };
 	enum { NUDGE_BTN_Y = 117, NUDGE_BTN_SIZE = 15 };
+	enum { USED_X = 11, USED_Y = 140, USED_CELL = 5, USED_MAX = 26 };
 	const int panX0 = 150, panX1 = 313, panY0 = 7, panY1 = 183;
 	const int fieldsTop = panY0 + 13;
 	const int row_h = 9;
@@ -1558,12 +1688,14 @@ static void seSpriteEditor(int bank)
 
 	JE_byte captureHulls[SHIP_DRAGONWING];
 	const int captureHullCount = seCaptureHullList(captureHulls, COUNTOF(captureHulls));
+	const int sourceCount = captureHullCount + SE_BANKS - 1;
 	int frame = 3, copyPose = 3, color = 15, source = 0, tool = SES_TOOL_PAINT;
 	static int background = C_PANEL;
 	static int guides = SES_GUIDES_OFF;
 	bool mirror = false;
 	bool clearAll = false;
-	bool flipVertical = false;
+	bool captureAll = true;
+	int flipMode = SES_FLIP_H;
 	bool redoMode = false;
 	seUndoBase = seUndoCount = seRedoCount = 0;
 	int selected = SES_ROW_BANK;
@@ -1574,7 +1706,11 @@ static void seSpriteEditor(int bank)
 	bool canvasFocus = false;
 	int curX = SE_FRAME_W / 2, curY = SE_FRAME_H / 2;
 	JE_byte heldColor = 0;  // the color the pressed mouse button paints while dragging
+	bool heldDarken = false;
 	int strokeX = -1, strokeY = -1;  // last cell this drag painted; -1 = no stroke in progress
+	JE_byte recent[256];
+	int recentCount = 0;
+	int lastX = -1, lastY = -1;
 	char notice[40] = "";
 	int prev_mx = mouse_x, prev_my = mouse_y;
 	bool done = false;
@@ -1627,6 +1763,47 @@ static void seSpriteEditor(int bank)
 			JE_rectangle(VGAScreen, CANV_X + curX * CANV_SCALE - 1, CANV_Y + curY * CANV_SCALE - 1,
 			             CANV_X + curX * CANV_SCALE + CANV_SCALE, CANV_Y + curY * CANV_SCALE + CANV_SCALE, C_HI);
 
+		bool colorUsed[256] = { false };
+		for (int y = 0; y < SE_FRAME_H; ++y)
+			for (int x = 0; x < SE_FRAME_W; ++x)
+				colorUsed[*seFramePx(bank, frame, x, y)] = true;
+		colorUsed[0] = false;
+
+		bool recentSeen[256] = { false };
+		for (int i = 0; i < recentCount; ++i)
+			recentSeen[recent[i]] = true;
+
+		JE_byte order[256];
+		int orderCount = 0;
+		for (int c = 1; c < 256; ++c)
+			if (colorUsed[c] && !recentSeen[c])
+				order[orderCount++] = (JE_byte)c;
+		for (int i = 0; i < recentCount; ++i)
+			if (colorUsed[recent[i]])
+				order[orderCount++] = recent[i];
+
+		const int usedCount = (orderCount < USED_MAX) ? orderCount : USED_MAX;
+		const JE_byte *const usedList = order + orderCount - usedCount;
+		const int usedW = usedCount * USED_CELL;
+		const int usedX0 = USED_X + (USED_MAX * USED_CELL - usedW) / 2;
+
+		int usedSel = -1;
+		if (usedCount > 0)
+		{
+			for (int i = 0; i < usedCount; ++i)
+			{
+				fill_rectangle_wh(VGAScreen, usedX0 + i * USED_CELL, USED_Y,
+				                  USED_CELL, USED_CELL, usedList[i]);
+				if (usedList[i] == color)
+					usedSel = i;
+			}
+			JE_rectangle(VGAScreen, usedX0 - 1, USED_Y - 1,
+			             usedX0 + usedW, USED_Y + USED_CELL, C_DIV);
+		}
+		if (usedSel >= 0)
+			JE_rectangle(VGAScreen, usedX0 + usedSel * USED_CELL - 1, USED_Y - 1,
+			             usedX0 + usedSel * USED_CELL + USED_CELL, USED_Y + USED_CELL, C_HI);
+
 		for (int f = 0; f < SE_FRAMES; ++f)
 		{
 			fill_rectangle_wh(VGAScreen, STRIP_X + f * 26, STRIP_Y,
@@ -1658,7 +1835,10 @@ static void seSpriteEditor(int bank)
 			case SES_ROW_MIRROR: snprintf(raw, sizeof(raw), "%s", mirror ? "On" : "Off"); break;
 			case SES_ROW_GUIDES: snprintf(raw, sizeof(raw), "%s", sesGuidesName[guides]); break;
 			default:
-				if (captureHullCount > 0)
+				if (source >= captureHullCount)
+					snprintf(raw, sizeof(raw), "Custom %d",
+					         seCustomSourceBank(source - captureHullCount, bank));
+				else if (captureHullCount > 0)
 					seTrimName(seCaptureHullName(captureHulls[source]), raw, sizeof(raw));
 				else
 					SDL_strlcpy(raw, "None", sizeof(raw));
@@ -1690,8 +1870,19 @@ static void seSpriteEditor(int bank)
 			             bx + PAL_BTN_SIZE, PAL_BTN_Y + PAL_BTN_SIZE, sel ? C_HI : C_DIV);
 			draw_font_hv_shadow(VGAScreen, bx + PAL_BTN_SIZE / 2, PAL_BTN_Y + 4,
 			                    paletteLabels[b], small_font, centered, 15, sel ? 6 : 4, false, 1);
-			fill_rectangle_xy(VGAScreen, bx + 6, PAL_BTN_Y + 17,
-			                  bx + PAL_BTN_SIZE - 7, PAL_BTN_Y + PAL_BTN_SIZE - 6, (Uint8)paletteColors[b]);
+			const int swX0 = bx + 6, swX1 = bx + PAL_BTN_SIZE - 7;
+			if (b == 0 && tool == SES_TOOL_COLORIZE)
+			{
+				const int swW = swX1 - swX0 + 1;
+				for (int x = swX0; x <= swX1; ++x)
+					fill_rectangle_xy(VGAScreen, x, PAL_BTN_Y + 17, x, PAL_BTN_Y + PAL_BTN_SIZE - 6,
+					                  (Uint8)((color & 0xf0) | ((x - swX0) * 16 / swW)));
+			}
+			else
+			{
+				fill_rectangle_xy(VGAScreen, swX0, PAL_BTN_Y + 17, swX1,
+				                  PAL_BTN_Y + PAL_BTN_SIZE - 6, (Uint8)paletteColors[b]);
+			}
 			JE_rectangle(VGAScreen, bx + 5, PAL_BTN_Y + 16,
 			             bx + PAL_BTN_SIZE - 6, PAL_BTN_Y + PAL_BTN_SIZE - 5, C_DIV);
 		}
@@ -1707,10 +1898,12 @@ static void seSpriteEditor(int bank)
 		}
 
 		const int paletteSelection = (paletteTarget == SES_PAL_BACKGROUND) ? background : color;
-		JE_rectangle(VGAScreen, PAL_X + (paletteSelection % 16) * PAL_CELL - 1,
-		             PAL_Y + (paletteSelection / 16) * PAL_CELL - 1,
-		             PAL_X + (paletteSelection % 16) * PAL_CELL + PAL_CELL,
-		             PAL_Y + (paletteSelection / 16) * PAL_CELL + PAL_CELL, C_HI);
+		const bool dyeRow = (tool == SES_TOOL_COLORIZE && paletteTarget != SES_PAL_BACKGROUND);
+		const int selX0 = dyeRow ? PAL_X - 1 : PAL_X + (paletteSelection % 16) * PAL_CELL - 1;
+		const int selX1 = dyeRow ? PAL_X + 16 * PAL_CELL
+		                         : PAL_X + (paletteSelection % 16) * PAL_CELL + PAL_CELL;
+		JE_rectangle(VGAScreen, selX0, PAL_Y + (paletteSelection / 16) * PAL_CELL - 1,
+		             selX1, PAL_Y + (paletteSelection / 16) * PAL_CELL + PAL_CELL, C_HI);
 
 		fill_rectangle_xy(VGAScreen, panX0 + 2, actionsTop - 3, panX1 - 2, actionsTop - 3, C_DIV);
 		for (int a = 0; a < SES_ACT_COUNT; ++a)
@@ -1729,13 +1922,15 @@ static void seSpriteEditor(int bank)
 				snprintf(copyLabel, sizeof(copyLabel), "%s %s", label, sesPoseName[copyPose - 1]);
 				label = copyLabel;
 			}
-			else if (id == SES_ACT_FLIP && flipVertical)
-				label = "Flip V";
+			else if (id == SES_ACT_CAPTURE && !captureAll)
+				label = "Capture Pose";
+			else if (id == SES_ACT_FLIP)
+				label = sesFlipName[flipMode];
 			else if (id == SES_ACT_HISTORY && redoMode)
 				label = "Redo";
 			else if (id == SES_ACT_CLEAR && clearAll)
 				label = "Clear All";
-			if (id >= SES_ACT_COPY && id <= SES_ACT_CLEAR)
+			if (id >= SES_ACT_CAPTURE && id <= SES_ACT_CLEAR)
 			{
 				const Uint8 dot = (Uint8)((sel ? C_SEL : C_DIV) - 2);
 				fill_rectangle_wh(VGAScreen, bx0 + 1, ry + 2, 2, 2, dot);
@@ -1746,7 +1941,10 @@ static void seSpriteEditor(int bank)
 		}
 
 		const char *const help = canvasFocus ? "Arrows move, Enter uses the tool, Backspace erases, Tab leaves."
+		                       : selected == SES_ROW_TOOL ? sesToolHelp[tool]
 		                       : selected < SES_ROW_COUNT ? sesRows[selected].help
+		                       : selected == SES_PAL_COLOR && tool == SES_TOOL_COLORIZE
+		                         ? "Click a palette row to recolor this pose with it."
 		                       : selected < SES_NUDGE_LEFT ? sesPaletteHelp[selected - SES_PAL_COLOR]
 		                       : selected < SES_ACT_CAPTURE ? sesNudgeHelp[selected - SES_NUDGE_LEFT]
 		                       : sesActs[selected - SES_ACT_CAPTURE].help;
@@ -1768,6 +1966,8 @@ static void seSpriteEditor(int bank)
 		const bool mouseMoved = (mouse_x != prev_mx || mouse_y != prev_my);
 
 		int act = -1;  // a triggered tool button, performed after input decoding
+		bool dyeNow = false;
+		bool paintedColor = false;
 
 		if (mouse_scroll != 0)
 		{
@@ -1828,6 +2028,7 @@ static void seSpriteEditor(int bank)
 			{
 				notice[0] = '\0';
 				heldColor = (lastmouse_but == SDL_BUTTON_RIGHT || tool == SES_TOOL_ERASE) ? 0 : (JE_byte)color;
+				heldDarken = (lastmouse_but == SDL_BUTTON_RIGHT);
 			}
 
 			if (overCanvas)
@@ -1836,49 +2037,85 @@ static void seSpriteEditor(int bank)
 				const int py = (mouse_y - CANV_Y) / CANV_SCALE;
 				const bool pressEdit = newmouse && lastmouse_but != SDL_BUTTON_MIDDLE &&
 				                       (lastmouse_but == SDL_BUTTON_RIGHT || tool != SES_TOOL_PICK);
-				const bool strokeStart = !newmouse && strokeX < 0 &&
-				                         (tool == SES_TOOL_PAINT || tool == SES_TOOL_ERASE);
+				const bool freehand = (tool == SES_TOOL_PAINT || tool == SES_TOOL_ERASE ||
+				                       tool == SES_TOOL_SHADE);
+				const bool strokeStart = !newmouse && strokeX < 0 && freehand;
 				if (pressEdit || strokeStart)
 					seUndoBegin(bank);
+				const int op = (tool != SES_TOOL_SHADE) ? SE_STROKE_COLOR
+				             : (heldDarken ? SE_STROKE_DARKEN : SE_STROKE_LIGHTEN);
+				const bool shiftLine = newmouse && freehand && lastX >= 0 &&
+				                       lastmouse_but != SDL_BUTTON_MIDDLE &&
+				                       (keysactive[SDL_SCANCODE_LSHIFT] != 0 ||
+				                        keysactive[SDL_SCANCODE_RSHIFT] != 0);
 				if (newmouse && lastmouse_but == SDL_BUTTON_MIDDLE)
 					color = *seFramePx(bank, frame, px, py);
-				else if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT)
+				else if (shiftLine)
+				{
+					paintedColor = (op == SE_STROKE_COLOR && heldColor != 0);
+					seStrokeTo(bank, frame, lastX, lastY, px, py, heldColor, op);
+					if (mirror)
+						seStrokeTo(bank, frame, SE_FRAME_W - 1 - lastX, lastY,
+						           SE_FRAME_W - 1 - px, py, heldColor, op);
+				}
+				else if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT && tool != SES_TOOL_SHADE)
 				{
 					*seFramePx(bank, frame, px, py) = 0;
 					if (mirror)
 						*seFramePx(bank, frame, SE_FRAME_W - 1 - px, py) = 0;
 				}
 				else if (newmouse)
-					seApplyTool(bank, frame, px, py, &color, &tool, mirror);
-				else if (tool == SES_TOOL_PAINT || tool == SES_TOOL_ERASE)
 				{
+					paintedColor = (tool == SES_TOOL_PAINT || tool == SES_TOOL_FILL);
+					seApplyTool(bank, frame, px, py, &color, &tool, mirror, heldDarken);
+				}
+				else if (freehand && (px != strokeX || py != strokeY))
+				{
+					paintedColor = (op == SE_STROKE_COLOR && heldColor != 0);
 					if (strokeX >= 0)
 					{
-						seStrokeTo(bank, frame, strokeX, strokeY, px, py, heldColor);
+						seStrokeTo(bank, frame, strokeX, strokeY, px, py, heldColor, op);
 						if (mirror)
 							seStrokeTo(bank, frame, SE_FRAME_W - 1 - strokeX, strokeY,
-							           SE_FRAME_W - 1 - px, py, heldColor);
+							           SE_FRAME_W - 1 - px, py, heldColor, op);
 					}
 					else
 					{
-						*seFramePx(bank, frame, px, py) = heldColor;
+						seStrokePx(bank, frame, px, py, heldColor, op);
 						if (mirror)
-							*seFramePx(bank, frame, SE_FRAME_W - 1 - px, py) = heldColor;
+							seStrokePx(bank, frame, SE_FRAME_W - 1 - px, py, heldColor, op);
 					}
 				}
 				strokeX = px;
 				strokeY = py;
+				if (freehand)
+				{
+					lastX = px;
+					lastY = py;
+				}
 			}
 			else if (newmouse)
 			{
+				int pick = -1;
+				if (mouse_x >= PAL_X && mouse_x < PAL_X + 16 * PAL_CELL &&
+				    mouse_y >= PAL_Y && mouse_y < PAL_Y + 16 * PAL_CELL)
+					pick = (mouse_y - PAL_Y) / PAL_CELL * 16 + (mouse_x - PAL_X) / PAL_CELL;
+				else if (mouse_y >= USED_Y && mouse_y < USED_Y + USED_CELL &&
+				         mouse_x >= usedX0 && mouse_x < usedX0 + usedCount * USED_CELL)
+					pick = usedList[(mouse_x - usedX0) / USED_CELL];
+
 				if (lastmouse_but == SDL_BUTTON_RIGHT)
 					done = true;
-				else if (mouse_x >= PAL_X && mouse_x < PAL_X + 16 * PAL_CELL &&
-				         mouse_y >= PAL_Y && mouse_y < PAL_Y + 16 * PAL_CELL)
+				else if (pick >= 0)
 				{
-					int *const target = (paletteTarget == SES_PAL_BACKGROUND) ? &background : &color;
-					*target = (mouse_y - PAL_Y) / PAL_CELL * 16 + (mouse_x - PAL_X) / PAL_CELL;
-					JE_playSampleNum(S_CURSOR);
+					if (paletteTarget == SES_PAL_BACKGROUND)
+						background = pick;
+					else
+						color = pick;
+					if (paletteTarget != SES_PAL_BACKGROUND && tool == SES_TOOL_COLORIZE)
+						dyeNow = true;
+					else
+						JE_playSampleNum(S_CURSOR);
 				}
 				else if (mouse_y >= STRIP_Y && mouse_y < STRIP_Y + SE_FRAME_H &&
 				         mouse_x >= STRIP_X && mouse_x < STRIP_X + SE_FRAMES * 26)
@@ -1899,12 +2136,12 @@ static void seSpriteEditor(int bank)
 						{
 						case SES_ROW_BANK:   bank = (bank + 7 + dir) % 8 + 1; break;
 						case SES_ROW_FRAME:  frame = (frame + 4 + dir) % 5 + 1; break;
-						case SES_ROW_TOOL:   tool = (tool + SES_TOOL_COUNT + dir) % SES_TOOL_COUNT; break;
+						case SES_ROW_TOOL:   tool = seCycleTool(tool, dir, &paletteTarget); break;
 						case SES_ROW_MIRROR: mirror = !mirror; break;
 						case SES_ROW_GUIDES: guides = (guides + SES_GUIDES_COUNT + dir) % SES_GUIDES_COUNT; break;
 						default:
-							if (captureHullCount > 0)
-								source = (source + captureHullCount + dir) % captureHullCount;
+							if (sourceCount > 0)
+								source = (source + sourceCount + dir) % sourceCount;
 							break;
 						}
 						JE_playSampleNum(S_CURSOR);
@@ -1965,18 +2202,29 @@ static void seSpriteEditor(int bank)
 				JE_playSampleNum(S_CURSOR);
 				break;
 			case SDL_SCANCODE_LEFTBRACKET:
-				color = (color + 255) % 256;
+				color = (color + 256 - seColorStep(tool, false)) % 256;
 				break;
 			case SDL_SCANCODE_RIGHTBRACKET:
-				color = (color + 1) % 256;
+				color = (color + seColorStep(tool, false)) % 256;
 				break;
 			case SDL_SCANCODE_H:
-				flipVertical = false;
+				flipMode = SES_FLIP_H;
 				act = SES_ACT_FLIP;
 				break;
 			case SDL_SCANCODE_V:
-				flipVertical = true;
+				flipMode = SES_FLIP_V;
 				act = SES_ACT_FLIP;
+				break;
+			case SDL_SCANCODE_1:
+			case SDL_SCANCODE_2:
+			case SDL_SCANCODE_3:
+			case SDL_SCANCODE_4:
+			case SDL_SCANCODE_5:
+			case SDL_SCANCODE_6:
+			case SDL_SCANCODE_7:
+			case SDL_SCANCODE_8:
+				bank = lastkey_scan - SDL_SCANCODE_1 + 1;
+				JE_playSampleNum(S_CURSOR);
 				break;
 			case SDL_SCANCODE_M:
 				mirror = !mirror;
@@ -1997,10 +2245,14 @@ static void seSpriteEditor(int bank)
 				{
 					if (tool != SES_TOOL_PICK)
 						seUndoBegin(bank);
-					seApplyTool(bank, frame, curX, curY, &color, &tool, mirror);
+					paintedColor = (tool == SES_TOOL_PAINT || tool == SES_TOOL_FILL);
+					seApplyTool(bank, frame, curX, curY, &color, &tool, mirror,
+					            (lastkey_mod & KMOD_SHIFT) != 0);
 				}
 				else if (selected >= SES_NUDGE_LEFT)
 					act = selected;
+				else if (selected == SES_PAL_COLOR && tool == SES_TOOL_COLORIZE)
+					dyeNow = true;
 				else
 					dir = 1;
 				break;
@@ -2017,17 +2269,20 @@ static void seSpriteEditor(int bank)
 				{
 				case SES_ROW_BANK:   bank = (bank + 7 + dir) % 8 + 1; break;
 				case SES_ROW_FRAME:  frame = (frame + 4 + dir) % 5 + 1; break;
-				case SES_ROW_TOOL:   tool = (tool + SES_TOOL_COUNT + dir) % SES_TOOL_COUNT; break;
+				case SES_ROW_TOOL:   tool = seCycleTool(tool, dir, &paletteTarget); break;
 				case SES_ROW_MIRROR: mirror = !mirror; break;
 				case SES_ROW_GUIDES: guides = (guides + SES_GUIDES_COUNT + dir) % SES_GUIDES_COUNT; break;
 				case SES_ROW_SOURCE:
-					if (captureHullCount > 0)
-						source = (source + captureHullCount + dir) % captureHullCount;
+					if (sourceCount > 0)
+						source = (source + sourceCount + dir) % sourceCount;
 					break;
-				case SES_PAL_COLOR:  color = (color + 256 + ((lastkey_mod & KMOD_SHIFT) ? dir * 16 : dir)) % 256; break;
+				case SES_PAL_COLOR:
+					color = (color + 256 + dir * seColorStep(tool, (lastkey_mod & KMOD_SHIFT) != 0)) % 256;
+					break;
 				case SES_PAL_BACKGROUND: background = (background + 256 + ((lastkey_mod & KMOD_SHIFT) ? dir * 16 : dir)) % 256; break;
+				case SES_ACT_CAPTURE: captureAll = !captureAll; break;
 				case SES_ACT_COPY:   copyPose = (copyPose + 4 + dir) % 5 + 1; break;
-				case SES_ACT_FLIP:   flipVertical = !flipVertical; break;
+				case SES_ACT_FLIP:   flipMode = (flipMode + SES_FLIP_COUNT + dir) % SES_FLIP_COUNT; break;
 				case SES_ACT_HISTORY: redoMode = !redoMode; break;
 				case SES_ACT_CLEAR:  clearAll = !clearAll; break;
 				default:             break;
@@ -2035,6 +2290,16 @@ static void seSpriteEditor(int bank)
 				JE_playSampleNum(S_CURSOR);
 			}
 			newkey = false;
+		}
+
+		if (paintedColor)
+			seTouchColor(recent, &recentCount, (JE_byte)color);
+
+		if (dyeNow)
+		{
+			seUndoBegin(bank);
+			seColorizeFrame(bank, frame, color >> 4);
+			JE_playSampleNum(S_SELECT);
 		}
 
 		if (act >= SES_NUDGE_LEFT && act != SES_ACT_HISTORY && act != SES_ACT_DONE)
@@ -2053,10 +2318,24 @@ static void seSpriteEditor(int bank)
 			break;
 		}
 		case SES_ACT_CAPTURE:
-			if (captureHullCount > 0 && seCaptureBank(bank, captureHulls[source]))
+		{
+			const int first = captureAll ? 1 : frame, last = captureAll ? SE_FRAMES : frame;
+			char name[32] = "";
+			bool taken = false;
+			if (source >= captureHullCount)
 			{
-				char name[32];
+				const int src = seCustomSourceBank(source - captureHullCount, bank);
+				seCaptureCustom(bank, src, first, last);
+				snprintf(name, sizeof(name), "Custom %d", src);
+				taken = true;
+			}
+			else if (captureHullCount > 0 && seCaptureHull(bank, captureHulls[source], first, last))
+			{
 				seTrimName(seCaptureHullName(captureHulls[source]), name, sizeof(name));
+				taken = true;
+			}
+			if (taken)
+			{
 				snprintf(notice, sizeof(notice), "Captured %.28s", name);
 				JE_playSampleNum(S_SELECT);
 			}
@@ -2066,6 +2345,7 @@ static void seSpriteEditor(int bank)
 				JE_playSampleNum(S_SPRING);
 			}
 			break;
+		}
 		case SES_ACT_COPY:
 			for (int y = 0; y < SE_FRAME_H; ++y)
 				for (int x = 0; x < SE_FRAME_W; ++x)
@@ -2073,7 +2353,16 @@ static void seSpriteEditor(int bank)
 			JE_playSampleNum(S_SELECT);
 			break;
 		case SES_ACT_FLIP:
-			seFlipFrame(bank, frame, flipVertical);
+			if (flipMode == SES_FLIP_H || flipMode == SES_FLIP_V)
+			{
+				seFlipFrame(bank, frame, flipMode == SES_FLIP_V);
+			}
+			else
+			{
+				const bool vertical = (flipMode == SES_FOLD_U || flipMode == SES_FOLD_D);
+				const bool fromFar = (flipMode == SES_FOLD_R || flipMode == SES_FOLD_D);
+				seFoldFrame(bank, frame, vertical, fromFar);
+			}
 			JE_playSampleNum(S_SELECT);
 			break;
 		case SES_ACT_HISTORY:
