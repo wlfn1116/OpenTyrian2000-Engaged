@@ -11,7 +11,7 @@ This fork adds:
 - a wider 16:9 playfield and smooth high-refresh rendering;
 - Endless mode built from the original levels and new gameplay effects;
 - two-player online play across every mode;
-- an in-game remake of the SHIPEDIT.EXE ship editor with added QoL;
+- an in-game remake of the SHIPEDIT.EXE ship editor;
 - an in-game custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows x86-64;
