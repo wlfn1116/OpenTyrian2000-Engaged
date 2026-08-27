@@ -8755,6 +8755,7 @@ int qa_run_unit_suite(void)
 	qa_test_peer_idle_rule();
 	qa_test_menu_claim();
 	qa_test_online_suite();
+	qa_test_endless_shop_stock();
 	qa_test_endless_suite();
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();

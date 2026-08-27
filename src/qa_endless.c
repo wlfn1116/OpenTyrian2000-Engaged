@@ -2671,6 +2671,60 @@ static void qa_sortie_restart_matrix(void)
 	endlessSortieHave = savedHave;
 }
 
+static void qa_sortie_stock_matrix(void)
+{
+	char seedSaved[COUNTOF(endlessRunSeed)];
+	memcpy(seedSaved, endlessRunSeed, sizeof(seedSaved));
+	JE_byte availSaved[9][10], availMaxSaved[9];
+	memcpy(availSaved, itemAvail, sizeof(availSaved));
+	memcpy(availMaxSaved, itemAvailMax, sizeof(availMaxSaved));
+	const bool haveSaved = endlessSortieHave, resumeSaved = endlessResumeVisit;
+	const bool lockedSaved = endlessLockedSortie;
+	const JE_byte outpostEpSaved = endlessSortieOutpostEp;
+
+	qa_session(0);
+	qa_clear_ships();
+	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
+	endlessSetSeed("QA REROLL STOCK");
+	endlessRunDepth = 9;
+	endlessSortieOutpostEp = 0;
+	endlessReseedPlayers((Uint64)endlessRunDepth * 2);
+	endlessResetShopPrices();
+	endlessShopRedrawStock();
+
+	JE_byte dealtAvail[9][10];
+	memcpy(dealtAvail, itemAvail, sizeof(dealtAvail));
+
+	player[0].cash = 10000000;
+	endlessCashResync();
+	qa_check(endlessTryReroll(), "the outpost can afford a reroll");
+	qa_check(memcmp(dealtAvail, itemAvail, sizeof(dealtAvail)) != 0,
+	         "...and the reroll deals different shelves");
+
+	JE_byte rolledAvail[9][10], rolledMax[9];
+	memcpy(rolledAvail, itemAvail, sizeof(rolledAvail));
+	memcpy(rolledMax, itemAvailMax, sizeof(rolledMax));
+
+	endlessCaptureSortie();
+	memset(itemAvail, 0x5a, sizeof(itemAvail));
+	memset(itemAvailMax, 3, sizeof(itemAvailMax));
+	endlessRestoreSortie();
+
+	qa_check(memcmp(rolledAvail, itemAvail, sizeof(rolledAvail)) == 0
+	         && memcmp(rolledMax, itemAvailMax, sizeof(rolledMax)) == 0,
+	         "a reopened outpost keeps the shelves the reroll paid for");
+	qa_check(endlessResumePending(),
+	         "...and resumes that visit instead of dealing a new one");
+
+	endlessSortieOutpostEp = outpostEpSaved;
+	endlessLockedSortie = lockedSaved;
+	endlessResumeVisit = resumeSaved;
+	endlessSortieHave = haveSaved;
+	endlessSetSeed(seedSaved);
+	memcpy(itemAvail, availSaved, sizeof(availSaved));
+	memcpy(itemAvailMax, availMaxSaved, sizeof(availMaxSaved));
+}
+
 /* Every gamble outcome, fired through the debug trigger from both machines. */
 static void qa_gamble_matrix(void)
 {
@@ -2765,6 +2819,7 @@ void qa_test_endless_suite(void)
 	qa_gamble_matrix();
 	qa_death_prompt_matrix();
 	qa_sortie_restart_matrix();
+	qa_sortie_stock_matrix();
 	qa_test_endless_death_menu();
 	qa_modifier_display_matrix();
 	qa_drive_matrix();

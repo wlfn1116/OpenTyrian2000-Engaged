@@ -375,15 +375,11 @@ static Uint8 *playeritem_map(PlayerItems *items, uint i)
 	return map[i];
 }
 
-static void ensure_equipped_items_visible(void)
+static void stock_owned_items(PlayerItems *owned)
 {
-	/* Add currently equipped items to the shop inventory if they are not
-	 * already present. This mirrors the initial setup performed when the
-	 * buy/sell screen is entered and is required when equipment is changed
-	 * via the debug menu. */
 	for (int i = 0; i < 7; i++)
 	{
-		int item = *playeritem_map(&shopPlayer()->items, i);
+		int item = *playeritem_map(owned, i);
 
 		int slot = 0;
 		for (; slot < itemAvailMax[itemAvailMap[i] - 1]; ++slot)
@@ -398,6 +394,20 @@ static void ensure_equipped_items_visible(void)
 			itemAvailMax[itemAvailMap[i] - 1]++;
 		}
 	}
+}
+
+static void ensure_equipped_items_visible(void)
+{
+	/* Add currently equipped items to the shop inventory if they are not
+	 * already present. This mirrors the initial setup performed when the
+	 * buy/sell screen is entered and is required when equipment is changed
+	 * via the debug menu. */
+	stock_owned_items(&shopPlayer()->items);
+}
+
+static void shop_stock_owned_items(void)
+{
+	stock_owned_items(endlessMode ? &shopPlayer()->items : &shopPlayer()->last_items);
 }
 
 uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut)
@@ -2458,24 +2468,7 @@ void JE_itemScreen(void)
 #endif
 
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
-	for (int i = 0; i < 7; i++)
-	{
-		int item = *playeritem_map(&shopPlayer()->last_items, i);
-
-		int slot = 0;
-
-		for (; slot < itemAvailMax[itemAvailMap[i]-1]; ++slot)
-		{
-			if (itemAvail[itemAvailMap[i]-1][slot] == item)
-				break;
-		}
-
-		if (slot == itemAvailMax[itemAvailMap[i]-1])
-		{
-			itemAvail[itemAvailMap[i]-1][slot] = item;
-			itemAvailMax[itemAvailMap[i]-1]++;
-		}
-	}
+	shop_stock_owned_items();
 
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
@@ -11407,4 +11400,77 @@ void JE_weaponViewFrame(void)
 
 	lastPower = 147 - (power / 10);
 
+}
+
+void qa_test_endless_shop_stock(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedTwo = twoPlayerMode;
+	const JE_boolean savedOne = onePlayerAction, savedCoopEndless = coopEndlessMode;
+	const bool savedNet = isNetworkGame;
+	const uint savedNum = thisPlayerNum, savedShopIdx = shopPlayerIndex;
+	Player savedPlayers[COUNTOF(player)];
+	JE_byte savedAvail[9][10], savedAvailMax[9];
+	memcpy(savedPlayers, player, sizeof(savedPlayers));
+	memcpy(savedAvail, itemAvail, sizeof(savedAvail));
+	memcpy(savedAvailMax, itemAvailMax, sizeof(savedAvailMax));
+
+	endlessMode = true;
+	coopEndlessMode = false;
+	twoPlayerMode = false;
+	onePlayerAction = false;
+	isNetworkGame = false;
+	thisPlayerNum = 1;
+	shopPlayerIndex = 0;
+
+	const JE_byte carried = 39, tradedIn = 41, absent = 43, customShip = 91;
+	memset(&player[0].items, 0, sizeof(player[0].items));
+	player[0].items.ship = 1;
+	player[0].items.weapon[FRONT_WEAPON].id = carried;
+	player[0].items.weapon[FRONT_WEAPON].power = 1;
+	player[0].items.generator = 1;
+	player[0].items.shield = 1;
+	player[0].last_items = player[0].items;
+	player[0].last_items.weapon[FRONT_WEAPON].id = tradedIn;
+	player[0].last_items.ship = customShip;
+
+	memset(itemAvail, 0, sizeof(itemAvail));
+	memset(itemAvailMax, 0, sizeof(itemAvailMax));
+	const int frontRow = itemAvailMap[1] - 1, shipRow = itemAvailMap[0] - 1;
+	itemAvail[frontRow][0] = carried;
+	itemAvail[frontRow][1] = 45;
+	itemAvailMax[frontRow] = 2;
+	itemAvail[shipRow][0] = player[0].items.ship;
+	itemAvailMax[shipRow] = 1;
+
+	shop_stock_owned_items();
+	qa_check(itemAvailMax[frontRow] == 2
+	         && itemAvail[frontRow][0] == carried && itemAvail[frontRow][1] == 45,
+	         "an Endless outpost does not restock the gear a purchase replaced");
+	qa_check(itemAvailMax[shipRow] == 1 && itemAvail[shipRow][0] == player[0].items.ship,
+	         "...including a custom ship, which nothing else stocks");
+
+	player[0].items.weapon[FRONT_WEAPON].id = absent;
+	shop_stock_owned_items();
+	qa_check(itemAvailMax[frontRow] == 3 && itemAvail[frontRow][2] == absent,
+	         "...but gear the ship carries and the shelves lack is still stocked");
+
+	endlessMode = false;
+	memset(itemAvail, 0, sizeof(itemAvail));
+	memset(itemAvailMax, 0, sizeof(itemAvailMax));
+	itemAvail[frontRow][0] = carried;
+	itemAvailMax[frontRow] = 1;
+	shop_stock_owned_items();
+	qa_check(itemAvailMax[frontRow] == 2 && itemAvail[frontRow][1] == tradedIn,
+	         "a campaign shop keeps stocking from the last level's loadout");
+
+	memcpy(itemAvailMax, savedAvailMax, sizeof(itemAvailMax));
+	memcpy(itemAvail, savedAvail, sizeof(itemAvail));
+	memcpy(player, savedPlayers, sizeof(savedPlayers));
+	shopPlayerIndex = savedShopIdx;
+	thisPlayerNum = savedNum;
+	isNetworkGame = savedNet;
+	coopEndlessMode = savedCoopEndless;
+	onePlayerAction = savedOne;
+	twoPlayerMode = savedTwo;
+	endlessMode = savedEndless;
 }

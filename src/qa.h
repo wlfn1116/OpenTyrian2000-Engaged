@@ -110,6 +110,7 @@ void qa_test_save_transfer_preinit(void);
 void qa_test_custom_episode(void);
 
 void qa_test_load_screen_help(void);
+void qa_test_endless_shop_stock(void);
 // Custom-ship return-point and gauge-scaling checks (mainint.c).
 void qa_test_extra_ship_return(void);
 // The Relaxed death prompt's rows and widths against the choice enum (mainint.c).
