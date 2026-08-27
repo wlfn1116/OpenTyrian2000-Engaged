@@ -285,7 +285,10 @@ void service_SDL_events(JE_boolean clear_new)
 				lastkey_mod = ev.key.keysym.mod;
 				keydown = true;
 
-				mouseInactive = true;
+				if (!mouseShiftKeepsCursor ||
+				    (ev.key.keysym.scancode != SDL_SCANCODE_LSHIFT &&
+				     ev.key.keysym.scancode != SDL_SCANCODE_RSHIFT))
+					mouseInactive = true;
 				return;
 
 			case SDL_KEYUP:

@@ -31,6 +31,7 @@ bool has_mouse = true;
 #endif
 
 bool mouseInactive = true;
+bool mouseShiftKeepsCursor = false;
 JE_byte mouseCursor;
 JE_word mouseX, mouseY, mouseButton;
 JE_word mouseXB, mouseYB;

@@ -34,6 +34,7 @@ enum
 extern bool has_mouse;
 
 extern bool mouseInactive;
+extern bool mouseShiftKeepsCursor;
 extern JE_byte mouseCursor;
 extern JE_word mouseX, mouseY, mouseButton;
 extern JE_word mouseXB, mouseYB;

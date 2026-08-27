@@ -1717,6 +1717,7 @@ static void seSpriteEditor(int bank)
 
 	wait_noinput(false, false, true);
 	newkey = newmouse = false;
+	mouseShiftKeepsCursor = true;
 
 	while (!done)
 	{
@@ -2402,6 +2403,8 @@ static void seSpriteEditor(int bank)
 			break;
 		}
 	}
+
+	mouseShiftKeepsCursor = false;
 
 	// Loadout previews read the compiled blob.
 	seRebuildShapes();
