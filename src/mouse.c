@@ -32,6 +32,7 @@ bool has_mouse = true;
 
 bool mouseInactive = true;
 bool mouseShiftKeepsCursor = false;
+bool mouseTwoFingerRightClick = false;
 JE_byte mouseCursor;
 JE_word mouseX, mouseY, mouseButton;
 JE_word mouseXB, mouseYB;

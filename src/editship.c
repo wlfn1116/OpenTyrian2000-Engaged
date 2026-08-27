@@ -1668,6 +1668,12 @@ static int seColorStep(int tool, bool wholeRow)
 	return (tool == SES_TOOL_COLORIZE || wholeRow) ? 16 : 1;
 }
 
+#ifdef PLATFORM_HANDHELD
+enum { SE_RIGHT_CLICK_EXITS = 0 };
+#else
+enum { SE_RIGHT_CLICK_EXITS = 1 };
+#endif
+
 static void seSpriteEditor(int bank)
 {
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
@@ -1718,6 +1724,7 @@ static void seSpriteEditor(int bank)
 	wait_noinput(false, false, true);
 	newkey = newmouse = false;
 	mouseShiftKeepsCursor = true;
+	mouseTwoFingerRightClick = true;
 
 	while (!done)
 	{
@@ -2105,7 +2112,7 @@ static void seSpriteEditor(int bank)
 				         mouse_x >= usedX0 && mouse_x < usedX0 + usedCount * USED_CELL)
 					pick = usedList[(mouse_x - usedX0) / USED_CELL];
 
-				if (lastmouse_but == SDL_BUTTON_RIGHT)
+				if (SE_RIGHT_CLICK_EXITS && lastmouse_but == SDL_BUTTON_RIGHT)
 					done = true;
 				else if (pick >= 0)
 				{
@@ -2405,6 +2412,7 @@ static void seSpriteEditor(int bank)
 	}
 
 	mouseShiftKeepsCursor = false;
+	mouseTwoFingerRightClick = false;
 
 	// Loadout previews read the compiled blob.
 	seRebuildShapes();

@@ -200,6 +200,42 @@ void mouseGetRelativeMotionF(float *const out_x, float *const out_y)
 	mouseWindowYRelative = 0;
 }
 
+#ifdef PLATFORM_HANDHELD
+enum { TOUCH_FINGER_MAX = 8 };
+static SDL_FingerID touchFinger[TOUCH_FINGER_MAX];
+static int touchFingerCount;
+
+static int touchFingerIndex(SDL_FingerID id)
+{
+	for (int i = 0; i < touchFingerCount; ++i)
+		if (touchFinger[i] == id)
+			return i;
+	return -1;
+}
+
+static void touchFingerPush(SDL_FingerID id)
+{
+	if (touchFingerIndex(id) < 0 && touchFingerCount < TOUCH_FINGER_MAX)
+		touchFinger[touchFingerCount++] = id;
+}
+
+static void touchFingerPop(SDL_FingerID id)
+{
+	const int i = touchFingerIndex(id);
+	if (i < 0)
+		return;
+
+	for (int j = i; j + 1 < touchFingerCount; ++j)
+		touchFinger[j] = touchFinger[j + 1];
+	--touchFingerCount;
+}
+
+static bool touchFingerOwnsPointer(SDL_FingerID id)
+{
+	return touchFingerCount == 0 || touchFinger[touchFingerCount - 1] == id;
+}
+#endif
+
 void service_SDL_events(JE_boolean clear_new)
 {
 	SDL_Event ev;
@@ -238,6 +274,9 @@ void service_SDL_events(JE_boolean clear_new)
 					windowHasFocus = false;
 
 					mouseSetRelative(mouseRelativeEnabled);
+#ifdef PLATFORM_HANDHELD
+					touchFingerCount = 0;
+#endif
 #ifdef TOUCH_UI_BUTTONS
 					touch_ui_release_all();
 #endif
@@ -397,6 +436,12 @@ void service_SDL_events(JE_boolean clear_new)
 				if (claimedByButton)
 					break;
 #endif
+				const bool secondFinger = (ev.type == SDL_FINGERDOWN && touchFingerCount > 0);
+				if (ev.type == SDL_FINGERDOWN)
+					touchFingerPush(ev.tfinger.fingerId);
+				else if (ev.type == SDL_FINGERUP)
+					touchFingerPop(ev.tfinger.fingerId);
+
 				int ww = 0, wh = 0;
 				SDL_GetWindowSize(main_window, &ww, &wh);
 				if (ww <= 0 || wh <= 0)
@@ -423,22 +468,29 @@ void service_SDL_events(JE_boolean clear_new)
 				else
 				{
 					// Menus: absolute tap-to-click at the touched point.
-					mouse_x = (Sint32)(ev.tfinger.x * (float)ww);
-					mouse_y = (Sint32)(ev.tfinger.y * (float)wh);
-					mapWindowPointToScreen(&mouse_x, &mouse_y);
-					mouseInactive = false;
+					const bool chord = mouseTwoFingerRightClick;
+					const bool movesPointer = !chord || ev.type == SDL_FINGERDOWN ||
+					                          (ev.type == SDL_FINGERMOTION &&
+					                           touchFingerOwnsPointer(ev.tfinger.fingerId));
+					if (movesPointer)
+					{
+						mouse_x = (Sint32)(ev.tfinger.x * (float)ww);
+						mouse_y = (Sint32)(ev.tfinger.y * (float)wh);
+						mapWindowPointToScreen(&mouse_x, &mouse_y);
+						mouseInactive = false;
+					}
 
 					if (ev.type == SDL_FINGERDOWN)
 					{
 						newmouse = true;
-						lastmouse_but = SDL_BUTTON_LEFT;
+						lastmouse_but = (chord && secondFinger) ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
 						lastmouse_x = mouse_x;
 						lastmouse_y = mouse_y;
 						mousedown = true;
 					}
 					else if (ev.type == SDL_FINGERUP)
 					{
-						mousedown = false;
+						mousedown = (chord && touchFingerCount > 0);
 					}
 				}
 				break;
