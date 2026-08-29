@@ -60,11 +60,12 @@ static JE_byte shot_guidance_nearest(int x, int y)
 	return closest;
 }
 
-// Only a shot walking a circle is left alone, since a course correction would pull it off its
-// pattern. A shot riding the ship is steered within the ship's frame, so its curve travels with it.
+// Only a pattern pinned to the ship on both axes (a shield ring) is left alone: steered off the
+// ship it would guard nothing.
 static bool shot_guidance_can_steer(const PlayerShotDataType *shot)
 {
-	return !shot->shotComplicated;
+	return !(shot->shotComplicated
+	         && shot->shotXM >= SHOT_ATTACHED_VEL_MIN && shot->shotYM >= SHOT_ATTACHED_VEL_MIN);
 }
 
 /* One velocity nudge on one axis. A ship-relative velocity (see SHOT_ATTACHED_VEL_MIN) is
@@ -72,6 +73,7 @@ static bool shot_guidance_can_steer(const PlayerShotDataType *shot)
  * free velocity is kept out of that range. */
 static void shot_guidance_nudge(JE_integer *vel, bool positive, bool xAxis)
 {
+	// The both-axes pin is not part of the x band.
 	if (xAxis && *vel == SHOT_ATTACHED_VEL_MIN)
 		return;
 
@@ -457,10 +459,13 @@ bool player_shot_move_and_draw(
 		*out_shoty = shot->shotY;
 
 		// Wide cull margins keep interpolated exits and returning projectile arcs visible.
-		// Decelerating shots are culled above -15 once they stop ascending.
+		// Decelerating shots are culled above -15 once they stop ascending; a riding
+		// velocity ascends by its drift from the resting value.
+		const int ym_drift = shot->shotYM >= SHOT_ATTACHED_VEL_MIN
+		                     ? shot->shotYM - SHOT_ATTACHED_VEL_REST : shot->shotYM;
 		if (shot->shotX < -34 || shot->shotX > PLAYFIELD_WIDTH + 34 ||
 			shot->shotY < -40 || shot->shotY > 240 ||
-			(shot->shotY < -15 && shot->shotYM >= 0))
+			(shot->shotY < -15 && ym_drift >= 0))
 		{
 			shotAvail[shot_id] = 0;
 			return false;
@@ -878,6 +883,18 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		    ? endlessPerkGuidanceDelay(bay_i, weapon->aim > 5 ? weapon->aim - 5 : 0) : 0;
 		if (guidance_delay > 0 && shot_guidance_can_steer(shot))
 		{
+			// A beam pinned by the lone x sentinel (Laser, SDF Main Gun) re-encodes as riding
+			// velocities: the same motion, now steerable on each axis, clamped into the band.
+			if (shot->shotXM == SHOT_ATTACHED_VEL_MIN && shot->shotYM < SHOT_ATTACHED_VEL_MIN)
+			{
+				int v = SHOT_ATTACHED_VEL_REST + shot->shotYM;
+				if (v < SHOT_ATTACHED_VEL_MIN)
+					v = SHOT_ATTACHED_VEL_MIN;
+				else if (v > SHOT_ATTACHED_VEL_MAX)
+					v = SHOT_ATTACHED_VEL_MAX;
+				shot->shotXM = SHOT_ATTACHED_VEL_REST;
+				shot->shotYM = (JE_integer)v;
+			}
 			shot->aimAtEnemy = shot_guidance_nearest(shot->shotX, shot->shotY);
 			shot->aimDelay = 5;
 			shot->aimDelayMax = (JE_byte)(guidance_delay | SHOT_AIM_GUIDANCE);

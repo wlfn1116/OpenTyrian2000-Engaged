@@ -2480,6 +2480,70 @@ static void qa_test_guidance_perk(void)
 	         && playerShotData[id].aimAtEnemy == 6,
 	         "a gun that rides the ship is steered and keeps riding it");
 
+	// The pinned-beam re-encode: both axes become riding velocities the nudge can steer.
+	const JE_word pinnedGun = 188;  // Laser level 1: every beam pins to the ship by the x sentinel
+	qa_check(weapons[pinnedGun].sx[0] == SHOT_ATTACHED_VEL_MIN && weapons[pinnedGun].sy[0] == 14
+	         && weapons[pinnedGun].circlesize == 0 && weapons[pinnedGun].aim <= 5,
+	         "the guidance test's pinned gun is the one it assumes");
+	id = qa_guidance_fire(SHOT_FRONT, pinnedGun);
+	s = &playerShotData[id];
+	qa_check(qa_guidance_marked(id) && s->aimAtEnemy == 6
+	         && s->shotXM == SHOT_ATTACHED_VEL_REST && s->shotYM == SHOT_ATTACHED_VEL_REST - 14,
+	         "a beam pinned by the lone x sentinel is re-encoded to ride the ship on both axes");
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == SHOT_ATTACHED_VEL_REST + 1 && s->shotYM == SHOT_ATTACHED_VEL_REST - 15,
+	         "...and its correction bends both axes inside the ship's frame");
+
+	// The top cull reads ascent from the riding drift.
+	const int savedDeltaX = player[0].delta_x_shot_move;
+	const int savedDeltaY = player[0].delta_y_shot_move;
+	player[0].delta_x_shot_move = 0;
+	player[0].delta_y_shot_move = 0;
+	bool outSpecial;
+	int outX, outY, outHitDx, outHitDy;
+	JE_integer outDmg;
+	JE_byte outBlast, outChain, outOwner;
+	JE_word outRadiusW, outRadiusH;
+	s->shotTrail = 255;
+	s->shotX = 100;
+	s->shotY = -20;
+	qa_check(player_shot_move_and_draw(id, &outSpecial, &outX, &outY, &outDmg, &outBlast,
+	                                   &outChain, &outOwner, &outRadiusW, &outRadiusH,
+	                                   &outHitDx, &outHitDy)
+	         && shotAvail[id] != 0,
+	         "above the screen a re-encoded beam still ascends and survives to the deep margin");
+	s->shotY = -20;
+	s->shotYM = SHOT_ATTACHED_VEL_REST;
+	qa_check(!player_shot_move_and_draw(id, &outSpecial, &outX, &outY, &outDmg, &outBlast,
+	                                    &outChain, &outOwner, &outRadiusW, &outRadiusH,
+	                                    &outHitDx, &outHitDy)
+	         && shotAvail[id] == 0,
+	         "...while one resting beside the ship is retired at the early one");
+	player[0].delta_x_shot_move = savedDeltaX;
+	player[0].delta_y_shot_move = savedDeltaY;
+
+	// Patterns: a free-flying one steers, one pinned to the ship on both axes does not.
+	const JE_word patternGun = 659;  // The Orange Juicer level 1: one free-flying looping shot
+	qa_check(weapons[patternGun].circlesize != 0 && weapons[patternGun].sx[0] == 0
+	         && weapons[patternGun].sy[0] == 2 && weapons[patternGun].aim <= 5,
+	         "the guidance test's pattern gun is the one it assumes");
+	id = qa_guidance_fire(SHOT_FRONT, patternGun);
+	s = &playerShotData[id];
+	qa_check(qa_guidance_marked(id) && s->shotComplicated && s->aimAtEnemy == 6,
+	         "a free-flying pattern shot is steered");
+	s->shotXM = 0;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == 1, "...by its base velocity, which carries the whole pattern");
+
+	const JE_word ringGun = 749;  // Orange Shield: a pattern pinned to the ship on both axes
+	qa_check(weapons[ringGun].circlesize != 0
+	         && weapons[ringGun].sx[0] == SHOT_ATTACHED_VEL_REST
+	         && weapons[ringGun].sy[0] == SHOT_ATTACHED_VEL_REST && weapons[ringGun].aim <= 5,
+	         "the guidance test's ring gun is the one it assumes");
+	id = qa_guidance_fire(SHOT_FRONT, ringGun);
+	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id) && playerShotData[id].aimAtEnemy == 0,
+	         "a pattern pinned to the ship on both axes is left alone");
+
 	// A recycled slot: the mark must not outlive the shot that carried it.
 	memset(shotAvail, 0, sizeof(shotAvail));
 	endlessPerkTakenBy[0][PERK_GUIDANCE] = 0;

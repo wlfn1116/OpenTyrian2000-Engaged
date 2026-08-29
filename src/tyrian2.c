@@ -9315,6 +9315,21 @@ void networkStartScreen(void)
 }
 #endif /* WITH_NETWORK */
 
+// Present one supersampled title-slide frame: the composed background with the two logo
+// sprites at fractional positions.
+static void title_logo_present_hi(SDL_Surface *hi, const SDL_Surface *bg, int scale,
+                                  float yLogo, float y2K)
+{
+	memcpy(hi->pixels, bg->pixels, (size_t)hi->pitch * hi->h);
+
+	const int x_off = video_get_menu_x_offset();
+	blit_sprite_table_scaled(hi, (11 + x_off) * scale, (int)(yLogo * scale + 0.5f),
+	                         PLANET_SHAPES, 146, scale, BLITT_COPY, 0, 0, false);
+	blit_sprite_table_scaled(hi, (155 + x_off) * scale, (int)(y2K * scale + 0.5f),
+	                         PLANET_SHAPES, 151, scale, BLITT_COPY, 0, 0, false);
+	present_hi(hi);
+}
+
 bool titleScreen(void)
 {
 	enum MenuItemIndex
@@ -9387,6 +9402,33 @@ bool titleScreen(void)
 					const Uint32 slideStart = SDL_GetTicks();
 					const Uint32 slideMs = 800;  // ~matches the original stepped slide
 
+					// The background is composed and expanded once: the logo never
+					// reaches the edge columns the pillarbox gradient samples.
+					SDL_Surface *logo_hi = NULL, *logo_hi_bg = NULL;
+					const int ss = effective_supersample();
+					if (ss > 1)
+					{
+						const int hiW = vga_width * ss;
+						const int hiH = vga_height * ss;
+						logo_hi = SDL_CreateRGBSurface(0, hiW, hiH, 8, 0, 0, 0, 0);
+						logo_hi_bg = SDL_CreateRGBSurface(0, hiW, hiH, 8, 0, 0, 0, 0);
+						if (logo_hi != NULL && logo_hi_bg != NULL)
+						{
+							memcpy(VGAScreen->pixels, VGAScreen2->pixels,
+							       VGAScreen->pitch * VGAScreen->h);
+							expand_frame_to_hi(video_compose_frame(), logo_hi_bg, ss);
+						}
+						else
+						{
+							if (logo_hi != NULL)
+								SDL_FreeSurface(logo_hi);
+							if (logo_hi_bg != NULL)
+								SDL_FreeSurface(logo_hi_bg);
+							logo_hi = NULL;
+							logo_hi_bg = NULL;
+						}
+					}
+
 					for (;;)
 					{
 						touch_ui_set_layout(TOUCH_LAYOUT_SKIP);
@@ -9394,13 +9436,22 @@ bool titleScreen(void)
 						if (t > 1.0f)
 							t = 1.0f;
 
-						const int yLogo = (int)(60.0f - 56.0f * t + 0.5f);
-						const int y2K   = (int)(45.0f + 28.0f * t + 0.5f);
+						const float yLogo = 60.0f - 56.0f * t;
+						const float y2K   = 45.0f + 28.0f * t;
 
-						memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
-						blit_sprite(VGAScreenSeg, 11, yLogo, PLANET_SHAPES, 146); // tyrian logo
-						blit_sprite(VGAScreenSeg, 155, y2K, PLANET_SHAPES, 151); // 2000(tm)
-						JE_showVGA();
+						// The 1x frame stays current either way, so the resize-repaint
+						// poll in service_SDL_events never presents a logo-less title.
+						memcpy(VGAScreen->pixels, VGAScreen2->pixels,
+						       VGAScreen->pitch * VGAScreen->h);
+						blit_sprite(VGAScreenSeg, 11, (int)(yLogo + 0.5f),
+						            PLANET_SHAPES, 146); // tyrian logo
+						blit_sprite(VGAScreenSeg, 155, (int)(y2K + 0.5f),
+						            PLANET_SHAPES, 151); // 2000(tm)
+
+						if (logo_hi != NULL)
+							title_logo_present_hi(logo_hi, logo_hi_bg, ss, yLogo, y2K);
+						else
+							JE_showVGA();
 
 						if (JE_anyButton())
 							break;
@@ -9409,6 +9460,12 @@ bool titleScreen(void)
 
 						if (!output_vsync)
 							limit_render_fps();
+					}
+
+					if (logo_hi != NULL)
+					{
+						SDL_FreeSurface(logo_hi);
+						SDL_FreeSurface(logo_hi_bg);
 					}
 				}
 				else

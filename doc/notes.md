@@ -273,7 +273,9 @@ modifiers; The End also excludes Dead Generator.
 Perks belong to a player. Use `perkMine` for the local shopper and `perkFx` for
 the ship whose effect is being calculated.
 
-- Guidance Package tags shots by bay and retargets after a kill.
+- Guidance Package tags shots by bay and retargets after a kill. It re-encodes
+  a beam pinned by the lone x sentinel (sx 101) as riding velocities on both
+  axes and steers everything except patterns pinned to the ship on both axes.
 - Twin Pods spends the second shot's power and ammunition. If the primary shot
   is refused, fire neither.
 - Reinforced Prow scales damage dealt and received separately.

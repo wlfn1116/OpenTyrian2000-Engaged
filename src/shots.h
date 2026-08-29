@@ -51,8 +51,9 @@ typedef struct {
 // A shot velocity above 100 rides the ship: the move subtracts 120 and adds the ship's delta, so
 // 120 rests beside the ship and the shipped tables use 111 to 124 for beams that drift either way.
 // Steering clamps a riding velocity to this range, which keeps it riding.
-#define SHOT_ATTACHED_VEL_MIN 101  // ...and on x this one value pins both axes; steering leaves it alone
-#define SHOT_ATTACHED_VEL_MAX 199  // drift cap, well clear of the range the shipped tables use
+#define SHOT_ATTACHED_VEL_MIN  101  // ...on x this one value pins both axes; guidance re-encodes it
+#define SHOT_ATTACHED_VEL_REST 120
+#define SHOT_ATTACHED_VEL_MAX  199  // drift cap, well clear of the range the shipped tables use
 
 // Large enough for sustained specials and maximum-width custom weapons. Keep
 // RL_ID_PSHOT_BASE + MAX_PWEAPON below RL_ID_ESHOT_BASE.

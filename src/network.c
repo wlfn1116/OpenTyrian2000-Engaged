@@ -110,7 +110,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       88           /* Required-set custom sync. */
+#define NET_VERSION       89           /* Guidance steers beams and patterns. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.
