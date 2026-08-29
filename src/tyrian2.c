@@ -101,12 +101,11 @@ static void enemy_sprite_box(unsigned int i, int *left, int *top, int *right, in
 	*bottom = *top  + (big ? 28 : 14);
 }
 
-// Center Martyrdom on the visible bounds of a linked or 2x2 body. A single-cell enemy keeps its
-// sprite anchor; the freed slot is measured directly before unioning live link partners.
-static void endlessMartyrBurstOrigin(unsigned int i, JE_integer *ox, JE_integer *oy)
+/* The visible screen bounds of the linked or 2x2 body `i` belongs to; the freed slot is measured
+ * directly before unioning live link partners. Returns false for a lone single-cell enemy. */
+static bool enemy_hull_bounds(unsigned int i, int *left, int *top, int *right, int *bottom)
 {
-	int left, top, right, bottom;
-	enemy_sprite_box(i, &left, &top, &right, &bottom);
+	enemy_sprite_box(i, left, top, right, bottom);
 	bool multiCell = (enemy[i].size == 1);
 
 	const JE_byte link = enemy[i].linknum;
@@ -126,15 +125,22 @@ static void endlessMartyrBurstOrigin(unsigned int i, JE_integer *ox, JE_integer 
 			if (r <= PLAYFIELD_LEFT || l > PLAYFIELD_RIGHT || b <= 0 || t >= vga_height)
 				continue;
 
-			if (l < left)   left = l;
-			if (t < top)    top = t;
-			if (r > right)  right = r;
-			if (b > bottom) bottom = b;
+			if (l < *left)   *left = l;
+			if (t < *top)    *top = t;
+			if (r > *right)  *right = r;
+			if (b > *bottom) *bottom = b;
 			multiCell = true;
 		}
 	}
 
-	if (!multiCell)
+	return multiCell;
+}
+
+// Center Martyrdom on the visible bounds of a linked or 2x2 body.
+static void endlessMartyrBurstOrigin(unsigned int i, JE_integer *ox, JE_integer *oy)
+{
+	int left, top, right, bottom;
+	if (!enemy_hull_bounds(i, &left, &top, &right, &bottom))
 	{
 		*ox = enemy[i].ex + enemy[i].mapoffset;
 		*oy = enemy[i].ey;
@@ -143,6 +149,22 @@ static void endlessMartyrBurstOrigin(unsigned int i, JE_integer *ox, JE_integer 
 
 	*ox = (JE_integer)((left + right) / 2);
 	*oy = (JE_integer)((top + bottom) / 2);
+}
+
+/* Contract in tyrian2.h. Bank ex space because the per-tick mapoffset reapplies: a screen-space
+ * hull center must shed the dying slot's offset. */
+void enemy_loot_anchor(unsigned int i, JE_integer *x, JE_integer *y)
+{
+	int left, top, right, bottom;
+	if (!enemy_hull_bounds(i, &left, &top, &right, &bottom))
+	{
+		*x = enemy[i].ex;
+		*y = enemy[i].ey;
+		return;
+	}
+
+	*x = (JE_integer)((left + right) / 2 - 6 - enemy[i].mapoffset);
+	*y = (JE_integer)((top + bottom) / 2 - 7);
 }
 
 // Spawn a 4-, 6-, or 8-way Martyrdom burst unless the shared enemy-shot pool is nearly full.
@@ -555,6 +577,7 @@ void enemy_logical_death(unsigned int i, int killer)
 	// endlessFxActive(), so outside an endless run these cost a call and nothing else.
 	endlessCountKill(linknum, killer);
 	endlessAwardEliteKill(linknum, elite, killer);
+	endlessPerkSurveyorDrops(i, linknum, killer);
 	const int shockRadius = endlessShockwaveRadius(linknum, elite);
 	const int martyrShots = endlessMartyrdomBurstShots(linknum, elite);
 

@@ -391,6 +391,8 @@ static int endlessShockwaveLastLink = 0;
 
 static int endlessBountyLastLink = 0;
 
+static int endlessSurveyorLastLink = 0;
+
 // Level-script events that write enemy armor, and the one that renumbers a link group.
 #define ENDLESS_EVENT_ARMOR_SET     25
 #define ENDLESS_EVENT_ARMOR_SET_ALT 47
@@ -451,6 +453,7 @@ void endlessResetElites(void)
 	endlessMartyrLastLink = 0;
 	endlessShockwaveLastLink = 0;
 	endlessBountyLastLink = 0;
+	endlessSurveyorLastLink = 0;
 	endlessAegisReset();
 
 	// Phase salts must be unique across all structural streams.
@@ -867,6 +870,10 @@ bool endlessSpecialPickup(int slot)
 #define ENEMY_REAR_POWERUP  534
 #define ENEMY_GEM_5000      399
 
+// Surveyor's finds: the AST. CITY superbomb (value -4) and the ASTEROID1 orbiting orb (value -3).
+#define ENEMY_SUPERBOMB     800
+#define ENEMY_ORBIT_ORB     535
+
 static bool endlessPortCanPowerUp(uint port)
 {
 	// Either ship having room keeps the pickup on the field for whoever can still take it.
@@ -898,15 +905,66 @@ JE_word endlessResolvePowerupDrop(JE_word eDatI)
 	return ENEMY_GEM_5000;
 }
 
-// Embedded cubes become visible gems. Campaign-effect mode keeps the normal archive.
-void endlessDropCubeGem(int slot)
+// Spawn one loot enemy in the dead enemy's bank.
+static void endlessSpawnLootXY(int slot, JE_word eDatI, JE_integer x, JE_integer y)
 {
-	const Sint16 g = JE_newEnemy(slot - (slot % 25), ENEMY_GEM_5000, 0);
+	const Sint16 g = JE_newEnemy(slot - (slot % 25), eDatI, 0);
 	if (g == 0)
 		return;
 
-	enemy[g-1].ex = enemy[slot].ex;
-	enemy[g-1].ey = enemy[slot].ey;
+	enemy[g-1].ex = x;
+	enemy[g-1].ey = y;
+}
+
+// Embedded cubes become visible gems. Campaign-effect mode keeps the normal archive.
+void endlessDropCubeGem(int slot)
+{
+	endlessSpawnLootXY(slot, ENEMY_GEM_5000, enemy[slot].ex, enemy[slot].ey);
+}
+
+// Surveyor's kill drops. Rules and pickup identities in doc/notes.md#perks.
+void endlessPerkSurveyorDrops(unsigned int slot, int linknum, int killer)
+{
+	if (!endlessFxActive())
+		return;
+
+	JE_byte stacks = 0;
+	if (killer >= 0 && killer < 2)
+	{
+		stacks = endlessPerkEffective(coopEndlessMode ? (uint)killer : 0, PERK_SURVEYOR);
+	}
+	else
+	{
+		for (uint p = 0; p < endlessEffectPlayers(); ++p)
+			if (endlessPerkEffective(p, PERK_SURVEYOR) > stacks)
+				stacks = endlessPerkEffective(p, PERK_SURVEYOR);
+	}
+	if (stacks == 0)
+		return;
+
+	if (linknum != 0 && linknum == endlessSurveyorLastLink)
+		return;
+	endlessSurveyorLastLink = linknum;
+
+	// Two draws as statements: an unsequenced pair diverges across compilers.
+	const int odds = ENDLESS_PERK_SURVEYOR_DROP_BASE / stacks;
+	const bool bomb = (mt_rand() % odds) == 0;
+	const bool orb  = (mt_rand() % odds) == 0;
+	if (!bomb && !orb)
+		return;
+
+	JE_integer ax, ay;
+	enemy_loot_anchor(slot, &ax, &ay);
+
+	/* The kill site freed this slot just before the call but still reads and writes its fields
+	 * for the explosion, so the loot must not land there: hold the slot across the spawns. */
+	const JE_byte avail = enemyAvail[slot];
+	enemyAvail[slot] = 0;
+	if (bomb)
+		endlessSpawnLootXY((int)slot, ENEMY_SUPERBOMB, ax, ay);
+	if (orb)
+		endlessSpawnLootXY((int)slot, ENEMY_ORBIT_ORB, ax, ay);
+	enemyAvail[slot] = avail;
 }
 
 // Kill-fire HUD values.
@@ -1634,6 +1692,7 @@ void endless_combat_register_rollback(void)
 	rollback_register("endless.martyrLink", &endlessMartyrLastLink, sizeof(endlessMartyrLastLink));
 	rollback_register("endless.shockLink", &endlessShockwaveLastLink, sizeof(endlessShockwaveLastLink));
 	rollback_register("endless.bountyLink", &endlessBountyLastLink, sizeof(endlessBountyLastLink));
+	rollback_register("endless.surveyLink", &endlessSurveyorLastLink, sizeof(endlessSurveyorLastLink));
 	rollback_register("endless.aegisCd", endlessAegisCooldown, sizeof(endlessAegisCooldown));
 	rollback_register("endless.reviveGrace", &endlessReviveGrace, sizeof(endlessReviveGrace));
 	rollback_register("endless.staticLock", endlessStaticLockout, sizeof(endlessStaticLockout));

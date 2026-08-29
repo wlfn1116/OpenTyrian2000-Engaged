@@ -2567,6 +2567,226 @@ static void qa_test_guidance_perk(void)
 	guidedShotScreenAim = savedGuidedAim;
 }
 
+// The survey pickups' loot on the field after a drop-test kill. Each spawned pickup costs one
+// scatter draw in JE_setupEnemy (startxc is set on both records), which the stream checks add on.
+static int qa_surveyor_count_loot(int *bombs, int *orbs, int *misplaced,
+                                  JE_integer wantX, JE_integer wantY)
+{
+	int loot = 0;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		if (enemyAvail[i] != 2)
+			continue;
+		++loot;
+		if (!enemy[i].scoreitem || enemy[i].ex != wantX || enemy[i].ey != wantY)
+			++*misplaced;
+		if (enemy[i].evalue == -4)
+			++*bombs;
+		else if (enemy[i].evalue == -3)
+			++*orbs;
+		else
+			++*misplaced;
+	}
+	return loot;
+}
+
+/* Surveyor's kill drops: both survey pickups appear at the kill anchor, one pair of draws per
+ * linked hull with the loot at the hull's middle, deeper stacks shorten the odds, no draws
+ * without the perk, and nothing lands in the slot the kill site still uses. */
+static void qa_test_surveyor_drop_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const Uint64 savedActive = endlessActiveMods;
+	Uint64 savedPlayerMods[2];
+	memcpy(savedPlayerMods, endlessPlayerMods, sizeof(savedPlayerMods));
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	endlessActiveMods = 0;
+	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+
+	qa_check(enemyDat[800].value == -4 && enemyDat[535].value == -3,
+	         "the survey drop test's pickups are the two the collector special-cases");
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+
+	// The loot anchor: a lone cell keeps its own anchor...
+	enemyAvail[0] = 0;
+	enemy[0].ex = 90;
+	enemy[0].ey = 80;
+	JE_integer ax, ay;
+	enemy_loot_anchor(0, &ax, &ay);
+	qa_check(ax == 90 && ay == 80, "a lone cell's loot anchor is its own");
+
+	// ...and a linked 2x2-of-cells hull centers a loot cell on its visible union.
+	for (uint part = 10; part < 14; ++part)
+	{
+		enemyAvail[part] = 0;
+		enemy[part].ex = (JE_integer)(100 + (part % 2) * 12);
+		enemy[part].ey = (JE_integer)(60 + ((part - 10) / 2) * 14);
+		enemy[part].linknum = 9;
+	}
+	enemy_loot_anchor(10, &ax, &ay);
+	qa_check(ax == 106 && ay == 67, "a linked hull's loot anchor is the middle of its union");
+
+	// Without the perk a kill leaves the shared stream untouched and the field empty.
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		enemyAvail[i] = 1;
+	mt_srand(0x5EED50);
+	const Uint32 refDraw = mt_rand();
+	mt_srand(0x5EED50);
+	enemyAvail[0] = 0;
+	enemy[0].linknum = 0;
+	enemy_logical_death(0, 0);
+	qa_check(mt_rand() == refDraw, "without Surveyor a kill draws nothing from the shared stream");
+	bool spawnedAny = false;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		spawnedAny |= enemyAvail[i] != 1;
+	qa_check(!spawnedAny, "...and drops nothing");
+
+	/* Two stacks: run kills in the first free slot of the bank; both finds must show up. A drop
+	 * landing in that slot instead of beside it would mean the occupied-slot hold is gone. */
+	endlessPerkTakenBy[0][PERK_SURVEYOR] = 2;
+	endlessPerkRederive();
+	mt_srand(0x5EED51);
+	int bombs = 0, orbs = 0, misplaced = 0;
+	for (int k = 0; k < 3000; ++k)
+	{
+		for (uint i = 0; i < COUNTOF(enemy); ++i)
+			enemyAvail[i] = 1;   // sweep the last pass's loot so the bank cannot fill up
+		enemyAvail[0] = 0;
+		enemy[0].ex = (JE_integer)(60 + (k % 100));
+		enemy[0].ey = 90;
+		enemy[0].linknum = 0;
+		enemy_logical_death(0, 0);
+		qa_surveyor_count_loot(&bombs, &orbs, &misplaced, enemy[0].ex, enemy[0].ey);
+	}
+	qa_check(bombs > 0 && orbs > 0, "with Surveyor both survey pickups drop");
+	qa_check(misplaced == 0,
+	         "every drop is a score item at the kill anchor, outside the freed kill slot");
+
+	// One stack: half the drop chance of two, pinned by comparing the same-size runs.
+	endlessPerkTakenBy[0][PERK_SURVEYOR] = 1;
+	endlessPerkRederive();
+	mt_srand(0x5EED54);
+	int bombs1 = 0, orbs1 = 0, misplaced1 = 0;
+	for (int k = 0; k < 3000; ++k)
+	{
+		for (uint i = 0; i < COUNTOF(enemy); ++i)
+			enemyAvail[i] = 1;
+		enemyAvail[0] = 0;
+		enemy[0].linknum = 0;
+		enemy_logical_death(0, 0);
+		qa_surveyor_count_loot(&bombs1, &orbs1, &misplaced1, enemy[0].ex, enemy[0].ey);
+	}
+	qa_check(bombs1 + orbs1 > 0 && bombs1 + orbs1 < bombs + orbs && misplaced1 == 0,
+	         "one stack still drops, at longer odds than two");
+
+	/* A linked hull spends one pair of draws however many parts go down with it, plus the one
+	 * scatter draw each spawned pickup costs, and its loot sits at the hull's middle. */
+	endlessPerkTakenBy[0][PERK_SURVEYOR] = 2;
+	endlessPerkRederive();
+	int hullDrops = 0, hullMisplaced = 0, hullBombs = 0, hullOrbs = 0;
+	mt_srand(0x5EED52);
+	for (int k = 0; k < 2000 && hullDrops == 0; ++k)
+	{
+		for (uint i = 0; i < COUNTOF(enemy); ++i)
+			enemyAvail[i] = 1;
+		const JE_byte link = (JE_byte)(9 + (k % 2));   // alternate so the link latch never blocks
+		for (uint part = 10; part < 14; ++part)
+		{
+			enemyAvail[part] = 0;
+			enemy[part].ex = (JE_integer)(100 + (part % 2) * 12);
+			enemy[part].ey = (JE_integer)(60 + ((part - 10) / 2) * 14);
+			enemy[part].linknum = link;
+		}
+		const Uint32 markBefore = mt_rand();
+		mt_srand(markBefore);   // reseed on a drawn value: a fresh, reproducible stream point
+		for (uint part = 10; part < 14; ++part)
+			enemy_logical_death(part, 0);
+		hullDrops += qa_surveyor_count_loot(&hullBombs, &hullOrbs, &hullMisplaced, 106, 67);
+		const Uint32 got = mt_rand();
+		mt_srand(markBefore);
+		for (int d = 0; d < 2 + hullDrops; ++d)
+			mt_rand();
+		qa_check(mt_rand() == got,
+		         "a linked hull spends one pair of draws plus its spawns' scatter, not one per part");
+		if (hullDrops == 0)
+			mt_srand(got);   // walk the stream forward for the next attempt
+	}
+	qa_check(hullDrops > 0 && hullMisplaced == 0,
+	         "a linked hull's loot lands at the middle of its union");
+
+	// In co-op the perk is the holder's: only their kills roll, though anyone may take the loot.
+	coopEndlessMode = true;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkTakenBy[1][PERK_SURVEYOR] = 2;
+	endlessPerkRederive();
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		enemyAvail[i] = 1;
+	mt_srand(0x5EED53);
+	const Uint32 coopRef = mt_rand();
+	mt_srand(0x5EED53);
+	enemyAvail[5] = 0;
+	enemy[5].linknum = 0;
+	enemy_logical_death(5, 0);   // killed by the seat without the perk
+	qa_check(mt_rand() == coopRef, "in co-op the bare seat's kills roll nothing");
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		enemyAvail[i] = 1;
+	mt_srand(0x5EED55);
+	enemyAvail[5] = 0;
+	enemy[5].linknum = 0;
+	enemy_logical_death(5, 1);   // killed by the holder
+	int coopLoot = 0;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		coopLoot += enemyAvail[i] == 2;
+	const Uint32 gotCoop = mt_rand();
+	mt_srand(0x5EED55);
+	for (int d = 0; d < 2 + coopLoot; ++d)
+		mt_rand();
+	qa_check(mt_rand() == gotCoop, "...the holder's kills roll");
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		enemyAvail[i] = 1;
+	mt_srand(0x5EED56);
+	enemyAvail[5] = 0;
+	enemy[5].linknum = 0;
+	enemy_logical_death(5, ENDLESS_KILLER_NONE);
+	int noneLoot = 0;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		noneLoot += enemyAvail[i] == 2;
+	const Uint32 gotNone = mt_rand();
+	mt_srand(0x5EED56);
+	for (int d = 0; d < 2 + noneLoot; ++d)
+		mt_rand();
+	qa_check(mt_rand() == gotNone, "...and an unclaimed kill rolls with the deeper seat");
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	memcpy(endlessPlayerMods, savedPlayerMods, sizeof(savedPlayerMods));
+	endlessActiveMods = savedActive;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
 /* Twin Pods: where the two volleys land around each pod, that the perk stays personal in co-op, and
  * the two refusals (no first volley, no generator power for a second). */
 static void qa_test_twin_pods_perk(void)
@@ -8784,6 +9004,7 @@ int qa_run_unit_suite(void)
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
 	qa_test_guidance_perk();
+	qa_test_surveyor_drop_perk();
 	qa_test_twin_pods_perk();
 	qa_test_reinforced_prow_perk();
 	qa_test_knife_fight_perk();

@@ -36,7 +36,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Shield Matrix",    "Your shield recharges faster.",        4 },
 	{ "High-Velocity Shots", "Your shots travel faster.",        3 },
 	{ "Radar",            "Reveals sector levels; one reroll a visit.", 1 },
-	{ "Surveyor",         "Chart-a-Course offers an extra route.",     2 },
+	{ "Surveyor",         "An extra route; kills can drop pickups.",   2 },
 	{ "Executioner",      "Hits deal more to badly wounded enemies.",  3 },
 	{ "Opening Salvo",    "A pause supercharges a second of fire.", 1 },
 	{ "Kinetic Converter","Hits refuel gear; twiddles cost less.", 3 },

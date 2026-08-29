@@ -80,6 +80,10 @@ void enemy_note_full_armor(struct JE_SingleEnemyType *enemy);
 // Despawns still clear enemyAvail directly.
 void enemy_logical_death(unsigned int i, int killer);
 
+/* Where loot dropped by the body `i` belongs to should sit: the dying cell's anchor, or a cell
+ * centered on the visible hull for a linked or 2x2 body. In `i`'s bank ex space. */
+void enemy_loot_anchor(unsigned int i, JE_integer *x, JE_integer *y);
+
 /* Take the hull `slot` belongs to down as a killing shot does: every linked part pays out to
  * `payee`, dies credited to `killer` and explodes, a part with edlevel -1 transforms instead,
  * and a link-254 kill fires the level's jump. */
