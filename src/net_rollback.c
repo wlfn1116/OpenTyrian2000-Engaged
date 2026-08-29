@@ -1375,7 +1375,7 @@ static bool nrb_resync_pump(Uint32 wait_start, bool *reported, const char *why)
 			overlay_for = wait_start;
 			JE_barShade(VGAScreen, 3, 60, 257, 80);
 			JE_barShade(VGAScreen, 5, 62, 255, 78);
-			JE_dString(VGAScreen, 10, 65, "Resyncing players.", SMALL_FONT_SHAPES);
+			JE_dStringOutlined(VGAScreen, 10, 65, "Resyncing players.", SMALL_FONT_SHAPES);
 			last_present = 0;
 		}
 		if (SDL_GetTicks() - last_present > 100)

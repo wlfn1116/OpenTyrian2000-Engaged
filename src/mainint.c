@@ -2417,8 +2417,8 @@ void JE_drawNetworkNotice(const char *text)
 
 	JE_barShade(VGAScreen, px0, py0, px1, py1);
 	JE_barShade(VGAScreen, px0 + 2, py0 + 2, px1 - 2, py1 - 2);
-	JE_dString(VGAScreen, (px0 + px1) / 2 - JE_textWidth(text, normal_font) / 2, py0 + 7,
-	           text, SMALL_FONT_SHAPES);
+	JE_dStringOutlined(VGAScreen, (px0 + px1) / 2 - JE_textWidth(text, normal_font) / 2, py0 + 7,
+	                   text, SMALL_FONT_SHAPES);
 }
 
 void JE_doInGameSetup(void)

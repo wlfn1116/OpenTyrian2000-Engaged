@@ -40,6 +40,8 @@ extern JE_byte warningCol;
 extern JE_shortint warningColChange;
 
 void JE_dString(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);
+// JE_dString plus a black cardinal-direction outline, for shape-font text drawn over artwork.
+void JE_dStringOutlined(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);
 // Dim an already-drawn shape-font string in place (halves each glyph's shade), following the
 // same glyph advance as JE_dString.
 void JE_dStringDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);

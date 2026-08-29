@@ -162,6 +162,10 @@ static JE_integer col, colC;
 static JE_byte lastCurSel;
 static JE_integer curMenu;
 static JE_byte curSel[MENU_MAX]; /* [1..maxmenu] */
+
+// Load/save cursor row from the last slot picked, restored on each outpost visit so a
+// quicksave keeps landing on the same slot across levels.
+static JE_byte lastLoadSaveSel = 2;
 static JE_byte curItemType, curItem, cursor;
 static JE_boolean leftPower, rightPower, rightPowerAfford;
 static JE_byte currentCube;
@@ -1717,16 +1721,17 @@ void shopWaitNotice(const char *text, const char *detail, const char *hint)
 	JE_barShade(VGAScreen, 3, 3, LEGACY_WIDTH - 4, 196);
 	JE_barShade(VGAScreen, 1, 1, LEGACY_WIDTH - 2, 198);
 
-	JE_dString(VGAScreen, JE_fontCenter(text, SMALL_FONT_SHAPES), 92, text, SMALL_FONT_SHAPES);
+	// Black-outlined: the shade above still leaves bright backdrop pixels under the text.
+	JE_dStringOutlined(VGAScreen, JE_fontCenter(text, SMALL_FONT_SHAPES), 92, text, SMALL_FONT_SHAPES);
 	if (detail != NULL)
 	{
-		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 110, detail,
-		                    small_font, centered, 15, 4, false, 1);
+		draw_font_hv_full_shadow(VGAScreen, LEGACY_WIDTH / 2, 110, detail,
+		                         small_font, centered, 15, 4, true, 1);
 	}
 	if (hint != NULL)
 	{
-		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 122, hint,
-		                    small_font, centered, 15, 2, false, 1);
+		draw_font_hv_full_shadow(VGAScreen, LEGACY_WIDTH / 2, 122, hint,
+		                         small_font, centered, 15, 2, true, 1);
 	}
 }
 
@@ -2445,6 +2450,7 @@ void JE_itemScreen(void)
 
 	for (unsigned int i = 0; i < COUNTOF(curSel); ++i)
 		curSel[i] = 2;
+	curSel[MENU_LOAD_SAVE] = lastLoadSaveSel;
 
 	curMenu = MENU_FULL_GAME;
 
@@ -10716,6 +10722,7 @@ void JE_menuFunction(JE_byte select)
 		}
 		else
 		{
+			lastLoadSaveSel = (JE_byte)curSelect;
 			if (twoPlayerMode)
 				temp = 11;
 			else

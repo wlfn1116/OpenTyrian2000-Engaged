@@ -94,6 +94,42 @@ void JE_dString(SDL_Surface * screen, int x, int y, const char *s, unsigned int 
 	}
 }
 
+void JE_dStringOutlined(SDL_Surface * screen, int x, int y, const char *s, unsigned int font)
+{
+	const int defaultBrightness = -3;
+
+	int bright = 0;
+
+	for (int i = 0; s[i] != '\0'; ++i)
+	{
+		int sprite_id = font_ascii[(unsigned char)s[i]];
+
+		switch (s[i])
+		{
+		case ' ':
+			x += 6;
+			break;
+
+		case '~':
+			bright = (bright == 0) ? 2 : 0;
+			break;
+
+		default:
+			if (sprite_id != -1)
+			{
+				blit_sprite_dark(screen, x,     y - 1, font, sprite_id, true);
+				blit_sprite_dark(screen, x + 1, y,     font, sprite_id, true);
+				blit_sprite_dark(screen, x,     y + 1, font, sprite_id, true);
+				blit_sprite_dark(screen, x - 1, y,     font, sprite_id, true);
+				blit_sprite_hv_unsafe(screen, x, y, font, sprite_id, 0xf, defaultBrightness + bright);
+
+				x += sprite(font, sprite_id)->width + 1;
+			}
+			break;
+		}
+	}
+}
+
 void JE_dStringDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int font)
 {
 	// Mirror JE_dString's glyph advance exactly (so positions line up with the already-drawn row),

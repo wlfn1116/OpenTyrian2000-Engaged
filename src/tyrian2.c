@@ -8754,7 +8754,7 @@ void networkStartScreen(void)
 		JE_loadPic(VGAScreen, 2, false);
 		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 		memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
-		JE_dString(VGAScreen, JE_fontCenter("Waiting for other player.", SMALL_FONT_SHAPES), 140, "Waiting for other player.", SMALL_FONT_SHAPES);
+		JE_dStringOutlined(VGAScreen, JE_fontCenter("Waiting for other player.", SMALL_FONT_SHAPES), 140, "Waiting for other player.", SMALL_FONT_SHAPES);
 		JE_showVGA();
 		fade_palette(colors, 10, 0, 255);
 
