@@ -26,9 +26,13 @@
 #include "game_menu.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "lds_play.h"
+#include "loudness.h"
 #include "lvlmast.h"
 #include "mainint.h"
 #include "mouse.h"
+#include "mtrand.h"
+#include "musmast.h"
 #include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
@@ -1471,7 +1475,7 @@ static const char *const sesToolHelp[SES_TOOL_COUNT] = {
 	"Copy the color you click, then return to Paint.",
 	"Rub out pixels wherever you draw.",
 	"Step a pixel lighter. Right-click steps it darker.",
-	"Recolor a whole pose into one palette row.",
+	"Recolor pixels as you draw. Right-click recolors the pose.",
 };
 static const char *const sesGuidesName[SES_GUIDES_COUNT] = { "Off", "Vertical", "Horizontal", "Both" };
 static const char *const sesFlipName[SES_FLIP_COUNT] = {
@@ -1505,7 +1509,7 @@ static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
 	{ "Flip H",      "Mirror or fold this pose. Left/Right chooses." },
 	{ "Undo",        "Take back or redo an edit. Also Ctrl+Z and Ctrl+Y." },
 	{ "Clear",       "Erase this pose or every pose. Left/Right chooses." },
-	{ "Revert",      "Undo changes to this custom bank." },
+	{ "Revert",      "Revert this bank or play a random song. Left/Right chooses." },
 	{ "Done",        "Back to the loadout editor." },
 };
 
@@ -1537,13 +1541,33 @@ static void seFloodFill(int bank, int frame, int sx, int sy, JE_byte to)
 	}
 }
 
-enum { SE_STROKE_COLOR, SE_STROKE_LIGHTEN, SE_STROKE_DARKEN };
+enum { SE_STROKE_COLOR, SE_STROKE_LIGHTEN, SE_STROKE_DARKEN, SE_STROKE_COLORIZE };
+
+static void seColorizePx(int bank, int frame, int x, int y, JE_byte high)
+{
+	JE_byte *const px = seFramePx(bank, frame, x, y);
+	if (*px == 0 || *px == 15)
+		return;
+
+	const JE_byte dyed = (JE_byte)(high | (*px & 0x0f));
+	*px = (dyed == 0) ? 1 : dyed;
+}
+
+// One shade step per pixel per stroke; cleared where each stroke begins its undo entry.
+static bool seShadeDone[SE_FRAME_H][SE_FRAME_W];
+
+static void seShadeStrokeBegin(void)
+{
+	memset(seShadeDone, 0, sizeof seShadeDone);
+}
 
 static void seShadePx(int bank, int frame, int x, int y, bool darker)
 {
 	JE_byte *const px = seFramePx(bank, frame, x, y);
-	if (*px == 0)
+	if (*px == 0 || seShadeDone[y][x])
 		return;
+
+	seShadeDone[y][x] = true;
 
 	const int high = *px & 0xf0, low = *px & 0x0f;
 	const int minShade = (high == 0) ? 1 : 0;
@@ -1559,6 +1583,8 @@ static void seStrokePx(int bank, int frame, int x, int y, JE_byte c, int op)
 {
 	if (op == SE_STROKE_COLOR)
 		*seFramePx(bank, frame, x, y) = c;
+	else if (op == SE_STROKE_COLORIZE)
+		seColorizePx(bank, frame, x, y, (JE_byte)(c & 0xf0));
 	else
 		seShadePx(bank, frame, x, y, op == SE_STROKE_DARKEN);
 }
@@ -1596,19 +1622,12 @@ static void seColorizeFrame(int bank, int frame, int row)
 	const JE_byte high = (JE_byte)((row & 0x0f) << 4);
 	for (int y = 0; y < SE_FRAME_H; ++y)
 		for (int x = 0; x < SE_FRAME_W; ++x)
-		{
-			JE_byte *const px = seFramePx(bank, frame, x, y);
-			if (*px == 0)
-				continue;
-
-			const JE_byte dyed = (JE_byte)(high | (*px & 0x0f));
-			*px = (dyed == 0) ? 1 : dyed;
-		}
+			seColorizePx(bank, frame, x, y, high);
 }
 
-// Pick selects the color and returns to Paint.
+// Pick selects the color and returns to Paint. alt is right-click or Shift.
 static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool, bool mirror,
-                        bool darken)
+                        bool alt)
 {
 	const int mirrorX = SE_FRAME_W - 1 - x;
 	switch (*tool)
@@ -1628,12 +1647,19 @@ static void seApplyTool(int bank, int frame, int x, int y, int *color, int *tool
 			*seFramePx(bank, frame, mirrorX, y) = 0;
 		break;
 	case SES_TOOL_COLORIZE:
-		seColorizeFrame(bank, frame, *color >> 4);
+		if (alt)
+			seColorizeFrame(bank, frame, *color >> 4);
+		else
+		{
+			seColorizePx(bank, frame, x, y, (JE_byte)(*color & 0xf0));
+			if (mirror)
+				seColorizePx(bank, frame, mirrorX, y, (JE_byte)(*color & 0xf0));
+		}
 		break;
 	case SES_TOOL_SHADE:
-		seShadePx(bank, frame, x, y, darken);
+		seShadePx(bank, frame, x, y, alt);
 		if (mirror)
-			seShadePx(bank, frame, mirrorX, y, darken);
+			seShadePx(bank, frame, mirrorX, y, alt);
 		break;
 	default:
 		*seFramePx(bank, frame, x, y) = (JE_byte)*color;
@@ -1674,6 +1700,57 @@ enum { SE_RIGHT_CLICK_EXITS = 0 };
 enum { SE_RIGHT_CLICK_EXITS = 1 };
 #endif
 
+// Jukebox-style music keeper: a track that ends or loops through fades into another random one.
+static bool seFadingSong = false;
+static int seFadeVolume;
+
+static void sePlayRandomSong(void)
+{
+	if (seFadingSong)
+	{
+		seFadingSong = false;
+		set_volume(tyrMusicVolume, fxVolume);
+	}
+
+	// play_song is a no-op on the song already selected; replay it explicitly.
+	const unsigned int song = mt_rand() % MUSIC_NUM;
+	if (song == song_playing)
+		restart_song();
+	else
+		play_song(song);
+}
+
+// Both editor loops run on setDelay(3) frames, so one call steps three classic ticks.
+static void seServiceMusic(void)
+{
+	if (audio_disabled || music_disabled)
+		return;
+
+	if (songlooped && !seFadingSong)
+	{
+		seFadingSong = true;
+		seFadeVolume = tyrMusicVolume;
+	}
+
+	if (seFadingSong)
+	{
+		for (int t = 0; t < 3 && seFadingSong; ++t)
+		{
+			if (seFadeVolume > 5)
+				seFadeVolume -= 2;
+			else
+			{
+				seFadeVolume = tyrMusicVolume;
+				seFadingSong = false;
+			}
+		}
+		set_volume(seFadeVolume, fxVolume);
+	}
+
+	if (!playing || (songlooped && !seFadingSong))
+		sePlayRandomSong();
+}
+
 static void seSpriteEditor(int bank)
 {
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
@@ -1703,6 +1780,7 @@ static void seSpriteEditor(int bank)
 	bool captureAll = true;
 	int flipMode = SES_FLIP_H;
 	bool redoMode = false;
+	bool revertRandom = false;
 	seUndoBase = seUndoCount = seRedoCount = 0;
 	int selected = SES_ROW_BANK;
 	int paletteTarget = SES_PAL_COLOR;
@@ -1729,6 +1807,7 @@ static void seSpriteEditor(int bank)
 	while (!done)
 	{
 		setDelay(3);
+		seServiceMusic();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
@@ -1938,7 +2017,9 @@ static void seSpriteEditor(int bank)
 				label = "Redo";
 			else if (id == SES_ACT_CLEAR && clearAll)
 				label = "Clear All";
-			if (id >= SES_ACT_CAPTURE && id <= SES_ACT_CLEAR)
+			else if (id == SES_ACT_REVERT && revertRandom)
+				label = "Random Song";
+			if (id >= SES_ACT_CAPTURE && id <= SES_ACT_REVERT)
 			{
 				const Uint8 dot = (Uint8)((sel ? C_SEL : C_DIV) - 2);
 				fill_rectangle_wh(VGAScreen, bx0 + 1, ry + 2, 2, 2, dot);
@@ -1952,7 +2033,7 @@ static void seSpriteEditor(int bank)
 		                       : selected == SES_ROW_TOOL ? sesToolHelp[tool]
 		                       : selected < SES_ROW_COUNT ? sesRows[selected].help
 		                       : selected == SES_PAL_COLOR && tool == SES_TOOL_COLORIZE
-		                         ? "Click a palette row to recolor this pose with it."
+		                         ? "Choose the dye color. Enter here recolors the whole pose."
 		                       : selected < SES_NUDGE_LEFT ? sesPaletteHelp[selected - SES_PAL_COLOR]
 		                       : selected < SES_ACT_CAPTURE ? sesNudgeHelp[selected - SES_NUDGE_LEFT]
 		                       : sesActs[selected - SES_ACT_CAPTURE].help;
@@ -2045,13 +2126,19 @@ static void seSpriteEditor(int bank)
 				const int py = (mouse_y - CANV_Y) / CANV_SCALE;
 				const bool pressEdit = newmouse && lastmouse_but != SDL_BUTTON_MIDDLE &&
 				                       (lastmouse_but == SDL_BUTTON_RIGHT || tool != SES_TOOL_PICK);
+				// Right-held Colorize is not a stroke: the press already dyed the whole pose.
 				const bool freehand = (tool == SES_TOOL_PAINT || tool == SES_TOOL_ERASE ||
-				                       tool == SES_TOOL_SHADE);
+				                       tool == SES_TOOL_SHADE ||
+				                       (tool == SES_TOOL_COLORIZE && !heldDarken));
 				const bool strokeStart = !newmouse && strokeX < 0 && freehand;
 				if (pressEdit || strokeStart)
+				{
 					seUndoBegin(bank);
-				const int op = (tool != SES_TOOL_SHADE) ? SE_STROKE_COLOR
-				             : (heldDarken ? SE_STROKE_DARKEN : SE_STROKE_LIGHTEN);
+					seShadeStrokeBegin();
+				}
+				const int op = (tool == SES_TOOL_SHADE)
+				             ? (heldDarken ? SE_STROKE_DARKEN : SE_STROKE_LIGHTEN)
+				             : (tool == SES_TOOL_COLORIZE) ? SE_STROKE_COLORIZE : SE_STROKE_COLOR;
 				const bool shiftLine = newmouse && freehand && lastX >= 0 &&
 				                       lastmouse_but != SDL_BUTTON_MIDDLE &&
 				                       (keysactive[SDL_SCANCODE_LSHIFT] != 0 ||
@@ -2066,7 +2153,8 @@ static void seSpriteEditor(int bank)
 						seStrokeTo(bank, frame, SE_FRAME_W - 1 - lastX, lastY,
 						           SE_FRAME_W - 1 - px, py, heldColor, op);
 				}
-				else if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT && tool != SES_TOOL_SHADE)
+				else if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT &&
+				         tool != SES_TOOL_SHADE && tool != SES_TOOL_COLORIZE)
 				{
 					*seFramePx(bank, frame, px, py) = 0;
 					if (mirror)
@@ -2120,10 +2208,7 @@ static void seSpriteEditor(int bank)
 						background = pick;
 					else
 						color = pick;
-					if (paletteTarget != SES_PAL_BACKGROUND && tool == SES_TOOL_COLORIZE)
-						dyeNow = true;
-					else
-						JE_playSampleNum(S_CURSOR);
+					JE_playSampleNum(S_CURSOR);
 				}
 				else if (mouse_y >= STRIP_Y && mouse_y < STRIP_Y + SE_FRAME_H &&
 				         mouse_x >= STRIP_X && mouse_x < STRIP_X + SE_FRAMES * 26)
@@ -2252,7 +2337,10 @@ static void seSpriteEditor(int bank)
 				if (canvasFocus)
 				{
 					if (tool != SES_TOOL_PICK)
+					{
 						seUndoBegin(bank);
+						seShadeStrokeBegin();
+					}
 					paintedColor = (tool == SES_TOOL_PAINT || tool == SES_TOOL_FILL);
 					seApplyTool(bank, frame, curX, curY, &color, &tool, mirror,
 					            (lastkey_mod & KMOD_SHIFT) != 0);
@@ -2293,6 +2381,7 @@ static void seSpriteEditor(int bank)
 				case SES_ACT_FLIP:   flipMode = (flipMode + SES_FLIP_COUNT + dir) % SES_FLIP_COUNT; break;
 				case SES_ACT_HISTORY: redoMode = !redoMode; break;
 				case SES_ACT_CLEAR:  clearAll = !clearAll; break;
+				case SES_ACT_REVERT: revertRandom = !revertRandom; break;
 				default:             break;
 				}
 				JE_playSampleNum(S_CURSOR);
@@ -2310,7 +2399,8 @@ static void seSpriteEditor(int bank)
 			JE_playSampleNum(S_SELECT);
 		}
 
-		if (act >= SES_NUDGE_LEFT && act != SES_ACT_HISTORY && act != SES_ACT_DONE)
+		if (act >= SES_NUDGE_LEFT && act != SES_ACT_HISTORY && act != SES_ACT_DONE &&
+		    !(act == SES_ACT_REVERT && revertRandom))
 			seUndoBegin(bank);
 
 		switch (act)
@@ -2394,6 +2484,14 @@ static void seSpriteEditor(int bank)
 			break;
 		}
 		case SES_ACT_REVERT:
+			if (revertRandom)
+			{
+				sePlayRandomSong();
+				if (song_playing < MUSIC_NUM)
+					snprintf(notice, sizeof(notice), "Playing %.30s", musicTitle[song_playing]);
+				JE_playSampleNum(S_SELECT);
+				break;
+			}
 			for (int f = 1; f <= SE_FRAMES; ++f)
 				for (int corner = 0; corner < 4; ++corner)
 				{
@@ -2491,6 +2589,7 @@ void JE_shipEditor(void)
 	while (!done)
 	{
 		setDelay(3);
+		seServiceMusic();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
@@ -2963,6 +3062,12 @@ void JE_shipEditor(void)
 
 	touch_ui_clear_layout();
 	wait_noinput(false, false, true);
+
+	if (seFadingSong)
+	{
+		seFadingSong = false;
+		set_volume(tyrMusicVolume, fxVolume);
+	}
 
 	VGAScreen = temp_surface;
 	set_menu_centered(prevCentered);
