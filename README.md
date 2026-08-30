@@ -65,8 +65,8 @@ See [Touch controls](GUIDE.md#touch-controls).
 
 ## Online play
 
-Open **Online Multiplayer** from the main menu. A host can be
-found over LAN or joined by address. The default port is UDP 1333.
+Open **Online Multiplayer** from the main menu. A host can be found
+over LAN or joined by address. The default port is UDP 1333.
 
 Players can mix Windows, macOS, Linux, Android, iOS, Switch, and Vita builds
 when both copies use the same game version. Rollback is the default netcode;
