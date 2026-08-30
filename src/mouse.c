@@ -24,6 +24,8 @@
 #include "video.h"
 #include "vga256d.h"
 
+#include <math.h>
+
 #if defined(TARGET_GP2X) || defined(TARGET_DINGUX)
 bool has_mouse = false;
 #else
@@ -140,10 +142,10 @@ void JE_mouseStart(void)
 
 		mouseButton = mousedown ? lastmouse_but : 0; /* incorrect, possibly unimportant */
 
-		// Pillarboxed menus build a side gradient from the frame's edge columns; a cursor
-		// drawn into VGAScreen here would smear into it near an edge. So defer: JE_showVGA
-		// composites the cursor after the gradient is built from clean content.
-		if (video_get_menu_x_offset() != 0)
+		// Defer to JE_showVGA when the cursor belongs on the final frame: the pillarbox
+		// gradient must build from clean edge columns, and supersampling draws the
+		// cursor on the hi frame at its fractional position.
+		if (video_get_menu_x_offset() != 0 || effective_supersample() > 1)
 		{
 			mouseGrabbed = false;
 			cursorPresentPending = true;
@@ -189,8 +191,20 @@ void JE_drawMouseToMenuScreen(SDL_Surface *dst, int x_offset)
 		blit_sprite2x2_clip(dst, x, y, shopSpriteSheet, spriteInfo->index);
 }
 
-// Composite the cursor onto a supersampled frame, block-expanded from the same 1x art so it
-// looks exactly like the classic cursor.
+// True when JE_mouseStart/Filter deferred the cursor to the next JE_showVGA.
+bool mouse_cursor_deferred(void)
+{
+	return has_mouse && cursorPresentPending;
+}
+
+// True when that deferred cursor will actually draw, so a supersampled present pays off.
+bool mouse_cursor_wants_hi(void)
+{
+	return has_mouse && cursorPresentPending && !mouseInactive && !MOUSE_CURSOR_HIDDEN;
+}
+
+// Composite the cursor onto a supersampled frame: the same 1x art, block-expanded, placed
+// at the pointer's sub-pixel position.
 void JE_drawMouseToHiFrame(SDL_Surface *hi, int scale, int x_offset)
 {
 	cursorPresentPending = false;  // this frame carries the cursor; JE_showVGA must not repeat it
@@ -200,15 +214,20 @@ void JE_drawMouseToHiFrame(SDL_Surface *hi, int scale, int x_offset)
 
 	const MousePointerSpriteInfo *spriteInfo = &mousePointerSprites[mouseCursor];
 	const unsigned int gr = spriteInfo->index;
-	const int x = (mouse_x - spriteInfo->x - spriteInfo->fx + x_offset) * scale;
-	const int y = (mouse_y - spriteInfo->y - spriteInfo->fy) * scale;
+	const int x = (int)lroundf(mouse_xf * (float)scale)
+	            - (spriteInfo->x + spriteInfo->fx - x_offset) * scale;
+	const int y = (int)lroundf(mouse_yf * (float)scale)
+	            - (spriteInfo->y + spriteInfo->fy) * scale;
 
-	// The quadrant layout of blit_sprite2x2_clip, at hi coordinates.
+	// The quadrant layout of blit_sprite2x2_clip, at hi coordinates. A deferred
+	// JE_mouseStartFilter draw carries its darken filter.
+	const Blit2Op op = cursorPresentFiltered ? BLIT2_FILTER : BLIT2_COPY;
+	const Uint8 filter = cursorPresentFiltered ? cursorPresentFilter : 0;
 	const int x2 = x + 12 * scale, y2 = y + 14 * scale;
-	blit_sprite2_scaled(hi, x, y, shopSpriteSheet, gr, scale, BLIT2_COPY, 0);
-	blit_sprite2_scaled(hi, x2, y, shopSpriteSheet, gr + 1, scale, BLIT2_COPY, 0);
-	blit_sprite2_scaled(hi, x, y2, shopSpriteSheet, gr + 19, scale, BLIT2_COPY, 0);
-	blit_sprite2_scaled(hi, x2, y2, shopSpriteSheet, gr + 20, scale, BLIT2_COPY, 0);
+	blit_sprite2_scaled(hi, x, y, shopSpriteSheet, gr, scale, op, filter);
+	blit_sprite2_scaled(hi, x2, y, shopSpriteSheet, gr + 1, scale, op, filter);
+	blit_sprite2_scaled(hi, x, y2, shopSpriteSheet, gr + 19, scale, op, filter);
+	blit_sprite2_scaled(hi, x2, y2, shopSpriteSheet, gr + 20, scale, op, filter);
 }
 
 void JE_mouseStartFilter(Uint8 filter)
@@ -217,9 +236,9 @@ void JE_mouseStartFilter(Uint8 filter)
 	{
 		mouseButton = mousedown ? lastmouse_but : 0; /* incorrect, possibly unimportant */
 
-		// Same pillarbox deferral as JE_mouseStart, carrying the darken filter
+		// Same deferral as JE_mouseStart, carrying the darken filter
 		// (the title screen uses this variant).
-		if (video_get_menu_x_offset() != 0)
+		if (video_get_menu_x_offset() != 0 || effective_supersample() > 1)
 		{
 			mouseGrabbed = false;
 			cursorPresentPending = true;

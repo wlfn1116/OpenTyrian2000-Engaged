@@ -1446,13 +1446,13 @@ static bool runOptionsMenu(MenuId startMenu)
 		{
 			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
 
-			Uint16 oldMouseX = mouse_x;
-			Uint16 oldMouseY = mouse_y;
+			float oldMouseX = mouse_xf;
+			float oldMouseY = mouse_yf;
 
 			push_joysticks_as_keyboard();
 			service_SDL_events(false);
 
-			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
+			mouseMoved = mouse_xf != oldMouseX || mouse_yf != oldMouseY;
 		} while (!(newkey || newmouse || mouseMoved || fullscreen_display != oldFullscreenDisplay));
 
 		if (currentPicker == MENU_ITEM_NONE)

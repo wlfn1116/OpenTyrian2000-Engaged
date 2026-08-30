@@ -126,6 +126,7 @@ void video_output_size(int *out_w, int *out_h);
 void video_output_pixel_scale(float *out_sx, float *out_sy);
 
 void mapWindowPointToScreen(Sint32 *inout_x, Sint32 *inout_y);
+void mapWindowPointToScreenF(float *inout_x, float *inout_y);  // keeps the sub-pixel fraction
 void scaleWindowDistanceToScreen(Sint32 *inout_x, Sint32 *inout_y);
 void scaleWindowDistanceToScreenF(float *inout_x, float *inout_y);  // float, no rounding loss
 

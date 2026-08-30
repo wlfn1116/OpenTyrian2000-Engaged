@@ -405,13 +405,13 @@ void JE_helpSystem(JE_byte startTopic)
 		{
 			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
 
-			Uint16 oldMouseX = mouse_x;
-			Uint16 oldMouseY = mouse_y;
+			float oldMouseX = mouse_xf;
+			float oldMouseY = mouse_yf;
 
 			push_joysticks_as_keyboard();
 			service_SDL_events(false);
 
-			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
+			mouseMoved = mouse_xf != oldMouseX || mouse_yf != oldMouseY;
 		} while (!(newkey || newmouse || mouseMoved));
 
 		// Handle interaction.
@@ -1055,13 +1055,13 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 
 			NETWORK_KEEP_ALIVE();  // the joiner is connected and waiting while the host browses
 
-			Uint16 oldMouseX = mouse_x;
-			Uint16 oldMouseY = mouse_y;
+			float oldMouseX = mouse_xf;
+			float oldMouseY = mouse_yf;
 
 			push_joysticks_as_keyboard();
 			service_SDL_events(false);
 
-			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
+			mouseMoved = mouse_xf != oldMouseX || mouse_yf != oldMouseY;
 		} while (!(newkey || newmouse || mouseMoved));
 
 		// Handle interaction.
@@ -3468,15 +3468,15 @@ JE_boolean JE_inGameSetup(void)
 		{
 			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
 
-			Uint16 oldMouseX = mouse_x;
-			Uint16 oldMouseY = mouse_y;
+			float oldMouseX = mouse_xf;
+			float oldMouseY = mouse_yf;
 
 			push_joysticks_as_keyboard();
 			service_SDL_events(false);
 
 			NETWORK_KEEP_ALIVE();
 
-			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
+			mouseMoved = mouse_xf != oldMouseX || mouse_yf != oldMouseY;
 		} while (!(newkey || newmouse || mouseMoved));
 
 		// Handle interaction.
@@ -3927,8 +3927,8 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 
 			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
 
-			const Uint16 oldMouseX = mouse_x;
-			const Uint16 oldMouseY = mouse_y;
+			const float oldMouseX = mouse_xf;
+			const float oldMouseY = mouse_yf;
 
 			push_joysticks_as_keyboard();
 			service_SDL_events(false);
@@ -3939,7 +3939,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 			while (network_shop_pump())
 				;
 
-			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
+			mouseMoved = mouse_xf != oldMouseX || mouse_yf != oldMouseY;
 		} while (!(newkey || newmouse || mouseMoved));
 
 		bool action = false;

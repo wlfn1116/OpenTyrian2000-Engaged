@@ -397,15 +397,15 @@ static void saveXferPoll(void)
 
 static bool saveXferWaitForInput(void)
 {
-	const Uint16 startMouseX = mouse_x;
-	const Uint16 startMouseY = mouse_y;
+	const float startMouseX = mouse_xf;
+	const float startMouseY = mouse_yf;
 
 	for (;;)
 	{
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
 
-		const bool mouseMoved = mouse_x != startMouseX || mouse_y != startMouseY;
+		const bool mouseMoved = mouse_xf != startMouseX || mouse_yf != startMouseY;
 		if (newkey || newmouse || mouseMoved)
 			return mouseMoved;
 

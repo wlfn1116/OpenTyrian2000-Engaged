@@ -52,6 +52,7 @@ Uint8 lastmouse_but;
 Sint32 lastmouse_x, lastmouse_y;
 JE_boolean mouse_pressed[4] = {false, false, false, false};
 Sint32 mouse_x, mouse_y;
+float mouse_xf, mouse_yf;
 Sint32 mouse_scroll;  // accumulated wheel delta since the last clear_new poll
 
 bool windowHasFocus;
@@ -339,6 +340,9 @@ void service_SDL_events(JE_boolean clear_new)
 				mouse_x = ev.motion.x;
 				mouse_y = ev.motion.y;
 				mapWindowPointToScreen(&mouse_x, &mouse_y);
+				mouse_xf = (float)ev.motion.x;
+				mouse_yf = (float)ev.motion.y;
+				mapWindowPointToScreenF(&mouse_xf, &mouse_yf);
 
 				if (mouseRelativeEnabled && windowHasFocus)
 				{
@@ -477,6 +481,9 @@ void service_SDL_events(JE_boolean clear_new)
 						mouse_x = (Sint32)(ev.tfinger.x * (float)ww);
 						mouse_y = (Sint32)(ev.tfinger.y * (float)wh);
 						mapWindowPointToScreen(&mouse_x, &mouse_y);
+						mouse_xf = ev.tfinger.x * (float)ww;
+						mouse_yf = ev.tfinger.y * (float)wh;
+						mapWindowPointToScreenF(&mouse_xf, &mouse_yf);
 						mouseInactive = false;
 					}
 

@@ -23,6 +23,7 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "touch_ui.h"
+#include "tyrian2.h"  // expand_frame_to_hi()
 #include "video_scale.h"
 
 #include "console_platform.h"  // console_get_output_size()
@@ -127,6 +128,9 @@ SDL_Surface *VGAScreen, *VGAScreenSeg;
 SDL_Surface *VGAScreen2;
 SDL_Surface *game_screen;
 static SDL_Surface* menu_screen;
+
+// Supersampled frame JE_showVGA presents when a deferred cursor rides it; sized on demand.
+static SDL_Surface *menu_hi = NULL;
 
 static int current_x_offset = MENU_X_OFFSET;
 
@@ -262,6 +266,8 @@ void deinit_video(void)
 	game_screen = NULL;
 	SDL_FreeSurface(menu_screen);
 	menu_screen = NULL;
+	SDL_FreeSurface(menu_hi);
+	menu_hi = NULL;
 
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
@@ -551,14 +557,55 @@ SDL_Surface *video_compose_frame(void)
 	return menu_screen;
 }
 
+static SDL_Surface *ensure_menu_hi(int scale)
+{
+	const int w = vga_width * scale, h = vga_height * scale;
+	if (menu_hi != NULL && (menu_hi->w != w || menu_hi->h != h))
+	{
+		SDL_FreeSurface(menu_hi);
+		menu_hi = NULL;
+	}
+	if (menu_hi == NULL)
+		menu_hi = SDL_CreateRGBSurface(0, w, h, 8, 0, 0, 0, 0);
+	return menu_hi;
+}
+
 void JE_showVGA(void)
 {
-	SDL_Surface *const frame = video_compose_frame();
+	SDL_Surface *frame = video_compose_frame();
 
-	// Draw the cursor onto the composited frame (after the side gradient is
-	// built from the clean content) so it doesn't smear into the pillarbox.
+	// A visible deferred cursor rides a block-expanded hi frame at its fractional position.
+	if (mouse_cursor_wants_hi())
+	{
+		const int ss = effective_supersample();
+		SDL_Surface *const hi = ss > 1 ? ensure_menu_hi(ss) : NULL;
+		if (hi != NULL)
+		{
+			expand_frame_to_hi(frame, hi, ss);
+			JE_drawMouseToHiFrame(hi, ss, current_x_offset);
+			present_hi(hi);
+			return;
+		}
+	}
+
 	if (frame != VGAScreen)
+	{
+		// Draw the cursor onto the composited frame (after the side gradient is
+		// built from the clean content) so it doesn't smear into the pillarbox.
 		JE_drawMouseToMenuScreen(frame, current_x_offset);
+	}
+	else if (mouse_cursor_deferred())
+	{
+		// No hi frame to land on: draw on a menu_screen copy, never into VGAScreen.
+		if (mouse_cursor_wants_hi())
+		{
+			for (int y = 0; y < vga_height; ++y)
+				memcpy((Uint8 *)menu_screen->pixels + y * menu_screen->pitch,
+				       (const Uint8 *)VGAScreen->pixels + y * VGAScreen->pitch, vga_width);
+			frame = menu_screen;
+		}
+		JE_drawMouseToMenuScreen(frame, current_x_offset);
+	}
 
 	scale_and_flip(frame);
 }
@@ -1061,6 +1108,20 @@ void mapWindowPointToScreen(Sint32 *const inout_x, Sint32 *const inout_y)
 
 	*inout_x = (2 * (x - last_output_rect.x) + 1) * VGAScreen->w / (2 * last_output_rect.w) - current_x_offset;
 	*inout_y = (2 * (y - last_output_rect.y) + 1) * VGAScreen->h / (2 * last_output_rect.h);
+}
+
+/** Float variant: same pixel-center convention, without the flooring. */
+void mapWindowPointToScreenF(float *const inout_x, float *const inout_y)
+{
+	float scale_x, scale_y;
+	video_output_pixel_scale(&scale_x, &scale_y);
+
+	if (last_output_rect.w > 0)
+		*inout_x = (*inout_x * scale_x - (float)last_output_rect.x + 0.5f)
+		         * (float)VGAScreen->w / (float)last_output_rect.w - (float)current_x_offset;
+	if (last_output_rect.h > 0)
+		*inout_y = (*inout_y * scale_y - (float)last_output_rect.y + 0.5f)
+		         * (float)VGAScreen->h / (float)last_output_rect.h;
 }
 
 /** Scales a distance in window coordinates to game screen coordinates. */

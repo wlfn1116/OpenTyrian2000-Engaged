@@ -9571,8 +9571,8 @@ bool titleScreen(void)
 
 		// Poll finely instead of sleeping 16 ms so the outer loop (and mouse cursor)
 		// redraws at the display's refresh rate; a still cursor yields the CPU.
-		const Uint16 startMouseX = mouse_x;
-		const Uint16 startMouseY = mouse_y;
+		const float startMouseX = mouse_xf;
+		const float startMouseY = mouse_yf;
 		bool mouseMoved = false;
 		for (;;)
 		{
@@ -9588,7 +9588,7 @@ bool titleScreen(void)
 			push_joysticks_as_keyboard();
 			service_SDL_events(false);
 
-			mouseMoved = mouse_x != startMouseX || mouse_y != startMouseY;
+			mouseMoved = mouse_xf != startMouseX || mouse_yf != startMouseY;
 			if (newkey || new_text || newmouse || mouseMoved)
 				break;
 

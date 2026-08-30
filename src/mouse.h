@@ -45,5 +45,7 @@ void JE_mouseStartFilter(Uint8 filter);
 void JE_mouseReplace(void);
 void JE_drawMouseToMenuScreen(SDL_Surface *dst, int x_offset);
 void JE_drawMouseToHiFrame(SDL_Surface *hi, int scale, int x_offset);
+bool mouse_cursor_deferred(void);
+bool mouse_cursor_wants_hi(void);
 
 #endif /* MOUSE_H */

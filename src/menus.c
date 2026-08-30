@@ -52,8 +52,8 @@ char timed_battle_name[4][23];
 // display refresh rate.
 static bool menuWaitForInput(void)
 {
-	const Uint16 startMouseX = mouse_x;
-	const Uint16 startMouseY = mouse_y;
+	const float startMouseX = mouse_xf;
+	const float startMouseY = mouse_yf;
 
 	for (;;)
 	{
@@ -62,7 +62,7 @@ static bool menuWaitForInput(void)
 
 		NETWORK_KEEP_ALIVE();
 
-		const bool mouseMoved = mouse_x != startMouseX || mouse_y != startMouseY;
+		const bool mouseMoved = mouse_xf != startMouseX || mouse_yf != startMouseY;
 		if (newkey || newmouse || mouseMoved)
 			return mouseMoved;
 

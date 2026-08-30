@@ -243,8 +243,8 @@ static void lobbyRestoreBackdrop(void)
 // Wait for a key, a button, or mouse MOTION; returns true if the mouse moved.
 static bool lobbyWaitForInput(void)
 {
-	const Uint16 startMouseX = mouse_x;
-	const Uint16 startMouseY = mouse_y;
+	const float startMouseX = mouse_xf;
+	const float startMouseY = mouse_yf;
 
 	for (;;)
 	{
@@ -253,7 +253,7 @@ static bool lobbyWaitForInput(void)
 
 		NETWORK_KEEP_ALIVE();
 
-		const bool mouseMoved = mouse_x != startMouseX || mouse_y != startMouseY;
+		const bool mouseMoved = mouse_xf != startMouseX || mouse_yf != startMouseY;
 		if (newkey || newmouse || mouseMoved)
 			return mouseMoved;
 

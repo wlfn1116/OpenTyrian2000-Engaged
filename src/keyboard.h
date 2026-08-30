@@ -35,6 +35,9 @@ extern Uint8 lastmouse_but;
 extern Sint32 lastmouse_x, lastmouse_y;
 extern JE_boolean mouse_pressed[4];
 extern Sint32 mouse_x, mouse_y;
+// Pointer position keeping the fraction mouse_x/y floor away. The supersampled cursor
+// draws from these, so wait loops gating on motion must compare these, not mouse_x/y.
+extern float mouse_xf, mouse_yf;
 extern Sint32 mouse_scroll;
 extern Uint8 keysactive[SDL_NUM_SCANCODES];
 
