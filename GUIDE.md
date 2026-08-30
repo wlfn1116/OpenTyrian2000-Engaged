@@ -131,9 +131,10 @@ never use faster scrolling.
 The normal shop restocks each visit. **Data Cubes** opens the E-Shop and **Ship
 Specs** opens the perk list.
 
-The Endless weapon lists use one pool, so either bay may offer a gun associated
-with the other. These rows are tagged **Front** or **Rear**. The gun still works
-in either bay, though its firing pattern can change.
+The weapon categories are **Primary Gun** and **Secondary Gun**; both draw from
+one pool. Each row is tagged **Front** or **Rear** for the gun's original bay
+(**Dual-Mode** replaces **Rear** on two-mode guns in the Secondary list). A gun
+works in either bay, though its firing pattern can change.
 
 E-Shop stock may include:
 

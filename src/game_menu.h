@@ -64,10 +64,14 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y);
 // fires op[0], so the same port has no mode to toggle there.
 #define SHOP_DUAL_MODE_TAG "Dual-Mode"
 
-// Mark a gun the shipped game issues for the other bay. Only a list stocked from both bays can
-// offer such a row, so only Endless draws these.
+// Name the bay the shipped game issues a gun for. Only Endless stocks a list from both bays
+// (its Primary/Secondary Gun categories), and it tags every classified row.
 #define SHOP_FRONT_GUN_TAG "Front"
 #define SHOP_REAR_GUN_TAG  "Rear"
+
+// Help lines for those renamed rows. QA keeps them short enough for the ping readout.
+#define SHOP_PRIMARY_GUN_HELP   "Change or upgrade your main weapon."
+#define SHOP_SECONDARY_GUN_HELP "Your second gun. Dual-Mode guns switch modes."
 
 // The stock Tyrian 2000 weapon table fills ports 1-47 with real weapons; ports 48-60 are dummy
 // "Test" placeholders (see custom_weapon.c), so no shop offers a front or rear weapon above 47.

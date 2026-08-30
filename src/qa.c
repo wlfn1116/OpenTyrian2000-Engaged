@@ -7367,9 +7367,8 @@ static void qa_test_wide_hull_columns(void)
 	printf("# wide shop hulls clear their labels by %dpx\n", gap);
 }
 
-/* A weapon row tags a two-mode port, or a gun Endless stocked for the other bay, after its
- * cost, in a column that has to clear both the cost text and the owned marker the same row can
- * carry. */
+/* A weapon row tags a two-mode port, or a gun's issuing bay in Endless, after its cost, in a
+ * column that has to clear both the cost text and the owned marker the same row can carry. */
 static void qa_test_dual_mode_tag(void)
 {
 	const int tagW = JE_textWidth(SHOP_DUAL_MODE_TAG, TINY_FONT);
@@ -7450,9 +7449,9 @@ static bool qa_tag_is(const char *tag, const char *want)
 	return strcmp(tag, want) == 0;
 }
 
-/* Endless deals both weapon lists from one id pool, so each list marks the guns the shipped game
- * issues for the other bay. The mark only means something if every real port names one bay. A
- * campaign shop fills its two lists from separate data, so it must never carry the mark. */
+/* Endless deals both weapon lists from one id pool, so every gun row names its issuing bay
+ * (Dual-Mode outranks Rear in the rear list); that only means something if every real port
+ * names one bay. A campaign shop fills its lists from separate data and never carries the mark. */
 static void qa_test_weapon_bay_tags(void)
 {
 	uint front = 0, rear = 0, unclassified = 0;
@@ -7481,12 +7480,12 @@ static void qa_test_weapon_bay_tags(void)
 		         port, weaponPort[port].name);
 		qa_check(!dualMode || bay == SHOP_BAY_REAR, label);
 
-		const char *const wantRear = dualMode ? SHOP_DUAL_MODE_TAG
-		                           : bay == SHOP_BAY_FRONT ? SHOP_FRONT_GUN_TAG : NULL;
+		const char *const wantBay = bay == SHOP_BAY_FRONT ? SHOP_FRONT_GUN_TAG
+		                          : bay == SHOP_BAY_REAR  ? SHOP_REAR_GUN_TAG : NULL;
+		const char *const wantRear = dualMode ? SHOP_DUAL_MODE_TAG : wantBay;
 
-		snprintf(label, sizeof(label), "port %u is tagged only where it is out of place", port);
-		qa_check(qa_tag_is(shop_weapon_row_tag(port, false, true),
-		                   bay == SHOP_BAY_REAR ? SHOP_REAR_GUN_TAG : NULL)
+		snprintf(label, sizeof(label), "port %u names its bay in a mixed list", port);
+		qa_check(qa_tag_is(shop_weapon_row_tag(port, false, true), wantBay)
 		         && qa_tag_is(shop_weapon_row_tag(port, true, true), wantRear), label);
 
 		snprintf(label, sizeof(label), "port %u carries no bay tag in a campaign shop", port);
@@ -7497,6 +7496,13 @@ static void qa_test_weapon_bay_tags(void)
 
 	// Port 16 holds the sidekick weapon table; every other real port belongs to a bay.
 	qa_check(front > 0 && rear > 0 && unclassified == 1, "the bay table covers the weapon ports");
+
+	// The renamed rows' help lines share the bar with the widest online ping readout.
+	qa_check(help_bar_right_x(SHOP_PRIMARY_GUN_HELP, "Ping: 9999 ms")
+	             == help_bar_right_x("", "Ping: 9999 ms")
+	         && help_bar_right_x(SHOP_SECONDARY_GUN_HELP, "Ping: 9999 ms")
+	             == help_bar_right_x("", "Ping: 9999 ms"),
+	         "the bay help lines leave the ping readout flush right");
 	printf("# weapon bays: %u front, %u rear, %u unclassified of %d ports; tags %dpx / %dpx\n",
 	       front, rear, unclassified, SHOP_REAL_WEAPON_PORTS,
 	       JE_textWidth(SHOP_FRONT_GUN_TAG, TINY_FONT), JE_textWidth(SHOP_REAR_GUN_TAG, TINY_FONT));

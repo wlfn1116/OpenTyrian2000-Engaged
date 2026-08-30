@@ -898,18 +898,22 @@ static void configure_buysell_debug_menu(void)
 }
 
 /* Endless swaps the shop's front-menu items 2/3 (Data Cubes -> E-Shop, Ship Specs -> Perks) and
- * captures the stock labels so a campaign shop restores them. The E-Shop labels carry live prices,
- * so this is called again after each buy. */
+ * renames the weapon bays Primary/Secondary Gun, capturing the stock labels so a campaign shop
+ * restores them. The E-Shop labels carry live prices, so this is called again after each buy. */
 static void configure_endless_shop_menu(void)
 {
 	static char stockCubes[sizeof(menuInt[1][1])];
 	static char stockSpecs[sizeof(menuInt[1][2])];
+	static char stockFront[sizeof(menuInt[2][2])];
+	static char stockRear[sizeof(menuInt[2][3])];
 	static bool stockSaved = false;
 
 	if (!stockSaved)
 	{
 		SDL_strlcpy(stockCubes, menuInt[1][1], sizeof(stockCubes));
 		SDL_strlcpy(stockSpecs, menuInt[1][2], sizeof(stockSpecs));
+		SDL_strlcpy(stockFront, menuInt[2][2], sizeof(stockFront));
+		SDL_strlcpy(stockRear,  menuInt[2][3], sizeof(stockRear));
 		stockSaved = true;
 	}
 
@@ -919,6 +923,11 @@ static void configure_endless_shop_menu(void)
 		// (endless has no use for Ship Specs; your run-persistent perks matter more).
 		SDL_strlcpy(menuInt[1][1], "E-Shop", sizeof(menuInt[1][1]));
 		SDL_strlcpy(menuInt[1][2], "Perks", sizeof(menuInt[1][2]));
+
+		// These rows also feed the category header and the item-list title (JE_genItemMenu).
+		// The category names the slot; each row's tag names the gun's issuing bay.
+		SDL_strlcpy(menuInt[2][2], "Primary Gun", sizeof(menuInt[2][2]));
+		SDL_strlcpy(menuInt[2][3], "Secondary Gun", sizeof(menuInt[2][3]));
 
 		// E-Shop submenu (menuInt row MENU_ESHOP+1): title, 11 buys, Done. Names only; the
 		// exact cost of each buy is shown in the help line at the bottom (see the help block).
@@ -945,6 +954,8 @@ static void configure_endless_shop_menu(void)
 	{
 		SDL_strlcpy(menuInt[1][1], stockCubes, sizeof(menuInt[1][1]));
 		SDL_strlcpy(menuInt[1][2], stockSpecs, sizeof(menuInt[1][2]));
+		SDL_strlcpy(menuInt[2][2], stockFront, sizeof(menuInt[2][2]));
+		SDL_strlcpy(menuInt[2][3], stockRear,  sizeof(menuInt[2][3]));
 	}
 }
 
@@ -4747,21 +4758,20 @@ const char *shop_weapon_row_tag(JE_word port, bool rearList, bool mixedBays)
 	if (port == 0 || port > PORT_NUM)
 		return NULL;  // None, and any id past the port table
 
-	// The rear list gives the Dual-Mode tag the column. Only rear guns carry a second mode in the
-	// shipped data, so that never hides a bay tag.
+	// The rear list gives the Dual-Mode tag the column. A two-mode port is always a rear gun,
+	// so it only ever covers a Rear tag.
 	if (rearList && weaponPort[port].opnum == 2)
 		return SHOP_DUAL_MODE_TAG;
 
 	if (!mixedBays)
 		return NULL;
 
-	const ShopWeaponBay bay = shop_weapon_port_bay(port);
-	if (bay == SHOP_BAY_FRONT && rearList)
-		return SHOP_FRONT_GUN_TAG;
-	if (bay == SHOP_BAY_REAR && !rearList)
-		return SHOP_REAR_GUN_TAG;
-
-	return NULL;
+	switch (shop_weapon_port_bay(port))
+	{
+	case SHOP_BAY_FRONT: return SHOP_FRONT_GUN_TAG;
+	case SHOP_BAY_REAR:  return SHOP_REAR_GUN_TAG;
+	default:             return NULL;
+	}
 }
 
 int shop_row_tag_x(int costRight, int tagW, int markerX)
@@ -5606,6 +5616,12 @@ void JE_drawMainMenuHelpText(void)
 		else if (endlessMode && curMenu == MENU_FULL_GAME && sel == 3)
 		{
 			snprintf(tempStr, sizeof(tempStr), "Review the perks you've acquired.");
+		}
+		else if (endlessMode && curMenu == MENU_UPGRADES && (sel == 3 || sel == 4))
+		{
+			// The stock data help names the Front/Rear Gun rows, which endless renames.
+			SDL_strlcpy(tempStr, sel == 3 ? SHOP_PRIMARY_GUN_HELP : SHOP_SECONDARY_GUN_HELP,
+			            sizeof(tempStr));
 		}
 		else if (curMenu == MENU_ESHOP)
 		{
