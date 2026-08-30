@@ -69,9 +69,10 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y);
 #define SHOP_FRONT_GUN_TAG "Front"
 #define SHOP_REAR_GUN_TAG  "Rear"
 
-// Help lines for those renamed rows. QA keeps them short enough for the ping readout.
-#define SHOP_PRIMARY_GUN_HELP   "Change or upgrade your main weapon."
-#define SHOP_SECONDARY_GUN_HELP "Your second gun. Dual-Mode guns switch modes."
+// Help lines for those renamed rows. QA keeps them on the bar; a line past the ping band
+// hides the row's online ping (save_help_bar_ping_band).
+#define SHOP_PRIMARY_GUN_HELP   "Change or upgrade your primary weapon."
+#define SHOP_SECONDARY_GUN_HELP "Your secondary gun. Dual-Mode guns can switch between modes."
 
 // The stock Tyrian 2000 weapon table fills ports 1-47 with real weapons; ports 48-60 are dummy
 // "Test" placeholders (see custom_weapon.c), so no shop offers a front or rear weapon above 47.

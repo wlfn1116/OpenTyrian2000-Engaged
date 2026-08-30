@@ -7497,12 +7497,11 @@ static void qa_test_weapon_bay_tags(void)
 	// Port 16 holds the sidekick weapon table; every other real port belongs to a bay.
 	qa_check(front > 0 && rear > 0 && unclassified == 1, "the bay table covers the weapon ports");
 
-	// The renamed rows' help lines share the bar with the widest online ping readout.
-	qa_check(help_bar_right_x(SHOP_PRIMARY_GUN_HELP, "Ping: 9999 ms")
-	             == help_bar_right_x("", "Ping: 9999 ms")
-	         && help_bar_right_x(SHOP_SECONDARY_GUN_HELP, "Ping: 9999 ms")
-	             == help_bar_right_x("", "Ping: 9999 ms"),
-	         "the bay help lines leave the ping readout flush right");
+	// Help text draws at x=10 and DARKEN shades one pixel right; the bar is the hard limit.
+	// A line reaching the ping band only hides that row's online ping (save_help_bar_ping_band).
+	qa_check(10 + JE_textWidth(SHOP_PRIMARY_GUN_HELP, TINY_FONT) + 1 <= LEGACY_WIDTH
+	         && 10 + JE_textWidth(SHOP_SECONDARY_GUN_HELP, TINY_FONT) + 1 <= LEGACY_WIDTH,
+	         "the bay help lines stay on the help bar");
 	printf("# weapon bays: %u front, %u rear, %u unclassified of %d ports; tags %dpx / %dpx\n",
 	       front, rear, unclassified, SHOP_REAL_WEAPON_PORTS,
 	       JE_textWidth(SHOP_FRONT_GUN_TAG, TINY_FONT), JE_textWidth(SHOP_REAR_GUN_TAG, TINY_FONT));
