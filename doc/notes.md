@@ -268,6 +268,22 @@ Course-correction modifiers are exclusive. Canonicalization keeps the strongest:
 Milestones use the upcoming zone. Multiples of 100 exclude scroll-speed
 modifiers; The End also excludes Dead Generator.
 
+Milestone approach warnings (`endlessMilestoneApproach`, endless_shop.c) replay
+the campaign's `]P` + `]W` screen recipe once per zone on a fresh approach
+(`endlessWarnedZone`: reset with the run, rearmed by a save load). The screen
+starts `songBuy` itself, so the shop's `play_song` call no-ops and the track
+continues unbroken. It draws no simulation RNG and paces per machine online;
+the shop HELLO re-sync absorbs peers arriving apart. The first credits-zone
+approach swaps in the send-off text and song, keyed exactly like
+`ENDLESS_FINALE_SHOP_SONG`.
+
+Every tier shares backdrop pic 5, recolors its palette in place (strongest
+channel scaled into the tier hue), and centers the text block on its line
+count. Glow text and pulse bars read palette bank 14, so a backdrop needs that
+bank ramping dark to bright plus dark art behind the text. Pic 5 is the only
+stock pic with both: pic 4 inverts the bank and pics 8, 9, and 13 are too
+bright behind the text.
+
 ### Perks
 
 Perks belong to a player. Use `perkMine` for the local shopper and `perkFx` for
@@ -368,6 +384,14 @@ Useful layout limits:
 
 Seven rows fit above a classic help line. Debug headings are not selectable.
 Boss and enemy bars use playfield coordinates.
+
+Press edges (`newkey`, `newmouse`) persist until `service_SDL_events(true)` or
+an explicit clear, keyboard.c does no key-repeat filtering (a held key re-arms
+`newkey` on every repeat), and `JE_wipeKey` is a no-op stub. A screen that the
+previous screen's dismissing press must not skip opens with
+`wait_noinput(true, true, true)` and then clears both edges, in that order. The
+credits roll, episode banner, high-score screens, and Endless milestone warning
+open this way.
 
 ### Touch requests
 

@@ -124,8 +124,7 @@ routes and gives each kill a small chance, doubled by a second stack, to drop
 a superbomb or an orbiting orb. Sector Sabotage removes threats from the
 chosen route.
 
-Milestone charts appear every 25 zones. Multiples of 100 include **The End** and
-never use faster scrolling.
+Milestone charts appear every 25 zones. Multiples of 100 include **The End**.
 
 ### Outpost
 

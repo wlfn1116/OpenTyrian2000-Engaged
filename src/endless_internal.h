@@ -323,6 +323,7 @@ extern bool endlessGambleRigged[2];        // Rigged: the NEXT gamble secretly r
 extern int  endlessLongCon[2];             // The Long Con: sectors until a paid-and-forgotten APEX ambush comes due
 extern bool endlessResumeVisit;            // a save was just loaded: the next outpost restores its snapshot
 extern bool endlessCreditsShown;           // the zone-100 credits roll already played this run (rides the save)
+extern int  endlessWarnedZone;             // zone whose milestone approach warning already played (not saved)
 
 Sint64 endlessClearBase(void);              // the depth-scaled unit every endless payout is built from
 Sint64 endlessClearBonusFor(Uint64 mods);   // clear payout for an ARBITRARY modifier set at the current depth

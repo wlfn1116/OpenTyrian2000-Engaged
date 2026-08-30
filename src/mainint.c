@@ -1461,7 +1461,9 @@ void JE_nextEpisode(void)
 	JE_showVGA();
 	fade_palette(colors, 15, 0, 255);
 
-	JE_wipeKey();
+	// A press surviving the fades would drop the banner on its first JE_anyButton.
+	wait_noinput(true, true, true);
+	newkey = newmouse = false;
 	// A gameplay wire test has no player to press past the episode banner.
 	if (waitForEpisodeBanner)
 	{
@@ -2093,6 +2095,10 @@ void JE_highScoreScreen(void)
 
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer and arrow sprites
+
+	// The press that opened the boards would page straight through them.
+	wait_noinput(true, true, true);
+	newkey = newmouse = false;
 
 	bool restart = true;
 
@@ -6523,6 +6529,10 @@ void JE_highScoreCheck(void)
 
 				fade_palette(colors, 15, 0, 255);
 
+				// A surviving press would zero frameCountMax in the glow and skip the wait.
+				wait_noinput(true, true, true);
+				newkey = newmouse = false;
+
 				sprintf(buffer, "~#%d:~  %lld", slot+1, (long long)t2kHighScores[table][slot].score);
 
 				frameCountMax = 6;
@@ -6981,6 +6991,10 @@ void JE_playCredits(void)
 	JE_clr256(VGAScreen);
 	JE_showVGA();
 	fade_palette(colors, 2, 0, 255);
+
+	// A press surviving the fades would end the roll on its first JE_anyButton.
+	wait_noinput(true, true, true);
+	newkey = newmouse = false;
 
 	const int ticks_max = lines * 20 * 3;
 

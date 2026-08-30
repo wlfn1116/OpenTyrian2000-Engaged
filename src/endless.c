@@ -774,6 +774,7 @@ void endlessResetRun(void)
 	endlessPerkDepthDone = -1;
 	endlessResumeVisit = false;
 	endlessCreditsShown = false;
+	endlessWarnedZone = 0;
 	endlessLastSong = 0;
 	endlessLastSongDepth = -1;
 	endlessRegenTick = 0;

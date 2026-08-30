@@ -7,16 +7,24 @@
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "episodes.h"
+#include "fonthand.h"
 #include "game_menu.h"
+#include "helptext.h"
 #include "keyboard.h"
+#include "loudness.h"
 #include "lvlmast.h"
 #include "mainint.h"
 #include "musmast.h"
 #include "network.h"
+#include "nortsong.h"
+#include "nortvars.h"
+#include "params.h"
+#include "picload.h"
 #include "qa.h"
 #include "palette.h"
 #include "player.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "video.h"
@@ -86,6 +94,10 @@ int  endlessLongCon[2] = { 0, 0 };
 // also saved so the zone-101 outpost cannot replay them.
 bool endlessResumeVisit  = false;
 bool endlessCreditsShown = false;
+
+// The zone whose approach warning already played, so an outpost reopen cannot replay it.
+// Presentation only: reset with the run, cleared by a save load.
+int endlessWarnedZone = 0;
 
 // Cash-fraction purchases use the entry balance so their prices remain fixed during the visit.
 Sint64 endlessShopEntryCash[2] = { 0, 0 };
@@ -999,11 +1011,193 @@ void endlessApplyLevelPayout(Sint64 *interestOut, Sint64 *bonusOut)
 		*bonusOut = bonus;
 }
 
+/* Milestone approach intermissions, rebuilt from the campaign's danger screen on episode
+ * 1's approach to MINES. Tiers share backdrop pic 5 and differ by text and palette tint;
+ * doc/notes.md covers the backdrop constraints. */
+#define ENDLESS_APPROACH_PIC 5
+
+typedef struct
+{
+	bool tinted;             // recolor the backdrop palette toward tint[] (max-channel scale)
+	Uint8 tint[3];
+	const char *lines[12];   // JE_outCharGlow line capacity; unused tail stays NULL
+} EndlessApproachScreen;
+
+static const EndlessApproachScreen endlessApproachMinor = { false, { 0, 0, 0 }, {
+	"Warning:",
+	"",
+	"Every route charted on this outpost crosses",
+	"class S or S+ hostile territory.",
+	"",
+	"Enemy patrols are converging on this sector cluster.",
+	"No safe passage exists.",
+	"",
+	"Proceed with caution.",
+} };
+
+static const EndlessApproachScreen endlessApproachPlain = { true, { 255, 168, 48 }, {
+	"Warning:",
+	"",
+	"Massed enemy fleets hold every sector on",
+	"this outpost.  Danger readings of class S+ and",
+	"S++ on all charted approach vectors.",
+	"",
+	"Hostile force strength exceeds all prior",
+	"contact in this region.",
+	"",
+	"Proceed with extreme caution.",
+} };
+
+static const EndlessApproachScreen endlessApproachGrand = { true, { 255, 64, 48 }, {
+	"DANGER:",
+	"",
+	"All sectors on this outpost register class",
+	"S++ and S+++ hostility.  Readings at this depth",
+	"exceed measurable scale.",
+	"",
+	"One contact returns no classification at all.",
+	"The charts name it only: The End.",
+	"",
+	"There will be no reinforcements.",
+} };
+
+static const EndlessApproachScreen endlessApproachFinale = { true, { 255, 64, 48 }, {
+	"Zone 100.",
+	"",
+	"One hundred zones of hostile space lie behind",
+	"you.  No pilot on record has come this far.",
+	"",
+	"Every reading on this outpost converges",
+	"on a single sector the charts refuse to name.",
+	"",
+	"The End.",
+	"",
+	"It has been an honor flying with you.",
+} };
+
+// Scale each palette entry's strongest channel into the tier hue, so planet, pulse bars,
+// and typed text shift together while the bank ramps keep their dark-to-bright order.
+static void endlessApproachTintColors(const Uint8 tint[3])
+{
+	for (int i = 0; i < 256; ++i)
+	{
+		int v = colors[i].r;
+		if (colors[i].g > v)
+			v = colors[i].g;
+		if (colors[i].b > v)
+			v = colors[i].b;
+		colors[i].r = (Uint8)(v * tint[0] / 255);
+		colors[i].g = (Uint8)(v * tint[1] / 255);
+		colors[i].b = (Uint8)(v * tint[2] / 255);
+	}
+}
+
+// JE_displayText with the text block centered on its line count. The typing and the
+// closing wait keep the network alive, so each player reads at their own pace.
+static void endlessApproachTextScreen(const EndlessApproachScreen *sc)
+{
+	int lineCount = 0;
+	while (lineCount < (int)COUNTOF(sc->lines) && sc->lines[lineCount] != NULL)
+		++lineCount;
+
+	JE_word y = (JE_word)((vga_height - lineCount * 10) / 2);
+	for (int i = 0; i < lineCount; ++i)
+	{
+		if (!ESCPressed)
+		{
+			JE_outCharGlow(10, y, sc->lines[i]);
+
+			if (haltGame)
+				JE_tyrianHalt(5);
+
+			y += 10;
+		}
+	}
+
+	// A press during the text zeroes frameCountMax and skips the wait below too.
+	const bool typedThrough = (frameCountMax != 0);
+	if (typedThrough)
+		frameCountMax = 6;
+	JE_outCharGlow(JE_fontCenter(miscText[4], TINY_FONT), 184, miscText[4]);
+
+	do
+	{
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+		touch_ui_idle_repaint();
+		JE_updateWarning(VGAScreen);
+
+		setDelay(1);
+
+		NETWORK_KEEP_ALIVE();
+
+		wait_delay();
+
+	} while (!(JE_anyButton() || (frameCountMax == 0 && typedThrough) || ESCPressed));
+	levelWarningDisplay = false;
+}
+
+// Starting songBuy here makes JE_itemScreen's own play_song() a no-op, so the track
+// runs unbroken from the warning screen into the outpost.
+static void endlessApproachShow(const EndlessApproachScreen *sc)
+{
+	VGAScreen = VGAScreenSeg;   // the level loop may have left it on VGAScreen2
+	set_menu_centered(true);
+	fade_black(10);             // the level-complete tally is still up
+
+	play_song(songBuy);
+
+	JE_loadPic(VGAScreen, ENDLESS_APPROACH_PIC, false);
+	if (sc->tinted)
+		endlessApproachTintColors(sc->tint);
+	JE_showVGA();
+	fade_palette(colors, 10, 0, 255);
+
+	ESCPressed = false;         // a stale script-skip flag would blank the whole screen
+	wait_noinput(true, true, true);   // a surviving tally-dismiss press would flash the text past
+	newkey = newmouse = false;
+	useLastBank = false;
+	warningCol = 14 * 16 + 5;
+	warningColChange = 1;
+	warningSoundDelay = 0;
+	levelWarningDisplay = true;
+	warningRed = false;         // stale campaign red mode would move and tint the text
+	frameCountMax = 1;          // the MINES typing cadence (]Wy 01)
+	setDelay2(6);
+	endlessApproachTextScreen(sc);
+	newkey = false;
+}
+
+// At most one warning per approach: reopens (quit-level, death return) and resumed
+// saves land back in the outpost directly.
+static void endlessMilestoneApproach(bool freshApproach)
+{
+	const int zone = endlessRunDepth + 1;
+	const int kind = endlessMilestoneKind();
+
+	if (kind == 0 || !freshApproach || endlessWarnedZone == zone)
+		return;
+	// Wire tests and constant-play have no one to press past the screen.
+	if (constantPlay || qa_net_gameplay_ticks > 0)
+		return;
+
+	endlessWarnedZone = zone;
+
+	const EndlessApproachScreen *sc =
+	      (zone == ENDLESS_CREDITS_ZONE && !endlessCreditsShown) ? &endlessApproachFinale
+	    : (kind == 2) ? &endlessApproachGrand
+	    : (kind == 1) ? &endlessApproachPlain
+	    :               &endlessApproachMinor;
+	endlessApproachShow(sc);
+}
+
 void endlessBetweenLevels(void)
 {
 	// Reaching the outpost ends whatever zone came before it, cleared or bailed out of, and closes
 	// it so the weapon editor and shop previews reachable from here cannot count as combat use.
 	endlessCustomWeaponZoneEnd();
+
+	// Read before the resume flag is consumed below; only a true approach warns.
+	const bool freshApproach = !endlessResumeVisit && !endlessLockedSortie;
 
 	// A partner who went down mid-zone is back on their feet here: full hull, no shield.
 	endlessReviveDownedAtOutpost();
@@ -1123,5 +1317,8 @@ void endlessBetweenLevels(void)
 	// the credits have rolled, later century outposts (200, 300, ...) warn like any milestone.
 	if (endlessRunDepth + 1 == ENDLESS_CREDITS_ZONE && !endlessCreditsShown)
 		songBuy = ENDLESS_FINALE_SHOP_SONG;
+
+	endlessMilestoneApproach(freshApproach);
+
 	JE_itemScreen();
 }

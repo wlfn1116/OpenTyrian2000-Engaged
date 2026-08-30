@@ -1797,6 +1797,9 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	// Pre-v9 records resume with zone-100 credits marked unshown.
 	endlessCreditsShown = r->creditsShown != 0;
 
+	// A loaded run replays its approaches, so a milestone reached again warns again.
+	endlessWarnedZone = 0;
+
 	// A zero lastSong means no remembered depth for pre-v10 records.
 	endlessLastSong      = r->lastSong;
 	endlessLastSongDepth = (r->lastSong != 0) ? r->lastSongDepth : -1;
