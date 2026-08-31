@@ -478,6 +478,15 @@ static int *menuItemIntSetting(MenuItemId id)
 	}
 }
 
+static bool subpixelFxAvailable(void)
+{
+#ifdef __vita__
+	return smoothMotion;
+#else
+	return smoothMotion && render_supersample != 1;
+#endif
+}
+
 /* Likewise for the plain On/Off rows: flipping the flag is the whole action. Toggles
  * that also have to *do* something (reload the shape tables, re-init the scaler) keep
  * their own case next to the work they trigger. */
@@ -548,6 +557,11 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 	bool *const boolSetting = menuItemBoolSetting(id);
 	if (boolSetting != NULL)
 	{
+		if (id == MENU_ITEM_SUBPIXEL_FX && !subpixelFxAvailable())
+		{
+			JE_playSampleNum(S_SPRING);
+			return;
+		}
 		*boolSetting = !*boolSetting;
 		JE_playSampleNum(S_CURSOR);
 		return;
@@ -1182,7 +1196,8 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			const bool selected = i == *selectedMenuItemIndex;
 			const bool disabled = (currentPicker != MENU_ITEM_NONE && !selected)
-			                   || (menuItem->id == MENU_ITEM_SUPERSAMPLE && !smoothMotion);
+			                   || (menuItem->id == MENU_ITEM_SUPERSAMPLE && !smoothMotion)
+			                   || (menuItem->id == MENU_ITEM_SUBPIXEL_FX && !subpixelFxAvailable());
 
 			if (selected)
 				yPicker = y;
@@ -1204,7 +1219,12 @@ static bool runOptionsMenu(MenuId startMenu)
 			if (intSetting != NULL && menuItemHasPicker(menuItem))
 				value = menuItem->getPickerItem((size_t)*intSetting, buffer, sizeof buffer);
 			else if (boolSetting != NULL)
-				value = *boolSetting ? "On" : "Off";
+			{
+				bool shown = *boolSetting;
+				if (menuItem->id == MENU_ITEM_SUBPIXEL_FX && !subpixelFxAvailable())
+					shown = false;
+				value = shown ? "On" : "Off";
+			}
 			else switch (menuItem->id)
 			{
 			case MENU_ITEM_ENH_PRESET:
@@ -1660,9 +1680,14 @@ static bool runOptionsMenu(MenuId startMenu)
 				}
 				else if (boolSetting != NULL)
 				{
-					*boolSetting = !*boolSetting;
-					JE_applyItemDataSettings();  // covers the Zica Lv11 lock and buff rows
-					JE_playSampleNum(S_CLICK);
+					if (selectedMenuItemId == MENU_ITEM_SUBPIXEL_FX && !subpixelFxAvailable())
+						JE_playSampleNum(S_SPRING);
+					else
+					{
+						*boolSetting = !*boolSetting;
+						JE_applyItemDataSettings();  // covers the Zica Lv11 lock and buff rows
+						JE_playSampleNum(S_CLICK);
+					}
 				}
 				else if (intSetting != NULL && menuItemHasPicker(selectedMenuItem))
 				{
