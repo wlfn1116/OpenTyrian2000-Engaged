@@ -2246,7 +2246,7 @@ void JE_drawShield(void)
 }
 
 // Endless reinforced hulls can exceed the 28-unit armour bar.
-const int armorGaugeLayerCol[ARMOR_GAUGE_LAYERS] = { 224, 112, 80, 176, 16, 48, 96, 32 };
+const int armorGaugeLayerCol[ARMOR_GAUGE_LAYERS] = { 224, 32, 48, 64, 80, 112, 96, 128 };
 
 static void endlessDrawArmorBar(float armor, int flash)
 {

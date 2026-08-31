@@ -3022,7 +3022,7 @@ void JE_itemScreen(void)
 				// Reinforced hull exceeds the classic 28-armour bar; draw it as colour-coded
 				// rollover rows (same 28-per-layer rollover as the in-game HUD armour bar) so it
 				// can't march off the panel into the shield gauge. Layer colours tunable.
-				static const int shopArmorLayerCol[] = { 14, 30, 46, 62, 78, 94, 110, 126 };
+				static const int shopArmorLayerCol[] = { 14, 30, 46, 62, 78, 110, 94, 126 };
 				int a = shopPlayer()->armor;
 				for (int L = 0; a > 0 && L < (int)COUNTOF(shopArmorLayerCol); ++L)
 				{
