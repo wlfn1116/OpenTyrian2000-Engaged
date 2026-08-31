@@ -336,6 +336,12 @@ static bool endlessLightCone = false;
 
 bool endlessLightConeActive(void) { return endlessLightCone; }
 
+bool endlessZoneLightConeRoll(void)
+{
+	Uint64 state = endlessSplitMixSeed(endlessZonePhaseSalt(0x40000000));
+	return endlessSplitMixStep(&state) % 10 == 0;
+}
+
 // Bounds-safe base-level accessors for crash reporting.
 const char *endlessBaseLevelName(void)     { return endlessBaseName; }
 int         endlessBaseLevelEpisode(void)  { return endlessBaseEp; }
@@ -395,8 +401,7 @@ void endlessRegenerateLevel(void)
 	endlessPickLevelMusic();
 
 	// The light cone has its own per-zone phase.
-	endlessReseed(endlessZonePhaseSalt(0x40000000));
-	endlessLightCone = (endlessRand() % 10 == 0);
+	endlessLightCone = endlessZoneLightConeRoll();
 
 	// Gravity has a separate phase; 0x50000000 belongs to elite rolls.
 	endlessReseed(endlessZonePhaseSalt(0x60000000));

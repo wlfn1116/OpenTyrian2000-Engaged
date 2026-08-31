@@ -1449,6 +1449,14 @@ int endlessCourseModRows(int i, EndlessCourseModRow *rows, int max)
 		rows[n].cleansed = (cleansed & ENDLESS_MOD_OVERCLOCK) != 0;
 		++n;
 	}
+	if (n < max && endlessZoneLightConeRoll() && !(mods & ENDLESS_MOD_TOPSY))
+	{
+		rows[n].word     = "spotlight view";
+		rows[n].weight   = 4;
+		rows[n].hostile  = true;
+		rows[n].cleansed = false;
+		++n;
+	}
 	for (int a = 1; a < n; ++a)  // insertion sort, worst first; n is tiny
 	{
 		const EndlessCourseModRow key = rows[a];

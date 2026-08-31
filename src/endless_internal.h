@@ -438,6 +438,7 @@ extern bool    endlessChartStarCharts;
 extern uint    endlessChartSeat;
 
 Uint64 endlessZonePhaseSalt(Uint64 phase);  // depth-keyed phase salt, shifted by the reroll count
+bool   endlessZoneLightConeRoll(void);
 void   endlessChartVisit(void);             // fresh outpost: latch the redeal inputs and chart
 void   endlessChartRedeal(void);            // chart again at the current reroll count
 void   endlessChartSyncRerolls(uint p, JE_byte rerolls);  // adopt a peer's reroll (shop packet)
