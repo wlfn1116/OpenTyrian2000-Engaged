@@ -467,7 +467,10 @@ void service_SDL_events(JE_boolean clear_new)
 					if (ev.type == SDL_FINGERDOWN)
 						mouse_pressed[0] = true;
 					else if (ev.type == SDL_FINGERUP)
+					{
 						mouse_pressed[0] = false;
+						mousedown = false;
+					}
 				}
 				else
 				{
