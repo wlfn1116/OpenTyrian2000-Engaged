@@ -921,6 +921,55 @@ static void seDrawPreviewStars(SDL_Surface *dst, int scale, int x_offset, Uint32
 	}
 }
 
+static void seMountArtColumns(bool big, uint sprite, int *a0, int *a1)
+{
+	static SDL_Surface *scratch = NULL;
+
+	*a0 = 0;
+	*a1 = (big ? 24 : 12) - 1;
+	if (scratch == NULL)
+		scratch = SDL_CreateRGBSurface(0, 24, 28, 8, 0, 0, 0, 0);
+	if (scratch == NULL)
+		return;
+
+	SDL_FillRect(scratch, NULL, 0);
+	if (big)
+		blit_sprite2x2(scratch, 0, 0, spriteSheet10, sprite);
+	else
+		blit_sprite2(scratch, 0, 0, spriteSheet9, sprite);
+
+	const int w = big ? 24 : 12, h = big ? 28 : 14;
+	int lo = w, hi = -1;
+	for (int y = 0; y < h; ++y)
+	{
+		const Uint8 *row = (const Uint8 *)scratch->pixels + y * scratch->pitch;
+		for (int x = 0; x < w; ++x)
+			if (row[x] != 0)
+			{
+				if (x < lo)
+					lo = x;
+				if (x > hi)
+					hi = x;
+			}
+	}
+	if (hi >= 0)
+	{
+		*a0 = lo;
+		*a1 = hi;
+	}
+}
+
+static int seMountArtX(bool rightSide, bool big, uint sprite)
+{
+	const int mid = (SE_BOX_X0 + SE_BOX_X1 + 1) / 2;
+	const int gap0 = rightSide ? mid + SHOP_WIDE_HULL_HALF : SE_KICK_L_X + 26;
+	const int gap1 = rightSide ? SE_KICK_R_X - 3 : mid - SHOP_WIDE_HULL_HALF - 1;
+
+	int a0, a1;
+	seMountArtColumns(big, sprite, &a0, &a1);
+	return gap0 + (gap1 - gap0 + 1 - (a1 - a0 + 1) + (rightSide ? 1 : 0)) / 2 - a0;
+}
+
 static void seDrawOrbitSidekick(SDL_Surface *dst, int scale, int x_offset, bool rightSide,
                                 JE_byte v, Uint32 clock_ms)
 {
@@ -938,8 +987,7 @@ static void seDrawOrbitSidekick(SDL_Surface *dst, int scale, int x_offset, bool 
 	const float a = (float)clock_ms * 0.004f;
 	const float dx = (rightSide ? -sinf(a) : sinf(a)) * 5.0f;
 	const float dy = (rightSide ? -cosf(a) : cosf(a)) * 5.0f;
-	const int cx = rightSide ? SE_KICK_R_X - 15 : SE_KICK_L_X + 38;
-	const float fx = (float)(cx - 6) + dx;
+	const float fx = (float)seMountArtX(rightSide, false, sprite) + dx;
 	const float fy = (float)(SE_CENTER_Y + 6) + dy;
 
 	blit_sprite2_scaled(dst, (int)((fx + (float)x_offset) * (float)scale + 0.5f),
@@ -974,7 +1022,7 @@ static void seDrawMountedSidekick(bool rightSide, JE_byte v, Uint32 clock_ms)
 		return;
 
 	const bool big = (o->tr == 1 || o->tr == 2);
-	const int x = rightSide ? SE_KICK_R_X - (big ? 27 : 21) : SE_KICK_L_X + (big ? 26 : 32);
+	const int x = seMountArtX(rightSide, big, sprite);
 	int y;
 	switch (o->tr)
 	{
@@ -2895,9 +2943,9 @@ void JE_shipEditor(void)
 	const int defaultsTop = previewTop - row_h;
 	const int panMidX = (panX0 + panX1) / 2;
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
-	const int boxMid = (SE_BOX_X0 + SE_BOX_X1) / 2;
+	const int boxMid = (SE_BOX_X0 + SE_BOX_X1 + 1) / 2;
 	const int sideLabelsY = SE_BOX_Y0 + 104;
-	const int itemLabelsY = SE_BOX_Y0 + 155, hpBarsY = SE_BOX_Y0 + 167;
+	const int itemLabelsY = SE_BOX_Y0 + 153, hpBarsY = SE_BOX_Y0 + 166;
 	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_HI = 0xFB, C_SEL = 0xF5 };
 
 	int slot = 1;
@@ -2952,7 +3000,7 @@ void JE_shipEditor(void)
 		if (gr > 1)
 		{
 			for (int b = -2; b <= 2; ++b)
-				blit_sprite2x2(VGAScreen, SE_BOX_X0 + 3 + (b + 2) * 26, SE_POSES_Y, *sheet, gr + b * 2);
+				blit_sprite2x2(VGAScreen, SE_BOX_X0 + 4 + (b + 2) * 26, SE_POSES_Y, *sheet, gr + b * 2);
 		}
 		else
 			seDrawHull(boxMid, SE_POSES_Y, sheet, gr, 0);
@@ -3170,12 +3218,12 @@ void JE_shipEditor(void)
 				}
 				else if (mouse_y >= SE_CENTER_Y - 6 && mouse_y < SE_ITEMS_Y - 7)
 				{
-					boxRow = (mouse_x <= SE_KICK_L_X + 49) ? SE_ROW_LEFT
-					       : (mouse_x >= SE_KICK_R_X - 28) ? SE_ROW_RIGHT : SE_ROW_GRAPHIC;
+					boxRow = (mouse_x <= SE_KICK_L_X + 50) ? SE_ROW_LEFT
+					       : (mouse_x >= SE_KICK_R_X - 27) ? SE_ROW_RIGHT : SE_ROW_GRAPHIC;
 					fx0 = (boxRow == SE_ROW_LEFT) ? SE_KICK_L_X - 1
-					    : (boxRow == SE_ROW_RIGHT) ? SE_KICK_R_X - 1 : SE_KICK_L_X + 50;
+					    : (boxRow == SE_ROW_RIGHT) ? SE_KICK_R_X - 1 : SE_KICK_L_X + 51;
 					fx1 = (boxRow == SE_ROW_LEFT) ? SE_KICK_L_X + 24
-					    : (boxRow == SE_ROW_RIGHT) ? SE_KICK_R_X + 24 : SE_KICK_R_X - 29;
+					    : (boxRow == SE_ROW_RIGHT) ? SE_KICK_R_X + 24 : SE_KICK_R_X - 28;
 					fy0 = SE_CENTER_Y - 1;
 					fy1 = SE_CENTER_Y + 28;
 				}
