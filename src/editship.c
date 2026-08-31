@@ -1694,12 +1694,6 @@ static int seColorStep(int tool, bool wholeRow)
 	return (tool == SES_TOOL_COLORIZE || wholeRow) ? 16 : 1;
 }
 
-#ifdef PLATFORM_HANDHELD
-enum { SE_RIGHT_CLICK_EXITS = 0 };
-#else
-enum { SE_RIGHT_CLICK_EXITS = 1 };
-#endif
-
 // Jukebox-style music keeper: a track that ends or loops through fades into another random one.
 static bool seFadingSong = false;
 static int seFadeVolume;
@@ -2200,9 +2194,7 @@ static void seSpriteEditor(int bank)
 				         mouse_x >= usedX0 && mouse_x < usedX0 + usedCount * USED_CELL)
 					pick = usedList[(mouse_x - usedX0) / USED_CELL];
 
-				if (SE_RIGHT_CLICK_EXITS && lastmouse_but == SDL_BUTTON_RIGHT)
-					done = true;
-				else if (pick >= 0)
+				if (pick >= 0)
 				{
 					if (paletteTarget == SES_PAL_BACKGROUND)
 						background = pick;
@@ -2224,7 +2216,8 @@ static void seSpriteEditor(int bank)
 					canvasFocus = false;
 					if (hover < SES_ROW_COUNT)
 					{
-						const int dir = (mouse_x < panMidX) ? -1 : 1;
+						const int dir = (lastmouse_but == SDL_BUTTON_RIGHT ||
+						                 mouse_x < panMidX) ? -1 : 1;
 						switch (hover)
 						{
 						case SES_ROW_BANK:   bank = (bank + 7 + dir) % 8 + 1; break;
@@ -2241,6 +2234,21 @@ static void seSpriteEditor(int bank)
 					}
 					else if (hover == SES_PAL_COLOR || hover == SES_PAL_BACKGROUND)
 						JE_playSampleNum(S_CURSOR);
+					else if (lastmouse_but == SDL_BUTTON_RIGHT)
+					{
+						switch (hover)
+						{
+						case SES_ACT_CAPTURE: captureAll = !captureAll; break;
+						case SES_ACT_COPY:    copyPose = copyPose % 5 + 1; break;
+						case SES_ACT_FLIP:    flipMode = (flipMode + 1) % SES_FLIP_COUNT; break;
+						case SES_ACT_HISTORY: redoMode = !redoMode; break;
+						case SES_ACT_CLEAR:   clearAll = !clearAll; break;
+						case SES_ACT_REVERT:  revertRandom = !revertRandom; break;
+						default:              break;
+						}
+						if (hover >= SES_ACT_CAPTURE && hover <= SES_ACT_REVERT)
+							JE_playSampleNum(S_CURSOR);
+					}
 					else
 						act = hover;  // the absolute nav id; the dispatch below matches enum values
 				}
