@@ -457,6 +457,7 @@ bool arcadeRandomBalls = true;
 bool arcadeRearGunScale = true;
 /* Give unused sheet icons to items that otherwise reuse an icon or have none. */
 bool unusedShopSprites = true;
+bool shipEditorStars = true;
 /* Take a projectile's hit test from the middle of its sprite rather than the top-left corner of
  * its cell, and the target's from the middle of its own (the two shot loops in tyrian2.c). See
  * doc/notes.md#coordinates. */
@@ -1123,6 +1124,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "guided_shot_screen_aim", &guided_shot_screen_aim);
 		guidedShotScreenAim = (guided_shot_screen_aim != 0);
 
+		int ship_editor_stars = shipEditorStars ? 1 : 0;
+		config_get_int_option(section, "ship_editor_stars", &ship_editor_stars);
+		shipEditorStars = (ship_editor_stars != 0);
+
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
 			xmasMode = 0;
@@ -1400,6 +1405,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "unused_shop_sprites", unusedShopSprites ? 1 : 0);
 	config_set_int_option(section, "centered_shot_hitboxes", centeredShotHitboxes ? 1 : 0);
 	config_set_int_option(section, "guided_shot_screen_aim", guidedShotScreenAim ? 1 : 0);
+	config_set_int_option(section, "ship_editor_stars", shipEditorStars ? 1 : 0);
 	enhancementSaveCustomSet(section);
 	config_set_int_option(section, "xmas", xmasMode);
 

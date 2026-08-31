@@ -453,6 +453,7 @@ extern bool arcadeRearGunScale; // 1P arcade: lives raise the rear gun on top of
 extern bool unusedShopSprites;  // give the shop sheet's unreferenced icons to items that share one (episodes.c)
 extern bool centeredShotHitboxes;  // collide a projectile from the middle of its sprite, not its corner (tyrian2.c)
 extern bool guidedShotScreenAim;   // weapon-table homing steers toward an enemy's screen x, ex + mapoffset (shots.c)
+extern bool shipEditorStars;
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
 /* Enhancement presets. The Enhancements menu's Preset row writes every enhancement setting at

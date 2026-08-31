@@ -534,7 +534,7 @@ enum
 	SE_ROW_ARMOR,
 	SE_ROW_COUNT,
 	SE_RESTORE_DEFAULTS = SE_ROW_COUNT,
-	SE_TOGGLE_PREVIEW,
+	SE_TOGGLE_STARS,
 	SE_ACT_SPRITES,
 	SE_ACT_IMPORT,
 	SE_ACT_REVERT,
@@ -560,7 +560,7 @@ static const char *const seDefaultsHelp =
 	"Restore all ten ships and sprite banks from the stock file.";
 static const char *const seDefaultsConfirmHelp =
 	"Choose Defaults again to confirm the stock restore.";
-static const char *const sePreviewHelp = "Animate the center ship and the star backdrop.";
+static const char *const seStarsHelp = "Show the drifting stars behind the preview.";
 static const char *const seRevertConfirmHelp =
 	"Choose Revert again to discard the editor's changes.";
 
@@ -858,12 +858,6 @@ static void seRestoreBoxBase(void)
 		memcpy(dst, seBoxBase[y], SE_BOX_X1 - SE_BOX_X0 + 1);
 }
 
-static bool seBoxOpenSpace(int x, int y)
-{
-	return x >= SE_BOX_X0 && x <= SE_BOX_X1 && y >= SE_BOX_Y0 && y <= SE_BOX_Y1 &&
-	       seBoxBase[y - SE_BOX_Y0][x - SE_BOX_X0] == SE_BG_SPACE;
-}
-
 static Uint32 seStarHash(Uint32 v)
 {
 	v ^= v >> 16;
@@ -874,16 +868,37 @@ static Uint32 seStarHash(Uint32 v)
 	return v;
 }
 
+static bool seBayGlassAt(int x, int y)
+{
+	if (y < SE_CENTER_Y - 1 || y > SE_CENTER_Y + 28)
+		return false;
+	return (x >= SE_KICK_L_X - 1 && x <= SE_KICK_L_X + 24) ||
+	       (x >= SE_KICK_R_X - 1 && x <= SE_KICK_R_X + 24);
+}
+
 static void seDrawStarCell(SDL_Surface *dst, int scale, int x_offset, int x, float fy, JE_byte c)
 {
+	if (x < SE_BOX_X0 || x > SE_BOX_X1)
+		return;
+
 	const int hx = (x + x_offset) * scale;
 	const int hy = (int)(fy * (float)scale + 0.5f);
 
 	for (int py = hy; py < hy + scale; ++py)
 	{
-		if (!seBoxOpenSpace(x, py / scale))
+		const int sy = py / scale;
+		if (sy < SE_BOX_Y0 || sy > SE_BOX_Y1)
 			continue;
-		memset((Uint8 *)dst->pixels + py * dst->pitch + hx, c, (size_t)scale);
+
+		const Uint8 base = seBoxBase[sy - SE_BOX_Y0][x - SE_BOX_X0];
+		JE_byte draw;
+		if (base == SE_BG_SPACE)
+			draw = c;
+		else if (base == SE_BG_WELL && seBayGlassAt(x, sy))
+			draw = (JE_byte)((c & 0xf0) | ((c & 0x0f) >> 1));
+		else
+			continue;
+		memset((Uint8 *)dst->pixels + py * dst->pitch + hx, draw, (size_t)scale);
 	}
 }
 
@@ -970,32 +985,147 @@ static int seMountArtX(bool rightSide, bool big, uint sprite)
 	return gap0 + (gap1 - gap0 + 1 - (a1 - a0 + 1) + (rightSide ? 1 : 0)) / 2 - a0;
 }
 
-static void seDrawOrbitSidekick(SDL_Surface *dst, int scale, int x_offset, bool rightSide,
-                                JE_byte v, Uint32 clock_ms)
+typedef struct
 {
+	JE_byte id;
+	uint frame;
+	uint charge;
+	uint charge_ticks;
+	uint fire_ticks;
+	bool animating;
+} SeMountAnim;
+
+static SeMountAnim seMountAnim[2];
+static Uint64 seMountTicksDone;
+
+static void seMountAnimSync(uint side, JE_byte v)
+{
+	SeMountAnim *const m = &seMountAnim[side];
+
+	if (m->id == v)
+		return;
+	m->id = v;
+	m->frame = 0;
+	m->charge = 0;
+	m->charge_ticks = 20;
+	m->fire_ticks = 1;
+	m->animating = true;
+}
+
+static void seMountAnimTick(SeMountAnim *m)
+{
+	const JE_OptionType *const o = &options[m->id];
+
+	if (o->pwr == 0)
+	{
+		if (--m->fire_ticks == 0)
+		{
+			m->fire_ticks = (o->wpnum > 0 && o->wpnum <= WEAP_NUM)
+			              ? (uint)weapons[o->wpnum].shotrepeat + 1 : 20;
+			m->animating = true;
+		}
+	}
+
+	if (m->animating)
+	{
+		if (++m->frame >= o->ani)
+		{
+			m->frame = 0;
+			m->animating = (o->option == 1);
+		}
+	}
+
+	if (o->pwr > 0)
+	{
+		if (--m->charge_ticks == 0)
+		{
+			if (m->charge < o->pwr)
+				++m->charge;
+			else
+			{
+				m->charge = 0;
+				m->animating = true;
+			}
+			m->charge_ticks = 20;
+		}
+	}
+}
+
+static void seMountAnimAdvance(Uint32 clock_ms, JE_byte leftKick, JE_byte rightKick)
+{
+	seMountAnimSync(0, leftKick);
+	seMountAnimSync(1, rightKick);
+
+	const Uint64 target = (Uint64)clock_ms * 35 / 1000;
+	if (seMountTicksDone > target || seMountTicksDone + 35 < target)
+		seMountTicksDone = (target > 35) ? target - 35 : 0;
+	for (; seMountTicksDone < target; ++seMountTicksDone)
+		for (uint side = 0; side < 2; ++side)
+		{
+			const JE_byte v = seMountAnim[side].id;
+			if (v != 0 && v <= OPTION_NUM && options[v].option != 0)
+				seMountAnimTick(&seMountAnim[side]);
+		}
+}
+
+static void seDrawMountBody(SDL_Surface *dst, int scale, int x_offset, bool rightSide,
+                            float orbitAngle)
+{
+	const SeMountAnim *const m = &seMountAnim[rightSide ? 1 : 0];
+	const JE_byte v = m->id;
+
 	if (v == 0 || v > OPTION_NUM)
 		return;
-	const JE_OptionType *o = &options[v];
-	if (o->option == 0 || o->tr != 4)
+	const JE_OptionType *const o = &options[v];
+	if (o->option == 0)
 		return;
 
-	const uint frame = (o->ani > 1) ? (clock_ms / 120) % o->ani : 0;
-	const uint sprite = o->gr[frame];
+	const uint frame = (m->frame < COUNTOF(o->gr)) ? m->frame : 0;
+	uint sprite = o->gr[frame];
 	if (sprite == 0)
 		return;
+	sprite += m->charge;
 
-	const float a = (float)clock_ms * 0.004f;
-	const float dx = (rightSide ? -sinf(a) : sinf(a)) * 5.0f;
-	const float dy = (rightSide ? -cosf(a) : cosf(a)) * 5.0f;
-	const float fx = (float)seMountArtX(rightSide, false, sprite) + dx;
-	const float fy = (float)(SE_CENTER_Y + 6) + dy;
+	const bool big = (o->tr == 1 || o->tr == 2);
+	const uint anchor = (o->gr[0] != 0) ? o->gr[0] : sprite;
+	float fx = (float)seMountArtX(rightSide, big, anchor);
+	float fy;
+	switch (o->tr)
+	{
+	case 1:
+		fy = SE_CENTER_Y + 4;
+		break;
+	case 2:
+		fy = SE_CENTER_Y - 4;
+		break;
+	case 3:
+		fy = SE_CENTER_Y + 16;
+		break;
+	case 4:
+		fx += (rightSide ? -sinf(orbitAngle) : sinf(orbitAngle)) * 5.0f;
+		fy = (float)(SE_CENTER_Y + 6) + (rightSide ? -cosf(orbitAngle) : cosf(orbitAngle)) * 5.0f;
+		break;
+	default:
+		fy = SE_CENTER_Y + 7;
+		break;
+	}
 
-	blit_sprite2_scaled(dst, (int)((fx + (float)x_offset) * (float)scale + 0.5f),
-	                    (int)(fy * (float)scale + 0.5f), spriteSheet9, sprite,
-	                    scale, BLIT2_COPY, 0);
+	const int hx = (int)((fx + (float)x_offset) * (float)scale + 0.5f);
+	const int hy = (int)(fy * (float)scale + 0.5f);
+	if (big)
+	{
+		blit_sprite2_scaled(dst, hx, hy, spriteSheet10, sprite, scale, BLIT2_COPY, 0);
+		blit_sprite2_scaled(dst, hx + 12 * scale, hy, spriteSheet10, sprite + 1, scale, BLIT2_COPY, 0);
+		blit_sprite2_scaled(dst, hx, hy + 14 * scale, spriteSheet10, sprite + 19, scale, BLIT2_COPY, 0);
+		blit_sprite2_scaled(dst, hx + 12 * scale, hy + 14 * scale, spriteSheet10, sprite + 20,
+		                    scale, BLIT2_COPY, 0);
+	}
+	else
+		blit_sprite2_scaled(dst, hx, hy, spriteSheet9, sprite, scale, BLIT2_COPY, 0);
 
-	for (int y = (int)fy - 1; y <= (int)fy + 15; ++y)
-		for (int x = (int)fx - 1; x <= (int)fx + 13; ++x)
+	const int w = big ? 24 : 12, h = big ? 28 : 14;
+	for (int y = (int)fy - 1; y <= (int)fy + h + 1; ++y)
+		for (int x = (int)fx - 1; x <= (int)fx + w + 1; ++x)
 		{
 			if (x < SE_BOX_X0 || x > SE_BOX_X1 || y < SE_BOX_Y0 || y > SE_BOX_Y1)
 				continue;
@@ -1006,44 +1136,6 @@ static void seDrawOrbitSidekick(SDL_Surface *dst, int scale, int x_offset, bool 
 			for (int k = 0; k < scale; ++k, row += dst->pitch)
 				memset(row, p, (size_t)scale);
 		}
-}
-
-static void seDrawMountedSidekick(bool rightSide, JE_byte v, Uint32 clock_ms)
-{
-	if (v == 0 || v > OPTION_NUM)
-		return;
-	const JE_OptionType *o = &options[v];
-	if (o->option == 0 || o->tr == 4)
-		return;
-
-	const uint frame = (o->ani > 1) ? (clock_ms / 120) % o->ani : 0;
-	const uint sprite = o->gr[frame];
-	if (sprite == 0)
-		return;
-
-	const bool big = (o->tr == 1 || o->tr == 2);
-	const int x = seMountArtX(rightSide, big, sprite);
-	int y;
-	switch (o->tr)
-	{
-	case 1:
-		y = SE_CENTER_Y + 4;
-		break;
-	case 2:
-		y = SE_CENTER_Y - 4;
-		break;
-	case 3:
-		y = SE_CENTER_Y + 16;
-		break;
-	default:
-		y = SE_CENTER_Y + 7;
-		break;
-	}
-
-	if (big)
-		blit_sprite2x2(VGAScreen, x, y, spriteSheet10, sprite);
-	else
-		blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
 }
 
 static void seDrawDockClamp(int x0, int y0, int x1, int y1, int arm, JE_byte c)
@@ -1079,6 +1171,10 @@ static void seDrawPreviewBackdrop(void)
 		JE_rectangle(VGAScreen, cx0, cellY0, cx1, cellY1, SE_BG_SOCKET);
 	}
 
+	fill_rectangle_xy(VGAScreen, SE_KICK_L_X - 1, SE_CENTER_Y - 1,
+	                  SE_KICK_L_X + 24, SE_CENTER_Y + 28, SE_BG_WELL);
+	fill_rectangle_xy(VGAScreen, SE_KICK_R_X - 1, SE_CENTER_Y - 1,
+	                  SE_KICK_R_X + 24, SE_CENTER_Y + 28, SE_BG_WELL);
 	seDrawDockClamp(SE_KICK_L_X - 2, SE_CENTER_Y - 2, SE_KICK_L_X + 25, SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
 	seDrawDockClamp(SE_KICK_R_X - 2, SE_CENTER_Y - 2, SE_KICK_R_X + 25, SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
 }
@@ -1143,7 +1239,7 @@ static SDL_Surface *seEnsureHiFrame(int scale)
 	return seHiFrame;
 }
 
-static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms, bool animate,
+static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms,
                                  JE_byte leftKick, JE_byte rightKick)
 {
 	seCaptureBoxBase();
@@ -1158,9 +1254,14 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms, bool animate
 		first = false;
 
 		const Uint32 now = SDL_GetTicks();
-		if (animate)
-			*clock_ms += now - *last_ms;
+		*clock_ms += now - *last_ms;
 		*last_ms = now;
+
+		seMountAnimAdvance(*clock_ms, leftKick, rightKick);
+		const bool bothSat = leftKick != 0 && leftKick <= OPTION_NUM && options[leftKick].tr == 4 &&
+		                     rightKick != 0 && rightKick <= OPTION_NUM && options[rightKick].tr == 4;
+		const float orbitAngle =
+			(float)fmod((double)*clock_ms * 0.035 * (bothSat ? 0.2 : 0.15), 6.283185307179586);
 
 		const int ss = effective_supersample();
 		SDL_Surface *const hi = ss > 1 ? seEnsureHiFrame(ss) : NULL;
@@ -1168,9 +1269,10 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms, bool animate
 		seRestoreBoxBase();
 		if (hi == NULL)
 		{
-			seDrawPreviewStars(VGAScreen, 1, 0, *clock_ms);
-			seDrawOrbitSidekick(VGAScreen, 1, 0, false, leftKick, *clock_ms);
-			seDrawOrbitSidekick(VGAScreen, 1, 0, true, rightKick, *clock_ms);
+			if (shipEditorStars)
+				seDrawPreviewStars(VGAScreen, 1, 0, *clock_ms);
+			seDrawMountBody(VGAScreen, 1, 0, false, orbitAngle);
+			seDrawMountBody(VGAScreen, 1, 0, true, orbitAngle);
 			seDrawClickFlash(VGAScreen, 1, 0);
 		}
 
@@ -1179,9 +1281,10 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms, bool animate
 		{
 			const int x_offset = video_get_menu_x_offset();
 			expand_frame_to_hi(video_compose_frame(), hi, ss);
-			seDrawPreviewStars(hi, ss, x_offset, *clock_ms);
-			seDrawOrbitSidekick(hi, ss, x_offset, false, leftKick, *clock_ms);
-			seDrawOrbitSidekick(hi, ss, x_offset, true, rightKick, *clock_ms);
+			if (shipEditorStars)
+				seDrawPreviewStars(hi, ss, x_offset, *clock_ms);
+			seDrawMountBody(hi, ss, x_offset, false, orbitAngle);
+			seDrawMountBody(hi, ss, x_offset, true, orbitAngle);
 			seDrawClickFlash(hi, ss, x_offset);
 			JE_drawMouseToHiFrame(hi, ss, x_offset);
 			present_hi(hi);
@@ -2413,7 +2516,7 @@ static void seSpriteEditor(int bank)
 		service_SDL_events(false);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
-		sePresentPreviewTick(&starClock, &starLast, true, 0, 0);
+		sePresentPreviewTick(&starClock, &starLast, 0, 0);
 
 		const bool mouseMoved = (mouse_x != prev_mx || mouse_y != prev_my);
 
@@ -2588,8 +2691,8 @@ static void seSpriteEditor(int bank)
 					canvasFocus = false;
 					if (hover < SES_ROW_COUNT)
 					{
-						const int dir = (lastmouse_but == SDL_BUTTON_RIGHT ||
-						                 mouse_x < panMidX) ? -1 : 1;
+						const int click = (lastmouse_but == SDL_BUTTON_RIGHT) ? -1 : 1;
+						const int dir = (mouse_x < panMidX) ? -click : click;
 						switch (hover)
 						{
 						case SES_ROW_BANK:   bank = (bank + 7 + dir) % 8 + 1; break;
@@ -2950,12 +3053,12 @@ void JE_shipEditor(void)
 
 	int slot = 1;
 	int selected = 0;
-	bool previewOn = true;
 	bool defaultsArmed = false;
 	bool revertArmed = false;
 	Uint32 previewStart = SDL_GetTicks();
 	Uint32 starClock = 0;
 	Uint32 starLast = SDL_GetTicks();
+	memset(seMountAnim, 0, sizeof(seMountAnim));
 	int previewSlot = slot;
 	JE_byte previewGraphic = *seField(slot, SE_ROW_GRAPHIC);
 	char notice[40] = "";
@@ -2986,8 +3089,7 @@ void JE_shipEditor(void)
 		}
 
 		const Uint32 starNow = SDL_GetTicks();
-		if (previewOn)
-			starClock += starNow - starLast;
+		starClock += starNow - starLast;
 		starLast = starNow;
 
 		seDrawPreviewBackdrop();
@@ -3005,11 +3107,9 @@ void JE_shipEditor(void)
 		else
 			seDrawHull(boxMid, SE_POSES_Y, sheet, gr, 0);
 
-		seDrawMountedSidekick(false, *seField(slot, SE_ROW_LEFT), starClock);
-		seDrawMountedSidekick(true, *seField(slot, SE_ROW_RIGHT), starClock);
 		JE_drawItem(6, *seField(slot, SE_ROW_LEFT), SE_KICK_L_X, SE_CENTER_Y);
 		seDrawHull(boxMid, SE_CENTER_Y, sheet, gr,
-		           previewOn ? extraShipPreviewBank(SDL_GetTicks() - previewStart) : 0);
+		           extraShipPreviewBank(SDL_GetTicks() - previewStart));
 		JE_drawItem(7, *seField(slot, SE_ROW_RIGHT), SE_KICK_R_X, SE_CENTER_Y);
 		{
 			const int sw = JE_textWidth("SIDE ", small_font);
@@ -3103,15 +3203,15 @@ void JE_shipEditor(void)
 		}
 
 		{
-			const bool sel = selected == SE_TOGGLE_PREVIEW;
+			const bool sel = selected == SE_TOGGLE_STARS;
 			char value[12];
 			if (sel)
-				snprintf(value, sizeof(value), "< %s >", previewOn ? "On" : "Off");
+				snprintf(value, sizeof(value), "< %s >", shipEditorStars ? "On" : "Off");
 			else
-				SDL_strlcpy(value, previewOn ? "On" : "Off", sizeof(value));
+				SDL_strlcpy(value, shipEditorStars ? "On" : "Off", sizeof(value));
 			fill_rectangle_xy(VGAScreen, panX0 + 2, previewTop - 1, panX1 - 2,
 			                  previewTop + row_h - 3, sel ? C_SEL : C_PANEL);
-			draw_font_hv_shadow(VGAScreen, labelX, previewTop, "Preview", small_font,
+			draw_font_hv_shadow(VGAScreen, labelX, previewTop, "Star Background", small_font,
 			                    left_aligned, 15, sel ? 5 : 3, false, 1);
 			draw_font_hv_shadow(VGAScreen, valueX, previewTop, value, small_font,
 			                    right_aligned, 15, sel ? 6 : 5, false, 1);
@@ -3135,7 +3235,7 @@ void JE_shipEditor(void)
 		const char *const help = selected < SE_ROW_COUNT ? seRows[selected].help
 		                         : selected == SE_RESTORE_DEFAULTS
 		                             ? (defaultsArmed ? seDefaultsConfirmHelp : seDefaultsHelp)
-		                         : selected == SE_TOGGLE_PREVIEW            ? sePreviewHelp
+		                         : selected == SE_TOGGLE_STARS              ? seStarsHelp
 		                         : selected == SE_ACT_REVERT && revertArmed ? seRevertConfirmHelp
 		                         : seActs[selected - SE_ACT_SPRITES].help;
 		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
@@ -3148,7 +3248,7 @@ void JE_shipEditor(void)
 		service_SDL_events(false);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
-		sePresentPreviewTick(&starClock, &starLast, previewOn,
+		sePresentPreviewTick(&starClock, &starLast,
 		                     *seField(slot, SE_ROW_LEFT), *seField(slot, SE_ROW_RIGHT));
 
 		// Do not leave with unsaved changes.
@@ -3175,7 +3275,7 @@ void JE_shipEditor(void)
 			else if (mouse_y >= defaultsTop - 1 && mouse_y < defaultsTop + row_h - 2)
 				hover = SE_RESTORE_DEFAULTS;
 			else if (mouse_y >= previewTop - 1 && mouse_y < previewTop + row_h - 2)
-				hover = SE_TOGGLE_PREVIEW;
+				hover = SE_TOGGLE_STARS;
 			else if (mouse_y >= actionsTop - 1 && mouse_y <= actionsTop + 9)
 			{
 				int a = (mouse_x - (panX0 + 2)) / actionWidth;
@@ -3257,20 +3357,18 @@ void JE_shipEditor(void)
 				selected = hover;
 				if (hover == SE_ROW_SLOT)
 				{
-					const bool back = dir < 0 || mouse_x < panMidX;
-					slot += back ? (slot > 1 ? -1 : 9) : (slot < 10 ? 1 : -9);
+					const int step = (mouse_x < panMidX) ? -dir : dir;
+					slot += (step < 0) ? (slot > 1 ? -1 : 9) : (slot < 10 ? 1 : -9);
 					JE_playSampleNum(S_CURSOR);
 				}
 				else if (hover < SE_ROW_COUNT)
 				{
-					seStepField(slot, hover, (dir < 0 || mouse_x < panMidX) ? -1 : 1);
+					seStepField(slot, hover, (mouse_x < panMidX) ? -dir : dir);
 					JE_playSampleNum(S_CURSOR);
 				}
-				else if (hover == SE_TOGGLE_PREVIEW)
+				else if (hover == SE_TOGGLE_STARS)
 				{
-					previewOn = !previewOn;
-					if (previewOn)
-						previewStart = SDL_GetTicks();
+					shipEditorStars = !shipEditorStars;
 					JE_playSampleNum(S_CURSOR);
 				}
 				else if (dir > 0)
@@ -3327,11 +3425,9 @@ void JE_shipEditor(void)
 			case SDL_SCANCODE_SPACE:
 				if (selected == SE_RESTORE_DEFAULTS)
 					loadDefaults = true;
-				else if (selected == SE_TOGGLE_PREVIEW)
+				else if (selected == SE_TOGGLE_STARS)
 				{
-					previewOn = !previewOn;
-					if (previewOn)
-						previewStart = SDL_GetTicks();
+					shipEditorStars = !shipEditorStars;
 					JE_playSampleNum(S_CURSOR);
 				}
 				else if (selected == SE_ACT_SPRITES)
@@ -3382,12 +3478,8 @@ void JE_shipEditor(void)
 					loadDefaults = true;
 					playCursor = false;
 				}
-				else if (selected == SE_TOGGLE_PREVIEW)
-				{
-					previewOn = !previewOn;
-					if (previewOn)
-						previewStart = SDL_GetTicks();
-				}
+				else if (selected == SE_TOGGLE_STARS)
+					shipEditorStars = !shipEditorStars;
 				else
 				{
 					selected += dir;
