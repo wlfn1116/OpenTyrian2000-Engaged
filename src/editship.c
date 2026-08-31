@@ -530,8 +530,8 @@ enum
 	SE_ROW_LEFT,
 	SE_ROW_RIGHT,
 	SE_ROW_GENERATOR,
-	SE_ROW_ARMOR,
 	SE_ROW_SHIELD,
+	SE_ROW_ARMOR,
 	SE_ROW_COUNT,
 	SE_RESTORE_DEFAULTS = SE_ROW_COUNT,
 	SE_TOGGLE_PREVIEW,
@@ -552,8 +552,8 @@ static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
 	{ "Left Sidekick",  "The companion in the left bay, or None." },
 	{ "Right Sidekick", "The companion in the right bay, or None." },
 	{ "Generator",      "Recharges the shield and feeds the guns." },
-	{ "Armor",          "Hull strength, 1 to 30." },
 	{ "Shield",         "The shield model fitted to this ship." },
+	{ "Armor",          "Hull strength, 1 to 30." },
 };
 
 static const char *const seDefaultsHelp =
@@ -589,10 +589,12 @@ bool JE_shipEditorConfirmationSelfTest(void)
 	return !seConfirmAction(&armed) && armed && seConfirmAction(&armed) && !armed;
 }
 
-// Bytes 0..8 map directly to the Graphic through Shield rows.
+// Bytes 0..6 follow the row order; armor and shield stay at file bytes 7 and 8.
 static JE_byte *seField(int slot, int row)
 {
-	return &extraShips[(slot - 1) * 15 + (row - SE_ROW_GRAPHIC)];
+	const int byte = (row == SE_ROW_ARMOR) ? 7
+	               : (row == SE_ROW_SHIELD) ? 8 : row - SE_ROW_GRAPHIC;
+	return &extraShips[(slot - 1) * 15 + byte];
 }
 
 // Resolve the sentinel independently of the machine-local Weapon Creator toggle.
@@ -833,6 +835,7 @@ enum
 	SE_BG_SOCKET = 0x53,
 	SE_BG_RIM = 0x54,
 	SE_BG_CLAMP = 0x55,
+	SE_BG_SELECT = 0x5a,
 	SE_BG_WELL = 0x60,
 	SE_BG_STAR_COUNT = 32,
 };
@@ -995,16 +998,16 @@ static void seDrawMountedSidekick(bool rightSide, JE_byte v, Uint32 clock_ms)
 		blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
 }
 
-static void seDrawDockClamp(int x0, int y0, int x1, int y1, int arm)
+static void seDrawDockClamp(int x0, int y0, int x1, int y1, int arm, JE_byte c)
 {
-	fill_rectangle_xy(VGAScreen, x0, y0, x0 + arm, y0, SE_BG_CLAMP);
-	fill_rectangle_xy(VGAScreen, x1 - arm, y0, x1, y0, SE_BG_CLAMP);
-	fill_rectangle_xy(VGAScreen, x0, y1, x0 + arm, y1, SE_BG_CLAMP);
-	fill_rectangle_xy(VGAScreen, x1 - arm, y1, x1, y1, SE_BG_CLAMP);
-	fill_rectangle_xy(VGAScreen, x0, y0, x0, y0 + arm, SE_BG_CLAMP);
-	fill_rectangle_xy(VGAScreen, x1, y0, x1, y0 + arm, SE_BG_CLAMP);
-	fill_rectangle_xy(VGAScreen, x0, y1 - arm, x0, y1, SE_BG_CLAMP);
-	fill_rectangle_xy(VGAScreen, x1, y1 - arm, x1, y1, SE_BG_CLAMP);
+	fill_rectangle_xy(VGAScreen, x0, y0, x0 + arm, y0, c);
+	fill_rectangle_xy(VGAScreen, x1 - arm, y0, x1, y0, c);
+	fill_rectangle_xy(VGAScreen, x0, y1, x0 + arm, y1, c);
+	fill_rectangle_xy(VGAScreen, x1 - arm, y1, x1, y1, c);
+	fill_rectangle_xy(VGAScreen, x0, y0, x0, y0 + arm, c);
+	fill_rectangle_xy(VGAScreen, x1, y0, x1, y0 + arm, c);
+	fill_rectangle_xy(VGAScreen, x0, y1 - arm, x0, y1, c);
+	fill_rectangle_xy(VGAScreen, x1, y1 - arm, x1, y1, c);
 }
 
 static void seDrawPreviewBackdrop(void)
@@ -1028,8 +1031,53 @@ static void seDrawPreviewBackdrop(void)
 		JE_rectangle(VGAScreen, cx0, cellY0, cx1, cellY1, SE_BG_SOCKET);
 	}
 
-	seDrawDockClamp(SE_KICK_L_X - 2, SE_CENTER_Y - 2, SE_KICK_L_X + 25, SE_CENTER_Y + 29, 4);
-	seDrawDockClamp(SE_KICK_R_X - 2, SE_CENTER_Y - 2, SE_KICK_R_X + 25, SE_CENTER_Y + 29, 4);
+	seDrawDockClamp(SE_KICK_L_X - 2, SE_CENTER_Y - 2, SE_KICK_L_X + 25, SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
+	seDrawDockClamp(SE_KICK_R_X - 2, SE_CENTER_Y - 2, SE_KICK_R_X + 25, SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
+}
+
+enum { SE_FLASH_MS = 200 };
+
+static int seFlashX0, seFlashY0, seFlashX1, seFlashY1;
+static Uint32 seFlashStart_ms;
+
+static void seFlashRegion(int x0, int y0, int x1, int y1)
+{
+	seFlashX0 = x0;
+	seFlashY0 = y0;
+	seFlashX1 = x1;
+	seFlashY1 = y1;
+	seFlashStart_ms = SDL_GetTicks();
+}
+
+static void seDrawClickFlash(SDL_Surface *dst, int scale, int x_offset)
+{
+	if (seFlashStart_ms == 0)
+		return;
+	const Uint32 age = SDL_GetTicks() - seFlashStart_ms;
+	if (age >= SE_FLASH_MS)
+	{
+		seFlashStart_ms = 0;
+		return;
+	}
+
+	static const Uint8 dither[2][2] = { { 0, 2 }, { 3, 1 } };
+	const int glow4 = (int)((SE_FLASH_MS - age) * 10 / SE_FLASH_MS);
+	const int hy1 = (seFlashY1 + 1) * scale - 1;
+	const int hx0 = (seFlashX0 + x_offset) * scale;
+	const int hx1 = (seFlashX1 + 1 + x_offset) * scale - 1;
+
+	for (int y = seFlashY0 * scale; y <= hy1; ++y)
+	{
+		Uint8 *row = (Uint8 *)dst->pixels + y * dst->pitch;
+		for (int x = hx0; x <= hx1; ++x)
+		{
+			const int lift = (glow4 + dither[y & 1][x & 1]) >> 2;
+			if (lift == 0)
+				continue;
+			const int v = (row[x] & 0x0f) + lift;
+			row[x] = (Uint8)((row[x] & 0xf0) | (v > 15 ? 15 : v));
+		}
+	}
 }
 
 static SDL_Surface *seHiFrame = NULL;
@@ -1075,6 +1123,7 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms, bool animate
 			seDrawPreviewStars(VGAScreen, 1, 0, *clock_ms);
 			seDrawOrbitSidekick(VGAScreen, 1, 0, false, leftKick, *clock_ms);
 			seDrawOrbitSidekick(VGAScreen, 1, 0, true, rightKick, *clock_ms);
+			seDrawClickFlash(VGAScreen, 1, 0);
 		}
 
 		JE_mouseStart();
@@ -1085,6 +1134,7 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms, bool animate
 			seDrawPreviewStars(hi, ss, x_offset, *clock_ms);
 			seDrawOrbitSidekick(hi, ss, x_offset, false, leftKick, *clock_ms);
 			seDrawOrbitSidekick(hi, ss, x_offset, true, rightKick, *clock_ms);
+			seDrawClickFlash(hi, ss, x_offset);
 			JE_drawMouseToHiFrame(hi, ss, x_offset);
 			present_hi(hi);
 		}
@@ -1095,26 +1145,6 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms, bool animate
 		JE_mouseReplace();
 
 		if (newkey || newmouse || mouse_scroll != 0 || mouse_x != mx0 || mouse_y != my0)
-			break;
-		if (!output_vsync)
-			limit_render_fps();
-	}
-}
-
-/* Wake on input or once per tick. Tick wakes renew the touch layout; pointer wakes keep paint
- * strokes responsive. */
-static void seWaitTick(void)
-{
-	const Uint16 x0 = mouse_x, y0 = mouse_y;
-
-	for (;;)
-	{
-		if (getDelayTicks() == 0)
-			break;
-		JE_mouseStart();   // services SDL events + draws the cursor at its live pos
-		JE_showVGA();
-		JE_mouseReplace(); // restore the pixels under the cursor for the next pass
-		if (newkey || newmouse || mouse_scroll != 0 || mouse_x != x0 || mouse_y != y0)
 			break;
 		if (!output_vsync)
 			limit_render_fps();
@@ -2040,7 +2070,7 @@ static void seSpriteEditor(int bank)
 	enum { PAL_X = 199, PAL_Y = 75, PAL_CELL = 4 };
 	enum { PAL_BTN_Y = 81, PAL_BTN_SIZE = 32, PAL_COL_X = 160, PAL_BG_X = 272 };
 	enum { NUDGE_BTN_Y = 117, NUDGE_BTN_SIZE = 15 };
-	enum { USED_X = 11, USED_Y = 140, USED_CELL = 5, USED_MAX = 26 };
+	enum { USED_X = 11, USED_Y = 139, USED_CELL = 5, USED_MAX = 26 };
 	const int panX0 = 150, panX1 = 313, panY0 = 7, panY1 = 183;
 	const int fieldsTop = panY0 + 13;
 	const int row_h = 9;
@@ -2078,6 +2108,8 @@ static void seSpriteEditor(int bank)
 	int lastX = -1, lastY = -1;
 	char notice[40] = "";
 	int prev_mx = mouse_x, prev_my = mouse_y;
+	Uint32 starClock = 0;
+	Uint32 starLast = SDL_GetTicks();
 	bool done = false;
 
 	wait_noinput(false, false, true);
@@ -2092,12 +2124,12 @@ static void seSpriteEditor(int bank)
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
-		fill_rectangle_xy(VGAScreen, BOX_X0, BOX_Y0, BOX_X1, BOX_Y1, 0);
+		fill_rectangle_xy(VGAScreen, BOX_X0, BOX_Y0, BOX_X1, BOX_Y1, SE_BG_SPACE);
 		JE_rectangle(VGAScreen, BOX_X0 - 1, BOX_Y0 - 1, BOX_X1 + 1, BOX_Y1 + 1, C_HI);
 
 		char caption[24];
 		snprintf(caption, sizeof(caption), "Custom Bank %d", bank);
-		draw_font_hv_shadow(VGAScreen, (BOX_X0 + BOX_X1) / 2, BOX_Y0 + 4, caption, small_font, centered, 15, 4, false, 1);
+		draw_font_hv_shadow(VGAScreen, (BOX_X0 + BOX_X1) / 2, BOX_Y0 + 4, caption, small_font, centered, 5, 4, true, 1);
 
 		fill_rectangle_wh(VGAScreen, CANV_X, CANV_Y, SE_FRAME_W * CANV_SCALE,
 		                  SE_FRAME_H * CANV_SCALE, (Uint8)background);
@@ -2126,7 +2158,7 @@ static void seSpriteEditor(int bank)
 				fill_rectangle_wh(VGAScreen, x, centerY - 1, 2, 2, C_GUIDE);
 		}
 		JE_rectangle(VGAScreen, CANV_X - 1, CANV_Y - 1,
-		             CANV_X + SE_FRAME_W * CANV_SCALE, CANV_Y + SE_FRAME_H * CANV_SCALE, C_DIV);
+		             CANV_X + SE_FRAME_W * CANV_SCALE, CANV_Y + SE_FRAME_H * CANV_SCALE, SE_BG_CLAMP);
 		if (canvasFocus)
 			JE_rectangle(VGAScreen, CANV_X + curX * CANV_SCALE - 1, CANV_Y + curY * CANV_SCALE - 1,
 			             CANV_X + curX * CANV_SCALE + CANV_SCALE, CANV_Y + curY * CANV_SCALE + CANV_SCALE, C_HI);
@@ -2166,11 +2198,16 @@ static void seSpriteEditor(int bank)
 					usedSel = i;
 			}
 			JE_rectangle(VGAScreen, usedX0 - 1, USED_Y - 1,
-			             usedX0 + usedW, USED_Y + USED_CELL, C_DIV);
+			             usedX0 + usedW, USED_Y + USED_CELL, SE_BG_CLAMP);
 		}
 		if (usedSel >= 0)
 			JE_rectangle(VGAScreen, usedX0 + usedSel * USED_CELL - 1, USED_Y - 1,
-			             usedX0 + usedSel * USED_CELL + USED_CELL, USED_Y + USED_CELL, C_HI);
+			             usedX0 + usedSel * USED_CELL + USED_CELL, USED_Y + USED_CELL, SE_BG_SELECT);
+
+		fill_rectangle_xy(VGAScreen, BOX_X0, STRIP_Y - 3, BOX_X1, STRIP_Y + SE_FRAME_H + 2, SE_BG_BAND);
+		fill_rectangle_xy(VGAScreen, BOX_X0, STRIP_Y - 3, BOX_X1, STRIP_Y - 3, SE_BG_RIM);
+		fill_rectangle_xy(VGAScreen, BOX_X0, STRIP_Y + SE_FRAME_H + 2, BOX_X1,
+		                  STRIP_Y + SE_FRAME_H + 2, SE_BG_RIM);
 
 		for (int f = 0; f < SE_FRAMES; ++f)
 		{
@@ -2178,8 +2215,8 @@ static void seSpriteEditor(int bank)
 			                  SE_FRAME_W, SE_FRAME_H, (Uint8)background);
 			seDrawFramePx(STRIP_X + f * 26, STRIP_Y, bank, f + 1);
 			if (f + 1 == frame)
-				JE_rectangle(VGAScreen, STRIP_X + f * 26 - 1, STRIP_Y - 1,
-				             STRIP_X + f * 26 + SE_FRAME_W, STRIP_Y + SE_FRAME_H, C_HI);
+				seDrawDockClamp(STRIP_X + f * 26 - 1, STRIP_Y - 1,
+				                STRIP_X + f * 26 + SE_FRAME_W, STRIP_Y + SE_FRAME_H, 4, SE_BG_SELECT);
 		}
 
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
@@ -2328,10 +2365,7 @@ static void seSpriteEditor(int bank)
 		service_SDL_events(false);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
-		JE_mouseStart();
-		JE_showVGA();
-		JE_mouseReplace();
-		seWaitTick();
+		sePresentPreviewTick(&starClock, &starLast, true, 0, 0);
 
 		const bool mouseMoved = (mouse_x != prev_mx || mouse_y != prev_my);
 
@@ -2493,6 +2527,9 @@ static void seSpriteEditor(int bank)
 				         mouse_x >= STRIP_X && mouse_x < STRIP_X + SE_FRAMES * 26)
 				{
 					frame = (mouse_x - STRIP_X) / 26 + 1;
+					seFlashRegion(STRIP_X + (frame - 1) * 26, STRIP_Y,
+					              STRIP_X + (frame - 1) * 26 + SE_FRAME_W - 1,
+					              STRIP_Y + SE_FRAME_H - 1);
 					JE_playSampleNum(S_CURSOR);
 				}
 				else if (hover >= 0)
@@ -2881,6 +2918,7 @@ void JE_shipEditor(void)
 
 	wait_noinput(false, false, true);
 	newkey = newmouse = false;
+	mouseTwoFingerRightClick = true;
 
 	while (!done)
 	{
@@ -2966,7 +3004,7 @@ void JE_shipEditor(void)
 				if (shields[s].mpwr > shieldMax)
 					shieldMax = shields[s].mpwr;
 			seDrawDockClamp(SE_BOX_X0 + 9, hpBarsY - 3,
-			                SE_BOX_X0 + 12 + 112 + 2, hpBarsY + 2 * ENEMY_BAR_THICK + 1, 2);
+			                SE_BOX_X0 + 12 + 112 + 2, hpBarsY + 2 * ENEMY_BAR_THICK + 1, 2, SE_BG_CLAMP);
 			hud_draw_ship_hp_bars_preview(SE_BOX_X0 + 12, hpBarsY, 112,
 			                              shields[*seField(slot, SE_ROW_SHIELD)].mpwr, (uint)shieldMax,
 			                              *seField(slot, SE_ROW_ARMOR), 30);
@@ -3113,6 +3151,7 @@ void JE_shipEditor(void)
 
 			int boxRow = -1;
 			bool boxSlot = false;
+			int fx0 = 0, fy0 = 0, fx1 = 0, fy1 = 0;
 			if (mouse_x >= SE_BOX_X0 && mouse_x <= SE_BOX_X1 &&
 			    mouse_y >= SE_BOX_Y0 && mouse_y <= SE_BOX_Y1)
 			{
@@ -3120,16 +3159,34 @@ void JE_shipEditor(void)
 					SE_ROW_FRONT, SE_ROW_REAR, SE_ROW_SPECIAL, SE_ROW_GENERATOR, SE_ROW_SHIELD
 				};
 				if (mouse_y < SE_POSES_Y - 3)
+				{
 					boxSlot = true;
+					fx0 = SE_BOX_X0; fy0 = SE_BOX_Y0; fx1 = SE_BOX_X1; fy1 = SE_POSES_Y - 4;
+				}
 				else if (mouse_y <= SE_POSES_Y + 30)
+				{
 					boxRow = SE_ROW_GRAPHIC;
+					fx0 = SE_BOX_X0; fy0 = SE_POSES_Y - 2; fx1 = SE_BOX_X1; fy1 = SE_POSES_Y + 29;
+				}
 				else if (mouse_y >= SE_CENTER_Y - 6 && mouse_y < SE_ITEMS_Y - 7)
+				{
 					boxRow = (mouse_x <= SE_KICK_L_X + 49) ? SE_ROW_LEFT
 					       : (mouse_x >= SE_KICK_R_X - 28) ? SE_ROW_RIGHT : SE_ROW_GRAPHIC;
+					fx0 = (boxRow == SE_ROW_LEFT) ? SE_KICK_L_X - 1
+					    : (boxRow == SE_ROW_RIGHT) ? SE_KICK_R_X - 1 : SE_KICK_L_X + 50;
+					fx1 = (boxRow == SE_ROW_LEFT) ? SE_KICK_L_X + 24
+					    : (boxRow == SE_ROW_RIGHT) ? SE_KICK_R_X + 24 : SE_KICK_R_X - 29;
+					fy0 = SE_CENTER_Y - 1;
+					fy1 = SE_CENTER_Y + 28;
+				}
 				else if (mouse_y >= SE_ITEMS_Y - 2 && mouse_y <= SE_ITEMS_Y + 43)
 				{
-					const int cell = (mouse_x - SE_BOX_X0) / 27;
-					boxRow = cellRow[cell > 4 ? 4 : cell];
+					int cell = (mouse_x - SE_BOX_X0) / 27;
+					if (cell > 4)
+						cell = 4;
+					boxRow = cellRow[cell];
+					fx0 = SE_BOX_X0 + cell * 27 + 1; fy0 = SE_ITEMS_Y - 1;
+					fx1 = SE_BOX_X0 + cell * 27 + 26; fy1 = SE_ITEMS_Y + 28;
 				}
 			}
 
@@ -3137,12 +3194,14 @@ void JE_shipEditor(void)
 			{
 				slot += (dir < 0) ? (slot > 1 ? -1 : 9) : (slot < 10 ? 1 : -9);
 				selected = SE_ROW_SLOT;
+				seFlashRegion(fx0, fy0, fx1, fy1);
 				JE_playSampleNum(S_CURSOR);
 			}
 			else if (boxRow >= 0)
 			{
 				seStepField(slot, boxRow, dir);
 				selected = boxRow;
+				seFlashRegion(fx0, fy0, fx1, fy1);
 				JE_playSampleNum(S_CURSOR);
 			}
 			else if (hover >= 0 && hover < SE_NAV_COUNT)
@@ -3333,6 +3392,7 @@ void JE_shipEditor(void)
 		{
 			const JE_byte grByte = *seField(slot, SE_ROW_GRAPHIC);
 			seSpriteEditor(extraShipGraphicIsCustom(grByte) ? grByte - 7 : 1);
+			mouseTwoFingerRightClick = true;
 		}
 
 		if (importLegacy)
@@ -3408,6 +3468,7 @@ void JE_shipEditor(void)
 		}
 	}
 
+	mouseTwoFingerRightClick = false;
 	touch_ui_clear_layout();
 	wait_noinput(false, false, true);
 
