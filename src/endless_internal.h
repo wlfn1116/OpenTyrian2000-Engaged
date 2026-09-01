@@ -166,7 +166,7 @@ void endlessReviveGraceReset(void);
 // Course choice and Executioner.
 #define ENDLESS_PERK_SURVEYOR_ROUTES 1
 #define ENDLESS_PERK_SURVEYOR_DROP_BASE 100  // kill drops: 1-in-(N/stacks), rolled per pickup kind
-#define ENDLESS_PERK_SURVEYOR_CUBE_BASE 200
+#define ENDLESS_PERK_SURVEYOR_CUBE_BASE 300
 #define ENDLESS_PERK_EXEC_DMG_PCT   15
 #define ENDLESS_PERK_EXEC_HP_PCT    25
 #define ENDLESS_PERK_EXEC_BOSS_PCT  15

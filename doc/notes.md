@@ -304,7 +304,7 @@ the ship whose effect is being calculated.
   affordable twiddle charges.
 - Surveyor draws three kill drops, the AST. CITY superbomb (enemy 800) and the
   ASTEROID1 orbiting orb (enemy 535) at 1-in-(100/stacks) of the killing ship,
-  and the random-special datacube (enemy 513) at 1-in-(200/stacks), once per
+  and the random-special datacube (enemy 513) at 1-in-(300/stacks), once per
   linked hull with the loot centered on the hull. An unclaimed kill uses the
   deeper seat; either ship may collect.
 
