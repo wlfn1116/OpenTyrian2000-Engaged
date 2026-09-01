@@ -140,8 +140,8 @@ make test
 make sanitize-test
 ```
 
-The suite covers deterministic replays, rollback state, save migrations,
-malformed inputs, Endless generation, and two network peers behind a fault proxy.
+The suite covers deterministic replays, rollback state, save migrations, malformed
+inputs, Endless generation, and two network peers behind a fault proxy.
 [testing/README.md](testing/README.md) lists the runners and scenarios.
 
 GitHub Actions builds Windows (x86-64 and ARM64), Linux (x86-64 and aarch64),
