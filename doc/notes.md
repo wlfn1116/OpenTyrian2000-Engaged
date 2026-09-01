@@ -302,10 +302,11 @@ the ship whose effect is being calculated.
   fire spends the charge.
 - Kinetic Converter uses actual shield or hull loss and applies only to
   affordable twiddle charges.
-- Surveyor draws two kill drops, the AST. CITY superbomb (enemy 800) and the
-  ASTEROID1 orbiting orb (enemy 535), at 1-in-(100/stacks) of the killing
-  ship, once per linked hull with the loot centered on the hull. An unclaimed
-  kill uses the deeper seat; either ship may collect.
+- Surveyor draws three kill drops, the AST. CITY superbomb (enemy 800) and the
+  ASTEROID1 orbiting orb (enemy 535) at 1-in-(100/stacks) of the killing ship,
+  and the random-special datacube (enemy 513) at 1-in-(200/stacks), once per
+  linked hull with the loot centered on the hull. An unclaimed kill uses the
+  deeper seat; either ship may collect.
 
 Countermeasures triggers on every hull hit, has no cooldown, and ignores
 shield-only hits.

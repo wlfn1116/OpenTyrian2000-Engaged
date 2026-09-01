@@ -120,9 +120,7 @@ Only one special-enemy share and one course-correction threat survive on a card;
 the strongest wins. The danger grade runs from F through S+++.
 
 Radar reveals level names and grants one reroll per outpost. Surveyor adds
-routes and gives each kill a small chance, doubled by a second stack, to drop
-a superbomb or an orbiting orb. Sector Sabotage removes threats from the
-chosen route.
+routes. Sector Sabotage removes threats from the chosen route.
 
 Milestone charts appear every 25 zones. Multiples of 100 include **The End**.
 
@@ -176,7 +174,7 @@ Breakthrough, the E-Shop, and gambles can add picks.
 | Shield Matrix | Faster shield recharge |
 | High-Velocity Shots | Faster player shots |
 | Radar | Reveals levels and grants a chart reroll |
-| Surveyor | Adds a course choice; kills can drop superbombs and orbiting orbs |
+| Surveyor | Adds a course choice; kills can drop superbombs, orbs, and specials |
 | Executioner | More damage to badly wounded enemies |
 | Opening Salvo | Charges a strong, free opening volley |
 | Kinetic Converter | Damage refunds power, recharge, and sidekick charge |

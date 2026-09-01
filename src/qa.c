@@ -2568,8 +2568,9 @@ static void qa_test_guidance_perk(void)
 }
 
 // The survey pickups' loot on the field after a drop-test kill. Each spawned pickup costs one
-// scatter draw in JE_setupEnemy (startxc is set on both records), which the stream checks add on.
-static int qa_surveyor_count_loot(int *bombs, int *orbs, int *misplaced,
+// scatter draw in JE_setupEnemy (startxc is set on all three records), which the stream checks
+// add on.
+static int qa_surveyor_count_loot(int *bombs, int *orbs, int *cubes, int *misplaced,
                                   JE_integer wantX, JE_integer wantY)
 {
 	int loot = 0;
@@ -2584,14 +2585,16 @@ static int qa_surveyor_count_loot(int *bombs, int *orbs, int *misplaced,
 			++*bombs;
 		else if (enemy[i].evalue == -3)
 			++*orbs;
+		else if (enemy[i].evalue == 1)
+			++*cubes;
 		else
 			++*misplaced;
 	}
 	return loot;
 }
 
-/* Surveyor's kill drops: both survey pickups appear at the kill anchor, one pair of draws per
- * linked hull with the loot at the hull's middle, deeper stacks shorten the odds, no draws
+/* Surveyor's kill drops: all three survey pickups appear at the kill anchor, one triple of draws
+ * per linked hull with the loot at the hull's middle, deeper stacks shorten the odds, no draws
  * without the perk, and nothing lands in the slot the kill site still uses. */
 static void qa_test_surveyor_drop_perk(void)
 {
@@ -2614,6 +2617,8 @@ static void qa_test_surveyor_drop_perk(void)
 
 	qa_check(enemyDat[800].value == -4 && enemyDat[535].value == -3,
 	         "the survey drop test's pickups are the two the collector special-cases");
+	qa_check(enemyDat[513].value == 1,
+	         "the survey drop test's cube is the datacube the special grant answers");
 
 	for (uint i = 0; i < COUNTOF(enemy); ++i)
 	{
@@ -2660,7 +2665,7 @@ static void qa_test_surveyor_drop_perk(void)
 	endlessPerkTakenBy[0][PERK_SURVEYOR] = 2;
 	endlessPerkRederive();
 	mt_srand(0x5EED51);
-	int bombs = 0, orbs = 0, misplaced = 0;
+	int bombs = 0, orbs = 0, cubes = 0, misplaced = 0;
 	for (int k = 0; k < 3000; ++k)
 	{
 		for (uint i = 0; i < COUNTOF(enemy); ++i)
@@ -2670,9 +2675,10 @@ static void qa_test_surveyor_drop_perk(void)
 		enemy[0].ey = 90;
 		enemy[0].linknum = 0;
 		enemy_logical_death(0, 0);
-		qa_surveyor_count_loot(&bombs, &orbs, &misplaced, enemy[0].ex, enemy[0].ey);
+		qa_surveyor_count_loot(&bombs, &orbs, &cubes, &misplaced, enemy[0].ex, enemy[0].ey);
 	}
-	qa_check(bombs > 0 && orbs > 0, "with Surveyor both survey pickups drop");
+	qa_check(bombs > 0 && orbs > 0 && cubes > 0, "with Surveyor all three survey pickups drop");
+	qa_check(cubes < bombs + orbs, "the cube drops at longer odds than the survey pair");
 	qa_check(misplaced == 0,
 	         "every drop is a score item at the kill anchor, outside the freed kill slot");
 
@@ -2680,7 +2686,7 @@ static void qa_test_surveyor_drop_perk(void)
 	endlessPerkTakenBy[0][PERK_SURVEYOR] = 1;
 	endlessPerkRederive();
 	mt_srand(0x5EED54);
-	int bombs1 = 0, orbs1 = 0, misplaced1 = 0;
+	int bombs1 = 0, orbs1 = 0, cubes1 = 0, misplaced1 = 0;
 	for (int k = 0; k < 3000; ++k)
 	{
 		for (uint i = 0; i < COUNTOF(enemy); ++i)
@@ -2688,16 +2694,17 @@ static void qa_test_surveyor_drop_perk(void)
 		enemyAvail[0] = 0;
 		enemy[0].linknum = 0;
 		enemy_logical_death(0, 0);
-		qa_surveyor_count_loot(&bombs1, &orbs1, &misplaced1, enemy[0].ex, enemy[0].ey);
+		qa_surveyor_count_loot(&bombs1, &orbs1, &cubes1, &misplaced1, enemy[0].ex, enemy[0].ey);
 	}
-	qa_check(bombs1 + orbs1 > 0 && bombs1 + orbs1 < bombs + orbs && misplaced1 == 0,
+	qa_check(bombs1 + orbs1 + cubes1 > 0 && bombs1 + orbs1 + cubes1 < bombs + orbs + cubes &&
+	         misplaced1 == 0,
 	         "one stack still drops, at longer odds than two");
 
-	/* A linked hull spends one pair of draws however many parts go down with it, plus the one
+	/* A linked hull spends one triple of draws however many parts go down with it, plus the one
 	 * scatter draw each spawned pickup costs, and its loot sits at the hull's middle. */
 	endlessPerkTakenBy[0][PERK_SURVEYOR] = 2;
 	endlessPerkRederive();
-	int hullDrops = 0, hullMisplaced = 0, hullBombs = 0, hullOrbs = 0;
+	int hullDrops = 0, hullMisplaced = 0, hullBombs = 0, hullOrbs = 0, hullCubes = 0;
 	mt_srand(0x5EED52);
 	for (int k = 0; k < 2000 && hullDrops == 0; ++k)
 	{
@@ -2715,13 +2722,14 @@ static void qa_test_surveyor_drop_perk(void)
 		mt_srand(markBefore);   // reseed on a drawn value: a fresh, reproducible stream point
 		for (uint part = 10; part < 14; ++part)
 			enemy_logical_death(part, 0);
-		hullDrops += qa_surveyor_count_loot(&hullBombs, &hullOrbs, &hullMisplaced, 106, 67);
+		hullDrops += qa_surveyor_count_loot(&hullBombs, &hullOrbs, &hullCubes, &hullMisplaced,
+		                                    106, 67);
 		const Uint32 got = mt_rand();
 		mt_srand(markBefore);
-		for (int d = 0; d < 2 + hullDrops; ++d)
+		for (int d = 0; d < 3 + hullDrops; ++d)
 			mt_rand();
 		qa_check(mt_rand() == got,
-		         "a linked hull spends one pair of draws plus its spawns' scatter, not one per part");
+		         "a linked hull spends one triple of draws plus its spawns' scatter, not one per part");
 		if (hullDrops == 0)
 			mt_srand(got);   // walk the stream forward for the next attempt
 	}
@@ -2754,7 +2762,7 @@ static void qa_test_surveyor_drop_perk(void)
 		coopLoot += enemyAvail[i] == 2;
 	const Uint32 gotCoop = mt_rand();
 	mt_srand(0x5EED55);
-	for (int d = 0; d < 2 + coopLoot; ++d)
+	for (int d = 0; d < 3 + coopLoot; ++d)
 		mt_rand();
 	qa_check(mt_rand() == gotCoop, "...the holder's kills roll");
 
@@ -2769,7 +2777,7 @@ static void qa_test_surveyor_drop_perk(void)
 		noneLoot += enemyAvail[i] == 2;
 	const Uint32 gotNone = mt_rand();
 	mt_srand(0x5EED56);
-	for (int d = 0; d < 2 + noneLoot; ++d)
+	for (int d = 0; d < 3 + noneLoot; ++d)
 		mt_rand();
 	qa_check(mt_rand() == gotNone, "...and an unclaimed kill rolls with the deeper seat");
 

@@ -870,9 +870,11 @@ bool endlessSpecialPickup(int slot)
 #define ENEMY_REAR_POWERUP  534
 #define ENEMY_GEM_5000      399
 
-// Surveyor's finds: the AST. CITY superbomb (value -4) and the ASTEROID1 orbiting orb (value -3).
+// Surveyor's finds: the AST. CITY superbomb (value -4), the ASTEROID1 orbiting orb (value -3),
+// and the datacube (value 1) endless already hands out as the random-special "?" pickup.
 #define ENEMY_SUPERBOMB     800
 #define ENEMY_ORBIT_ORB     535
+#define ENEMY_DATA_CUBE     513
 
 static bool endlessPortCanPowerUp(uint port)
 {
@@ -946,11 +948,13 @@ void endlessPerkSurveyorDrops(unsigned int slot, int linknum, int killer)
 		return;
 	endlessSurveyorLastLink = linknum;
 
-	// Two draws as statements: an unsequenced pair diverges across compilers.
+	// Each draw its own statement: an unsequenced pair diverges across compilers.
 	const int odds = ENDLESS_PERK_SURVEYOR_DROP_BASE / stacks;
 	const bool bomb = (mt_rand() % odds) == 0;
 	const bool orb  = (mt_rand() % odds) == 0;
-	if (!bomb && !orb)
+	const int cubeOdds = ENDLESS_PERK_SURVEYOR_CUBE_BASE / stacks;
+	const bool cube = (mt_rand() % cubeOdds) == 0;
+	if (!bomb && !orb && !cube)
 		return;
 
 	JE_integer ax, ay;
@@ -964,6 +968,8 @@ void endlessPerkSurveyorDrops(unsigned int slot, int linknum, int killer)
 		endlessSpawnLootXY((int)slot, ENEMY_SUPERBOMB, ax, ay);
 	if (orb)
 		endlessSpawnLootXY((int)slot, ENEMY_ORBIT_ORB, ax, ay);
+	if (cube)
+		endlessSpawnLootXY((int)slot, ENEMY_DATA_CUBE, ax, ay);
 	enemyAvail[slot] = avail;
 }
 
