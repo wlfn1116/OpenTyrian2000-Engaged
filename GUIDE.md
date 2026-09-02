@@ -62,8 +62,8 @@ The setup screen asks for a seed, run mode, and Base Level rule.
 | Same | Every route uses one random level |
 | Same Shuffle | Every route uses one level from the shuffled bag |
 
-Shuffle rules exhaust the level pool before refilling it. A Radar reroll spends
-the discarded hand and deals the next one.
+Shuffle rules exhaust the level pool before refilling it. A Radar reroll
+spends the discarded hand and deals the next one.
 
 | Run mode | Saving | On death |
 | --- | --- | --- |
