@@ -2444,6 +2444,8 @@ void JE_doInGameSetup(void)
 
 	haltGame = false;
 
+	JE_repaintShieldArmorBars();
+
 #ifdef WITH_NETWORK
 	// A rollback session reaches this menu on a frame both machines confirmed and needs no
 	// handshake here; its release also carries the menu frame's input records and, unlike
@@ -8871,6 +8873,8 @@ void JE_pauseGame(void)
 
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
+
+	JE_repaintShieldArmorBars();
 
 	if (!superPause)
 	{
