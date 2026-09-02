@@ -142,6 +142,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_ARMOR_STEP     8  // Ablative Plating maximum armor.
 #define ENDLESS_PERK_CASH_PCT      15  // Scavenger cash (%).
 #define ENDLESS_PERK_REGEN_TICKS  140  // Nanorepair ticks per armor point at one stack.
+#define ENDLESS_PERK_REGEN_CALM_TICKS 175
 #define ENDLESS_PERK_SIPHON_PCT    12  // Siphon heal chance (%).
 #define ENDLESS_PERK_BOUNTY_PICKUP_MULT 4
 #define ENDLESS_PERK_BULWARK        1
@@ -283,6 +284,7 @@ void endlessPerkGrant(uint p, int id, int delta);
 extern int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];
 extern int endlessPerkChoiceN;
 extern int endlessRegenTick;
+extern int endlessRegenCalm[2];
 extern int endlessSalvoIdle[2];
 extern int endlessSalvoWindow[2];
 

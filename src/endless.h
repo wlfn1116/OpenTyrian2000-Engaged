@@ -807,6 +807,8 @@ EndlessSeekerTier endlessSeekerTier(void);
 JE_byte endlessSeekerPasses(void);
 void    endlessSeekerTurn(float *turnCos, float *turnSin);
 
+void endlessRegenHitTaken(void);
+
 // The caller caps this drain at the generator's current reserve.
 unsigned endlessStaticDischargeDrain(unsigned actualDamage);
 

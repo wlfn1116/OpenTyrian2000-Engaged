@@ -2132,6 +2132,9 @@ JE_byte JE_playerDamage(JE_byte temp,
 	JE_drawArmor();
 	VGAScreen = game_screen; /* side-effect of game_screen */
 
+	if (endlessFxShip(this_player))
+		endlessRegenHitTaken();
+
 	// Static Discharge uses the actual shield and armor loss because the return value is zero for a
 	// fully absorbed hit. Drain only the affected ship's available generator reserve.
 	if (endlessFxShip(this_player))

@@ -782,6 +782,7 @@ void endlessResetRun(void)
 	{
 		endlessSalvoIdle[p] = ENDLESS_PERK_SALVO_IDLE;
 		endlessSalvoWindow[p] = 0;
+		endlessRegenCalm[p] = 0;
 	}
 	memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
 	endlessLockedSortie = false;
@@ -974,8 +975,14 @@ void endlessGameplayTick(void)
 	++endlessRegenTick;
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
+		if (player[p].shield < player[p].shield_max)
+			endlessRegenCalm[p] = 0;
+		else if (endlessRegenCalm[p] < ENDLESS_PERK_REGEN_CALM_TICKS)
+			++endlessRegenCalm[p];
+
 		const JE_byte stacks = endlessPerkEffective(p, PERK_REGEN);
-		if (stacks > 0 && endlessRegenTick % (ENDLESS_PERK_REGEN_TICKS / stacks) == 0
+		if (stacks > 0 && endlessRegenCalm[p] >= ENDLESS_PERK_REGEN_CALM_TICKS
+		    && endlessRegenTick % (ENDLESS_PERK_REGEN_TICKS / stacks) == 0
 		    && !endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
 			++player[p].armor;
 	}
@@ -1004,6 +1011,7 @@ void endless_register_rollback(void)
 	rollback_register("endless.perkOwned", endlessPerkOwned, sizeof(endlessPerkOwned));
 	rollback_register("endless.perkTakenBy", endlessPerkTakenBy, sizeof(endlessPerkTakenBy));
 	rollback_register("endless.regenTick", &endlessRegenTick, sizeof(endlessRegenTick));
+	rollback_register("endless.regenCalm", endlessRegenCalm, sizeof(endlessRegenCalm));
 	rollback_register("endless.salvoIdle", endlessSalvoIdle, sizeof(endlessSalvoIdle));
 	rollback_register("endless.salvoWindow", endlessSalvoWindow, sizeof(endlessSalvoWindow));
 	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));

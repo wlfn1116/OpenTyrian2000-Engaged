@@ -113,6 +113,7 @@ void endlessPerkGrant(uint p, int id, int delta)
 int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];  // this visit's offered perk ids
 int endlessPerkChoiceN = 0;           // how many are offered (0..ENDLESS_PERK_OFFERS_MILESTONE)
 int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
+int endlessRegenCalm[2] = { 0, 0 };
 /* Opening Salvo charges on a gun sitting idle and is spent by that gun firing, so both are per
  * ship: one shared charge had the second ship's fire spending the first ship's salvo. */
 int endlessSalvoIdle[2] = { 0, 0 };   // ticks the main gun has sat idle (reset each run)
@@ -693,7 +694,15 @@ void endlessResetZonePerkTimers(void)
 	{
 		endlessSalvoIdle[p]   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 2s wait is dead time here
 		endlessSalvoWindow[p] = 0;                        // no half-spent salvo carries over
+		endlessRegenCalm[p]   = 0;
 	}
+}
+
+void endlessRegenHitTaken(void)
+{
+	const uint p = endlessFxPlayer();
+	if (p < COUNTOF(endlessRegenCalm))
+		endlessRegenCalm[p] = 0;
 }
 
 // Pulse application lives at the player-shot kill sites in tyrian2.c.
