@@ -1,7 +1,7 @@
 # OpenTyrian2000 Engaged player guide
 
-Engaged keeps the original Tyrian campaigns and adds Endless mode, online play,
-editors, restored content, and smoother rendering.
+Engaged keeps the original Tyrian campaigns and adds Endless mode,
+online play, editors, restored content, and smoother rendering.
 
 ## Find a feature
 
