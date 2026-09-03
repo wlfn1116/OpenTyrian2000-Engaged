@@ -22,8 +22,8 @@ online play, editors, restored content, and smoother rendering.
 
 Graphics settings are under **Setup > Graphics**.
 
-- **Smooth Motion** presents interpolated frames at the display rate. Supported
-  modes also move your ship at that rate.
+- **Smooth Motion** presents interpolated frames at the display rate.
+  Supported modes also move your ship at that rate.
 - **Sub-pixel** renders the playfield at Auto, Off, 2x through 5x, or Native.
   The mouse cursor also moves at this finer precision on every screen.
 - **Native** follows the fitted output size and costs the most GPU time.
