@@ -16,10 +16,23 @@ project(OpenTyrian2000 C)
 # vita.cmake provides the Vita packaging helpers.
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-# VPK and LiveArea metadata
+# VPK and LiveArea metadata. APP_VER is the zero-padded major.minor from
+# src/opentyrian_version.h, matching build.ps1; the SFO requires "XX.YY", so
+# input that does not fit that shape keeps the default.
 set(VITA_APP_NAME "OpenTyrian 2000 Engaged")
 set(VITA_TITLEID  "OTYR20000")
 set(VITA_VERSION  "01.00")
+file(READ "${CMAKE_SOURCE_DIR}/../src/opentyrian_version.h" OT_VERSION_HEADER)
+if(OT_VERSION_HEADER MATCHES "OPENTYRIAN_VERSION[ \t]+\"[^\"0-9]*([0-9]+)\\.([0-9]+)")
+  # Latch both captures first: the pad below overwrites CMAKE_MATCH_<n>.
+  set(OT_VER_MAJOR "${CMAKE_MATCH_1}")
+  set(OT_VER_MINOR "${CMAKE_MATCH_2}")
+  string(REGEX REPLACE "^([0-9])$" "0\\1" OT_VER_MAJOR "${OT_VER_MAJOR}")
+  string(REGEX REPLACE "^([0-9])$" "0\\1" OT_VER_MINOR "${OT_VER_MINOR}")
+  if(OT_VER_MAJOR MATCHES "^[0-9][0-9]$" AND OT_VER_MINOR MATCHES "^[0-9][0-9]$")
+    set(VITA_VERSION "${OT_VER_MAJOR}.${OT_VER_MINOR}")
+  endif()
+endif()
 
 # Preserve engine assumptions, loader aliasing, and netplay float parity.
 add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-aliasing

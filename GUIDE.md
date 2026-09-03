@@ -387,8 +387,9 @@ Self-Test writes failures to `rollback_selftest.log`.
 
 ## Extra menu and Ship Editor
 
-**Title screen > Extra** contains Transfer, Ship Editor, Jukebox, Destruct,
-SuperTyrian, Super Arcade ships, command-line cheats, and Christmas Mode.
+**Title screen > Extra** contains Instructions, Transfer, Ship Editor, Jukebox,
+Destruct, SuperTyrian, Super Arcade ships, command-line cheats, and Christmas
+Mode.
 
 **Esc > Extra** exposes solo cheats and the custom-ship picker. Custom ships are
 available in solo Campaign, Endless, and Arcade, plus online Campaign, Endless,

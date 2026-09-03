@@ -250,6 +250,7 @@ void JE_loadHelpText(void)
 	strcpy(menuText[6], menuText[5]);
 	strcpy(menuText[5], menuText[4]);
 	strcpy(menuText[4], "Setup");
+	strcpy(menuText[0], "Start Game");
 
 	/*Event text*/
 	skip_pascal_string(f);

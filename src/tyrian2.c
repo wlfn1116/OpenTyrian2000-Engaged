@@ -9169,7 +9169,6 @@ bool titleScreen(void)
 		MENU_ITEM_NEW_GAME = 0,
 		MENU_ITEM_LOAD_GAME,
 		MENU_ITEM_HIGH_SCORES,
-		MENU_ITEM_INSTRUCTIONS,
 		MENU_ITEM_SETUP,
 		MENU_ITEM_EXTRA,
 		MENU_ITEM_DEMO,
@@ -9184,14 +9183,13 @@ bool titleScreen(void)
 	size_t selectedIndex = MENU_ITEM_NEW_GAME;
 	size_t specialNameProgress[SA_ENGAGE] = { 0 };
 
-	// Title menu labels: the 7 data-file entries (menuText[]) with "Extra" inserted
-	// after Setup. Keep in sync with enum MenuItemIndex above.
+	// Title menu labels: the data-file entries (menuText[]) with "Extra" inserted after
+	// Setup. Instructions lives in the Extra menu. Keep in sync with MenuItemIndex above.
 	const char *const titleLabels[] =
 	{
-		menuText[0],  // Start New Game
+		menuText[0],  // Start Game
 		menuText[1],  // Load Game
 		menuText[2],  // High Scores
-		menuText[3],  // Instructions
 		menuText[4],  // Setup
 		"Extra",
 		menuText[5],  // Demo
@@ -9199,8 +9197,8 @@ bool titleScreen(void)
 	};
 
 	const int xCenter = LEGACY_WIDTH / 2;
-	const int yMenuItems = 98;
-	const int hMenuItem = 12;
+	const int yMenuItems = 104;
+	const int hMenuItem = 13;
 	int wMenuItem[COUNTOF(titleLabels)] = { 0 };
 
 	for (; ; )
@@ -9569,15 +9567,6 @@ bool titleScreen(void)
 				fade_black(15);
 
 				JE_highScoreScreen();
-
-				restart = true;
-				break;
-			}
-			case MENU_ITEM_INSTRUCTIONS:
-			{
-				fade_black(15);
-
-				JE_helpSystem(1);
 
 				restart = true;
 				break;

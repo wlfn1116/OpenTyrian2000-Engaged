@@ -333,6 +333,7 @@ typedef enum
 	MENU_ITEM_CLEAR_LOGS,           // delete every stored log, crash and net alike (console-only row)
 
 	/* Title-screen Extra menu. */
+	MENU_ITEM_INSTRUCTIONS,
 	MENU_ITEM_JUKEBOX,
 	MENU_ITEM_DESTRUCT,
 	MENU_ITEM_SUPERTYRIAN,
@@ -952,6 +953,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_EXTRA] = {
 			.header = "Extra",
 			.items = {
+				{ MENU_ITEM_INSTRUCTIONS, "Instructions", "Read the instructions and help topics." },
 				{ MENU_ITEM_JUKEBOX, "Jukebox", "Listen to the music of Tyrian." },
 				{ MENU_ITEM_SUBMENU, "Secret Modes...", "Play Destruct, SuperTyrian, or Super Arcade.", MENU_SECRET_MODES },
 				{ MENU_ITEM_SHIP_EDITOR, "Ship Editor...", "Design the Tab+Number custom ships." },
@@ -1680,6 +1682,20 @@ static bool runOptionsMenu(MenuId startMenu)
 					JE_playSampleNum(S_SELECT);
 
 					currentMenu = menuParents[currentMenu];
+					break;
+				}
+				case MENU_ITEM_INSTRUCTIONS:
+				{
+					JE_playSampleNum(S_SELECT);
+
+					fade_black(10);
+
+					// The help system plays its own track; put the menu's back afterwards.
+					const unsigned int song = song_playing;
+					JE_helpSystem(1);
+					play_song(song);
+
+					restart = true;
 					break;
 				}
 				case MENU_ITEM_JUKEBOX:
