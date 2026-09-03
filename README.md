@@ -2,16 +2,15 @@
 
 [![build](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml)
 
-OpenTyrian2000 Engaged is a fork of
-[OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port
-of the DOS game Tyrian 2000.
+OpenTyrian2000 Engaged is a fork of [OpenTyrian2000](https://github.com/KScl/opentyrian2000),
+an open-source port of the DOS game Tyrian 2000.
 
 This fork adds:
 
 - a wider 16:9 playfield and smooth high-refresh rendering;
 - Endless mode built from the original levels and new gameplay effects;
 - two-player online play across every mode;
-- an in-game remake of the SHIPEDIT.EXE ship editor with added QoL;
+- an in-game remake of the SHIPEDIT.EXE ship editor;
 - an in-game custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows x86-64;
@@ -39,8 +38,8 @@ the consoles can also use an external copy. See their build guides.
 
 ## Display and controls
 
-The game uses a 356x200 frame: a 299-pixel playfield and the
-original 57-pixel HUD. Menus retain their centered 320-pixel layout.
+The game uses a 356x200 frame: a 299-pixel playfield and the original
+57-pixel HUD. Menus retain their centered 320-pixel layout.
 
 The simulation runs at 35 Hz. Smooth Motion interpolates between ticks,
 while Sub-pixel rendering removes whole-pixel stepping from slow movement
@@ -146,9 +145,9 @@ malformed inputs, Endless generation, and two network peers behind a fault proxy
 
 GitHub Actions builds Windows (x86-64 and ARM64), Linux (x86-64 and aarch64),
 macOS, Android, iOS, Switch, and Vita. The suite runs on both architectures
-of both desktop systems.
-Current artifacts are available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
-and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
+of both desktop systems. Get current builds from the
+[latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
+or the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
 
 ## License
 

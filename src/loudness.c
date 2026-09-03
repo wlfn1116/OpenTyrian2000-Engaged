@@ -53,9 +53,7 @@ bool audio_disabled = false, music_disabled = false, samples_disabled = false;
 MusicDevice music_device = OPL;
 char soundfont[4096] = { 0 };
 
-// True once FluidSynth is the active MIDI backend AND a readable SoundFont is
-// configured; i.e. the user's .sf2 will actually be heard. Surfaced in the
-// Sound menu and crash log so the choice is confirmable (see init_audio()).
+// True when FluidSynth is active with a readable SoundFont.
 bool midi_soundfont_loaded = false;
 
 const char *const music_device_names[MUSIC_DEVICE_MAX] = {
@@ -103,9 +101,7 @@ static Sint32 volumeFactorTable[256];
 #define TO_FIXED(x) ((Sint32)((x) * (1 << 12)))
 #define FIXED_TO_INT(x) ((Sint32)((x) >> 12))
 
-// Twice the Loudness update rate (in updates/second). In Tyrian, Loudness updates were
-// performed at the same rate as the game timer, which varied depending on the game speed
-// (~69.57 Hz at most game speeds).
+// Twice the Loudness update rate; classic Tyrian usually ran it near 69.57 Hz.
 static const int ldsUpdate2Rate = 139;  // 69.5 * 2
 
 static int samplesPerLdsUpdate;
@@ -252,9 +248,7 @@ static bool is_soundfont_ext(const char *name)
 }
 
 #ifdef _WIN32
-// Directory holding the executable, no trailing slash; "" when it can't be determined.
-// A SoundFont dropped next to the .exe counts even when the data files live elsewhere
-// (an installed data dir, a -t override, a shortcut with a different working dir).
+// Executable directory without a trailing slash, or empty when unknown.
 static const char *exe_dir(void)
 {
 	static char dir[MAX_PATH];
@@ -273,10 +267,7 @@ static const char *exe_dir(void)
 	return dir;
 }
 
-// Scan one directory for loadable SoundFonts, keeping the newest seen so far in
-// best/bestTime. It may already hold a match from an earlier directory, so the
-// newest across every scanned directory wins. best[] is a full path, left untouched
-// when this directory holds nothing newer.
+// Keep the newest loadable SoundFont found across all scanned directories.
 static void scan_dir_for_soundfont(const char *dir, char *best, size_t bestSize, FILETIME *bestTime)
 {
 	if (dir == NULL || dir[0] == '\0')
@@ -306,9 +297,7 @@ static void scan_dir_for_soundfont(const char *dir, char *best, size_t bestSize,
 }
 #endif
 
-// Find the newest loadable SoundFont sitting next to the .exe or in the data folder.
-// Returns false with `out` empty when there is none; the condition that grays
-// FluidSynth out in the Sound menu (see soundfont_available()).
+// Find the newest SoundFont beside the executable or in the data directory.
 static bool find_soundfont(char *out, size_t outSize)
 {
 	out[0] = '\0';
@@ -322,9 +311,7 @@ static bool find_soundfont(char *out, size_t outSize)
 	return out[0] != '\0';
 }
 
-// Cached "is there a SoundFont FluidSynth could load?": -1 unscanned, 0 none, 1 found.
-// The Sound menu asks on every redraw, so the directory scan runs once per audio
-// (re)start; init_audio() clears it, and any music-device change restarts audio.
+// Cached SoundFont availability: -1 unscanned, 0 absent, 1 found.
 static int soundfont_scan = -1;
 
 // If no SoundFont is configured, adopt the newest one found next to the .exe or in
@@ -518,10 +505,7 @@ static void audioCallback(void *userdata, Uint8 *stream, int size)
 			{
 				lds_update();
 
-				// The number of samples that should be produced per Loudness
-				// update is not an integer, but we can only produce an integer
-				// number of samples, so we accumulate the fractional samples
-				// until it amounts to a whole sample.
+				// Carry fractional samples between Loudness updates.
 				samplesUntilLdsUpdate += samplesPerLdsUpdate;
 				samplesUntilLdsUpdateFrac += samplesPerLdsUpdateFrac;
 				if (samplesUntilLdsUpdateFrac >= ldsUpdate2Rate)
@@ -900,9 +884,7 @@ void multiSamplePlay(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint
 	SDL_UnlockAudioDevice(audioDevice);
 }
 
-// Silence every sample channel. Channels hold pointers into the sound-sample buffers,
-// so call this (on the main thread) before those buffers are freed or reallocated at
-// runtime (e.g. reloading Christmas voices), else the audio callback reads freed memory.
+// Stop channels before freeing or replacing sample buffers they may still reference.
 void stop_sample_channels(void)
 {
 	if (audio_disabled)

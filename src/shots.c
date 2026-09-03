@@ -68,9 +68,7 @@ static bool shot_guidance_can_steer(const PlayerShotDataType *shot)
 	         && shot->shotXM >= SHOT_ATTACHED_VEL_MIN && shot->shotYM >= SHOT_ATTACHED_VEL_MIN);
 }
 
-/* One velocity nudge on one axis. A ship-relative velocity (see SHOT_ATTACHED_VEL_MIN) is
- * nudged within its range, so the shot keeps riding the ship and its curve travels with it; a
- * free velocity is kept out of that range. */
+/* Nudge one axis without crossing between attached and free velocity ranges. */
 static void shot_guidance_nudge(JE_integer *vel, bool positive, bool xAxis)
 {
 	// The both-axes pin is not part of the x band.
@@ -245,9 +243,7 @@ void simulate_player_shots(void)
 				}
 				else if (anim_frame > 60000)
 				{
-					// Blended "special" sprite (e.g. the Plasma Storm cloud tiles). Mirror
-					// player_shot_move_and_draw so the weapon-simulator preview (custom
-					// weapon creator) shows these looks instead of silently skipping them.
+					// Draw blended special sprites in the weapon preview too.
 					rl_current_id = RL_ID_PSHOT_BASE + z;
 					rl_current_vel_x = tempShotX - rl_shot_old_x;
 					rl_current_vel_y = tempShotY - rl_shot_old_y;
@@ -269,9 +265,7 @@ draw_player_shot_loop_end:
 	}
 }
 
-// Endless Opening Salvo: the spark cue marking a boosted shot, coloured from the shot's own sprite
-// so each weapon flashes its own hue. Kept sparse and short-lived so a wide many-shot weapon does
-// not fill the screen with it; see doc/notes.md#gauges-and-effects.
+// Opening Salvo sparks use the shot's color and stay sparse; see doc/notes.md#gauges-and-effects.
 #define SALVO_LAUNCH_SPARKS     6  // one-off puff on the shot's first drawn tick
 #define SALVO_LAUNCH_REACH      5
 #define SALVO_LAUNCH_LIFE_TICKS 4
@@ -458,9 +452,7 @@ bool player_shot_move_and_draw(
 		*out_shotx = shot->shotX;
 		*out_shoty = shot->shotY;
 
-		// Wide cull margins keep interpolated exits and returning projectile arcs visible.
-		// Decelerating shots are culled above -15 once they stop ascending; a riding
-		// velocity ascends by its drift from the resting value.
+		// Wide cull margins preserve interpolated exits and returning shot arcs.
 		const int ym_drift = shot->shotYM >= SHOT_ATTACHED_VEL_MIN
 		                     ? shot->shotYM - SHOT_ATTACHED_VEL_REST : shot->shotYM;
 		if (shot->shotX < -34 || shot->shotX > PLAYFIELD_WIDTH + 34 ||
@@ -503,9 +495,7 @@ bool player_shot_move_and_draw(
 		// Attach tracking-shot axes to the render-rate ship and extrapolate the moving
 		// axis from this tick's final screen delta.
 		rl_current_id = RL_ID_PSHOT_BASE + shot_id;
-		// The linked-Dragonwing aim markers are recreated every tick, so their
-		// pool slot can drift; a stable id keeps them paired across frames and
-		// the aim swing interpolates instead of stepping at the tick rate.
+		// Stable ids pair recreated Dragonwing aim markers across frames.
 		bool link_marker = false;
 		for (int k = 0; k < 3; ++k)
 		{
@@ -518,18 +508,13 @@ bool player_shot_move_and_draw(
 		}
 		rl_current_vel_x = shot->shotX - rl_shot_old_x;
 		rl_current_vel_y = shot->shotY - rl_shot_old_y;
-		// Acceleration lets the travelling axis extrapolate a decelerating shot
-		// (e.g. Vulcan Cannon) without overshooting and snapping back; the attached
-		// axis ignores it (orbit math uses pure velocity).
+		// Extrapolate decelerating travel axes; attached orbit axes use velocity only.
 		rl_current_acc_x = shot->shotXC;
 		rl_current_acc_y = shot->shotYC;
 		rl_shot_attach = (shot->shotXM > 100 ? 1 : 0)
 		               | (shot->shotYM > 100 ? 2 : 0)
 		               | ((shot->playerNumber - 1) << 2);
-		// The aim markers orbit the fused ship: attach BOTH axes to the carrier
-		// (player 1 = index 0), so they ride the render-rate ship instead of
-		// interpolating a tick behind it; their own angular motion still
-		// interpolates from the cross-frame pairing.
+		// Attach both aim-marker axes to the fused ship while interpolating their orbit.
 		if (link_marker)
 			rl_shot_attach = 3;
 		if (*out_is_special)
@@ -561,9 +546,7 @@ bool player_shot_move_and_draw(
 				        superSparkCapForSprite(shot->shotGr % 1000));
 				sprite_frame = sprite_frame % 1000;
 			}
-			// salvoBoost 1 = first drawn tick (always the launch puff), stepping to 2 for the
-			// flight wisp, which a weapon with its own plume does not need. Both stay truthy,
-			// which is all the collision-time damage bonus tests.
+			// salvoBoost 1 draws the launch puff; 2 draws the optional flight wisp.
 			if (shot->salvoBoost)
 			{
 				if (shot->salvoBoost == 1)
@@ -588,15 +571,11 @@ bool player_shot_move_and_draw(
 	return true;
 }
 
-// Opening Salvo tag for the shots created by the next player_shot_create call, replacing the live
-// window test. Only player_shot_create_chained sets these, and it clears them before returning, so
-// they never span a sim tick and need no rollback entry.
+// Temporary Salvo tag for chained shots; cleared before returning, so rollback need not store it.
 static bool salvoBoostOverride = false;    // take the tag from salvoBoostFromParent
 static bool salvoBoostFromParent = false;  // the chain parent's tag, valid while the override is set
 
-// Offset from a circlesize shot's spawn point to the centre of the loop it walks, in pixels on one
-// axis. shotDev steps as a triangle wave and the position is its running sum, so the loop closes
-// after 4 * cir_size ticks and one period covers all of it.
+// A circlesize shot closes its loop after 4 * cir_size ticks.
 static int shot_circle_center_offset_px(int dev, int dir, int cir_size)
 {
 	if (cir_size <= 0)
@@ -641,15 +620,11 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	if (endlessFxActive())
 		power_use = power_use * endlessPerkPowerUsePercent() / 100;
 
-	// Special-weapon shots are paid for upfront in shield/armor; they must not also
-	// drain the generator, or a sustained special (e.g. an active Minefield) starves
-	// the main weapon of power.
+	// Special shots paid from shield or armor do not also drain the generator.
 	if (bay_i == SHOT_SPECIAL || bay_i == SHOT_SPECIAL2)
 		power_use = 0;
 
-	// Endless kill-fire BOON (Turbodrive / Overdrive): the boosted fire rate must not drain the
-	// generator faster, so shots fired during the window are power-free. An evil curse fires SLOWER,
-	// so it gets no such break; normal power cost applies.
+	// Boon windows make accelerated shots free; slower curse windows keep normal power cost.
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		power_use = 0;
 
@@ -668,15 +643,11 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	if (weapon->sound > 0)
 		soundQueue[soundChannel[bay_i]] = weapon->sound;
 
-	// The shot is paid for, so the gun has fired. Endless marks its record with a C when that gun is
-	// either player's custom weapon; the custom sidekick fires through the same port, so one test
-	// covers all bays.
+	// Mark Endless records when any bay fires either player's custom weapon port.
 	if (customWeaponPortIsCustom(portNum))
 		endlessNoteCustomWeaponShot();
 
-	// Endless Opening Salvo perk: tag the shots that belong to a charged volley, so the collision
-	// applies the damage bonus only to those. A chain-reaction child takes its parent's tag and
-	// ignores the window, which keeps the bonus with the volley that launched the carrier.
+	// Tag charged volleys so their Salvo bonus survives through chain-reaction children.
 	const JE_byte salvo_tag = (salvoBoostOverride
 	                           ? salvoBoostFromParent
 	                           : (endlessFxActive() && endlessOpeningSalvoVolleyActive())) ? 1 : 0;
@@ -929,9 +900,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		}
 
 		shotRepeat[bay_i] = weapon->shotrepeat;
-		// Endless Evil Turbodrive/Overdrive curse: JAM the guns by lengthening the cooldown as the
-		// kill combo climbs (0 unless an evil kill-fire window is up). Main/sidekick guns only; the
-		// special bays run their own cadence (see varz.c). shotRepeat is a byte, so clamp.
+		// Curse windows lengthen main and sidekick cooldowns; clamp the byte counter.
 		if (endlessFxActive() && bay_i != SHOT_SPECIAL && bay_i != SHOT_SPECIAL2)
 		{
 			const int jam = endlessKillFireJamTicks();
@@ -1005,9 +974,7 @@ JE_integer player_shot_create_deflected(const EnemyShotType *incoming, int damag
 	shot->shotCirSizeY = 0;
 	shot->shotTrail = 255;
 
-	// The player draw takes frames above 500 from the second sheet, the enemy draw from 500 up, and
-	// no shipped bullet sits on 500, so the sprite carries over as it is. The enemy loop wraps its
-	// frame at animax, the player loop at shotAniMax.
+	// Translate player frame ids above 500; no shipped bullet uses the boundary value.
 	shot->shotGr = incoming->sgr;
 	shot->shotAni = incoming->animate;
 	shot->shotAniMax = (incoming->animax > 0) ? incoming->animax : 1;

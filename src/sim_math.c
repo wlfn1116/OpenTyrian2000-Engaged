@@ -24,9 +24,7 @@
 #define PIO2_LO  6.07710050650619224932e-11
 #define TWO_OVER_PI 6.36619772367581382433e-01
 
-/* Past this the reduction has no significant bits left to give.  Nothing in the game can
- * reach it (the fastest-growing angle needs ~9 million years of play), so the clamp exists
- * to keep the long long cast in range, not because a caller might rely on it. */
+/* This unreachable clamp keeps range reduction within long long. */
 #define SIM_TRIG_MAX 1.0e12
 
 /* sin(r) on [-pi/4, pi/4] */

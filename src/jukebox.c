@@ -35,9 +35,7 @@
 
 #include <stdio.h>
 
-// Overlay the 1x text layer (only its non-zero glyph pixels) onto the hi-res star
-// buffer as scale x scale blocks, so the small-font text stays crisp on top of the
-// supersampled stars. Mirrors the game's HUD block-expand into the hi frame.
+// Block-expand nonzero text pixels over the supersampled star buffer.
 static void juke_overlay_text(SDL_Surface *text1x, SDL_Surface *hi, int scale)
 {
 	for (int y = 0; y < text1x->h; ++y)
@@ -87,9 +85,7 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 	Uint64 last_frame = SDL_GetPerformanceCounter();
 	float tick_acc = 0.0f;
 
-	// If sub-pixel supersampling is on, render the starfield into a hi-res buffer and present it
-	// through the same downscaling path the game uses, so the flying stars/sparks glide smoothly
-	// instead of stepping whole pixels.
+	// Present stars through the game's supersampling path when enabled.
 	SDL_Surface *juke_hi = NULL;
 	{
 		const int ss = effective_supersample();

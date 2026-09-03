@@ -302,9 +302,7 @@ JE_byte     astralDuration;
 JE_word     flareDuration;
 JE_boolean  flareStart;
 JE_shortint flareColChg;
-/* The full-screen grade on screen right now was installed by a flare special rather than the level.
-   Decides which grade a flare may pulse and release (simulation state, rollback-registered) and
-   lets the Special Tint setting hide a flare's wash without touching levelFilter. */
+/* The rollback-registered flare grade is separate from the level's screen filter. */
 bool        flareOwnsFilter = false;
 JE_byte     specialWait;
 JE_byte     nextSpecialWait;
@@ -438,9 +436,7 @@ void JE_getShipInfo(void)
 {
 	JE_boolean extraShip, extraShip2;
 
-	// An extra ship (id above 90) is described by extraShips[]; ships[] ends at the synthesized
-	// SHIP_DRAGONWING row, so indexing it with such an id reads well past the end. Default those
-	// to the standard sheet here; JE_SGr picks the real one for them a few lines down.
+	// Extra ship ids are not valid ships[] indices; JE_SGr selects their real sheet below.
 	shipGrPtr = (player[0].items.ship <= SHIP_DRAGONWING && ships[player[0].items.ship].shipgraphic > 500)
 	          ? &spriteSheetT2000 : &spriteSheet9;
 	shipGr2ptr = &spriteSheet9;
@@ -497,9 +493,7 @@ void JE_getShipInfo(void)
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
-		// Arcade lives scaling: the hull is only the 1-life figure, so keep it and raise the real
-		// ceiling on top of it. Every caller treats the result as a full hull restore;
-		// the between-level outpost is one of them, so armor follows the new ceiling.
+		// Arcade lives raise the full-restoration ceiling above the one-life hull value.
 		player[i].hull_armor = player[i].armor;
 		player[i].initial_armor = arcade_armor_max(&player[i]);
 		player[i].armor = player[i].initial_armor;
@@ -641,9 +635,7 @@ void JE_resetPlayerOptions(Player *this_player)
 	{
 		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
-		// Ordnance Reserves perk grows the magazine; the refill cadence is scaled to match, so the
-		// deeper reserve still fills in the shipped time instead of trickling in proportionally
-		// slower.
+		// Scale refill cadence so larger Ordnance Reserves magazines fill in the stock time.
 		this_player->sidekick[i].ammo =
 		this_player->sidekick[i].ammo_max = endlessPerkSidekickAmmo(this_option->ammo);
 
@@ -700,9 +692,7 @@ int hud_sidekick_ammo_y(uint slot)
 // Draw-only companion to JE_drawOptions: repaints the sidekick HUD boxes from current state.
 void JE_drawOptionsHUD(void)
 {
-	// A silent re-simulation pass suppresses sprite blits but still runs plain fills, so
-	// painting here would clear the box and never put the icon back. Leave the strip alone and
-	// let the level loop settle it on the next presented frame.
+	// Skip HUD fills during silent replay because their sprite redraws are suppressed.
 	if (rollback_resim_silent)
 	{
 		hud_sidekicks_dirty = true;
@@ -825,9 +815,7 @@ void JE_tyrianHalt(JE_byte code)
 #endif
 }
 
-// Opening Salvo: the specials that spawn no shot (repulsor, attractor, invuln, repair) have no
-// bullet to trail sparks off, so a boosted one would look identical to a plain one. Burst off the
-// ship instead, in the gauge's green. No-op outside a window.
+// Give shotless boosted specials a green ship-centered Salvo cue.
 static void salvo_special_burst(JE_byte playerNum)
 {
 	if (!endlessOpeningSalvoVolleyActive())
@@ -842,9 +830,7 @@ static void salvo_special_burst(JE_byte playerNum)
 static int special_mouse_x_for(JE_byte playerNum) { return dual_ship_mode() && playerNum == 2 ? mouseXB : mouseX; }
 static int special_mouse_y_for(JE_byte playerNum) { return dual_ship_mode() && playerNum == 2 ? mouseYB : mouseY; }
 
-/* A special went off during the JE_doSpecialShot call in progress. Set here rather than at the four
-   gates that call this, so a fifth can never forget to; JE_doSpecialShot clears it on entry and
-   reads it at the end, which keeps it scoped to one ship's turn through the tick. */
+/* JE_doSpecialShot clears and reads this flag within one ship's turn. */
 static bool specialFiredThisCall = false;
 
 /* The beam widens over its opening ticks, holds while the blast runs, then closes over its last
@@ -934,9 +920,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			const int push = endlessOpeningSalvoScale(1);  // Opening Salvo: shoves that much harder
 			salvo_special_burst(playerNum);
 
-			// Local int counter, not the global JE_byte `temp`: ENEMY_SHOT_MAX is 500, which a byte
-			// counter can never reach (it wraps at 255), so `temp` here would loop forever and hang
-			// the moment the Repulsor fires. (The pool grew past 255 for endless; see ENEMY_SHOT_MAX.)
+			// ENEMY_SHOT_MAX exceeds a byte, so this loop needs an int counter.
 			for (int es = 0; es < ENEMY_SHOT_MAX; es++)
 			{
 				if (!enemyShotAvail[es])
@@ -1084,9 +1068,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			break;
 		case 14:
 		{
-			// Vanilla's repair-the-OTHER-hull special, and co-op keeps that meaning: it heals the
-			// partner. Aiming it at the firer instead made it a second copy of case 13. The linked
-			// pair has no partner ship of its own, so there it stays on hull two.
+			// Repair the partner in co-op, or hull two for the linked pair.
 			const JE_byte repair_num = dual_ship_mode() ? (JE_byte)(3 - playerNum) : 2;
 			Player *const repair_player = &player[repair_num - 1];
 			repair_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
@@ -1151,9 +1133,7 @@ static bool special_is_flare(JE_byte sidx)
 	return (st >= 5 && st <= 11) || st == 16;
 }
 
-/* A twiddle runs on its own clock and its own flare ownership, so the equipped special can never
- * swallow one. twiddleWait is per ship; the flare pair describes the single live flare. File scope
- * exposes them to rollback. */
+/* Twiddles have per-ship clocks; the flare fields describe the one live flare. */
 static JE_boolean flareFromTwiddle = false;
 static JE_word twiddleFlareShotWait = 0;
 static JE_word twiddleWait[2] = { 0, 0 };
@@ -1181,9 +1161,7 @@ void JE_resetSpecialState(void)
 	JE_resetTwiddleClocks();
 }
 
-/* Fire a special as a twiddle: the recharge lands on the twiddle's own clock, so neither it nor
- * the equipped special can swallow the other, and a flare twiddle is paced by its flare
- * instead. See doc/notes.md#twiddles-and-specials. */
+/* Twiddles use their own recharge clock; flare twiddles are paced by the live flare. */
 static void twiddle_fire(JE_byte playerNum, uint slot, JE_byte specialType)
 {
 	const JE_byte equipped_wait = shotRepeat[SHOT_SPECIAL];
@@ -1233,9 +1211,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	const bool special_armed = shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0
 	                        && flareDuration == 0 && zinglonDuration < 2;
 
-	/* A recognised twiddle lives for this tick only (JE_playerMovement clears SFExecuted at the
-	 * top of the next one), so refusing it here discards the input. See
-	 * doc/notes.md#twiddles-and-specials. */
+	/* JE_playerMovement clears a recognized twiddle at the start of the next tick. */
 	const JE_byte twiddle_special = SFExecuted[playerNum-1];
 	if (twiddle_special > 0 && twiddleWait[twiddle_slot] == 0
 	    && (flareDuration == 0 || !special_is_flare(twiddle_special)))
@@ -1245,9 +1221,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		bool can_afford = true;
 		uint spend_shield = 0, spend_armor = 0;
 
-		/* Kinetic Converter perk (endless) discounts what every charge below deducts. temp2 keeps the
-		 * list price: JE_specialComplete reads it as the effect's magnitude, so a cheaper twiddle
-		 * must not also be a weaker one. */
+		/* Kinetic Converter discounts the charge without changing the effect magnitude in temp2. */
 		if (temp2 > 0)
 		{
 			if (temp2 < 98)  // costs some shield
@@ -1336,9 +1310,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		JE_specialComplete(playerNum, this_player->items.special);
 	}
 
-	// Debug: force-fire the selected twiddle's special. Runs after the equipped special (which keeps
-	// priority) on the same clock a performed twiddle uses, ignores the shield/armor cost, and won't
-	// stack onto an active flare.
+	// Debug twiddles use the normal twiddle clock after the equipped special gets priority.
 	if (playerNum == 1 && debug_fire_helpers)
 	{
 		const bool want = debugTwiddleTrigger
@@ -1469,9 +1441,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		flareDuration = 0;
 		flareFromTwiddle = false;
 		twiddleFlareShotWait = 0;
-		// Release the grade only if a flare installed it and this one carries a tint (in co-op the
-		// holder may be the other ship's). Comparing colours let a tint-less flare (-99) match a
-		// level's brightness-only flash. See doc/notes.md#twiddles-and-specials.
+		// Release only tinted flare-owned grades; see doc/notes.md#twiddles-and-specials.
 		if (flareOwnsFilter && specialWeaponFilter != -99)
 		{
 			levelFilter = -99;
@@ -1677,9 +1647,7 @@ void hud_ship_hp_bar_reset(void)
 }
 static float gaugeFlashAlpha = 1.0f;
 
-/* Where the shield/armor gauges paint. The tick draws take the classic 1x HUD surface; the
- * present pass hands in the supersampled frame instead, so the bars render NxN there rather
- * than arriving block-expanded off VGAScreenSeg. */
+/* Tick draws use the 1x HUD; presentation draws gauges directly on the supersampled frame. */
 static SDL_Surface *gauge_dst = NULL;
 static int gauge_scale = 1;
 
@@ -1857,9 +1825,7 @@ static bool endlessFxShip(const Player *this_player)
 	return endlessFxActive() && (coopEndlessMode || this_player == &player[0]);
 }
 
-/* The generator reserve belonging to the ship being hit. In a dual-ship session each ship keeps
- * its own and the global `power` is only the scratch context the weapon code runs in, which is
- * NOT loaded at the damage sites (see coop_ship_runtime_load in mainint.c). */
+/* Damage sites read the struck ship's generator reserve, not the weapon code's power scratch. */
 static int endlessGeneratorGet(const Player *this_player)
 {
 	return dual_ship_mode() ? (int)this_player->generator_power : (int)power;
@@ -1877,9 +1843,7 @@ static void endlessGeneratorSet(Player *this_player, int v)
 		power = (uint)v;
 }
 
-/* Wind back both clocks that gate the ship's special: shotRepeat[SHOT_SPECIAL] is the ordinary
- * cadence, specialWait the one a flare installs on the way out. Same storage split as the
- * generator above. */
+/* Rewind both the ordinary special cadence and the flare-imposed wait. */
 static void endlessKineticCoolSpecial(Player *this_player)
 {
 	JE_byte *const clocks[2] = {
@@ -1891,9 +1855,7 @@ static void endlessKineticCoolSpecial(Player *this_player)
 		*clocks[i] -= (JE_byte)endlessPerkKineticCooldownCut(*clocks[i]);
 }
 
-/* Feed the ship's sidekicks: `rounds` into a magazine, `stages` up a charge ramp. A pod can have
- * both, since the fire path adds a charge stage to an ammo pod's shot. The ammo gauge is
- * event-drawn and needs the dirty flag; a charge stage rides the pod sprite, redrawn every tick. */
+/* Feed sidekick magazines and charge ramps; mark event-drawn ammo gauges dirty. */
 static void endlessKineticFeedSidekicks(Player *this_player, int rounds, int stages)
 {
 	bool refilled = false;
@@ -1999,9 +1961,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		    && endlessAegisGateConsume(oldShield, temp))
 		{
 			temp = 0;
-			// Make the block READ as its own event: the full nine-point ring (the shield-absorb flare,
-			// so the hit visibly stops AT the shield) plus S_CLINK, a sound nothing else in the damage
-			// path uses.
+			// Mark a block with the full shield ring and its unique clink sound.
 			JE_setupExplosion(this_player->x - 17, this_player->y - 12, 0, 14, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x - 5 , this_player->y - 12, 0, 15, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x + 7 , this_player->y - 12, 0, 16, false, !twoPlayerMode);
@@ -2093,9 +2053,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	if (!rollback_resim && gaugeFlashArmor && this_player->armor < oldArmor)
 		armorGaugeFlash[gi] = GAUGE_FLASH_START;
 
-	/* Kinetic Converter perk (endless): the generator share reads the impact, so it needs a shield
-	 * that soaked something; the recharge and the sidekicks ride any hit. cmHullHit rather than an
-	 * armor delta, because cheatInfiniteArmor skips the armor deduction. */
+	/* Kinetic Converter's generator share needs shield absorption; its other effects need any hit. */
 	if (endlessFxShip(this_player) && (this_player->shield < oldShield || cmHullHit))
 	{
 		// Re-cap at the generator ceiling: the tick's own recharge/cap already ran.
@@ -2195,9 +2153,7 @@ static float hud_2p_gauge_units(float value)
 	return (units > HUD_2P_GAUGE_UNITS_MAX) ? (float)HUD_2P_GAUGE_UNITS_MAX : units;
 }
 
-// The tick mark showing where a full shield would reach, drawn on the row JE_dBar3 would use as
-// the bar's top at `units_max` (same edge arithmetic, so the two always meet). One 1x row thick
-// whatever the scale. Only worth drawing while the bar is short of it.
+// Draw the full-shield marker on JE_dBar3's top row while the bar is below it.
 static void draw_shield_ceiling_mark(int x, int bottom_y, float units_now, float units_max, int top_pad)
 {
 	if (units_now >= units_max)
@@ -2463,9 +2419,7 @@ void hud_draw_ship_hp_bars(void)
 
 void JE_drawArmor(void)
 {
-	// The 28 cap is the classic bar maximum; the endless reinforced hull legitimately exceeds it
-	// (drawn as rollover layers below), so don't clobber the real value in endless mode.
-	// This clamp mutates sim state, so it must run on silent passes too, BEFORE the gate.
+	// Clamp classic armor before the draw gate; Endless uses rollover layers above 28.
 	if (!endlessFxActive())
 		for (uint i = 0; i < COUNTOF(player); ++i)
 			if (player[i].armor > 28)
@@ -2529,9 +2483,7 @@ void JE_clearSPClip(void)
 	superpixelClipActive = false;
 }
 
-// Sprites hiding this tick's occluded sparks. A shower thrown from the middle of a sprite would
-// otherwise plot over it, since JE_drawSP runs after every playfield draw. Small: only the endless
-// "?" pickup publishes a box, and only while it is on screen.
+// On-screen Endless mystery pickups publish boxes that occlude later spark draws.
 #define MAX_SP_OCCLUDERS 24  // additional sprites do not occlude sparks
 
 static struct { int x0, y0, x1, y1; } sp_occluders[MAX_SP_OCCLUDERS];
@@ -2600,9 +2552,7 @@ void JE_discardSPPass(void)
 
 	if (sp_pass_advanced)
 	{
-		/* Rewind the step JE_drawSP took, so the replacement pass takes it once and the sparks it
-		   spawns get theirs. Travel is exactly invertible; the two skipped z values are a spark
-		   this pass retired and one spawned after the draw, neither of which took the step. */
+		/* Rewind JE_drawSP's step; retired and newly spawned sparks did not take it. */
 		for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
 		{
 			if (superpixels[i].z == 0 || superpixels[i].z >= SUPERPIXEL_SPAWN_Z)
@@ -2637,9 +2587,7 @@ static void sp_scatter(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE
 		signed int tempy = roundf(cosf(tempr) * mt_rand_1() * explowidth);
 		signed int tempx = roundf(sinf(tempr) * mt_rand_1() * explowidth);
 
-		// A silent re-simulation pass replays frames the presented timeline already spawned from.
-		// The draws above stay, because they are part of the deterministic stream; the superpixels
-		// do not, or a rollback would stack one shower per re-simulated frame.
+		// Silent replay keeps RNG draws but does not emit duplicate spark pixels.
 		if (rollback_resim_silent)
 			continue;
 
@@ -2712,9 +2660,7 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 	}
 }
 
-// Both shapes below place sparks by distance rather than by count, so a bigger one is drawn with a
-// heavier hand instead of the same few sparks stretched thinner. The cap is what keeps the largest
-// of them off the classic 101-entry window when Extra Sparks is off.
+// Space sparks by distance, capped to the classic pool when Extra Sparks is off.
 #define SP_SHAPE_SPARKS_MAX 24
 
 static JE_word sp_shape_count(JE_real span, JE_byte spacing)

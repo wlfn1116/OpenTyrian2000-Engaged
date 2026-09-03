@@ -103,9 +103,7 @@ struct JE_SingleEnemyType
 	JE_byte     filter;
 	JE_integer  evalue;
 	JE_integer  fixedmovey;
-	// Fractional carry used when a scroll modifier scales fixedmovey. A positive base names
-	// the full-speed layer divisor; -100 names the delay-gated percentage fallback; 0 resets.
-	// carry_move invalidates the carry when eyc changes how much of fixedmovey is scroll-relative.
+	// Scroll-scaling carry; positive selects a divisor, -100 a percentage, 0 resets.
 	JE_integer  fixedmovey_carry;
 	JE_integer  fixedmovey_carry_base;
 	JE_integer  fixedmovey_carry_move;
@@ -238,9 +236,7 @@ typedef struct {
 	Uint8 filter;  // passed on to each explosion this sequence spawns
 } rep_explosion_type;
 
-// `bright` lifts the plotted shade (see rl_superpixel_value). z alone halves into a mid shade
-// at spawn and fades to the bank floor, which the presentation-only showers lose against a lit
-// playfield; 0 keeps the classic shading.
+// `bright` raises superpixel shade; 0 keeps shipped shading.
 typedef struct {
 	unsigned int x, y, z;
 	signed int delta_x, delta_y;
@@ -335,9 +331,7 @@ extern JE_word mapStopStallTicks;
 extern JE_word superEnemy254Jump;
 extern Explosion explosions[MAX_EXPLOSIONS];
 extern JE_integer explosionFollowAmountX, explosionFollowAmountY;
-// Tint worn by explosions created by the next JE_setupExplosion / JE_setupExplosionLarge call.
-// Set it, spawn, clear it again: it is never left set across a tick, so it stays out of the
-// rollback registry. Presentation only; the network state hash ignores explosion colour.
+// Presentation tint for the next explosion call; clear it before the tick ends.
 extern Uint8 explosionFilter;
 
 /* Opacity for the next explosion, in sixteenths. JE_setupExplosion() stamps it into a local side
@@ -463,9 +457,7 @@ extern int superpixelClipX0, superpixelClipY0, superpixelClipX1, superpixelClipY
 void JE_setSPClip(int x0, int y0, int x1, int y1);
 void JE_clearSPClip(void);
 
-// A sprite that hides the sparks spawned with `occluded`, in screen pixels, both edges inclusive.
-// The drawing code publishes one box per sprite per tick; JE_drawSP consumes the list and clears
-// it, so a box never outlives the frame that set it.
+// Inclusive screen-space box that occludes marked sparks for one frame.
 void JE_addSPOccluder(int x0, int y0, int x1, int y1);
 
 extern JE_byte temp, temp2, temp3;
@@ -496,9 +488,7 @@ const char *extraShipEditorGraphicName(int graphic);
 void JE_drawOptions(void);
 void JE_resetPlayerOptions(Player *this_player);
 void JE_drawOptionsHUD(void);
-// Whose sidekick pods the HUD strip belongs to, and the ammo-gauge row inside it. Online
-// Campaign simulates both ships, so anything painting the strip has to ask rather than paint
-// for whichever player it happens to be simulating.
+// Player and row owning the sidekick HUD strip currently being drawn.
 uint hud_sidekick_player_index(void);
 int  hud_sidekick_ammo_y(uint slot);
 void JE_drawPlayerTags(void);  // two-player HUD "P1"/"P2" marks; no-op otherwise
@@ -574,17 +564,13 @@ void JE_repaintShieldArmorBars(void);
 JE_word JE_portConfigs(const Player *this_player);
 
 /*SuperPixels*/
-// classic_cap keeps this call inside the classic 101-spark window even when extraSparks is on
-// (used by the superspark weapon trails); pass false to honor the extraSparks setting. A capped
-// shower is thinned by the whole screen's spark traffic, an uncapped one is not.
+// classic_cap keeps the shower inside the shipped 101-spark window.
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap);
 // Uncapped JE_doSP with a shorter life. It keeps JE_doSP's simulation RNG cost; `bright`
 // compensates for the lower initial z. Spawn it before JE_drawSP.
 void JE_doSPBrief(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
                   JE_byte life, JE_byte bright);
-// The same shower from `seed` rather than the simulation RNG, for presentation-only effects.
-// `bright` is the shade lift described at superpixel_type; 0 gives the classic JE_doSP shading.
-// `occluded` marks the sparks as hidden by this tick's occluder boxes (see JE_addSPOccluder).
+// Seeded, presentation-only shower with optional shade lift and occlusion.
 void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
                    bool classic_cap, JE_byte bright, bool occluded, Uint32 seed);
 // Presentation-only spark ring that reaches `radius` on its last life tick. `spacing` controls
@@ -599,15 +585,11 @@ void JE_doSPBoltSeeded(JE_word x0, JE_word y0, JE_word x1, JE_word y1, JE_byte s
 // pace, so the shower reads as a drip rather than a burst. Seeded and uncapped like the shapes above.
 void JE_doSPDripSeeded(JE_word x, JE_word y, JE_word num, JE_byte spread, JE_byte color,
                        JE_byte life, JE_byte bright, Uint32 seed);
-// The spark pop a vaporised enemy bullet leaves, in the bullet's own colour (Endless Shockwave
-// and Countermeasures). Call with the slot still live. Presentation only, so a silent resim
-// spawns nothing.
+// Presentation-only spark pop; call while the enemy-shot slot is still live.
 void enemy_shot_vaporise_sparks(unsigned int slot);
 void JE_drawSP(void);
 void JE_resetSP(void);
-// Frame boundary for the ring. JE_beginSPPass opens a drawing pass; JE_discardSPPass puts the ring
-// back the way that pass found it, so the pass redrawing the frame reuses its slots and its step
-// instead of adding a second set. Call the discard wherever a drawn pass is abandoned.
+// Discard restores the spark ring to the state captured by begin.
 void JE_beginSPPass(void);
 void JE_discardSPPass(void);
 

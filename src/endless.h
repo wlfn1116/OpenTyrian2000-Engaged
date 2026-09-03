@@ -14,8 +14,7 @@
 // Combat effects can be enabled in a campaign without enabling Endless run flow.
 static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
 
-/* Online co-op. Both ships fly a shared run: the sector, its modifiers and the course slate are
- * run-wide, while wallets, stock, gear and the personal upgrades below belong to one player each.
+/* Co-op shares the route and modifiers, but each player owns their economy and upgrades.
  * See doc/notes.md#session-and-outpost. */
 
 // The ship this machine outfits and spends for: player 1 solo, the local ship in co-op.
@@ -65,9 +64,7 @@ void endlessAdvanceCourseTurn(void);   // call once a sector has been flown to i
 
 // A downed player spectates until the zone ends, then revives at the outpost.
 extern bool endlessPlayerDowned[2];
-/* The other player used the in-game menu's Quit. In Endless that means "back to the outpost",
- * the same as pressing it here, so the peer joins them there rather than being torn down; the
- * level ends with playerEndLevel set, which on its own would read as this player's death. */
+/* Handle a peer's in-game Quit as a shared return to the outpost. */
 void endlessCoopPeerQuitLevel(void);
 bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not downed
 // Which ship a homing or course-correcting shot at (fromX, fromY) goes for: the nearer one
@@ -178,19 +175,13 @@ enum {
 #define ENDLESS_ELITE_FILTER    0xD0
 #define ENDLESS_CHAMPION_FILTER 0x50  // bank 5 = purple (an "epic" aura; 0xB0 read as brown)
 
-// Shade lift for the endless aura and icon spark showers (see rl_superpixel_value). Over a dark
-// background it runs them from shade 13 down to 6 rather than 7 down to 0, so they stay in the
-// bright half of the bank for their whole 15 ticks.
+// Shade lift that keeps aura and icon sparks visible over dark backgrounds.
 #define ENDLESS_SPARK_BRIGHT 6
 
-// Shade lift for a tinted explosion (see blit_sprite2_blend_filter). Its sprites are mostly bank 7
-// around shade 7, which the blend halves to about 4: legible in their own yellow ramp, near-black
-// in the elite banks. Well under the aura's lift, so the sprite keeps its own gradient.
+// Shade lift for explosions blended into elite and champion banks.
 #define ENDLESS_EXPLOSION_BRIGHT 3
 
-// Shade lift for a tinted enemy bullet (see blit_sprite2_filter_bright). Shot art spans the
-// whole ramp, and the champion bank's bottom third is nearly black, so its darker pixels would
-// disappear at the sprite's own shade.
+// Shade lift that keeps dark projectile pixels visible in tier palettes.
 #define ENDLESS_SHOT_BRIGHT 2
 
 // Player-side kill-fire tint banks.
@@ -294,9 +285,7 @@ extern int endlessArmorBonus[2];
 
 void endlessResetRun(void);
 
-// All-time records, stored in opentyrian.cfg so Hardcore runs can update theirs. A run writes the
-// record for the difficulty it was started on; the figure for a mode as a whole is derived from
-// those, so it can never disagree with the breakdown behind it.
+// All-time records live in opentyrian.cfg, including Hardcore runs.
 void endlessNoteZoneReached(int zone);
 void endlessRecordRunStart(void);
 int  endlessBestZoneAtStart(void);
@@ -312,9 +301,7 @@ extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
 int endlessRecordTable(void);   // which table the run in progress writes
 const char *endlessRecordTableName(int players);
 
-/* How a visit's chart picks the levels behind its routes. Appended to rather than reordered: the
- * value indexes the record tables, rides the save, and travels on the connect packet. Menu order
- * pairs each rule with its Shuffle twin and is a separate list, endlessBaseRuleAtMenuIndex. */
+/* Persistent chart-rule values. Append new rules; do not reorder them. */
 typedef enum {
 	ENDLESS_BASE_VARIED = 0,       // every charted route is its own level
 	ENDLESS_BASE_SAME,             // one level fills the chart, leaving the modifiers as the choice
@@ -324,9 +311,7 @@ typedef enum {
 }
 EndlessBaseRule;
 
-/* ...and by the chart rule above, for the same reason: a slate of one repeated base level is a
- * different run from a slate of five, and a Shuffle run meets every level in the pool on a
- * schedule an unshuffled one does not. Each rule has a High Scores page of its own. */
+/* Records are separate for each persistent chart-rule value. */
 #define ENDLESS_BASE_TABLES ENDLESS_BASE_RULE_COUNT
 const char *endlessBaseLevelRuleName(int variant);   // the Base Level row's value for that rule
 const char *endlessBaseLevelRuleHelp(int variant);   // the one-line explanation both pickers show
@@ -412,9 +397,7 @@ const char *endlessSeedString(void);
 // Re-fork both players' outpost draw streams from the run seed.
 void endlessReseedPlayers(Uint64 salt);
 
-/* The Endless half of every save slot, kept in memory beside saveFiles[] and read and written with
- * them as 'endless' sections of opentyrian.sav (config.c owns the file). JE_saveGame captures or
- * clears the slot's half through endlessSaveCaptureSlot before the file is written. */
+/* In-memory Endless halves of the save slots owned by config.c. */
 bool endlessSlotHasRun(JE_byte slot);
 void endlessSaveCaptureSlot(JE_byte slot);
 /* Access a slot's cached Endless record without touching the live run. Serialize returns 0 when
@@ -429,9 +412,7 @@ bool endlessSaveRepairFromLegacy(void);   // ...and the halves an Endless-named 
 bool endlessSaveLegacyExists(void);       // is that file there at all?
 bool endlessSaveLegacyWasRead(void);      // ...and did this session read it through?
 
-/* Everything one Endless co-op player owns for themselves that the other machine also has to
- * know: the run-wide sector effects are derived identically on both sides, but these are bought.
- * Rides every outpost sync packet; see doc/notes.md#session-and-outpost. */
+/* Fixed-width personal state carried by every co-op outpost sync. */
 #define ENDLESS_PLAYER_BLOCK_PERKS 32
 #define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 11 + 8 * 3 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
@@ -451,9 +432,7 @@ size_t endlessRunSerialize(Uint8 *out, size_t max);
 bool   endlessRunAdopt(const Uint8 *bytes, size_t len);
 // Redeal this seat's shop rows: the fallback when an adopted record carries no partner half.
 void endlessShopRedrawStock(void);
-/* The partner's outpost half a save stores next to this machine's own (nothing is written on
- * the partner's disk). Their machine packs its half onto the save acknowledgement; the stash
- * holds it until the visit ends. */
+/* Partner outpost state held for the local save. */
 #define ENDLESS_OUTPOST_BLOCK_SIZE (9 + 90 + 8)
 int  endlessPackOwnOutpost(Uint8 *buf);
 void endlessPartnerOutpostStash(uint seat, const Uint8 *block);
@@ -642,9 +621,7 @@ void endlessGrantSpecial(uint p);
 // (mainint.c). Reads enemy state, writes none.
 bool endlessSpecialPickup(int slot);
 
-// Top half of the shop's unknown-item icon; its bottom half is a ship body. INK is the opaque
-// glyph's measured extent from the enemy reference point, grown by GRAB on each side for the
-// pickup box.
+// Unknown-item glyph extent and pickup padding from the enemy anchor.
 #define ENDLESS_SPECIAL_PICKUP_ICON 125
 #define ENDLESS_SPECIAL_GLYPH_INK_X0 2
 #define ENDLESS_SPECIAL_GLYPH_INK_X1 9
@@ -656,9 +633,7 @@ bool endlessSpecialPickup(int slot);
 #define ENDLESS_SPECIAL_GLYPH_Y0    (ENDLESS_SPECIAL_GLYPH_INK_Y0 - ENDLESS_SPECIAL_GLYPH_GRAB)
 #define ENDLESS_SPECIAL_GLYPH_Y1    (ENDLESS_SPECIAL_GLYPH_INK_Y1 + ENDLESS_SPECIAL_GLYPH_GRAB)
 
-// Rim shade for the glyph's outline pass, within whichever bank it is cycling through: dark enough
-// to read as an outline, tinted enough to belong to the icon. Below the glyph's own darkest pixel
-// (shade 3), and above the bank floor, which is flat black in some palettes.
+// Outline shade within the glyph's cycling palette bank.
 #define ENDLESS_SPECIAL_OUTLINE_SHADE 2
 
 // Replace an embedded data cube with a gem at the enemy slot.

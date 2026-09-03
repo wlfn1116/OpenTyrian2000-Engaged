@@ -36,9 +36,7 @@ void switch_platform_init(void)
 	// Mount bundled read-only data. Failure means the SD-card copy is used.
 	romfsInit();
 
-	// Make sure the writable config/save directory exists. mkdir() does not create
-	// parents, so create sdmc:/switch first; both calls no-op if already present.
-	// (sdmc:/switch is the standard homebrew data folder and normally exists.)
+	// Create the standard Switch data directory and this game's writable subdirectory.
 	mkdir("sdmc:/switch", 0777);
 	mkdir(SWITCH_USER_DIR, 0777);
 
@@ -99,10 +97,7 @@ bool switch_swkbd(char *out, size_t out_size, size_t max_len,
 
 void switch_get_output_size(int *w, int *h)
 {
-	// Mirror the switch-sdl2 video driver: it drives the window to 1280x720 in
-	// handheld and 1920x1080 when docked (SWITCH_PumpEvents). Matching that here at
-	// window-creation time means we start crisp instead of waiting for the first
-	// dock/undock transition to correct the size.
+	// Match switch-sdl2's handheld or docked window size from the first frame.
 	const bool handheld = appletGetOperationMode() == AppletOperationMode_Handheld;
 	if (w != NULL)
 		*w = handheld ? 1280 : 1920;

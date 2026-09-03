@@ -22,9 +22,7 @@
 // Kept below 1.0 for headroom so busy SoundFonts don't clip. (Tunable.)
 #define FM_MAX_GAIN 0.6f
 
-// One playable MIDI message at an absolute time (mirrors win_native_midi's model).
-// Meta events are consumed during parsing (tempo feeds the time map, loopStart marks
-// the loop point, the rest are dropped); only channel-voice messages and SysEx play.
+// Timed playable MIDI event; parsing consumes tempo, loop, and other metadata.
 typedef struct
 {
 	Uint64 time_us;   // absolute time from song start, microseconds
@@ -176,9 +174,7 @@ static int SDLCALL fm_thread(void *userdata)
 		}
 		silenced = false;
 
-		// A fade request ramps g_fade_scale 1 -> 0 over the requested time, then ends
-		// the song exactly like a finished one-shot (callers waiting on fm_playing() /
-		// the finish hook proceed the same way).
+		// A completed fade ends the song through the normal one-shot path.
 		const int req_fade = SDL_AtomicGet(&g_fade_ms);
 		if (req_fade > 0)
 		{

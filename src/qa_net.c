@@ -139,9 +139,7 @@ static void qa_net_announce(Uint32 phase)
 	network_send(8);
 }
 
-/* Announcements are state, not events: a product wait that legitimately consumes transient
- * rendezvous traffic (the save checkpoint does) can eat one unrecorded, and the announcer has
- * moved on and never says it again. */
+/* Announcements persist as state so unrelated waits cannot consume them. */
 static void qa_net_phase_keepalive(void)
 {
 	if (qa_net_my_phase == 0 || SDL_GetTicks() - qa_net_announced_at < 250 || !network_is_sync())
@@ -296,9 +294,7 @@ int qa_net_campaign_phases(void)
 		return 1;
 	}
 
-	/* A save checkpoint has to leave both views exactly as they were: the online save carries
-	 * two full loadouts and is written from whichever machine asked. Compare against what the
-	 * two ships are holding now, which is what the purchases above left them with. */
+	/* A checkpoint written by either peer must preserve both current loadouts. */
 	const Uint32 peerCashBefore = peer->cash;
 	const Uint32 localCashBefore = local->cash;
 	PlayerItems peerItemsBefore = peer->items;
@@ -477,9 +473,7 @@ int qa_net_endless_phases(void)
 	endlessRunDepth = 12;
 	endlessSetSeed("qa-wire-endless");
 
-	/* Both ships flying and undamaged before anything below reads a death state, and the arcade
-	 * lives pointer set the way starting a game would: the drain adopts debug blocks, and the
-	 * refresh inside that adopt reads both hull ceilings through it. */
+	/* Start with both ships alive and the arcade lives alias initialized. */
 	for (uint p = 0; p < COUNTOF(player); ++p)
 	{
 		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
@@ -544,9 +538,7 @@ int qa_net_endless_phases(void)
 
 	/* ---- the session settings both machines have to agree on ---- */
 
-	/* Individual credit with Double Earnings on: each ship banks double what it collects and
-	 * nothing of what the other does. Both machines simulate both ships, so the cash each
-	 * derives has to match, which is what the exchange below actually proves. */
+	/* In Individual mode, each ship earns double only from its own pickups on both peers. */
 	coop_set_session_shared_credit(false);
 	coop_set_session_double_earnings(true);
 	if (!coop_earnings_are_doubled())
@@ -617,9 +609,7 @@ int qa_net_endless_phases(void)
 	network_shop_end();
 	network_shop_begin();
 
-	/* One machine picks and the other has to leave the rendezvous already holding that index.
-	 * The waiter commits first and the charting player sends uncommitted packets before it
-	 * picks, which is the order that broke this once. */
+	/* The waiter must leave rendezvous with the charting peer's committed index. */
 	const bool charting = (thisPlayerNum == networkHostPlayerNum);
 	const int wireCourse = 2;
 	endlessCoopCourse = -1;
@@ -760,9 +750,7 @@ int qa_net_endless_phases(void)
 
 /* ---- barrier storm ------------------------------------------------------------------- */
 
-/* Nothing but barriers, back to back. Any scenario deep enough to need many rendezvous
- * inherits whatever the barrier mechanism does under loss, so it is pinned here on its own,
- * away from any mode's protocol. See doc/notes.md#tests. */
+/* Stress repeated lossy barriers independently of any game-mode protocol. */
 int qa_net_barrier_phases(void)
 {
 	static char name[24];

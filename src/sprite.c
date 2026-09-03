@@ -187,10 +187,7 @@ void blit_sprite(SDL_Surface *surface, int x, int y, unsigned int table, unsigne
 	}
 }
 
-/* Shared tail of the two dominant-bank walkers. Picks the most-used COLOUR bank, 1..15: bank 0 is
- * the palette's grey ramp, and a weapon sprite's white-hot core would outvote the hue that
- * identifies it. Returns 0 only for a sprite with no colour at all.
- */
+/* Pick the most-used color bank from 1..15; bank 0 is the gray ramp. */
 static Uint8 dominant_bank_of(const unsigned int count[16])
 {
 	unsigned int best = 0, bestCount = 0;
@@ -205,10 +202,7 @@ static Uint8 dominant_bank_of(const unsigned int count[16])
 	return (Uint8)best;
 }
 
-/* The palette bank a sprite-TABLE sprite is mostly drawn in; the blit_sprite side of
- * sprite2_dominant_bank. Walks the run-length stream exactly like the blitters above: 255 = a
- * transparent run whose length is the next byte, 254 = next row, 253 = one transparent pixel.
- */
+/* Return a sprite-table sprite's dominant color bank using the blitter's RLE rules. */
 Uint8 sprite_dominant_bank(unsigned int table, unsigned int index)
 {
 	if (table >= COUNTOF(sprite_table) || index >= sprite_table[table].count || !sprite_exists(table, index))
@@ -916,10 +910,7 @@ static void repair_uship_stray_pixels(Sprite2_array *sheet)
 	(void)sprite2_replace_cells(sheet, destination, &cleaned[0][0], COUNTOF(destination));
 }
 
-/* The palette bank this sprite is mostly drawn in; its "colour", for effects that want to match
- * the sprite they spawned from (the endless Opening Salvo trail picks its spark colour this way).
- * Walks the packed sprite exactly like blit_sprite2, so an unpaintable index reads as 0.
- */
+/* Return a packed sprite's dominant color bank, or 0 when it paints nothing. */
 Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 {
 	if (!sprite2_index_valid(sprite2s, index))
@@ -941,9 +932,7 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 	return dominant_bank_of(count);
 }
 
-/* Bounding box of the pixels a packed sprite actually paints, in its own 12px-wide grid; false if
- * it paints none. Walks it exactly like blit_sprite2, whose row move is a no-op at that pitch.
- */
+/* Find painted bounds in the packed sprite's 12-pixel grid; false means no painted pixels. */
 bool sprite2_ink_bounds(Sprite2_array sprite2s, unsigned int index, int *x0, int *y0, int *x1, int *y1)
 {
 	if (!sprite2_index_valid(sprite2s, index))
@@ -1131,9 +1120,7 @@ void blit_sprite2_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2
 	}
 }
 
-// True if sprite `index` draws nothing at all; every control byte is a row advance, so the
-// frame has no opaque pixel anywhere. Levels use blank frames for pieces the MAP draws (see the
-// kill gate in tyrian2.c), which the pixel test below can never find on screen.
+// True when the sprite stream contains no opaque pixels.
 bool sprite2_is_blank(Sprite2_array sprite2s, unsigned int index)
 {
 	if (!sprite2_index_valid(sprite2s, index))
@@ -1374,10 +1361,7 @@ void blit_sprite2_darken(SDL_Surface *surface, int x, int y, Sprite2_array sprit
 	}
 }
 
-// Clipping counterpart of blit_sprite2_darken (per-row X clip, mirrors
-// blit_sprite2_clip). Replay-only helper for rl_draw_cmd; see
-// blit_sprite2_blend_clip. Darken ignores the sprite pixel value but still
-// consumes one data byte per opaque pixel.
+// Clipped replay variant of blit_sprite2_darken; opaque pixels still consume data bytes.
 void blit_sprite2_darken_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
 	assert(surface->format->BitsPerPixel == 8);
@@ -1422,9 +1406,7 @@ void blit_sprite2_darken_clip(SDL_Surface *surface, int x, int y, Sprite2_array 
 	}
 }
 
-// Every opaque pixel written as one flat palette entry, for outline passes. blit_sprite2_filter
-// keeps the sprite's own shade in the low nibble, so it draws a shaded copy rather than a rim.
-// does not clip on left or right edges of surface
+// Write opaque pixels as one flat palette entry for unclipped outline passes.
 void blit_sprite2_solid(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 color)
 {
 	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);

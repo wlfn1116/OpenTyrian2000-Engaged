@@ -184,9 +184,7 @@ long ftell_eof(FILE *f)
 
 OT_RET_NOTNULL void *malloc_die(size_t size)
 {
-	// malloc(0) may return NULL without failing, so a zero-byte request can't be read as an error
-	// (a joystick with no buttons makes one). Round it to a byte the caller won't read, which keeps
-	// "NULL means out of memory" true here.
+	// Round zero-byte requests up so NULL always means allocation failure.
 	void *p = malloc(size ? size : 1);
 	if (p == NULL)
 	{

@@ -13,20 +13,13 @@ include $(DEVKITPRO)/libnx/switch_rules
 APP_TITLE   := OpenTyrian 2000 Engaged
 APP_AUTHOR  := wlfn / OpenTyrian Team
 
-# The version shown in the Homebrew Launcher comes from src/opentyrian_version.h
-# ("Engaged v1.1.0" -> "1.1.0"), so bumping the header bumps this too. Numeric
-# part only: the NACP display_version field holds at most 15 chars + NUL.
-# $(TOPDIR) resolves to this directory in both phases of the recursive build.
+# Homebrew Launcher version from src/opentyrian_version.h, trimmed to the NACP limit.
 APP_VERSION := $(shell sed -n 's/.*OPENTYRIAN_VERSION *"\([^"]*\)".*/\1/p' $(TOPDIR)/../src/opentyrian_version.h | sed 's/.*[vV]//')
 ifeq ($(strip $(APP_VERSION)),)
     APP_VERSION := 0.0.0
 endif
 
-# TARGET   is the output filename (opentyrian2000.nro and .elf)
-# BUILD    is the intermediate object directory
-# SOURCES  are the directories scanned for .c/.cpp/.s
-# INCLUDES are the directories scanned for .h
-# ROMFS    is packed read-only into the .nro and mounted at romfs:/
+# Output name, object directory, source/include roots, and read-only romfs root.
 TARGET   := opentyrian2000
 BUILD    := build
 SOURCES  := ../src
@@ -36,16 +29,11 @@ ROMFS    := romfs
 # Code generation
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-# SDL2 build flags come from the switch-portlibs pkg-config wrapper. Resolve it by
-# explicit path so it works whether or not portlibs/bin is on PATH. Switch links
-# statically, so --static is required to pull in EGL/GLESv2/glapi/drm_nouveau/nx.
-# (If your devkitPro lacks this wrapper, see switch/README.md for the literal flags.)
+# Resolve switch-portlibs directly and request its static SDL2 dependencies.
+# See switch/README.md if the wrapper is unavailable.
 PKGCONF := $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 
-# Signed char matches the engine's x86 assumptions; unfused floats preserve
-# cross-platform netplay parity. NDEBUG matches desktop Release behavior, while
-# debug symbols remain available for crash reports. Fixed-width display strings
-# intentionally permit snprintf truncation.
+# Match desktop Release, retain symbols, and preserve engine/netplay assumptions.
 CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsigned-char \
           -ffp-contract=off $(ARCH)
 
@@ -53,9 +41,7 @@ CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsig
 # switch-sdl2_net and the socket initialization in switch_platform.c.
 CFLAGS += $(INCLUDE) -D__SWITCH__ -DWITH_NETWORK -DTYRIAN_DIR='"."' $(shell $(PKGCONF) sdl2 SDL2_net --cflags)
 
-# Short commit id for the title screen. CI passes OPENTYRIAN_COMMIT in the
-# environment (git can be absent inside the container); local builds ask git.
-# An empty value omits the title-screen commit line.
+# CI supplies the title-screen commit id; local builds ask git.
 OPENTYRIAN_COMMIT ?= $(shell git -C $(TOPDIR)/.. rev-parse --short HEAD 2>/dev/null)
 ifneq ($(strip $(OPENTYRIAN_COMMIT)),)
     CFLAGS += -DOPENTYRIAN_COMMIT='"$(OPENTYRIAN_COMMIT)"'
@@ -167,10 +153,7 @@ DEPENDS := $(OFILES:.o=.d)
 # Main targets
 all: $(OUTPUT).nro
 
-# switch_rules provides the recipes: %.nro (runs elf2nro ... $(NROFLAGS)) and %.nacp.
-# NROFLAGS are elf2nro arguments, not prerequisites. The .nro depends on the
-# linked .elf, generated .nacp metadata, and the bundled romfs data files
-# (flat directory, so a top-level wildcard covers everything).
+# switch_rules builds the NRO from the ELF, NACP metadata, and flat romfs contents.
 ROMFS_FILES := $(wildcard $(TOPDIR)/$(ROMFS)/*)
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp $(ROMFS_FILES)
 $(OUTPUT).elf: $(OFILES)

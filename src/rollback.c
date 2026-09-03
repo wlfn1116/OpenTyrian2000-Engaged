@@ -52,17 +52,13 @@ static void rb_log_open(void)
 	rb_log_file = fopen("rollback_selftest.log", "a");
 	if (rb_log_file)
 	{
-		/* Fully buffered, with a big buffer: the trace writes a line per tick for
-		 * a whole demo, and on a console every unbuffered line is its own SD-card
-		 * write; enough I/O to disturb the frame timing being measured. */
+		/* Buffer per-tick traces to avoid one console storage write per line. */
 		static char buf[64 * 1024];
 		setvbuf(rb_log_file, buf, _IOFBF, sizeof(buf));
 	}
 }
 
-/* Flush points are deliberate and rare: the periodic progress line, a failure,
- * and leaving the level.  That bounds what a hard kill can lose to a few seconds
- * of trace without paying a write per line. */
+/* Flush on progress, failure, and level exit. */
 static void rb_log_flush(void)
 {
 	if (rb_log_file)
@@ -300,9 +296,7 @@ static Uint32 rb_item_hash(const RbItem *it)
 	return h;
 }
 
-/* Registry entries that only a co-op session moves. The trace hash skips them while no such
- * session is running, so single-player replay fixtures keep hashing the byte stream they were
- * recorded against. Endless entries all carry the "endless." prefix. */
+/* Skip co-op-only entries in legacy single-player replay hashes. */
 static bool rb_item_is_coop_only(const char *name)
 {
 	return strcmp(name, "coopCampaignMode") == 0
@@ -323,9 +317,7 @@ Uint32 rollback_state_hash(void)
 		const RbItem *const it = &rb_items[item];
 		const Uint8 *const bytes = rb_trace_buf + it->offset;
 
-		/* Legacy replay fixtures hash the pre-co-op registry byte stream. Preserve that projection
-		 * while no dual-ship session is running; the per-ship block it skips is live state in
-		 * Separate arcade as much as in co-op, and the co-op canaries cover the rest. */
+		/* Preserve the pre-co-op registry projection for legacy replay fixtures. */
 		if (!dual_ship_mode() && rb_item_is_coop_only(it->name))
 			continue;
 		if (!dual_ship_mode() && strcmp(it->name, "player") == 0 && it->size == sizeof(player))
@@ -617,9 +609,7 @@ bool rollback_wire_export(Uint8 *dst)
 	if (!rb_reloc_walk(dst, true))
 		return false;
 
-	/* Prove the payload: decode a copy and compare it against live state (which
-	 * rb_save_to just captured and nothing has touched since).  A mismatch means
-	 * an encode/decode bug or an unregistered relocation; refuse to ship it. */
+	/* Refuse a recovery payload that does not decode back to the live snapshot. */
 	Uint8 *chk = malloc(rb_total_size);
 	if (!chk)
 		return false;
@@ -765,9 +755,7 @@ static bool   st_tainted = false;
 static char   st_taint_why[64];
 static bool   st_level_active = false;
 
-/* The self-test skips levels flown with Endless effects, so nothing in that half of the game is
- * covered by it. A QA run can lift the exclusion to measure one of those systems on purpose; see
- * qa_run_replay_fixture. Off outside the test flag, which leaves ordinary play untouched. */
+/* QA may include Endless effects in the rollback self-test. */
 static bool st_allow_endless = false;
 
 void rollback_selftest_allow_endless(bool on)
@@ -992,10 +980,7 @@ void rollback_register_all(void)
 		        rb_item_count, rb_total_size, ROLLBACK_RING);
 }
 
-/* Registry shape, not registry contents.  Names go in because two builds can
- * reach the same total by different routes, and offsets go in because the wire
- * snapshot is positional; an item that merely MOVED would corrupt the peer
- * just as thoroughly as one that changed size. */
+/* Fingerprint names, sizes, and offsets because recovery snapshots are positional. */
 Uint32 rollback_layout_fingerprint(void)
 {
 	rollback_ensure_registered();

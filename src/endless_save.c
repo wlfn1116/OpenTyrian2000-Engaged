@@ -65,9 +65,7 @@ typedef struct {
 
 // Perk IDs are on-disk slots in the legacy record and in the co-op outpost block alike.
 COMPILE_TIME_ASSERT(endless_save_perks_fit, PERK_COUNT <= ENDLESS_SAVE_PERKS);
-/* The co-op outpost block's loops truncate rather than overrun, so an overflow would silently stop
- * syncing the perks past the width and desync the two ships instead of failing here. Widen it with
- * NET_VERSION. */
+/* A larger co-op outpost block requires a NET_VERSION bump. */
 COMPILE_TIME_ASSERT(endless_block_perks_fit, PERK_COUNT <= ENDLESS_PLAYER_BLOCK_PERKS);
 COMPILE_TIME_ASSERT(endless_save_cash_sources_fit, ENDLESS_CASH_SOURCES <= ENDLESS_SAVE_CASH_SOURCES);
 COMPILE_TIME_ASSERT(endless_save_cash_sinks_fit, ENDLESS_CASH_SINKS <= ENDLESS_SAVE_CASH_SINKS);
@@ -999,9 +997,7 @@ static bool endlessLegacyReadHeader(EndlessReader *rd, EndlessSaveHeader *h)
 	return true;
 }
 
-/* Take one record off the cursor. A file that states its record width is parsed from a zero-padded
- * copy of exactly that many bytes, so a record written narrower or wider than this reader expects
- * still leaves the next slot where the file says it starts. */
+/* Parse each declared record width from an isolated, zero-padded copy. */
 static bool endlessLegacyReadOneRec(EndlessReader *rd, const EndlessSaveHeader *h, EndlessSlotRec *rec)
 {
 	if (h->width == 0)
@@ -1220,9 +1216,7 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 	return true;
 }
 
-/* Prove the text codec on a record this build made: every field survives a round trip, a key the
- * reader does not know is ignored, a key it does not find reads as its zero, and a hand-edited
- * value outside the wallet range is clamped. */
+/* Exercise round trips, unknown keys, defaults, and wallet clamping. */
 bool endlessSaveTestTextCodec(char *detail, size_t detailSize)
 {
 	if (detail != NULL && detailSize != 0)
@@ -1326,9 +1320,7 @@ void endlessSaveConfigWrite(Config *config)
 	}
 }
 
-/* Whether this session read the sidecar through. config.c records it in opentyrian.sav, so a save
- * file that has taken the sidecar in never consults it again, while one whose import failed
- * tries once more. */
+/* Failed sidecar imports remain eligible for another attempt. */
 static bool endlessLegacySidecarRead = false;
 
 bool endlessSaveLegacyWasRead(void) { return endlessLegacySidecarRead; }
@@ -1489,9 +1481,7 @@ bool endlessSaveTestNewerLegacy(const char *v27Path, char *detail, size_t detail
 	return okay;
 }
 
-/* The partner's half of a save, as their machine reported it over the save acknowledgement:
- * their stock rows and the stream position they came off. Cleared when a new visit deals, so
- * a stale half cannot ride a later save; see doc/notes.md#online-saves. */
+/* Partner outpost state received with the save acknowledgement. */
 static struct
 {
 	bool   fresh;
@@ -1855,9 +1845,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessResumeVisit = true;  // next outpost: restore this snapshot, do not reroll
 }
 
-/* JE_saveGame calls this for the slot it is about to write, so the Endless half of the slot leaves
- * with the campaign half in the same file write. Hardcore is refused in JE_saveGame before this
- * runs, which keeps whatever record the slot held. */
+/* Stage the Endless half for the same file write as its campaign record. */
 void endlessSaveCaptureSlot(JE_byte slot)
 {
 	if (slot < 1 || slot > SAVE_FILES_NUM)
@@ -1992,9 +1980,7 @@ void endlessPackDebugBlock(Uint8 *buf)
 		for (int i = 0; i < ENDLESS_DEBUG_BLOCK_PERKS; ++i)
 			buf[n++] = (i < PERK_COUNT) ? endlessPerkTakenBy[p][i] : 0;
 
-	/* Both halves of each ship's personal buffs, verbatim. The live mask cannot be re-derived from
-	 * the purchased one: a sector consumes the purchase and zeroes it while the mask it folded
-	 * stays up for the rest of the zone. */
+	/* The live modifier mask cannot be rebuilt from consumed purchases. */
 	for (uint p = 0; p < COUNTOF(endlessPlayerMods); ++p)
 		for (int b = 7; b >= 0; --b)
 			buf[n++] = (Uint8)(endlessPlayerMods[p] >> (8 * b));
@@ -2035,16 +2021,12 @@ void endlessUnpackDebugBlock(const Uint8 *buf)
 		endlessPurchasedMods[p] = v;
 	}
 
-	/* Only on a mask that actually moved. The refresh re-rolls the gravity heading off the endless
-	 * stream, and the editing machine draws it exactly once for the same edit; rolling here on an
-	 * unrelated debug block would put the two streams a draw apart. */
+	/* Refresh only changed masks; gravity refresh consumes RNG. */
 	if (modsMoved)
 		endlessRefreshModDerivedState();
 }
 
-/* Online co-op resume: the host serializes the live run as the same text a save slot holds and the
- * joiner adopts it, so both machines resume from identical state. Each machine's own shop stock is
- * redrawn from the seed rather than sent (see doc/notes.md#session-and-outpost). */
+/* Online resume uses the save text codec; personal shop stock is regenerated locally. */
 size_t endlessRunSerialize(Uint8 *out, size_t max)
 {
 	if (!endlessMode || out == NULL)
@@ -2161,9 +2143,7 @@ bool endlessLoadSlot(JE_byte slot)
 	endlessMode = true;  // JE_loadGame cleared it for a normal load; this slot is an endless run
 	endlessRecordRunStart();  // resumed record gains count from this point
 
-	/* Put the record's partner half back in the stash: the resume re-captures this run for the
-	 * wire and the entry checkpoint, and losing the half there would strand the joiner on a
-	 * redeal. It still belongs to the partner, so the semantics hold on this machine. */
+	/* Preserve the partner half for the resumed entry checkpoint. */
 	endlessPartnerOutpostClear();
 	const EndlessSlotRec *const r = &endlessSlotCache[slot - 1];
 	if (r->partnerValid && r->partnerSeat <= 1)
@@ -2414,9 +2394,7 @@ static const char *const endlessBestZoneCustomKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone_custom", "best_zone_normal_custom", "best_zone_hardcore_custom",
 };
 
-// The per-difficulty breakdown, one key per mode: the zones as a comma-separated list in
-// endlessDifficultyLevel order, and their custom marks as a string of 0 and 1 in the same order.
-// A shorter or absent value leaves the remaining slots empty, so the list can grow.
+// Short or missing per-difficulty lists leave later entries empty.
 static const char *const endlessBestZoneDiffKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone_diff", "best_zone_normal_diff", "best_zone_hardcore_diff",
 };
@@ -2424,9 +2402,7 @@ static const char *const endlessBestZoneDiffCustomKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone_diff_custom", "best_zone_normal_diff_custom", "best_zone_hardcore_diff_custom",
 };
 
-/* The co-op table lives under the same key with a "_2p" tail, and every base-level rule past Varied
- * under a further tail of its own. A config written before either split carries neither tail, which
- * reads as an empty set of records for the tables that gained one. */
+/* Co-op and non-Varied records use key suffixes; missing suffixes read as empty tables. */
 static const char *const endlessRecordRuleTail[ENDLESS_BASE_TABLES] = {
 	"", "_same", "_variedshuffle", "_sameshuffle",
 };

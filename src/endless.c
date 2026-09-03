@@ -73,9 +73,7 @@ bool endlessCoopComboShared = false;
 EndlessCourseChooser endlessCourseChooser = ENDLESS_PICK_HOST;
 bool endlessCoopHostCharts = true;
 bool endlessPlayerDowned[2] = { false, false };
-/* The peer pressed Quit in the in-game menu. Endless answers it the way the local press is
- * answered: revert to the launch snapshot and reopen the outpost, together. Anything the sortie
- * snapshot cannot restore leaves the run where it was, so this is never a teardown. */
+/* A peer quit returns both players to the launch snapshot and outpost. */
 void endlessCoopPeerQuitLevel(void)
 {
 	if (endlessCoop() && endlessSortieValid())
@@ -88,9 +86,7 @@ static uint endlessFxPlayerIdx = 0;
 void endlessSetFxPlayer(uint p) { endlessFxPlayerIdx = (p < COUNTOF(player)) ? p : 0; }
 uint endlessFxPlayer(void)      { return coopEndlessMode ? endlessFxPlayerIdx : 0; }
 
-/* Split what each player bought: the personal half lands on their own mask, the rest (a shop
- * discount, a bulked-up boss, a rush of rammers) changes the sector for both. Called once, when
- * the course is committed. */
+/* Fold personal purchases into each player and shared purchases into the sector. */
 void endlessApplyPurchasedMods(void)
 {
 	for (uint p = 0; p < COUNTOF(player); ++p)
@@ -156,9 +152,7 @@ void endlessAdvanceCourseTurn(void)
 		endlessCoopHostCharts = !endlessCoopHostCharts;
 }
 
-/* The SEAT charting the next course, as both machines derive it (solo: player 1). The charting
- * machine is a per-machine question (endlessLocalPlayerCharts); this is the shared one, which
- * personal perks that shape the slate (Surveyor) read. */
+/* The shared seat whose perks shape the next course. Solo uses player one. */
 uint endlessChartingPlayerIndex(void)
 {
 	if (!endlessCoop())
@@ -604,9 +598,7 @@ void endlessNoteZoneReached(int zone)
 	save_opentyrian_config();
 }
 
-// Mark the record this run set, after the fact: a record is stamped as its zone is entered, before
-// that zone is flown. Ownership must come from the run-start baseline rather than the run depth;
-// see doc/notes.md#saves-and-retries.
+// Record ownership comes from the run's starting loadout, not its current depth.
 static void endlessMarkRecordCustom(void)
 {
 	int *best;
@@ -646,9 +638,7 @@ int endlessBestZoneAny(int variant, int players, EndlessRunMode mode)
 	return best;
 }
 
-/* The deepest a mode has been under any of the base-level rules. Summarising across rules no more
- * compares them than the any-difficulty figure compares difficulties: it is the one number the
- * four have between them, and the record page leads with it before narrowing to one. */
+/* Return the deepest record across the four base-level rules. */
 int endlessBestZoneAnyRule(int players, EndlessRunMode mode)
 {
 	int best = 0;
@@ -872,9 +862,7 @@ void endlessCountKill(int linknum, int killer)
 	endlessLastCountedLink = linknum;
 
 	++endlessRunKills;
-	/* Boss kills are counted when their health bar empties. Whose streak a kill feeds is the
-	 * session's Combo Feed setting: Individual credits the ship that fired the shot, Shared feeds
-	 * both. */
+	/* Combo Feed decides whether a boss kill advances one streak or both. */
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
 		if (endlessCoop() && !endlessCoopComboShared
@@ -895,9 +883,7 @@ void endlessCountKill(int linknum, int killer)
 	if (endlessActiveMods & ENDLESS_MOD_RETALIATION)
 		endlessRetaliationTimer = ENDLESS_RETALIATION_TICKS;
 
-	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max). Personal: each
-	// owning ship rolls its own chance from its own stacks, in seat order so the draws stay
-	// deterministic across the pair.
+	// Roll personal Siphon effects in seat order to keep RNG deterministic.
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
 		const JE_byte stacks = endlessPerkEffective(p, PERK_SIPHON);
@@ -1238,9 +1224,7 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 	#undef RUNEND_ROW
 
-	// The record shown is the one this run wrote to, the table named by the Mode and Base Level
-	// rows above. A trailing C marks a record set with a custom weapon, and a new record also
-	// shows the gain.
+	// Show the record selected by the Mode and Base Level rows.
 	char recordLine[64];
 	int *bestRecord;
 	bool *bestMark;
@@ -1278,9 +1262,7 @@ void endlessOnRunEnd(void)
 	const char *const closingLine = endlessMilestoneLine(endlessRunDepth + 1);
 	const char *const closingTail = endlessMilestoneEpilogue(endlessRunDepth + 1);
 
-	// Vertical metrics. SMALL_FONT_SHAPES glyphs stand 10 scanlines, 13 with a descender, and
-	// JE_outTextGlow outlines one pixel further each way, so a pitch has to clear 12 before the
-	// rows stop touching.
+	// Glow rows need a 12-pixel pitch; descenders need 15.
 	const int titleH    = 15;  // FONT_SHAPES cap height
 	const int lineH     = 13;  // SMALL_FONT_SHAPES, descender included
 	const int stepMin   = 11;  // hard floor, where the glow outlines of adjacent rows merge
@@ -1294,9 +1276,7 @@ void endlessOnRunEnd(void)
 	const int closeLines = (closingTail != NULL) ? 2 : 1;
 
 	int total;
-	// Close the gaps between blocks before tightening the row pitch: a summary long enough to need
-	// the room reads better packed than overlapped. The rows array bounds the tally, so even the
-	// fullest summary at its tightest lands inside the 200 scanlines.
+	// Tighten block gaps before reducing row pitch.
 	while ((total = titleH + titleGap + lineH + fellGap + (rowCount - 1) * step
 	                + lineH + tailGap + lineH
 	                + (closeLines - 1) * (recordGap + lineH)
@@ -1337,9 +1317,7 @@ void endlessOnRunEnd(void)
 	// Ignore held controls, then wait for fresh input.
 	wait_noinput(true, true, true);
 
-	// Ramp whatever is still playing away over the next half second, the same cue the Relaxed
-	// death menu uses when its panel goes up. The callers leave the track running for it, and the
-	// ramp starts here so the whole of it is ticked by the loop below.
+	// Fade the current track while the summary opens.
 	MusicFadeOut songFade;
 	music_fade_out_init(&songFade);
 

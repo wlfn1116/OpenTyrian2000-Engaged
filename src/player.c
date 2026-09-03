@@ -32,9 +32,7 @@ uint gameplay_local_player_index(void)
 	     ? thisPlayerNum - 1 : 0;
 }
 
-/* The Super Arcade ship this ship flies (1..SA), or SA_NONE. Online Super Arcade lets each player
- * pick their own, so every SAWeapon / SASpecialWeapon read has to be per ship rather than off the
- * session-wide superArcadeMode. Clamped: the value rides the save record and the wire. */
+/* Per-ship Super Arcade mode, clamped because it travels through saves and the wire. */
 uint player_sa_ship(const Player *this_player)
 {
 	const uint sa = this_player->items.super_arcade_mode;
@@ -69,9 +67,7 @@ bool arcade_life_scaling_active(void)
 	return arcadeLifeBoost && arcade_rules_active() && !superTyrian;
 }
 
-/* Rear-gun power combines its own pickups with lives - 1. The linked pair is excluded because
- * player two's rear-bay power is also its life counter; Separate arcade counts lives on each
- * ship's own front gun (player_lives_port), so its rear bay is free to scale. */
+/* Separate arcade may scale rear guns; the linked pair aliases player two's lives there. */
 bool arcade_rear_scale_active(void)
 {
 	if (!arcadeRearGunScale || superTyrian)
@@ -213,9 +209,7 @@ static void player_credit_cash(Player *this_player, Sint64 amount, EndlessCashSo
 {
 	if (coop_credit_is_shared())
 	{
-		/* Both wallets earn the full amount. This machine's own share still goes through the
-		 * run ledger, or an Endless run books every shared payment as undeclared drift: the
-		 * audit warns, and the summary files the lot under "other" instead of what earned it. */
+/* Shared credit still records the local wallet's income source in the run ledger. */
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
 			if (endlessMode && i == endlessEconomyIndex())
@@ -226,9 +220,7 @@ static void player_credit_cash(Player *this_player, Sint64 amount, EndlessCashSo
 		return;
 	}
 
-	// The ledger tracks the wallet of whoever is sitting at this keyboard, so the gate has to name
-	// that same ship. Naming player 1 outright meant the joiner booked its partner's earnings into
-	// its own wallet and paid its own earnings straight past the ledger. Solo, the two are one.
+	// Attribute income to the ship whose wallet is local on this machine.
 	if (endlessMode && this_player == &player[endlessEconomyIndex()])
 		endlessCashCredit(amount, endless_source);
 	else

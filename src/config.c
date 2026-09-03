@@ -214,9 +214,7 @@ const char *coopCampaignCreditName(Uint8 credit)
 	}
 }
 
-/* One line per episode: "score|difficulty|names". A missing or short value leaves the rest of
- * the episodes empty, so the list can grow. The credit rule rides a second key rather than a
- * fourth field, because the name runs to the end of the line and may itself contain a bar. */
+/* Per episode: "score|difficulty|names". Missing entries remain empty. */
 void coopCampaignScoreConfigSave(ConfigSection *section)
 {
 	if (section == NULL)
@@ -378,16 +376,12 @@ void set_smooth_motion(bool enabled)
 /* Bigger explosion "superspark" ring buffer (MAX_SUPERPIXELS) vs the classic 101-spark cap;
    off = the original sparser DOS spark showers. Read by JE_doSP (varz.c). */
 bool extraSparks = true;
-/* Where each superspark weapon leaves its ep4/5 projectile trail (JE_applySuperSparks,
-   episodes.c): SUPER_SPARKS_AUTO (vanilla per-episode), _ON (every episode), _OFF (no episode).
-   Default On so the trails show in ep1-3 as well (matches the original Mega Pulse request). */
+/* Per-weapon superspark policy: shipped behavior, always on, or always off. */
 int superSparkMode[SSW_COUNT] = { SUPER_SPARKS_ON, SUPER_SPARKS_ON, SUPER_SPARKS_ON, SUPER_SPARKS_ON };
 /* Cap a weapon's projectile trail at the classic 101-spark limit even when extraSparks is
    on, so the trail keeps its classic density (JE_doSP calls in shots.c). On by default. */
 bool superSparkClassicCap[SSW_COUNT] = { true, true, true, true };
-/* The ep4/5 Wallop Beam's second bolt (JE_applySuperSparks, episodes.c). Unlike the spark
-   trails this changes firepower (two bolts per volley); On gives every episode the ep4/5
-   double-bolt pattern. */
+/* Optional episode 4/5 Wallop Beam double-bolt pattern. */
 int wallopSecondBolt = SUPER_SPARKS_ON;
 
 /* Config keys for the per-weapon trail settings; indexed by SuperSparkWeapon. */
@@ -422,9 +416,7 @@ bool superSparkCapForSprite(JE_word sprite)
 	default:           return false;
 	}
 }
-/* HUD gauge gradient direction (Enhancements -> Heads-Up Display -> Gauges). GAUGE_GRAD_UP
-   reproduces the classic vertical gauges; other values run the gradient down the column or
-   across its width. Read by draw_power_gauge (tyrian2.c) and JE_dBar3 (nortvars.c). */
+/* Gradient direction for each HUD gauge; Up is the shipped style. */
 int gaugeGradGenerator = GAUGE_GRAD_UP;
 int gaugeGradShield    = GAUGE_GRAD_RIGHT;
 int gaugeGradArmor     = GAUGE_GRAD_LEFT;
@@ -451,16 +443,12 @@ bool arcadeLifeBoost = true;
 /* Arcade modes only: every weapon ball a level drops is re-rolled inside its own class
    (JE_makeEnemy in tyrian2.c). Off = the hand-placed pickups the level scripts specify. */
 bool arcadeRandomBalls = true;
-/* One-player arcade only: the life count raises the rear gun on top of its own banked power-up
-   balls, instead of the rear gun sitting where those balls left it (arcade_weapon_power in
-   player.c). Two-player is out; there the rear bay already IS player 2's life counter. */
+/* In solo Arcade, add spare lives to the rear gun's banked power. */
 bool arcadeRearGunScale = true;
 /* Give unused sheet icons to items that otherwise reuse an icon or have none. */
 bool unusedShopSprites = true;
 bool shipEditorStars = true;
-/* Take a projectile's hit test from the middle of its sprite rather than the top-left corner of
- * its cell, and the target's from the middle of its own (the two shot loops in tyrian2.c). See
- * doc/notes.md#coordinates. */
+/* Use sprite centres as projectile and target hit-test anchors. */
 bool centeredShotHitboxes = true;
 /* Steer a weapon-table guided shot toward the enemy's screen x (ex + mapoffset), where the
  * collision loop measures it (player_shot_aim_step in shots.c). */
@@ -596,9 +584,7 @@ EnhancementPreset enhancementPresetState(void)
 static int enhancementCustom[COUNTOF(enhancementSettings)];
 static bool enhancementCustomKnown = false;
 
-/* Fingerprint of the table's fixed columns. A stored Custom set is a positional list, so it is
- * only meaningful against the table it was written from; a reordered or retuned table changes
- * this and the stored list is dropped instead of restoring values into the wrong settings. */
+/* Reject positional Custom presets when the settings table fingerprint changes. */
 static unsigned int enhancementTableShape(void)
 {
 	unsigned int shape = (unsigned int)COUNTOF(enhancementSettings);
@@ -705,9 +691,7 @@ void enhancementApplyPreset(EnhancementPreset preset)
 
 Config opentyrian_config;  // implicitly initialized
 
-// The custom weapon is persisted as a raw JE_WeaponType per power level (a compact
-// comma-separated integer blob built by customWeaponSerializeLevel), plus the shared
-// weapon-wide identity keys. See custom_weapon.c for the blob layout.
+// Each custom power level is a comma-separated JE_WeaponType payload.
 
 bool load_opentyrian_config(void)
 {
@@ -747,9 +731,7 @@ bool load_opentyrian_config(void)
 		if (config_get_string_option(section, "scaler", &scaler_name))
 			set_scaler_by_name(scaler_name);
 #ifdef __vita__
-		// Ignore any saved scaler on Vita: software upscaling every frame is too slow for the
-		// hardware regardless of what a prior session wrote. Native + GPU upscale only. The
-		// in-session Graphics menu can still change it to experiment, but each boot resets here.
+		// Vita always boots at 1x software scale.
 		set_scaler_by_name("None");
 #endif
 
@@ -898,9 +880,7 @@ bool load_opentyrian_config(void)
 		if (touchButtonOpacity < 0 || touchButtonOpacity > TOUCH_OPACITY_MAX)
 			touchButtonOpacity = TOUCH_OPACITY_DEFAULT;
 
-		// Music device (OPL3 / FluidSynth / Native MIDI) + SoundFont path. The
-		// MIDI devices only take effect in a WITH_MIDI build; otherwise init_audio()
-		// falls back to OPL (see loudness.c).
+		// Builds without MIDI fall back to OPL during audio initialization.
 		const char *music_device_name;
 		if (config_get_string_option(section, "music_device", &music_device_name))
 		{
@@ -918,9 +898,7 @@ bool load_opentyrian_config(void)
 		if (config_get_string_option(section, "soundfont", &soundfont_name))
 			SDL_strlcpy(soundfont, soundfont_name, sizeof(soundfont));
 
-		// Multiplayer lobby: remembered so hosting or rejoining is Enter-Enter next time.
-		// Only the joiner's target port is stored with the address (as "host:port"); the
-		// listen port is separate because a machine can be host one session and joiner the next.
+		// Store the join target and local listen port separately.
 		{
 			const char *name;
 			if (config_get_string_option(section, "net_player_name", &name))
@@ -984,9 +962,7 @@ bool load_opentyrian_config(void)
 			if (net_delay >= 1 && net_delay <= 6)
 				network_delay = net_delay;
 
-			// Rollback netcode (local input applies instantly, peer predicted and
-			// corrected by re-simulation) vs the original delay-based lockstep.
-			// Host-authoritative like the rest of the sim settings.
+			// Host-selected rollback or delay-based lockstep.
 			config_get_bool_option(section, "net_rollback", &net_rollback);
 
 			// Repair a detected desync by streaming the host's state to the
@@ -997,10 +973,7 @@ bool load_opentyrian_config(void)
 			// (player.h).  Host-authoritative; Campaign sessions only.
 			config_get_bool_option(section, "net_campaign_shared_credit", &coopSharedCredit);
 
-			// Individual credit only: pay combat cash (pickups, kills, bounties) twice
-			// (player.h). The key keeps its historical name; renaming would drop the
-			// setting from existing configs. And whether an Endless kill feeds both
-			// ships' combo streaks or only the shooter's.
+			// Keep the historical key name for config compatibility.
 			config_get_bool_option(section, "net_coop_double_pickups", &coopDoubleEarnings);
 			config_get_bool_option(section, "net_endless_combo_shared", &network_host_endless_combo_shared);
 
@@ -1168,9 +1141,7 @@ bool load_opentyrian_config(void)
 			config_get_int_option(section, expertSettings[i].cfgKey, expertSettings[i].value);
 		clamp_expert_settings();  // guard against a hand-edited or stale config
 
-		// Custom Weapon Creator: master toggle + the saved per-power-level raw designs.
-		// Each level is a compact comma-separated integer blob (see custom_weapon.c);
-		// customWeaponInit() fills in a default design when none is present, and clamps.
+		// Custom weapon rows are clamped when the library initializes.
 		int custom_weapon_enabled = customWeaponEnabled ? 1 : 0;
 		config_get_int_option(section, "custom_weapon_enabled", &custom_weapon_enabled);
 		customWeaponEnabled = (custom_weapon_enabled != 0);
@@ -1731,9 +1702,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		// if two-player, use first player's front and second player's rear weapon
 		player[twoPlayerMode ? port : 0].items.weapon[port].power = rec->power[port];
 	}
-	/* Keyed on what the record says it is, not on what this session is: a record written by a
-	 * two-complete-ships session carries the other half of both loadouts, and it has to come
-	 * back whichever lobby is reading it. */
+	/* Restore the second loadout according to the record's mode. */
 	if (save_record_is_coop(rec) || save_record_is_dual_arcade(rec))
 	{
 		const Uint32 extra = rec->dualShipTag;
@@ -2030,9 +1999,7 @@ static void save_items_read(const ConfigSection *section, const char *prefix, JE
 	}
 }
 
-/* One slot as a `section 'save' 'N'`. Two-player slots write both ships under p1_/p2_ and name the
- * two-ship session that wrote them; one-player slots write p1_ and the last shop loadout under
- * last_. Every key is optional on the way back in. */
+/* Save slots are named sections with optional p1_, p2_, and last_ keys. */
 static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, JE_byte slot)
 {
 	const bool twoP = slot > 11;
@@ -2297,9 +2264,7 @@ static void save_defaults(void)
 	}
 }
 
-/* Whether opentyrian.sav records that the DOS-era endless.sav has been taken in. Until it does, a
- * slot named for a zone with no run behind it is repaired from that sidecar; afterwards the sidecar
- * is never read again, so deleting a run's section stays deleted. */
+/* Track whether the legacy Endless sidecar has been imported. */
 static bool save_legacy_endless_taken = false;
 
 /* Adopt parsed save data. Missing sections create empty slots; missing keys use defaults. */
@@ -2681,9 +2646,7 @@ void JE_loadConfiguration(void)
 			imported = true;
 	}
 
-	/* The sidecar is done with once it has been read through, or when there is none, and it stays
-	 * done: a later launch skips the repair and so never reads it again. An import that could not
-	 * read one leaves this false, so the next launch tries again. */
+	/* Mark a missing or fully read sidecar complete; failed reads retry next launch. */
 	const bool noteTaken = !save_legacy_endless_taken
 	                    && (!endlessSaveLegacyExists() || endlessSaveLegacyWasRead());
 	save_legacy_endless_taken |= noteTaken;

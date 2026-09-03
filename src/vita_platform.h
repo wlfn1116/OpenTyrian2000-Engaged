@@ -8,9 +8,7 @@
 
 #ifdef __vita__
 
-// Writable data directory on the memory card: holds tyrian.cfg, save files, and any
-// user-supplied data files. ux0:data always exists; vita_platform_init() creates the
-// subfolder. Kept in one place so file.c and config.c agree.
+// Writable Vita directory shared by config, saves, and user data.
 #define VITA_USER_DIR   "ux0:data/opentyrian2000"
 
 // Read-only game data bundled inside the VPK, auto-mounted at app0: by the loader.

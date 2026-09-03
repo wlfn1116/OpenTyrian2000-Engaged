@@ -95,9 +95,7 @@ static void qa_wallets_clear(void)
 
 /* ---- 1. the mode-flag split --------------------------------------------------------- */
 
-/* One game is exactly one of: solo, local arcade, online arcade, online campaign, online
- * Endless. The rules that used to key off "two ships on screen" now have to key off the
- * ruleset instead, and this is the table that says which is which. */
+/* Each session belongs to exactly one ruleset, independent of the number of visible ships. */
 static void qa_mode_split_matrix(void)
 {
 	char label[224];
@@ -109,9 +107,7 @@ static void qa_mode_split_matrix(void)
 	{
 		const bool coop = (camp != 0) || (endl != 0);
 
-		/* A co-op lobby always starts two ships, and JE_loadGameRecord clears onePlayerAction
-		 * whenever two-player is set, so a co-op session is never one-ship or one-player
-		 * arcade. Those shapes are unreachable, and asserting anything of them says nothing. */
+		/* Co-op cannot reach the one-ship or one-player arcade states. */
 		if (coop && (two == 0 || onePlayerAct != 0))
 			continue;
 
@@ -198,9 +194,7 @@ static void qa_mode_split_matrix(void)
 	         && dual_ship_mode() && !coop_mode_active(),
 	         "Separate arcade: arcade rules, two own ships, and no split HUD");
 
-	/* The two co-op modes own the ship pairing outright, so the flag says nothing there, and it
-	 * says nothing at all until a second ship exists. Both matter: it is session state that
-	 * outlives the lobby row, and a leftover must not reshape the next game. */
+	/* The separate-ships flag matters only to two-ship arcade sessions. */
 	coopCampaignMode = true;
 	qa_check(!arcade_separate_mode() && !arcade_rules_active() && coop_mode_active(),
 	         "a Separate flag left set does not touch an online campaign");
@@ -389,9 +383,7 @@ static void qa_arcade_economy_matrix(void)
 
 /* ---- 3b. Separate arcade gives each ship its own life counter ------------------------ */
 
-/* player[].lives aliases a weapon-power byte, and which bay it aliases differs by mode: the
- * linked pair puts player two's on the Dragonwing's rear gun, Separate arcade gives each ship
- * its own front gun. */
+/* Lives alias the linked pair's rear gun or each separate ship's front gun. */
 static void qa_separate_arcade_lives(void)
 {
 	qa_modes_clear();
@@ -403,9 +395,7 @@ static void qa_separate_arcade_lives(void)
 	qa_check(player_lives_port(0) == FRONT_WEAPON && player_lives_port(1) == FRONT_WEAPON,
 	         "Separate arcade counts each ship's lives on its own front gun");
 
-	/* Bind both ships the way the network start screen does, then spend a life on each and read
-	 * the counters back through the aliased bytes. Crossed aliases would show up here as one
-	 * ship's death moving the other's gun power. */
+	/* Spending a life must update only the weapon byte aliased to that ship. */
 	for (uint p = 0; p < COUNTOF(player); ++p)
 	{
 		player[p].items.weapon[FRONT_WEAPON].power = 4;
@@ -423,9 +413,7 @@ static void qa_separate_arcade_lives(void)
 	         && player[1].items.weapon[REAR_WEAPON].power == 7,
 	         "...and the second ship's counter is its front gun too, not the rear bay");
 
-	/* The rollback registry re-derives the alias after every restore; if it used a different
-	 * rule than the binding above, ship two's counter would jump to the rear bay each frame.
-	 * The ring is allocated lazily, so claim it before the first snapshot writes into it. */
+	/* Snapshot restore must rebuild the same lives aliases; claim the lazy ring before writing. */
 	rollback_state_hash();
 	rollback_snapshot(0x5EAAu);
 	player[0].lives = player[1].lives = NULL;
@@ -510,9 +498,7 @@ static void qa_special_block_geometry(void)
 		                           lightX, HUD_SPECIAL_LIGHT_Y, HUD_SPECIAL_LIGHT_W, HUD_SPECIAL_LIGHT_H),
 		         label);
 
-		/* The name label is the widest thing on the row, so it is what the block has to clear.
-		 * A shaded TINY_FONT line inks rows y-1..y+8, and a blank row must separate the block
-		 * from the name and the name from the lives icons under it. */
+		/* Clear the full name label, including the tiny font's shade and separator rows. */
 		const int blockBottom = MAX(HUD_SPECIAL_ICON_Y + HUD_SPECIAL_ICON_H,
 		                            HUD_SPECIAL_LIGHT_Y + HUD_SPECIAL_LIGHT_H);
 		snprintf(label, sizeof(label),
@@ -741,9 +727,7 @@ static void qa_rear_gun_mode_matrix(void)
 
 /* ---- 3f. a ship that is out leaves nothing behind on the HUD ------------------------- */
 
-/* The last death spends no life: the counter stops at one and the ship stays dead. A readout
- * taken straight off the counter therefore offers the survivor's partner a ship it cannot fly,
- * so every per-ship HUD readout keys off player_is_out instead. */
+/* HUD availability follows player_is_out because the final death leaves the life counter at one. */
 static void qa_downed_ship_hud(void)
 {
 	for (uint p = 0; p < COUNTOF(player); ++p)
@@ -1008,9 +992,7 @@ static void qa_campaign_score_matrix(void)
 	coopCampaignScoreNote();
 	qa_check(coopCampaignScores[0].score == 11000, "a better run takes the record");
 
-	/* Cash carried in from an earlier episode never reaches the board. A campaign run continues
-	 * into the next episode and can loop back to the first, and both keep the purse, so only the
-	 * episode the run started in, played once, is a record. */
+	/* Campaign records count only the first playthrough of the starting episode. */
 	static const char *const carried[3] = {
 		"a run now in a later episode", "a repeated game", "demo playback",
 	};
@@ -1152,9 +1134,7 @@ static void qa_online_strings_matrix(void)
 	qa_check(qa_string_drawable(endlessCourseChooserName((EndlessCourseChooser)99)),
 	         "an out-of-range course chooser still prints something");
 
-	/* The co-op Campaign board's second line carries two lobby-supplied names and the terms the
-	 * figure was earned on. Built from the widest glyph in the font, at the longest name the
-	 * lobby will store, it still has to come back inside the column the page draws it in. */
+	/* Two maximum-width lobby names and the run terms must fit the Campaign record column. */
 	{
 		char widest = 'W';
 		int widestPx = 0;
@@ -1238,9 +1218,7 @@ static void qa_inject_packet(const Uint8 *data, int len)
 	packet_in[0]->len = len;
 }
 
-/* Malformed and hostile reliable packets through the real pumps. Every case has to be consumed
- * or refused without a crash and without adopting anything a clamp should have stopped; the
- * transport acknowledged these on arrival, so the pumps are the only line of defence. */
+/* The reliable pumps must consume or reject malformed packets without adopting invalid state. */
 static void qa_hostile_packets(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -1496,9 +1474,7 @@ static void qa_debug_block_roundtrip(void)
 	qa_check(expertBossHpMult == 7 && expertEnemyArmorPct == 150,
 	         "the debug block carries the expert tunables");
 
-	/* The whole-block check. Every field is compared, including any this test does not name, so a
-	 * value that the menu edits and the block leaves behind fails here even when nothing above
-	 * mentions it. */
+	/* Compare the complete block so newly added settings cannot be omitted silently. */
 	network_debug_state_pack(readback);
 	qa_check(memcmp(published, readback, (size_t)size) == 0,
 	         "a debug block re-packed after adopting it is the same block");
@@ -1521,9 +1497,7 @@ static void qa_debug_block_roundtrip(void)
 	qa_check(debugTwiddleSpecial <= SPECIAL_NUM,
 	         "an out-of-range armed twiddle from a peer is clamped");
 
-	/* The Endless half. The Tune form writes the run's depth and modifiers and either ship's perks
-	 * and personal buffs straight into simulation state, and announces nothing of its own, so the
-	 * block is what carries them. */
+	/* The block carries Endless depth, modifiers, perks, and personal buffs. */
 	QaEndlessDebugState savedEndlessState;
 	qa_endless_debug_save(&savedEndlessState);
 
@@ -1559,9 +1533,7 @@ static void qa_debug_block_roundtrip(void)
 	         && (endlessPlayerMods[1] & ENDLESS_MOD_TURBODRIVE) == 0,
 	         "...without either ship picking up the other's");
 
-	/* Mid-zone the sector has consumed the purchase and zeroed it, and only the live mask still
-	 * carries the buff. Both halves travel, so the adopting machine ends up holding both as they
-	 * are rather than re-deriving one from an emptied field. */
+	/* Mid-zone sync preserves both consumed purchases and their live buff mask. */
 	endlessPlayerMods[0] = ENDLESS_MOD_TURBODRIVE;
 	endlessPlayerMods[1] = 0;
 	endlessPurchasedMods[0] = 0;
@@ -1633,9 +1605,7 @@ static void qa_super_online_matrix(void)
 		}
 	}
 
-	/* SuperTyrian: one loadout, issued to both ships. Ship two's slot is the only one that does not
-	 * start from a cleared rear bay -- the fresh-game data hands it the linked pair's Dragonwing
-	 * arsenal, Vulcan Cannon and all -- so the equip runs from the pair it would have inherited. */
+	/* SuperTyrian replaces the linked pair's inherited loadout on both ships. */
 	player[0].items.weapon[REAR_WEAPON].id = 5;    // whatever the previous game left in the bay
 	player[1].items.weapon[REAR_WEAPON].id = 15;   // the Dragonwing's own Vulcan Cannon
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -1685,9 +1655,7 @@ static void qa_super_online_matrix(void)
 
 	/* --- what the difficulty field means, per game type --- */
 
-	/* The host adds a bump to the lobby's difficulty and the joiner subtracts the same one, so
-	 * the two land on one initialDifficulty. Both halves call this; a type where they disagreed
-	 * would run the two machines on different rules from the first frame. */
+	/* Host and joiner must derive the same initial difficulty for every game type. */
 	const NetworkGameType savedType = network_game_type;
 	static const struct { NetworkGameType type; bool separate; int bump; const char *why; } bumps[] =
 	{
@@ -1750,9 +1718,7 @@ static void qa_super_online_matrix(void)
 
 /* ---- 10. the Super Arcade ship picker ------------------------------------------------ */
 
-/* Nine ship names in two columns, hit-tested for the mouse and stepped by the arrow keys. The
- * names come out of the data file, so their widths are not known until they are measured: this
- * checks the real strings against the real layout rather than trusting the column pitch. */
+/* Measure the real ship names against the two-column mouse and keyboard layout. */
 static void qa_sa_picker_layout(void)
 {
 	char label[224];
@@ -2057,9 +2023,7 @@ static void qa_sa_ship_packet(void)
 
 /* ---- the departure gate -------------------------------------------------------------- */
 
-/* Leaving the menu in a game type with no shared outpost is two phases: a withdrawable gate,
- * then the commit. Cover the packet round trip and every ordering the two waits can see, since
- * the orderings decide whether a withdrawal can strand the other machine. */
+/* Exercise every gate/commit ordering for menus without a shared outpost. */
 static void qa_depart_gate(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -2110,9 +2074,7 @@ static void qa_depart_gate(void)
 	         && network_depart_gate_step(false, -1, PACKET_KEEP_ALIVE) == DEPART_GATE_WAIT,
 	         "a withdrawn peer, an empty queue and other traffic all keep waiting");
 
-	/* The commit wait does not take Esc; this machine has already announced. The answer it has
-	 * to catch is the peer withdrawing, which sends this machine back to the gate instead of
-	 * leaving it holding a departure the peer walked away from. */
+	/* A peer withdrawal returns a committed waiter to the gate. */
 	qa_check(network_depart_wait_step(0, 0) == DEPART_WAIT_REOPENED
 	         && network_depart_wait_step(0, PACKET_WAITING) == DEPART_WAIT_REOPENED,
 	         "a peer that withdraws reopens the gate, even behind their own commit");
@@ -2135,9 +2097,7 @@ static void qa_depart_gate(void)
 
 /* ---- 13. the Endless debug zone jump crosses the wire -------------------------------- */
 
-/* An Endless jump carries the level and the whole Endless debug block: depth, modifier mask, both
- * ships' perk stacks and both ships' personal buffs. Test the round trip, both ships landing where
- * the panel put them, and refusal of a truncated block. */
+/* Endless jumps round-trip the level and complete debug block, and reject truncation. */
 static void qa_endless_jump_pick(void)
 {
 	const JE_boolean savedEndless = endlessMode;
@@ -2151,9 +2111,7 @@ static void qa_endless_jump_pick(void)
 	endlessJumpPickReset();
 	qa_check(!endlessJumpPickGet(block), "no zone jump is staged until one is made");
 
-	/* Stage a jump the way the panel does, with a mask that uses both halves of the 64 bits: the
-	 * modifier set outgrew 32 bits (see the TOPSY/SLUGGISH widening), so a 32-bit path would
-	 * silently drop the top. Ships one and two get different perks and different buffs. */
+	/* Use both halves of the 64-bit modifier mask and distinct state for each ship. */
 	const Uint64 wide = 0x8000000400000002ull;
 	endlessRunDepth = 37;
 	endlessActiveMods = wide;

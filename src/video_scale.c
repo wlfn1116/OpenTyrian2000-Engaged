@@ -251,9 +251,7 @@ void nn_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	SDL_UnlockTexture(dst_texture);
 }
 
-// Arbitrary-ratio nearest-neighbour for the Native scaler: the destination is the
-// exact output size, not an integer multiple, so sample by floor(dst * src / dst_size).
-// At an integer ratio this reproduces nn_32 byte-for-byte; repeated rows are memcpy'd.
+// Native nearest-neighbor samples exact output dimensions and reuses repeated rows.
 void nn_fit_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 {
 	int dst_width, dst_height, dst_pitch;

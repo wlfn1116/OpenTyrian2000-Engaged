@@ -46,9 +46,7 @@ static size_t match_link_cap;
 // Commands after the last smoothie filter are not filter input. Replay them in the
 // high-resolution tail pass. See doc/notes.md#render-list.
 static size_t bg_filter_end[2];
-// Background layers whose recorded rows sit after the last smoothie filter. In a mixed-resolution
-// display pass these layers are replayed at the foreground factor, so entities bound to them keep
-// the ordinary display-rate phase instead of the reduced plasma phase.
+// Layers recorded after the final filter replay at foreground resolution.
 static Uint8 bg_tail_layers[2];
 
 static inline bool rl_cmd_is_filter(int kind)
@@ -100,9 +98,7 @@ static RenderCmd *rl_push(void)
 	return c;
 }
 
-/* Rectangles a tick painted an opaque overlay into (see rl_mark_overlay_rect). Small and fixed;
-   a tick's claimants are the two boss bars, the special-ready light, and the three low-armor
-   WARNING strips, so the cap is headroom rather than a limit anything reaches. */
+/* Opaque overlay rectangles excluded from residual comparisons. */
 #define RL_OVERLAY_RECTS_MAX 12
 static struct { int x, y, w, h; } overlay_rect[RL_OVERLAY_RECTS_MAX];
 static int overlay_rect_count = 0;
@@ -173,10 +169,7 @@ void rl_end_record(void)
 	}
 }
 
-// Abandon a recording mid-tick (rollback re-simulation, self-test replay).
-// Discards the partial list AND flips back so the last COMPLETE frame is
-// "current" again; the next rl_begin_record then promotes that complete
-// frame, not the aborted partial, to the interpolation baseline.
+// Drop a partial recording and restore the last complete frame as current.
 void rl_abort_record(void)
 {
 	if (!render_list_recording)
@@ -397,9 +390,7 @@ static inline int rl_round_offset(double v)
 	return (int)floor(v + 0.5);
 }
 
-// Displacement from an entity's recorded (rounded) position to its interpolated one when the
-// sim rounded a sub-pixel offset away: the remainder itself, less the exact own motion still to
-// come this tick.
+// Restore the sub-pixel remainder removed by the simulation's rounded position.
 static inline float rl_sub_disp(int own, float sub, float sub_d, float inv)
 {
 	if (inv != 0.0f && own <= 40 && own >= -40)
@@ -413,9 +404,7 @@ static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, i
 {
 	const float rate = now ? bg_layer_dy_now[layer] : bg_layer_dy[layer];
 	const float frac = now ? bg_layer_yfrac_now[layer] : bg_layer_yfrac[layer];
-	// endlessScrollExtraPx publishes both values in exact hundredths. Recover that fixed-point
-	// representation before subtracting: doing (frac - rate) in float can turn an exact -N.5
-	// endpoint into -N.500000004 under a fast rate, which half-up then rounds one pixel backward.
+	// Subtract exact hundredths to keep half-pixel endpoints rounding consistently.
 	const int rate100 = rl_iround(rate * 100.0f);
 	const int frac100 = rl_iround(frac * 100.0f);
 	const double offset = ((double)frac100 - (double)(rate100 + own100) * (double)inv) *
@@ -423,9 +412,7 @@ static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, i
 	return rl_round_offset(offset);
 }
 
-// A filtered layer can be rasterized below the foreground factor (spatial low-cost mode), or
-// held at the tick endpoint while foreground-local movement keeps interpolating (Vita low-cost
-// mode).
+// Filtered layers may use a lower scale or hold at the tick endpoint.
 static inline int rl_bound_x_offset(const RenderCmd *c, int layer, float inv, int scale,
                                     int bg_scale, float bg_inv)
 {
@@ -467,9 +454,7 @@ static int wrap_delta(int d, int m)
 	return r;
 }
 
-// Wrap a delta into [0, m): resolve the tile wrap DOWNWARD. Vertical scroll is always
-// downward (backMove >= 0) and can be fast; the symmetric wrap_delta would map a
-// >= m/2 px/tick scroll to a negative delta, interpolating the field the wrong way.
+// Resolve vertical tile wraps downward; fast scroll can exceed half a tile per tick.
 static int wrap_delta_down(int d, int m)
 {
 	int r = d % m;
@@ -578,9 +563,7 @@ void rl_finalize(void)
 		int dx = c->x - prev[pi].x;
 		int dy = c->y - prev[pi].y;
 
-		// Parallax sub-pixel: the entity's own frac change this tick. Both fracs are the
-		// same anchor's (an enemy keeps its layer), so this stays small; the integer part
-		// of the parallax move is already in dx above, so their sum floats the parallax.
+		// Add the layer anchor's fractional change to its integer displacement.
 		c->par_frac_dx = c->par_frac - prev[pi].par_frac;
 
 		// Sub-pixel remainder: its change this tick completes dx/dy into the exact
@@ -615,10 +598,7 @@ void rl_finalize(void)
 		}
 		else if (c->kind == RC_FILTER_SCREEN)
 		{
-			// The flash/fade ramps brightness by ±levelBrightnessChg per tick; smooth it
-			// across displayed frames. Snap across the -99 "no filter" sentinel and
-			// colour-bank swaps; discontinuities, not ramps (a bank swap happens at
-			// peak wash-out, so the snap is invisible).
+			// Interpolate brightness ramps; snap sentinels and palette-bank changes.
 			int db = c->filt_bright - prev[pi].filt_bright;
 			if (c->filt_bright == -99 || prev[pi].filt_bright == -99 ||
 			    c->filt_col != prev[pi].filt_col || db > 14 || db < -14)
@@ -630,9 +610,7 @@ void rl_finalize(void)
 		              ? (par_yown100 > 4000 || par_yown100 < -4000)
 		              : (dy > 40 || dy < -40)))
 		{
-			// Large enemy-own jump => recycled slot or teleport; snap rather than streak.
-			// A bound layer may itself legitimately move more than 40px under a speed
-			// modifier, so exclude its canonical rate from this test.
+			// Snap recycled or teleported enemies, excluding their layer's own movement.
 			dx = 0;
 			dy = 0;
 			par_yown100 = 0;
@@ -724,9 +702,7 @@ void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 c
 	if (fill > along) fill = along;
 	if (fill < 0)     fill = 0;
 
-	// Track (groove) and shadow live in the fill's own palette bank (col & 0xf0), not a hardcoded
-	// bank 7, so an elite/champion bar is tinted blue/purple top-to-bottom instead of only on the
-	// fill row/column.
+	// Keep the groove and shadow in the fill's palette bank.
 	const int   bank   = col & 0xf0;
 	const Uint8 groove = (grooveCol != 0) ? grooveCol : (Uint8)(bank + 2);
 	const Uint8 shadow = (Uint8)((grooveCol != 0 ? (grooveCol & 0xf0) : bank) + 0);
@@ -772,9 +748,7 @@ static void rl_hp_plot_block(SDL_Surface *dst, int x, int y, Uint8 col, Uint8 op
 			rl_hp_plot(dst, xx, yy, col, opacity);
 }
 
-// Supersampled enemy health bar: same geometry as rl_draw_hp_bar with every 1x
-// pixel a scale x scale block; x,y are HI coordinates (already interpolated on the
-// sub-pixel grid), so the bar glides with its enemy.
+// Supersampled health bars use interpolated high-resolution coordinates.
 static void rl_draw_hp_bar_scaled(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col,
                                   bool vertical, Uint8 opacity, Uint8 grooveCol, int scale)
 {
@@ -901,9 +875,7 @@ static size_t res_count = 0, res_cap = 0;
 // replay can decode each offset back to (x,y) and re-apply it as a scale x scale block.
 static int res_ref_pitch = 0;
 
-// Ship render-rate override: per-player offset applied to that ship's
-// hull/shadow/charge (id in [RL_ID_SHIP_BASE, RL_ID_SIDEKICK_BASE)). Kept as FLOAT
-// and rounded at the render scale, so a supersampled ship moves sub-pixel.
+// Per-player display-rate offset for the hull, shadow, and charge effect.
 static bool ship_override_active = false;
 static float ship_override_dx[2] = { 0, 0 }, ship_override_dy[2] = { 0, 0 };
 
@@ -955,15 +927,11 @@ void rl_set_ship_vel(int player, int vx, int vy)
 // so they share the render-rate ship's clock.
 static bool rl_id_extrapolates(int id)
 {
-	// Player + enemy shots (rl_current_vel_* stamped around the blit in shots.c); a fresh shot
-	// leads from the gun with no muzzle gap, and fast free shots don't lag behind the ship and
-	// jitter.
+	// Extrapolate shots from the velocity recorded around their blit.
 	return id >= RL_ID_PSHOT_BASE && id < RL_ID_EXPL_BASE;  // player + enemy shots
 }
 
-// Which slice of the render list a replay pass draws. Smoothie levels separate
-// feedback backgrounds from fresh foregrounds; mixed-resolution mode adds a
-// high-resolution background tail between them. Normal levels use ALL.
+// Smoothie replay splits filtered backgrounds, their tail, and the foreground.
 typedef enum
 {
 	RL_PHASE_ALL = 0,  // backgrounds + filters + entities + grade (normal levels)
@@ -990,9 +958,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 	const bool split = (phase == RL_PHASE_BG_HEAD || phase == RL_PHASE_BG_TAIL);
 	const size_t filter_end = split ? bg_filter_end[cur_buf] : counts[cur_buf];
 
-	// A = main playfield buffer; B = background scratch (smoothie ping-pong).
-	// At scale > 1 both are supersampled (dst comes in scaled; B is sized to match). Only the
-	// background phases need B; skipping it keeps a mixed-scale frame from resizing it twice.
+	// A is the playfield; B is the feedback scratch surface used by background phases.
 	SDL_Surface *const A = dst;
 	SDL_Surface *const B = (fg_phase || tail_phase) ? NULL : rl_get_scratch_b(scale);
 
@@ -1058,10 +1024,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 
 		if (c->kind == RC_FILTER_SCREEN)
 		{
-			// Full-screen flash/fade: interpolate the brightness across the tick so
-			// the ramp is smooth at any refresh (filt_dbright = 0 => snap). Applied
-			// side-effect-free onto the composited playfield (A), matching the tick's
-			// own filter pass which runs after all entities.
+			// Apply the interpolated full-screen grade after compositing entities.
 			int bright = c->filt_bright;
 			if (inv != 0.0f && c->filt_dbright != 0)
 				bright -= rl_iround(c->filt_dbright * inv);
@@ -1097,9 +1060,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			continue;
 		}
 
-		// Position: exact scaled integer base plus a rounded displacement. Vertical background
-		// bindings also keep their phase correction split into integer + fractional pieces; this
-		// is required for relative alignment when one sprite is above Y=0 and another below it.
+		// Keep background phase correction split into integer and fractional pieces.
 		int x = c->x * scale, y = c->y * scale;
 		const bool is_ship_id = c->id >= RL_ID_SHIP_BASE && c->id < RL_ID_SIDEKICK_BASE;
 		if (use_override && ship_override_active && is_ship_id)
@@ -1113,18 +1074,12 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 		}
 		else
 		{
-			// Per-axis placement. An axis that tracks the ship (ship_attach) is
-			// drawn at the ship's render-rate position, so attached shots (laser,
-			// main pulse) stay on the gun during strafes; otherwise the axis
-			// extrapolates (enemy shots) or interpolates (everything else).
+			// Ship-bound axes follow display-rate movement; shots extrapolate, others interpolate.
 			const bool ovr = use_override && ship_override_active;
 			const int sp = (c->ship_attach >> 2) & 1;  // player index
 			const bool extrap = rl_id_extrapolates(c->id);
 
-			// Background rows: on a display replay (use_override) pan the horizontal parallax
-			// sub-pixel-smooth as recorded x plus (frac - dx*inv), from the un-floored float
-			// offsets (backgrnd.c). The exact/residual replay keeps the whole-pixel c->dx so
-			// recorded frames reproduce byte-exact.
+			// Display replay uses fractional parallax; exact replay keeps recorded integer offsets.
 			const bool bg_row = (c->kind == RC_BG_ROW || c->kind == RC_BG_ROW_BLEND)
 			    && c->id >= RL_ID_BG_BASE + 1 && c->id <= RL_ID_BG_BASE + 3;
 
@@ -1148,10 +1103,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			}
 			else if (extrap)
 			{
-				// Forward extrapolation leads by the predicted next displacement (velocity +
-				// acceleration). Leaving out acceleration makes a decelerating shot overshoot
-				// each tick and snap back at the boundary; adding it lands exactly on the next
-				// tick position.
+				// Include acceleration so decelerating shots meet the next tick position.
 				const int vext = c->dx + c->acc_x;
 				if (vext)
 					x += rl_iround(vext * alpha * scale);
@@ -1270,16 +1222,12 @@ void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
 	else if (alpha > 1.0f)
 		alpha = 1.0f;
 
-	// Normal (non-smoothie) levels: one self-contained pass into dst (cleared first),
-	// entities interpolated, residual (superpixels, boss bar, HUD) on top; smoothie
-	// levels use the staged background/foreground replays below instead.
+	// Non-feedback levels replay once, then add residual overlays.
 	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, feedback, RL_PHASE_ALL,
 	                 scale, scale, 1.0f - alpha, false);
 }
 
-// Smoothie pass 1 updates the feedback background without entities. With split, it stops at the
-// last filter and leaves the backgrounds recorded after it to a tail pass, which can draw them
-// at a higher scale than the plasma.
+// Feedback pass 1 stops at the final filter; a split tail may use a higher scale.
 void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split)
 {
 	if (alpha < 0.0f)
@@ -1303,9 +1251,7 @@ void rl_replay_bg_tail(SDL_Surface *dst, float alpha, int scale)
 	                 scale, scale, 1.0f - alpha, true);
 }
 
-// Smoothie foreground: draw entities at the display factor over the completed backgrounds, then
-// apply the full-screen grade and residual overlays. bg_scale/bg_alpha describe the filtered
-// layer transform actually visible underneath, so bound scenery remains locked to it.
+// Draw foreground over the completed feedback surface, then grade and add overlays.
 void rl_replay_fg(SDL_Surface *dst, float alpha, int scale,
                   int bg_scale, float bg_alpha, bool split)
 {
@@ -1424,9 +1370,7 @@ void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch)
 	rl_capture_overlay_rects(reference);
 }
 
-// See render_list.h. `before` = the frame just before the post-filter overlays,
-// `after` = the finished frame; the filtered playfield is identical in both, so
-// only overlay pixels are caught.
+// Compare pre-overlay and final frames to isolate residual overlays.
 void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after)
 {
 	res_count = 0;

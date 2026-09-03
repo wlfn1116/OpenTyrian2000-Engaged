@@ -4,8 +4,19 @@ Rules that are easy to break and hard to recover from the code live here. Keep
 player instructions in [GUIDE.md](../GUIDE.md) and build recipes in the platform
 READMEs.
 
-If a code comment grows past three sentences, shorten it and put the missing
-context in the relevant section below.
+Keep code comments local. Put subsystem contracts here.
+
+## Contents
+
+- [Build contracts](#build-contracts)
+- [Rendering](#rendering)
+- [Endless](#endless)
+- [Menus and touch UI](#menus-and-touch-ui)
+- [Networking](#networking)
+- [Ships, weapons, and item data](#ships-weapons-and-item-data)
+- [Audio, platforms, and logs](#audio-platforms-and-logs)
+- [Level and data formats](#level-and-data-formats)
+- [Tests](#tests)
 
 ## Build contracts
 
@@ -268,21 +279,15 @@ Course-correction modifiers are exclusive. Canonicalization keeps the strongest:
 Milestones use the upcoming zone. Multiples of 100 exclude scroll-speed
 modifiers; The End also excludes Dead Generator.
 
-Milestone approach warnings (`endlessMilestoneApproach`, endless_shop.c) replay
-the campaign's `]P` + `]W` screen recipe once per zone on a fresh approach
-(`endlessWarnedZone`: reset with the run, rearmed by a save load). The screen
-starts `songBuy` itself, so the shop's `play_song` call no-ops and the track
-continues unbroken. It draws no simulation RNG and paces per machine online;
-the shop HELLO re-sync absorbs peers arriving apart. The first credits-zone
-approach swaps in the send-off text and song, keyed exactly like
-`ENDLESS_FINALE_SHOP_SONG`.
+Milestone approach screens follow these rules:
 
-Every tier shares backdrop pic 5, recolors its palette in place (strongest
-channel scaled into the tier hue), and centers the text block on its line
-count. Glow text and pulse bars read palette bank 14, so a backdrop needs that
-bank ramping dark to bright plus dark art behind the text. Pic 5 is the only
-stock pic with both: pic 4 inverts the bank and pics 8, 9, and 13 are too
-bright behind the text.
+- Show once per zone. A loaded save may show the warning again.
+- Start `songBuy` on the warning screen and let the shop keep it playing.
+- Use no simulation RNG. Online timing stays local; the shop HELLO resyncs the
+  peers afterward.
+- Use the send-off text and song on the first credits-zone approach.
+- Use backdrop 5. Its dark artwork and palette bank 14 support the glow text
+  and pulse bars used by every tier.
 
 ### Perks
 
@@ -386,13 +391,13 @@ Useful layout limits:
 Seven rows fit above a classic help line. Debug headings are not selectable.
 Boss and enemy bars use playfield coordinates.
 
-Press edges (`newkey`, `newmouse`) persist until `service_SDL_events(true)` or
-an explicit clear, keyboard.c does no key-repeat filtering (a held key re-arms
-`newkey` on every repeat), and `JE_wipeKey` is a no-op stub. A screen that the
-previous screen's dismissing press must not skip opens with
-`wait_noinput(true, true, true)` and then clears both edges, in that order. The
-credits roll, episode banner, high-score screens, and Endless milestone warning
-open this way.
+Press edges (`newkey`, `newmouse`) survive until `service_SDL_events(true)` or
+an explicit clear. Keyboard repeat can re-arm `newkey`; `JE_wipeKey` does
+nothing.
+
+Screens that require a fresh press must call `wait_noinput(true, true, true)`,
+then clear both edges. This applies to the credits, episode banner, high-score
+screens, and Endless milestone warning.
 
 ### Touch requests
 
@@ -542,11 +547,12 @@ Disconnect recovery reloads the `LAST LEVEL` checkpoint before opening the save
 picker. Preserve the live co-op flags across that load or the new slot drops the
 departed player's state.
 
-For a resumed custom run, the host builds an ordered required set from
-`custom_collection`, then adds `custom_episode` if needed. An older Endless save
-without a collection falls back to every container installed on the host. The
-sync can pull a missing required file from either peer; it fails if neither has
-one. Only Endless resumes install the resulting list as the session pool.
+Custom resumes use these rules:
+
+- Start with `custom_collection`, then add `custom_episode` if needed.
+- For older Endless saves without a collection, use every host container.
+- Pull missing files from either peer. Fail if neither has a copy.
+- Install the resulting list as the session pool only for Endless.
 
 Record co-op Campaign only when its starting episode is completed for the first
 time. Later episodes, repeats, and deaths do not replace it.
@@ -620,10 +626,11 @@ The stock `newsh$.shp` and writable `custom_ships.shp` contain a Sprite2 blob,
 ten encrypted 15-byte ship records, and four plaintext checksums. The cipher
 and cell codec must round-trip the stock file exactly.
 
-`User.shp` is the DOS editor source. It has 304 presence bytes, followed by one
-12x14 cell for each set byte and then the encrypted ship table. Match its name
-case-insensitively. Search the writable state directory, active data directory,
-the executable's `data` directory, and the executable directory, in that order.
+`User.shp` is the DOS editor source: 304 presence bytes, one 12x14 cell for each
+set byte, then the encrypted ship table. Match the name case-insensitively.
+
+Search the writable state directory first, then the active data directory, the
+executable's `data` directory, and the executable directory.
 
 Graphic IDs are persistent:
 
@@ -752,6 +759,8 @@ and output for a data file.
 
 ### Custom-episode containers
 
+#### File format
+
 Tyrian 2000 Atlas writes one little-endian `.clv` file per custom episode. The
 160-byte `CLV1` header is fixed:
 
@@ -771,21 +780,27 @@ The level section uses the episode 4/5 layout: its item and enemy tables follow
 the last level. The script matches `levelsN.dat`; the datacube section matches
 `cubetxtN.dat` and may be empty. A blank title falls back to the file name.
 
-The loader accepts files from 160 bytes through 16 MiB. Level and script
-sections must be non-empty and every non-empty section must stay within the
-file. The level section's opening 16-bit offset count must be odd and between 3
-and 42. An invalid base episode is treated as episode 1.
+Loader limits:
 
-The base episode selects number-gated engine rules; it does not select stock
-data. On activation, the sections are extracted as `custom.lvl`, `custom.lev`,
-and `custom.cub` in `custom_levels`. Switching between stock and custom data
-forces a reload even when their episode number is the same. A rescan never
-changes the active episode.
+- File size: 160 bytes through 16 MiB.
+- Level and script sections: non-empty and contained within the file.
+- Opening level-offset count: odd and between 3 and 42.
+- Invalid base episodes fall back to episode 1.
 
-At startup and before episode selection, loose `.clv` files in the data and user
-directories move into `custom_levels`. A same-named file already there wins.
-Cross-volume moves fall back to copy-and-delete, and partial copies are removed.
-The directory is created only for a write.
+The base episode selects number-gated engine rules, not stock data. Activation
+extracts `custom.lvl`, `custom.lev`, and `custom.cub` in `custom_levels`.
+
+Switching between stock and custom data forces a reload even when the episode
+number is unchanged. A rescan never changes the active episode.
+
+#### Discovery and saves
+
+At startup and before episode selection, loose `.clv` files move from the data
+and user directories into `custom_levels`.
+
+- A same-named file already there wins.
+- Cross-volume moves use copy-and-delete and remove partial copies.
+- The directory is created only for a write.
 
 With no containers installed, custom-content menu rows stay hidden and a stored
 `custom_endless` value has no effect. Read-only scans must not create the
@@ -799,6 +814,8 @@ most 64 names in 4095 bytes.
 Offline load rows lock when `custom_episode` or a collection member is missing.
 Online rows stay available so the peers can reconcile the files. The advertised
 identity is the file name, size, and FNV-1a hash.
+
+#### Network sync
 
 `PACKET_CUSTOM_LEVEL` uses the common chunk header. Count values have these
 meanings:
@@ -819,10 +836,12 @@ contains a 64-byte file name, 32-bit size, and 32-bit FNV-1a hash. New sessions
 use the host's complete file-name-sorted collection. Resumes use the save's
 ordered dependencies.
 
-A zero size and hash means the host lacks that required file. The joiner must
-offer a local copy, which the host then requests. For nonzero identities, the
-joiner reuses an exact match or downloads the host's copy. Local extras remain
-installed but do not enter the session pool.
+File reconciliation:
+
+- Zero size and hash means the host needs the joiner's copy.
+- For nonzero identities, the joiner reuses an exact match or downloads the
+  host's copy.
+- Local extras stay installed but do not enter the session pool.
 
 Container requests may name a manifest entry; an empty name requests the
 container advertised in `PACKET_CONNECT`. Received names must remain inside the
@@ -833,10 +852,11 @@ After validation, an arriving container is compared byte for byte with an
 installed file of the same name. An exact match keeps the existing file and
 timestamp; different contents replace it.
 
-Custom-container sync blocks on the start screen. The guest must consume
-`PACKET_DETAILS` before entering that loop so it cannot pin the reliable queue
-head. While syncing, `network_clv_pump` drains container, shop, debug, waiting,
-and late-connect packets; `PACKET_QUIT` and `PACKET_GAME_QUIT` abort the transfer.
+Custom-container sync blocks on the start screen. The guest consumes
+`PACKET_DETAILS` first so it cannot pin the reliable queue head.
+
+During sync, `network_clv_pump` drains container, shop, debug, waiting, and
+late-connect packets. `PACKET_QUIT` and `PACKET_GAME_QUIT` abort the transfer.
 
 Stream chunk counts stay below the `0xfffe` offer sentinel; the 16 MiB container
 ceiling fits within that range. A settled required set supersedes late queued

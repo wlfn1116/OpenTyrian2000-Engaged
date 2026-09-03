@@ -47,15 +47,11 @@ void drb_round_reset(void);
 /* Frame being simulated; 1-based, 0 before the round's first tick. */
 Uint32 drb_frame(void);
 
-/* Re-simulation of an already-simulated frame: live input, sound and the frame delay are all
- * suppressed.  The silent variant also suppresses the present, so only the final catch-up pass of
- * a correction reaches the screen. */
+/* Re-simulation suppresses input, sound, and delay; silent passes also skip presentation. */
 bool drb_resim(void);
 bool drb_resim_silent(void);
 
-/* Tick hooks, in call order.  drb_frame_begin snapshots the frame before anything moves;
- * drb_record_local takes the live pass's sampled input; drb_frame_actions hands back the action
- * pair the frame simulates (the peer's predicted when its record has not arrived). */
+/* Tick hooks: snapshot, record local input, then fetch the simulated action pair. */
 void drb_frame_begin(void);
 void drb_record_local(Uint8 actions, Uint8 controls);
 void drb_frame_actions(Uint8 *local, Uint8 *peer);

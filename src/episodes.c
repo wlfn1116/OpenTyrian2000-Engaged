@@ -77,9 +77,7 @@ const char *JE_episodeDir(void)
 // was free; the shop loader (tyrian2.c) reads this.
 JE_byte chargeLaserSlot = 0;
 
-// Unused shop sprites.
-// Assign newsh1.shp's eleven unreferenced icons to weapons that lack distinct shop art. Endless
-// exposes these otherwise campaign-only ports together, making duplicate placeholders visible.
+// Reuse newsh1.shp's unreferenced icons for weapons without distinct shop art.
 static const struct { JE_byte port; JE_word gr; } unusedSpritePorts[] =
 {
 	{ 31,  15 },  // Guided Bombs
@@ -139,9 +137,7 @@ static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[
 	{ 47, 11, 163 },  // Super Pretzel, which is People Pretzels' own bolt
 };
 
-// Shipped icons, snapshotted straight after the item load so the toggle can be flipped both
-// ways between games without a reload. unusedSpriteBaseLaser is the Charge-Laser slot's own
-// icon (193), kept beside the slot it was read from.
+// Snapshot shipped icons after item load so the toggle can restore them without a reload.
 static JE_word unusedSpriteBasePort[COUNTOF(unusedSpritePorts)];
 static JE_word unusedSpriteBaseOpt[COUNTOF(unusedSpriteOptions)];
 static JE_word unusedSpriteBaseSpecial[COUNTOF(unusedSpecialIcons)];
@@ -256,9 +252,7 @@ const char *JE_shipName(JE_word id)
 	return ships[id].name;
 }
 
-/* The sidekick slot the Charge-Laser claims, and what that slot held before it did. Captured
- * while options[] is freshly loaded, so the toggle can put the original record back and the
- * menu can flip it without reloading the item data. */
+/* Save the sidekick row replaced by Charge-Laser so the toggle can restore it. */
 static int chargeLaserNativeSlot = 0;
 static JE_OptionType chargeLaserNativeOption;
 static bool chargeLaserCaptured = false;
@@ -437,9 +431,7 @@ static void JE_retagWeaponSparks(int wn, int mode, const JE_word *plain, const J
 {
 	if (wn <= 0 || wn > WEAP_NUM)
 		return;
-	// Only the first weapons[wn].max shot-graphic slots form the repeating fire pattern
-	// (shotMultiPos cycles 1..max in shots.c); retag each real bolt (either state),
-	// leaving the unused padding slots (never a listed sprite) alone.
+	// Retag only the real repeating shot slots, not unused array padding.
 	for (int j = 0; j < weapons[wn].max && j < 8; ++j)
 	{
 		for (int k = 0; k < nsprites; ++k)
@@ -510,9 +502,7 @@ static void JE_applySuperSparks(void)
 
 // Apply episode-specific item data from shipped constants. Auto keeps the running episode;
 // only active pattern slots are rewritten.
-/* The five items whose two data sets differ in nothing but the firing sound. One table, so the
- * apply below and the menu's preview (JE_epDiffFiringSound) cannot drift apart. See
- * doc/notes.md#item-tables. */
+/* This shared table keeps item-data changes and menu sound previews in sync. */
 static const struct
 {
 	JE_byte port;
@@ -596,9 +586,7 @@ static void JE_applyEpDiffs(void)
 		}
 		case EDW_MICROSOL_OPT5:
 		{
-			// The MicroSol bonus ship's 5th built-in weapon (the only one of its six that
-			// differs). ep1-3: a costly (drain 160) eight-way fan, 3 damage each.
-			// ep4/5: a cheap (drain 40) twin shot, 1 damage each.
+			// MicroSol weapon 5 is an eight-way fan in episodes 1-3 and a cheap twin shot later.
 			JE_WeaponType *m = &weapons[23];
 			if (ep45)
 			{
@@ -709,9 +697,7 @@ static void JE_captureAmmoSidekickBases(void)
 	ammoLabelPct = -1;
 }
 
-// Write "<name>   Ammo N" into every ammo sidekick's shop name, N being its magazine as the
-// player will actually fly it (shipped size + the Ordnance Reserves perk). Cheap to call often:
-// it does nothing until the perk bonus actually changes.
+// Refresh ammo sidekick names from their effective Ordnance Reserves magazine size.
 void JE_labelAmmoSidekicks(void)
 {
 	// Personal perks: the shop names show the magazine this machine's own player would fly.
@@ -973,9 +959,7 @@ void JE_loadItemDat(void)
 		if (strncmp(options[i].name, "Wobbley", 7) == 0 && options[i].gr[0] == 166)
 			options[i].gr[0] = options[i].gr[1];
 
-	// Four of the Flying Punch's five bolts are the quarters of its fist (spriteSheet12 155, 157,
-	// 159, 161). The fifth continues that run to 163, where the fist art ends and People Pretzels'
-	// spin begins. Blank its tile; the bolt keeps its damage and its trail.
+	// Blank Flying Punch's fifth tile, which spills into the next sprite's art.
 	if (weapons[794].sg[0] == 663)
 		weapons[794].sg[0] = 547;  // 47 through 54 are empty entries in the same sheet
 
@@ -1009,9 +993,7 @@ void JE_loadItemDat(void)
 
 void JE_applyItemDataSettings(void)
 {
-	// Each of these rewrites its fields from shipped constants (the Zica Lv11 pattern and the
-	// Charge-Laser's slot from the natives captured at load), so the set is idempotent and safe to
-	// reapply at any time.
+	// These rewrites start from shipped constants, making the whole pass idempotent.
 	JE_applyChargeLaserCannon();
 	JE_applyZicaLaserConfig();
 	JE_applySuperSparks();

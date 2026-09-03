@@ -5,24 +5,16 @@
 #include "opentyr.h"
 #include "episodes.h"
 
-// The custom weapon carries an independent raw design for each of the 11 power
-// levels, so buying weapon-power upgrades in the shop steps through them exactly
-// like a stock weapon.
+// Custom weapons carry one raw design for each of the 11 stock power levels.
 #define CUSTOM_POWER_LEVELS 11
 
-// A weapon port can have up to two fire modes (op[0] / op[1], selected by opnum):
-// front guns only use mode 0, but a REAR gun toggles between them in-game. The
-// custom weapon carries an independent design per (mode, power level).
+// Rear guns may define two fire modes; front guns use mode 0 only.
 #define CUSTOM_WEAPON_MODES 2
 
-// The most simultaneous bullets a weapon can describe = the width of the engine's per-bullet
-// arrays (WEAPON_MULTI_MAX, from episodes.h). Originally 8; raised there so custom weapons can
-// exceed the old cap. The editor exposes exactly this many segments.
+// The editor exposes one segment for every slot in the engine's per-bullet arrays.
 #define CUSTOM_BULLETS_MAX WEAPON_MULTI_MAX
 
-// Online Campaign gives each player slot its own reserved weapon port, sidekick option and
-// scratch weapon range, so both designs are live at once and mean the same thing on both
-// machines. Everything outside Online Campaign uses owner 0 only.
+// Online Campaign reserves independent weapon, sidekick, and scratch slots for each player.
 #define CUSTOM_WEAPON_OWNERS 2
 
 // Scratch weapon slots for the compiled custom designs: one per (owner, mode, level),
@@ -100,9 +92,7 @@ extern int customSidekickAnimate;   // option: 1 = animate while firing, 2 = alw
 // the sprite index; the sidekick blit is not bounds-checked). 0 if the sheet isn't loaded.
 int customSidekickSpriteCount(int mount);
 
-// Import sources: one named entry per real weapon port (sampleable across its
-// power levels) and per sidekick option. Used by the editor's Import actions to
-// seed a level (or the whole weapon) from a stock weapon.
+// Named stock weapon and sidekick sources used by the editor's Import actions.
 typedef struct
 {
 	char    name[31];      // source weapon/sidekick name shown in the picker
@@ -123,9 +113,7 @@ extern int                customBulletPresetCount;
 // 1 means the look is fixed (a sidekick shot, or a weapon with a single level).
 int customBulletMaxPower(int presetIdx);
 
-// One-time setup: gather the import-source list, claim a free port + sidekick slot,
-// fill in a default design if none is loaded, and materialize. Call once after
-// JE_loadItemDat() (also safe to call again; it never clobbers a loaded design).
+// Initialize after JE_loadItemDat(); repeated calls preserve loaded designs.
 void customWeaponInit(void);
 
 // Copy every power level's raw design into this owner's scratch weapon slots and wire up its
@@ -141,9 +129,7 @@ bool customWeaponEquip(void);
 void customWeaponSelectLevel(int level);
 void customWeaponSelectMode(int mode);
 
-// Import a stock weapon. Level: copy the source's chosen base power level into the
-// level currently being edited. All: copy the source's whole power curve into all
-// 11 levels and adopt its name / power drain (a full editable clone).
+// Import one stock power level, or clone the full curve with its name and drain.
 void customWeaponImportLevel(int presetIdx, int basePower);
 void customWeaponImportAllLevels(int presetIdx);
 
@@ -179,9 +165,7 @@ void customWeaponAutoScaleLevels(void);
 void customWeaponSerializeLevel(int mode, int level, char *buf, size_t bufSize);
 void customWeaponDeserializeLevel(int mode, int level, const char *str);
 
-// Weapon library.
-// The globals above are one working copy from custom_weapons.cfg.
-// Only one library weapon can be materialized in the reserved engine slots.
+// The library keeps one working copy materialized in the reserved engine slots.
 #define CUSTOM_WEAPON_LIB_MAX 32
 
 typedef struct
@@ -200,9 +184,7 @@ extern int customWeaponCurrentSlot; // which slot the working copy came from
 // then loads the chosen one into the globals and materializes it.
 void customWeaponSelectSlot(int slot);
 
-// Add a fresh default weapon (New) / a copy of the current one (Duplicate) as a new slot and
-// switch to it; returns the new slot, or -1 if the library is full. Delete drops the current
-// slot (at least one is always kept) and returns the slot now selected, or -1 if only one left.
+// Add or duplicate and select a slot; delete always leaves at least one library entry.
 int  customWeaponLibraryNew(void);
 int  customWeaponLibraryDuplicate(void);
 int  customWeaponLibraryDelete(void);
@@ -220,9 +202,7 @@ bool customWeaponLibrarySave(void);
 size_t customWeaponSerializeLibrary(Uint8 *buf, size_t cap);
 bool customWeaponAdoptLibrary(const Uint8 *buf, size_t len);
 
-/* Online Campaign design exchange. Serialize writes this machine's working copy; Adopt installs
- * a received one into another player's reserved slots without touching the editor. The format is
- * versioned and self-delimiting, and Adopt clamps everything it reads. */
+/* Exchange a versioned Campaign design; adoption clamps data and does not touch the editor. */
 #define CUSTOM_WEAPON_WIRE_VERSION 1
 
 // Upper bound on the encoded size: the fixed header plus every (mode, level) at full width.

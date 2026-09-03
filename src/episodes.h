@@ -168,9 +168,7 @@ extern JE_boolean bonusLevel;
 extern JE_boolean jumpBackToEpisode1;
 extern JE_byte chargeLaserSlot;  // option slot of the re-added Charge-Laser Cannon (0 = none)
 
-// Two scratch weapon slots (in the unused WEAP_END1(818)..WEAP_START2(1000) gap, after
-// the Charge-Laser's 900-905) holding the LV10-length Zica Lv11 side beams the "Long"
-// length option fires. Built by JE_applyZicaLaserConfig; fired in mainint.c / game_menu.c.
+// Scratch weapon slots for the long Zica Lv11 side beams.
 #define ZICA_LONG_WEAP_LEFT  906
 #define ZICA_LONG_WEAP_RIGHT 907
 
@@ -191,9 +189,7 @@ void JE_initEpisodeId(int id);
 // share another item's icon (or fall back to the 167 placeholder).
 void JE_applyUnusedShopSprites(void);
 
-/* Rewrite the loaded item data from every enhancement setting baked into it: the Zica Lv11
- * shape, the superspark trails, the ep1-3/ep4-5 item differences, and the shop icons. Idempotent,
- * so the menu calls it as a row changes and the change lands without starting a new game. */
+/* Reapply all item-data enhancements; safe to call after each menu change. */
 void JE_applyItemDataSettings(void);
 
 /* The firing sound an EpDiffWeapon row lands on in the given EPDIFF_* mode, so the Firing Sounds
@@ -210,18 +206,14 @@ const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr);
 // Display name of a special.
 const char *JE_specialName(JE_byte id);
 
-// Display name of a weapon port. The endless shop pools every real port into both gun menus,
-// so the pairs that ship under one name (Protron, Multi-Cannon, Vulcan Cannon) are told apart
-// while in endless. Every other name is the loaded one.
+// Distinguish same-named front and rear ports in the Endless shop.
 const char *JE_weaponPortName(JE_word id);
 
 // Display name of a ship. The Nort Ship flies as the Nort Ship Z in endless. Every other name is
 // the loaded one; an id past the table is named for the "None" record.
 const char *JE_shipName(JE_word id);
 
-// Refresh the "Ammo N" suffix on every ammo sidekick's shop name, so it shows the magazine the
-// player will actually fly with (the endless Ordnance Reserves perk grows it mid-run). Guarded
-// internally against no-op work, so the shop and JE_drawOptions can just call it.
+// Refresh ammo sidekick names after effective magazine sizes change.
 void JE_labelAmmoSidekicks(void);
 
 unsigned int JE_findNextEpisode(void);

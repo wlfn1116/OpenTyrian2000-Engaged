@@ -37,9 +37,7 @@ void game_menu_deinit(void);
 // scan the debug level picker uses); returns how many were written.
 uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut);
 
-// Look up the authored level name at (episode, section, fileNum) without loading the level,
-// into `out` (<= outSize, set to "" if not found). fileNum 0 matches the section's first ']L';
-// a non-zero fileNum distinguishes a section's alternate cut. Used by the endless Radar perk.
+// Read an authored level name without loading it; fileNum 0 selects the section's first cut.
 void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char *out, size_t outSize);
 
 void load_cubes(void);
@@ -87,9 +85,7 @@ typedef struct
 	int iconX, nameX, costX;
 } ShopItemColumns;
 
-// Columns for one ship row of the item list. A hull drawn as two 2x2 halves (the Nort Ship and
-// the Dragonwing) is 48px wide against a 24px icon column, so it takes an anchor shifted right
-// and a label column of its own; every other ship takes the standard columns.
+// Item-list columns for ordinary and 48-pixel ship icons.
 ShopItemColumns shop_ship_item_columns(JE_word shipId);
 
 // The bay the shipped game issues a weapon port for. Ports it issues to neither bay (None, the
@@ -137,9 +133,7 @@ void JE_drawScore(void);
 void JE_menuFunction(JE_byte select);
 bool JE_debugLevelSelect(void);
 
-// The endless effect layer's control panel, opened from the debug menu: sector modifiers,
-// personal buffs, perks and the zone-scaling readout, applied in place rather than launching a
-// level.
+// Debug panel for live Endless effects and scaling.
 void endlessDebugTuneScreen(void);
 
 // The debug level browser drops straight into a level, skipping the campaign route that
@@ -147,9 +141,7 @@ void endlessDebugTuneScreen(void);
 bool debugLevelJumpTake(void);
 void debugLevelJumpReturn(void);
 
-// Stage and synchronize a debug-browser level choice for the next network launch.
-// debugLevelPickGet() reports whether this machine has a browser pick staged (and what it is);
-// debugLevelPickApply() adopts a peer's staged pick through the same path.
+// Stage, query, and adopt a debug-browser choice for the next online launch.
 bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum);
 void debugLevelPickApply(JE_byte episode, JE_byte section, JE_byte fileNum);
 void debugLevelPickReset(void);

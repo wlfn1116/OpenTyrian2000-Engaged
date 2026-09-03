@@ -419,9 +419,7 @@ int lds_update(void)
 							Uint8	sound;
 							Uint16	high;
 							Sint8	transp = transpose & 127;
-							/* Originally, in assembler code, the player first shifted logically left the transpose
-							 * byte by 1 and then shifted arithmetically right the same byte to achieve the final,
-							 * signed transpose value. */
+							/* Match the original logical-left/arithmetic-right transpose conversion. */
 
 							if(transpose & 64)
 							{

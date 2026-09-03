@@ -859,9 +859,7 @@ class Dumper(object):
         ]
 
         for name, rows in simple:
-            # Names are space-padded to 30 in the data and the game keeps the padding
-            # (the shop aligns its "Ammo N" suffix against it). Keep it, and add a
-            # trimmed copy so the CSV reads cleanly.
+            # Preserve 30-byte name padding for the game and add a trimmed CSV field.
             for row in rows:
                 if "name" in row:
                     row["displayName"] = row["name"].rstrip()

@@ -26,9 +26,7 @@
 
 extern JE_word backPos, backPos2, backPos3;
 extern JE_word backMove, backMove2, backMove3;
-// Endless SMOOTH scroll boost: per-layer extra scroll px this tick (fractional carry). Set
-// once/tick in tyrian2.c; makes the boosted scroll advance smoothly instead of in whole
-// backMove lumps. See backgrnd.c and endlessScrollExtraPx() (endless_combat.c).
+// Per-layer Endless scroll boost for this tick, including fractional carry.
 extern int endlessScrollExtraPx1, endlessScrollExtraPx2, endlessScrollExtraPx3;
 
 // TRUE per-tick vertical scroll (px) of each background layer [1..3], computed at draw time in
@@ -39,16 +37,12 @@ extern int bgScrollDeltaY[4];
 // stable margin so interpolation cannot expose a black strip or change row count.
 extern int bgMarginRows;
 
-// Un-floored parallax offsets (mainint.c) and, per layer, bg_layer_dx (FLOAT scroll delta) +
-// bg_layer_frac (floored-away fraction). Interpolated sub-pixel-smooth, tick-locked to the
-// layer's anchored enemies.
+// Unfloored offsets and fractional deltas keep parallax aligned with anchored enemies.
 extern float mapXOfs_f, mapX2Ofs_f, mapX3Ofs_f;
 extern float oldMapXOfs_f, oldMapX3Ofs_f;  // un-floored mirrors of oldMapXOfs / oldMapX3Ofs
 extern float bg_layer_dx[4], bg_layer_frac[4];
 
-// Absolute horizontal anchor actually used when each background layer was recorded this tick.
-// Bound entities can be drawn on the other side of the mid-frame parallax update, so the render
-// list normalizes them to this anchor during finalize. valid[] is reset by rl_begin_record.
+// Recorded horizontal anchors normalize bound entities across the mid-frame parallax update.
 extern float bg_layer_xofs[4];
 extern bool bg_layer_xofs_valid[4];
 
@@ -76,18 +70,14 @@ extern bool background_advance;
 
 void JE_darkenBackground(JE_word neat);
 
-// mirror_w/col0: Extra Parallax edge mirroring; columns that fall outside the map row
-// render as its horizontally-flipped reflection (see bg_mirror_tile in backgrnd.c).
-// mirror_w 0 = off (stock reads).
+// Edge mirroring reflects columns outside the map row; mirror_w 0 keeps stock reads.
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0);
 void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0);
 // Supersampled variant (render-list replay only): x,y are HI-buffer coordinates;
 // each tile pixel is drawn as a scale x scale block, fully clipped, never recorded.
 void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale, bool blend, int mirror_w, int col0);
 
-// Layer 1's scroll delta + pan anchor for this tick, without drawing its rows. draw_background_1
-// calls it; a tick that blanks the layer instead (Astral Zone) must call it too, or layer 3 loses
-// the anchor it pans from under background3x1 and shifts by a tick's parallax.
+// Update layer 1's scroll anchor even when Astral Zone skips drawing the layer.
 void bg_publish_layer_1_phase(void);
 
 void draw_background_1(SDL_Surface *surface);

@@ -37,9 +37,7 @@ bool dir_remove_file(const char *dir, const char *file);
 
 long ftell_eof(FILE *f);
 
-// malloc that reports and exits rather than returning NULL, for the one-shot allocations whose
-// failure would otherwise surface as a null dereference further down. Never returns NULL, and a
-// zero-byte request still yields a real pointer (see the definition).
+// Allocate or terminate; zero-byte requests still return a usable pointer.
 OT_RET_NOTNULL void *malloc_die(size_t size);
 
 void fread_die(void *buffer, size_t size, size_t count, FILE *stream);

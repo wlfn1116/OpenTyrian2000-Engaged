@@ -75,9 +75,7 @@ const char *opentyrian_version = OPENTYRIAN_VERSION;
 const char *opentyrian_commit = OPENTYRIAN_COMMIT;
 
 #ifndef PLATFORM_HANDHELD
-// The console and mobile ports have a single, always-fullscreen display managed by the
-// video driver, so the Window/Display picker is meaningless there and is omitted from
-// the Graphics menu below.
+// Console and mobile video drivers own one always-fullscreen display.
 static size_t getDisplayPickerItemsCount(void)
 {
 	return 1 + (size_t)SDL_GetNumVideoDisplays();
@@ -119,9 +117,7 @@ static const char* getScalingModePickerItem(size_t i, char* buffer, size_t buffe
 
 /* Graphics: sub-pixel supersampling picker. */
 
-// Index maps directly onto render_supersample: 0 = Auto (follow the scaler),
-// 1 = Off, 2..5 = fixed NxN, 6 = Native (follow the display; see video.h). Keep
-// "5x" at RENDER_SUPERSAMPLE_MAX and "Native" at RENDER_SUPERSAMPLE_NATIVE.
+// Indices map directly to Auto, Off, fixed 2x..5x, and Native supersampling.
 static const char *const supersampleNames[] = { "Auto", "Off", "2x", "3x", "4x", "5x", "Native" };
 
 static size_t getSupersamplePickerItemsCount(void) { return COUNTOF(supersampleNames); }
@@ -155,9 +151,7 @@ static const char *const enemyBarPositionNames[] = { "Bottom", "Top", "Left", "R
 // run the gradient across the bar's 9-pixel width instead. The label names the bar's bright end.
 static const char *const gaugeGradNames[] = { "Up", "Down", "Left", "Right" };
 
-// Shared by every "which episode's data" row: the Zica Laser pattern and all nine
-// Episode Versions items (ZICA_BASE_* and EPDIFF_* run in step, config.h).
-// "Ep 4-5" spelled out: SMALL_FONT_SHAPES has no '+' glyph, so "Ep 4+" would draw as "Ep 4".
+// Shared episode-data labels; the small font lacks a plus glyph, so use "Ep 4-5".
 static const char *const episodeNames[] = { "Auto", "Ep 1-3", "Ep 4-5" };
 
 static const char *const zicaLengthNames[] = { "Short", "Long" };
@@ -180,9 +174,7 @@ NAME_PICKER(zicaLength, zicaLengthNames)
 NAME_PICKER(sparkMode, sparkModeNames)
 NAME_PICKER(customEndless, customEndlessNames)
 
-/* Enhancements: preset picker. Indexed by EnhancementPreset, so all three entries appear;
- * Custom is where hand edits land and has no values of its own, so the picker grays it,
- * refuses it, and the arrows step past it (config.c holds the settings each preset writes). */
+/* The preset picker shows Custom but does not let the user apply it. */
 static size_t enhPresetCount(void)
 {
 	return ENH_PRESET_COUNT;
@@ -195,9 +187,7 @@ static const char *enhPresetItem(size_t i, char *buffer, size_t bufferSize)
 
 /* Sound: music synthesizer picker. */
 
-// music_device_names[] / MUSIC_DEVICE_MAX come from loudness.h. The MIDI devices
-// (FluidSynth / Native MIDI) only produce sound in a WITH_MIDI build; otherwise
-// init_audio() forces the choice back to OPL.
+// FluidSynth and Native MIDI require WITH_MIDI; other builds force OPL.
 static size_t getMusicDeviceItemsCount(void)
 {
 #ifdef WITH_MIDI
@@ -239,9 +229,7 @@ static bool toggle_xmas_mode(void)
 	return true;
 }
 
-// While supersampling is enabled, algorithm scalers (Scale2x/hqNx) are bypassed by the in-game
-// hi path, which would make gameplay and pause/menus look different; so switch to the same-size
-// plain scaler.
+// Supersampling uses a plain same-size scaler so gameplay and menus match.
 static void enforcePlainScalerForSupersample(void)
 {
 	if (render_supersample != 1 && !scaler_is_plain(scaler))
@@ -487,9 +475,7 @@ static bool subpixelFxAvailable(void)
 #endif
 }
 
-/* Likewise for the plain On/Off rows: flipping the flag is the whole action. Toggles
- * that also have to *do* something (reload the shape tables, re-init the scaler) keep
- * their own case next to the work they trigger. */
+/* Plain toggles stop here; toggles with side effects keep dedicated cases below. */
 static bool *menuItemBoolSetting(MenuItemId id)
 {
 	const int slot = menuItemRunSlot(id, MENU_ITEM_SPARKS_CAP_BASE, SSW_COUNT);
@@ -528,9 +514,7 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	}
 }
 
-/* Sound a row makes when its value changes. A Firing Sounds row answers with the firing sound it
- * just chose, so the two episodes' versions can be compared from the menu; every other row makes
- * the ordinary menu noise. */
+/* Firing Sounds previews the selected sound; other rows use the normal menu sound. */
 static void playMenuItemSample(MenuItemId id, JE_byte fallback)
 {
 	const int slot = menuItemRunSlot(id, MENU_ITEM_EPDIFF_BASE, EDW_COUNT);
@@ -671,9 +655,7 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 	}
 }
 
-// Runs the shared options-menu framework starting at the given root menu.
-// Returns true if a full game was launched (SuperTyrian / Super Arcade), in
-// which case the caller (title screen) should start the game.
+// Run an options tree; true means the menu launched a full game.
 static bool runOptionsMenu(MenuId startMenu);
 
 void setupMenu(void)
@@ -755,9 +737,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				MENU_DONE_ROW
 			},
 		},
-		/* Enhancements is five domains, one submenu each: what you see, what the HUD draws,
-		 * what you fly with, how the game plays, and which episode's item data it plays with.
-		 * Every setting hangs off exactly one of them, and the Preset row above writes the lot. */
+		/* Each enhancement setting belongs to one of five submenus. */
 		[MENU_ENHANCEMENTS] = {
 			.header = "Enhancements",
 			.items = {
@@ -1208,9 +1188,7 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			draw_font_hv_shadow(VGAScreen, xMenuItemName, y, menuItem->name, normal_font, left_aligned, 15, shade, false, 2);
 
-			/* Nearly every row's value is one string in the value column, so the rows only
-			 * pick what to say and the draw below says it. A row that paints its own widget
-			 * (the sliders) or has nothing to show leaves value NULL. */
+			/* Rows select value text here; custom widgets and empty values leave it NULL. */
 			const char *value = NULL;
 
 			const int *const intSetting = menuItemIntSetting(menuItem->id);
@@ -1329,9 +1307,7 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			case MENU_ITEM_SHIP_SENS:
 			{
-				// Same bar as the volume sliders; middle == the classic 1:1 feel. The marker slot
-				// goes bright once the fill actually reaches it; compare the drawn bar counts
-				// (amt vs mark), not the raw value, so it flips exactly on the middle bar.
+				// The middle marker is the classic 1:1 feel; compare drawn bar counts.
 				const int amt = (ship_sensitivity + 4) / 8;
 				const int mark = (SHIP_SENS_DEFAULT + 4) / 8;
 				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, 174, amt, 2, 10);
@@ -1426,10 +1402,7 @@ static bool runOptionsMenu(MenuId startMenu)
 
 				const bool selected = i == pickerSelectedIndex;
 
-				// Algorithm scalers are unavailable while Sub-pixel is on (the hi
-				// path bypasses them in-game); gray them out. FluidSynth is likewise
-				// unusable with no SoundFont to load (see loudness.c), and Custom until
-				// the player has a set of their own for it to restore.
+				// Gray out bypassed scalers, unavailable FluidSynth, and an unset Custom preset.
 				const bool grayed = (currentPicker == MENU_ITEM_SCALER
 				                     && render_supersample != 1 && !scaler_is_plain((uint)i))
 				                 || (currentPicker == MENU_ITEM_MUSIC_DEVICE
@@ -1508,9 +1481,7 @@ static bool runOptionsMenu(MenuId startMenu)
 									action = true;
 								}
 
-								// Act on menu item via value. Only the sliders read *where* in the
-								// column the click landed; for every other row either column is
-								// the same press, so they fall through to the shared action.
+								// Only sliders care where the value column was clicked.
 								else if (lastmouse_x >= xMenuItemValue && lastmouse_x < xMenuItemValue + wMenuItemValue)
 								{
 									switch (menuItems[*selectedMenuItemIndex].id)
@@ -1664,9 +1635,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				const MenuItem *const selectedMenuItem = &menuItems[*selectedMenuItemIndex];
 				const MenuItemId selectedMenuItemId = selectedMenuItem->id;
 
-				/* Opening a submenu, flipping a flag and raising a picker are the three
-				 * things almost every row does, and each is the same work whichever row
-				 * asks for it. Only the rows that do something *else* need a case below. */
+				/* Handle common submenu, toggle, and picker actions before row-specific cases. */
 				bool *const boolSetting = menuItemBoolSetting(selectedMenuItemId);
 				const int *const intSetting = menuItemIntSetting(selectedMenuItemId);
 
@@ -2055,9 +2024,7 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			if (currentMenu == MENU_NONE)
 			{
-				// Persist every setting changed in this menu now (Show FPS, vsync, volumes,
-				// supersample, ...). On Switch the app is normally closed via the HOME menu,
-				// which never runs the clean-exit save, so otherwise the changes never stick.
+				// Save menu changes immediately because console HOME exits may skip normal shutdown.
 				save_opentyrian_config();
 
 				fade_black(10);
@@ -2245,9 +2212,7 @@ static bool runOptionsMenu(MenuId startMenu)
 }
 
 #ifdef _MSC_VER
-// C4702 (unreachable code): JE_tyrianHalt() exits, so main()'s trailing return never runs. It is
-// kept for the compilers that don't infer that. Code-generation warnings use the state in effect at
-// the closing brace, so this has to sit outside the body to have any effect.
+// Some compilers do not infer that JE_tyrianHalt exits; suppress C4702 around main's end.
 #pragma warning(push)
 #pragma warning(disable: 4702)
 #endif
@@ -2264,9 +2229,7 @@ int main(int argc, char *argv[])
 
 	mt_srand(time(NULL));
 
-	// opentyrian_version already leads with the fork name ("Engaged vX.Y.Z"),
-	// so pair it with the base game name here; using opentyrian_str would
-	// print ">> OpenTyrian 2000 Engaged Engaged vX.Y.Z <<".
+	// opentyrian_version already includes "Engaged", so pair it with the base game name.
 	printf("\nWelcome to... >> OpenTyrian 2000 %s <<\n\n", opentyrian_version);
 
 	printf("Copyright (C) 2022 The OpenTyrian Development Team\n");
@@ -2283,9 +2246,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	// Note for this reorganization:
-	// Tyrian 2000 requires help text to be loaded before the configuration,
-	// because the default high score names are stored in help text
+	// Load help text first because it supplies the default high-score names.
 
 	JE_paramCheck(argc, argv);
 
@@ -2299,14 +2260,10 @@ int main(int argc, char *argv[])
 
 	JE_loadConfiguration();
 
-	// Sweep the net logs older builds left behind, now that the saved Network Log setting is in
-	// effect (off means untouched). This run's own log names itself after the launch time and is
-	// created only if something gets written to it.
+	// Prune old network logs only when saved logging is enabled.
 	crashlog_netlog_begin_session();
 
-	// A saved Christmas choice (Extra menu, xmasMode 0/1) overrides the date
-	// auto-detection above and suppresses the "Activate Christmas?" prompt. Command line
-	// still wins: skipped if an arg already forced a choice (override_xmas set).
+	// Command-line Christmas mode beats the saved choice, which beats date detection.
 	if (!override_xmas && xmasMode >= 0)
 	{
 		xmas = (xmasMode != 0);
@@ -2420,9 +2377,7 @@ int main(int argc, char *argv[])
 	    && qa_net_game_type < NETWORK_GAME_TYPE_COUNT)
 	{
 		network_game_type = (NetworkGameType)qa_net_game_type;
-		// SuperTyrian has no difficulty ladder: the field carries its variant, and the lobby only
-		// ever leaves one of the two in it. A test peer has no lobby, so pin the same one here as
-		// the lobby would, or the pair flies a rung the mode cannot be started on.
+		// Pin SuperTyrian's variant because it has no difficulty ladder.
 		if (network_game_type == NETWORK_GAME_SUPERTYRIAN)
 			network_host_difficulty = qa_net_scrollock ? DIFFICULTY_SUICIDE : DIFFICULTY_LORD_OF_GAME;
 		if (network_game_type == NETWORK_GAME_ENDLESS)
@@ -2538,25 +2493,18 @@ int main(int argc, char *argv[])
 	for (; ; )
 	{
 #ifdef WITH_NETWORK
-		// Landing pad for a network teardown mid-game (peer quit, connection
-		// lost, desync halt): network_tyrian_halt longjmps here after cleaning
-		// the session up, and this iteration proceeds to the title screen like
-		// any finished game.
+		// Mid-game network teardown returns here after cleaning the session.
 		setjmp(network_bailout_env);
 		network_bailout_armed = true;
 
-		// The teardown skips the level loop's own exit, so clear the rollback
-		// mode flags here: a re-simulation pass left silent would suppress every
-		// sprite draw from the title screen on.
+		// Teardown bypasses the level exit, so clear rollback mode flags here.
 		rollback_level_end();
 #endif
 
 		crashlog_set_phase("title / main menu");
 
 #ifdef WITH_NETWORK
-		// A lobby session that has run its course: close the socket and hand the joiner its own
-		// settings back, so the title screen behaves like a normal single-player one and a second
-		// session can be started cleanly.
+		// Restore local settings after closing a completed lobby session.
 		if (isNetworkGame && network_from_lobby && !qa_net_lobby_run())
 		{
 			network_shutdown();

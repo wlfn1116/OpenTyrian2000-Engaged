@@ -1,21 +1,13 @@
-# Line endings.
-#
-# The index has always been LF while a Windows working tree checks out CRLF, with nothing here to
-# reconcile the two and core.autocrlf unset. Staging any file as-is therefore wrapped a whole-file
-# rewrite around whatever actually changed, and `git diff` had to be read with --ignore-all-space
-# to see the real work. Normalizing on commit settles it once, whatever a given checkout is
-# configured to do.
+# Keep text files LF in the index and working tree.
 * text=auto eol=lf
 
-# Visual Studio rewrites these with CRLF the moment it touches them. Keeping them CRLF in the
-# index is what stops every solution edit reading as a full-file diff.
+# Visual Studio rewrites these files as CRLF.
 *.sln              text eol=crlf
 *.rc               text eol=crlf
 *.props            text eol=crlf
 *.props.template   text eol=crlf
 
-# Byte-exact, and not text at all. The save-migration corpus in testing/fixtures is compared as
-# bytes by the suite; left to the content heuristic one of these eventually guesses wrong.
+# Byte-exact assets and fixtures.
 *.sav   binary
 *.lib   binary
 *.dll   binary
@@ -23,8 +15,7 @@
 *.jpg   binary
 *.ico   binary
 
-# The tracked data dump (tools/dump/dump_data.py). Its decoded output is text,
-# but the files it copies verbatim are not, and neither are the audio it writes.
+# Binary files copied into the tracked data dumps.
 *.wav   binary
 *.lds   binary
 *.exe   binary

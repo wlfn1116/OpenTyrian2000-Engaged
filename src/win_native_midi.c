@@ -13,9 +13,7 @@
 
 #pragma comment(lib, "winmm.lib")
 
-// One playable MIDI message at an absolute time. Meta events are consumed during
-// parsing (tempo feeds the time map, the rest are dropped); only channel-voice
-// messages and SysEx reach the synth.
+// Timed playable MIDI event; parsing consumes tempo and other metadata.
 typedef struct
 {
 	Uint64 time_us;   // absolute time from song start, microseconds
@@ -127,9 +125,7 @@ static void send_event(const WnmEvent *e)
 	send_short(e->status, e->d1, e->d2);
 }
 
-// Restart at the loop target with the exact channel state the song had there. Reset every channel,
-// then replay each state event before the target (in order, notes skipped) so every loop begins
-// identically, like OPL.
+// Rebuild channel state before the loop target, skipping notes, so each loop starts identically.
 static void restore_loop_state(void)
 {
 	all_notes_off();
@@ -189,9 +185,7 @@ static int SDLCALL wnm_thread(void *userdata)
 			SDL_AtomicSet(&g_vol_dirty, 0);
 		}
 
-		// A fade request ramps g_fade_scale 1 -> 0 over the requested time, then
-		// ends the song exactly like a finished one-shot (so callers waiting on
-		// wnm_playing()/the finish hook proceed the same way they do for FluidSynth).
+		// A completed fade ends the song through the normal one-shot path.
 		const int req_fade = SDL_AtomicGet(&g_fade_ms);
 		if (req_fade > 0)
 		{

@@ -71,9 +71,7 @@ bool enemy_armed_flash_shows(JE_byte linknum);
 /* Return the body-flash shade lift for the remaining presented frames. */
 Uint8 enemy_armed_flash_lift(Uint32 left);
 
-/* Re-latch the armor an enemy counts as starting with: its health bar's denominator, and the
- * full-HP figure the Executioner perk measures a wound against. Call after every direct write to
- * armorleft; damage must not call it. */
+/* Update an enemy's full-armour baseline after direct armour writes, never damage. */
 void enemy_note_full_armor(struct JE_SingleEnemyType *enemy);
 
 // Route every kill through this function so tallies, bounties, and reactive effects agree.
@@ -84,9 +82,7 @@ void enemy_logical_death(unsigned int i, int killer);
  * centered on the visible hull for a linked or 2x2 body. In `i`'s bank ex space. */
 void enemy_loot_anchor(unsigned int i, JE_integer *x, JE_integer *y);
 
-/* Take the hull `slot` belongs to down as a killing shot does: every linked part pays out to
- * `payee`, dies credited to `killer` and explodes, a part with edlevel -1 transforms instead,
- * and a link-254 kill fires the level's jump. */
+/* Kill a linked hull through the normal payout, transform, explosion, and jump paths. */
 void enemy_kill_group(unsigned int slot, int payee, int killer);
 
 /* True for an edlevel -1 transformed part that no longer participates in combat. */
@@ -101,9 +97,7 @@ void endlessScanSceneryLinks(void);
 /* True if Endless homing may steer this body. Call endlessScanSceneryLinks first. */
 bool endlessHomingChaser(unsigned int slot);
 
-/* Frames presented since the game started, the clock a cosmetic paces itself on. Rollback runs
- * several simulation passes against one presented frame, so a cadence counted in sim ticks stutters.
- * Outside the rollback registry, and never a simulation input. */
+/* Presented-frame clock for cosmetics; never simulation or rollback state. */
 Uint32 rl_presented_frames(void);
 
 extern float debug_interp_alpha;  // last presented interpolation fraction
@@ -131,9 +125,7 @@ void tyrian2_deinit(void);
 void JE_deriveStarShowSpecial(void);
 #ifdef WITH_NETWORK
 void networkStartScreen(void);
-/* Steps the host adds to the lobby's difficulty and the joiner subtracts again, so both land on
- * the same initialDifficulty. Public so the unit suite can pin the two halves against each other
- * for every game type; a mismatch would run the two machines on different rules. */
+/* Encode and decode the host's lobby difficulty offset. */
 int networkDifficultyBump(void);
 /* Equip one ship for the Super Arcade run it chose (1..SA). Both machines call it for both
  * ships, each from the pair of picks the announcement protocol settled. */
@@ -191,9 +183,7 @@ int  boss_bar_hud_left_shift(int hudRightX);  // px to shift LEFT for a right-si
 bool boss_bar_hud_needs_up_shift(void);       // true while a BOTTOM horizontal bar is shown
 int  boss_bar_bottom_band_top(void);          // topmost row that bar covers, or INT_MAX if none
 
-// Inclusive first and last row a side-hugging vertical boss bar covers, measured from the corner
-// HUD drawn on that side this tick: three blank rows above the frame and one below, clamped to
-// the WARNING strips. Public for the unit suite's clearance checks.
+// Inclusive vertical boss-bar bounds after HUD and warning-strip clearance.
 void boss_bar_vertical_span(bool onLeft, int *top, int *bot);
 
 // Experimental variable-timestep ship. Its mouse scale matches classic movement.

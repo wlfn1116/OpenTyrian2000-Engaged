@@ -6,9 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Create the synth + audio driver and load `soundfont` (may be "" -> silent synth).
-// `sample_rate` <= 0 defaults to 44100. Returns false if the synth or audio driver
-// can't be created (caller then falls back to OPL).
+// Start FluidSynth; empty soundfonts are silent and nonpositive sample rates use 44100 Hz.
 bool fm_init(const char *soundfont, int sample_rate);
 void fm_quit(void);   // stop playback and tear down synth + driver
 

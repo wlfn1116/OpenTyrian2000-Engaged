@@ -85,9 +85,7 @@ EndlessDeathChoice;
 
 EndlessDeathChoice JE_endlessDeathMenu(void);
 void JE_debugMenu(bool center);
-// Rebuild what a loadout write invalidates (ship graphics, hit boxes, shield ceiling, sidekick
-// pods), keeping every player's live armor and shield. For the network peer-apply path; the
-// menu's own edits go through a private variant that also re-armors a swapped hull.
+// Rebuild loadout-derived state while preserving live armour and shield.
 void debugLoadoutRefresh(bool overHud);
 bool JE_extraMenu(void);
 void JE_inGameHelp(void);
@@ -148,9 +146,7 @@ int hud_bottom_band_top(void);    // topmost row the scores/FPS claim anywhere a
 int hud_top_left_right_edge(void);
 int hud_top_right_left_edge(void);
 
-// Vertical extent of the same corner clusters, for the side-hugging vertical boss bars: the
-// bottom row of each top cluster, -1 where that corner draws nothing, and the top row of each
-// bottom corner's score and superbomb rows.
+// Vertical HUD bounds used by side-hugging boss bars; -1 means an empty top corner.
 int hud_top_left_bottom_edge(void);
 int hud_top_right_bottom_edge(void);
 int hud_bottom_left_top_edge(void);
@@ -164,9 +160,7 @@ int hud_bottom_right_top_edge(void);
 #define HUD_SPECIAL_LIGHT_W  12  // one sprite2 column...
 #define HUD_SPECIAL_LIGHT_H  14
 #define HUD_SPECIAL_LIGHT_Y   8  // ...centred against the icon's rows
-// A shaded TINY_FONT line at y inks rows y-1..y+8. The rise leaves one blank row between
-// the name and the lives icons; Y_SPECIAL puts the name one blank row under the special
-// icon (rows 1..28).
+// Tiny-font baselines leave one blank row around adjacent HUD elements.
 #define HUD_LIVES_NAME_RISE  10  // rows the name label sits above the lives row
 #define HUD_LIVES_Y          18
 #define HUD_LIVES_Y_SPECIAL  41  // pushed below the icon when this ship holds a special
@@ -184,9 +178,7 @@ void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, boo
 // Drop the meter's carried-over state; level setup calls it so a level cannot open on the previous
 // level's cooldown (which would read as the special arming, and pop).
 void hud_special_light_reset(void);
-// Open a meter phase for ship `p`, which has just equipped a special: the lockout it arrives with
-// is measured against itself rather than the recharge it replaced. Ignored when that ship has no
-// block on screen.
+// Begin a meter phase for a newly equipped special.
 void hud_special_light_rearm(uint p);
 // Repaint the ready light for one displayed frame: the meter at `alpha` between the previous and
 // current tick's fill, at `scale` into the supersampled playfield, over what the residual re-applied.

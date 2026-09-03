@@ -59,9 +59,7 @@ ifeq ($(WITH_NETWORK), true)
     EXTRA_CPPFLAGS += -DWITH_NETWORK
 endif
 
-# The version string itself comes from src/opentyrian_version.h; the short
-# commit id is baked in separately for the title screen's commit line. The
-# touch forces opentyr.o to rebuild so a new commit always lands in the binary.
+# Rebuild opentyr.o so the title screen always gets the current short commit id.
 OPENTYRIAN_COMMIT := $(shell $(VCS_IDREV) 2>/dev/null && \
                              touch src/opentyrian_version.h)
 ifneq ($(OPENTYRIAN_COMMIT), )
@@ -98,9 +96,7 @@ ALL_CPPFLAGS = -DTARGET_$(PLATFORM) \
                $(EXTRA_CPPFLAGS) \
                $(SDL_CPPFLAGS) \
                $(CPPFLAGS)
-# These correctness flags remain outside user-overridable CFLAGS. The engine
-# assumes signed char, and disabling fused operations keeps netplay float results
-# consistent with MSVC /fp:precise.
+# Required engine assumptions: signed char and unfused floats for netplay parity.
 ALL_CFLAGS = -std=iso9899:1999 \
              -fsigned-char \
              -ffp-contract=off \

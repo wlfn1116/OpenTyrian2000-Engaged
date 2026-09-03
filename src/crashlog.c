@@ -316,9 +316,7 @@ static void write_header(FILE *f, const char *event)
 	fprintf(f, "================================================================\n\n");
 }
 
-// Process-level context under the header: game phase, session uptime, which thread faulted (main
-// vs. a background/audio thread), and memory use. `faultTid` is the current thread on the
-// crash/CRT-fatal paths, or the stalled main thread for the hang watchdog.
+// Report phase, uptime, memory, and the faulting or stalled thread.
 static void write_process_info(FILE *f, DWORD faultTid)
 {
 	fprintf(f, "Phase:       %s\n", crashlog_get_phase() ? crashlog_get_phase() : "?");
@@ -415,9 +413,7 @@ static void write_registers(FILE *f, const CONTEXT *c)
 	fprintf(f, "\n");
 }
 
-// Walk `thr`'s call stack (using `ctx` as the starting register state) and write a
-// symbolised trace to `f`. The caller owns SymInitialize/SymCleanup so this can run inside
-// either the crash handler or the hang watchdog. Mutates `ctx` (StackWalk64 advances it).
+// Write thr's stack from ctx; the caller owns symbol setup and ctx is advanced.
 static void write_stack_trace(FILE *f, HANDLE proc, HANDLE thr, CONTEXT *ctx)
 {
 	STACKFRAME64 frame;
@@ -478,9 +474,7 @@ static void write_stack_trace(FILE *f, HANDLE proc, HANDLE thr, CONTEXT *ctx)
 	}
 }
 
-// Walk the calling thread without dbghelp: loading symbols from a running game stalls the frame
-// long enough to lose a network link. The RVAs match the symbolised form and decode against the
-// build's .pdb afterwards.
+// Capture RVAs without loading symbols, which can stall a live network session.
 static void write_stack_trace_raw(FILE *f)
 {
 	void *frames[48];
@@ -634,9 +628,7 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep)
 	return EXCEPTION_EXECUTE_HANDLER;  // let the process terminate normally
 }
 
-// CRT-level fatal errors.
-// These terminate the process without raising an SEH exception, so crash_handler never sees
-// them. Each hook captures the current context and writes the same rich report, then exits.
+// CRT fatal hooks write a report because these failures bypass the SEH handler.
 
 // Capture the current thread and write a crash or net report. False means reporting was re-entered.
 static bool write_captured_report_ex(bool net, const char *event, const char *detail)
@@ -778,9 +770,7 @@ void install_crash_handler(void)
 	_set_purecall_handler(on_purecall);
 }
 
-// Hang watchdog.
-// A background thread logs the main thread's stack when the event heartbeat stalls.
-// It resumes the thread and rearms after progress; it never terminates the process.
+// The watchdog logs a stalled main thread, resumes it, and rearms after progress.
 
 static volatile LONG s_heartbeat = 0;   // bumped by the main loop; frozen while it's stuck
 static HANDLE        s_mainThread = NULL;

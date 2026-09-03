@@ -16,9 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// SceNet wants a memory pool it keeps for its own lifetime. 1 MiB is generous for the two
-// UDP sockets this game ever has open at once, and it is never freed: see the header note
-// on why the stack stays up once raised.
+// SceNet keeps this 1 MiB pool for the lifetime of its two UDP sockets.
 #define VITA_NET_POOL_SIZE  (1 * 1024 * 1024)
 
 static int net_refcount = 0;

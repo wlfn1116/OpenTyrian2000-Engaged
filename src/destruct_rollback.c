@@ -264,9 +264,7 @@ void drb_session_end(void)
 	resim_silent = false;
 }
 
-/* Everything a fresh timeline needs, shared by the round start and a completed desync recovery.
- * A recovery is a round start as far as frames, histories and the epoch go; only the round's
- * recovery budget survives it. */
+/* Reset timeline state while preserving the round's recovery budget. */
 static void drb_reset_core(void)
 {
 	memset(local_hist, 0, sizeof(local_hist));
@@ -329,9 +327,7 @@ void drb_record_local(Uint8 actions, Uint8 controls)
 	s->tag = drb_cur;
 }
 
-/* Repeat the newest record we hold, keeping only the bits a player can hold down.  The unit,
- * weapon-up and weapon-down actions are edge triggered (destruct.c consumes the key as it reads
- * it), so predicting one would fire an action the peer never took. */
+/* Predict held inputs only; unit and weapon changes are edge-triggered. */
 static void drb_predict_remote(Uint32 frame, DrbInput *out)
 {
 	memset(out, 0, sizeof(*out));
@@ -386,9 +382,7 @@ static Uint32 drb_scan_mispredict(void)
 
 			if (used->actions != got->actions)
 			{
-				/* Not converging: rolling back to f keeps landing on the same mismatch.  Accept
-				 * the peer's record as consumed and move on; a divergence the canary reports
-				 * beats a battle that never completes another frame. */
+				/* Stop retrying a correction that cannot converge. */
 				if (f != resim_last_K || resim_repeat <= DRB_RESIM_GIVE_UP)
 					return f;
 
@@ -493,9 +487,7 @@ void drb_handle_packet(const Uint8 *data, int len)
 		++drb_diag.refused_window;
 		return;
 	}
-	/* A short round leaves frame numbers small enough to pass that test, which the epoch catches
-	 * instead.  Only strictly older is refused: a peer one round ahead is the machine that
-	 * regenerated first, and refusing it would turn a start skew into a mutual stall. */
+	/* Accept a peer one epoch ahead; it may have finished the round transition first. */
 	if ((Sint16)(SDLNet_Read16(&data[12]) - drb_epoch) < 0)
 	{
 		++drb_diag.refused_epoch;
@@ -656,18 +648,14 @@ static DrbStep drb_begin_resim(Uint32 K)
 		drb_diag.deepest = high - K + 1;
 
 	resim_active = true;
-	/* `high`, not drb_cur: a second correction arriving mid-re-simulation must not shorten the
-	 * pass to the frame being replayed.  A dropped tail turns those frames back into live passes,
-	 * and a live pass re-samples input over records already sent to the peer. */
+	/* Preserve the original replay ceiling when another correction arrives mid-pass. */
 	resim_target = high;
 	drb_cur = K;
 	resim_silent = (K < resim_target);
 	return DRB_STEP_RESIM;
 }
 
-/* Pump the world while stalled: OS events, inbound packets, a periodic resend in case the peer is
- * waiting on a lost packet, and the overlay that says why the battle stopped.  True means an
- * inbound desync recovery reset the timeline underneath the caller's wait. */
+/* Service events and packets while stalled. True means recovery reset the timeline. */
 static bool drb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *why)
 {
 	watchdog_heartbeat();
@@ -758,9 +746,7 @@ static void drb_process_controls(void)
 	}
 }
 
-/* Desync recovery engine.  The battle snapshot carries no relocatable pointers (destruct.c re-pins
- * the three it holds on every restore), so the host's blob is adopted as it arrives; see
- * doc/notes.md#rollback for the size guard. */
+/* Destruct snapshots have no relocatable pointers; destruct.c re-pins its live pointers. */
 
 /* FNV-1a over the compressed stream: guards the assembly logic, not the link (UDP already
  * checksums each datagram). */
@@ -854,9 +840,7 @@ static void drb_resync_send_nak(Uint16 gen, Uint16 reason)
 	network_send(DRB_RS_HDR);
 }
 
-/* The joiner's "I am on the new timeline".  The host resets onto it only when this arrives:
- * transport acks say the bytes were received, and the joiner acknowledges on receipt, before it has
- * parsed a single one of them. */
+/* This application ack confirms that the joiner adopted the new timeline. */
 static void drb_resync_send_ack(Uint16 gen)
 {
 	Uint8 *data = packet_out_temp->data;
@@ -942,9 +926,7 @@ static int drb_resync_send_once(void)
 				{
 					if (reason == DRB_NAK_FATAL)
 					{
-						/* No stream we can build will ever pass its check.  Retire recovery on
-						 * this side too, so the remaining attempts are not spent re-sending the
-						 * same refused bytes at a peer that has stopped listening for them. */
+						/* The peer rejected this layout; retire recovery for the session. */
 						resync_layout_bad = true;
 						fail = "the joiner refused permanently (its abort entry names why); "
 						       "recovery disabled for this session";
@@ -1229,9 +1211,7 @@ static bool drb_resync_receive(void)
 	{
 		resync_gen = gen;
 
-		/* Before the reset, and before we present: the host is blocked waiting for exactly this,
-		 * and it is the only evidence it will ever get that the bytes were taken rather than
-		 * merely delivered. */
+		/* Confirm adoption before resetting and presenting. */
 		drb_resync_send_ack(gen);
 
 		char detail[192];
@@ -1427,18 +1407,14 @@ DrbStep drb_driver(bool roundOver)
 		return pending_quit ? DRB_STEP_QUIT : DRB_STEP_NEWMAP;
 	}
 
-	/* Bound prediction depth and outstanding unacked history before advancing.  Signed
-	 * differences throughout: after a round fade the peer can legitimately be ahead of us, with
-	 * remote_contig and peer_acked past our own counter. */
+	/* Frame differences are signed because the peer may lead after a round fade. */
 	{
 		const Uint32 wait_start = SDL_GetTicks();
 		bool stall_reported = false;
 
 		while ((Sint64)(drb_cur + 1) - (Sint64)remote_contig > ROLLBACK_MAX_PREDICT
 		       || (Sint64)(drb_cur + 1) - (Sint64)peer_acked > DRB_REDUNDANCY - 1
-		       /* Start-of-round barrier: until the peer's first record arrives it may still be
-		        * fading in the previous round, and running a full prediction window against a
-		        * peer that has produced nothing guarantees an opening rollback burst. */
+		       /* Wait for the peer's first record before predicting the new round. */
 		       || (remote_newest == 0 && drb_cur >= 3))
 		{
 			if (drb_stall_pump(wait_start, &stall_reported, "peer too far behind"))
@@ -1512,9 +1488,7 @@ void drb_selftest_resync_bytes(size_t *rawBytes, size_t *compressedBytes)
 	*compressedBytes = selftest_probe_comp;
 }
 
-/* Take the live battle through the recovery's serialization and back.  A terrain buffer that has
- * been shot at is the realistic case for both halves: whether the round trip is exact, and what a
- * transfer actually costs once the zero-run coder has seen real craters. */
+/* Round-trip a live, damaged battle through recovery serialization. */
 static void drb_selftest_resync_probe(void)
 {
 	selftest_probe_done = true;

@@ -27,9 +27,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-// For the handful of functions that exit() rather than return. Purely an annotation; it generates
-// no code. Without it, callers appear able to continue after a failed
-// allocation looks to analysis like a null dereference on the next line.
+// Annotation for functions that terminate instead of returning.
 #if defined(_MSC_VER)
 #define OT_NORETURN __declspec(noreturn)
 #elif defined(__GNUC__)

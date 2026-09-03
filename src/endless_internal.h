@@ -82,9 +82,7 @@ extern int     endlessRecentCount;
 // Random safe level not present in the recent-level ring.
 bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
-/* The Shuffle rules' draw: the whole safe pool shuffled into a bag, taken in order, refilled with
- * a fresh shuffle once empty. Uses a stream of its own, so a shuffled chart consumes no structural
- * RNG and cannot shift the draws around it. See doc/notes.md#rng-and-level-shuffle. */
+/* Draw from a dedicated deterministic Shuffle bag. */
 bool endlessShuffleSafeLevel(int position, int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
 extern int endlessShuffleNext;        // pieces the run has drawn; the next hand starts here
@@ -103,9 +101,7 @@ void endlessResetKillDedup(void);   // clear the multi-part kill dedup guard at 
 // Per-zone half of the custom-weapon tracking behind endlessRunUsedCustom.
 void endlessResetCustomWeaponZone(void);
 
-// Record storage. The per-difficulty pair is indexed [chart rule][crew size][EndlessRunMode]
-// [difficulty slot]; readers outside the module go through endlessBestZoneForDifficulty and
-// endlessRecordDiffCustomMark.
+// Records are indexed by chart rule, crew size, run mode, and difficulty.
 extern int  endlessBestZoneDiff[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
 extern bool endlessBestZoneDiffCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
 

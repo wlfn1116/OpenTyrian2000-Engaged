@@ -157,15 +157,10 @@ void blit_sprite2_blend_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, 
  * existing opaque blit. */
 void blit_sprite2_alpha(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int bank, Uint8 opacity);
 void blit_sprite2_alpha_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int bank, Uint8 opacity);
-// A sub-row window of the sprite only, brightened `bright` steps toward its own palette bank top,
-// drawn at `scale` (x,y stay 1x). The window is in sub-rows so its edge can sit between two sprite
-// rows. Records nothing -- HUD overlays only, carried by the residual (see sprite.c).
+// Draw a brightened sub-row window at scale; HUD-only and not recorded for replay.
 void blit_sprite2_rows_bright_scaled(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int sub_first, int sub_last, int bright, int scale);
 
-// Supersampled (render-list replay) variants: x,y are HI-buffer coordinates; every
-// source pixel is drawn as a scale x scale block, fully clipped on all edges. These
-// never record into the render list. The op selects the pixel math, matching the
-// corresponding 1x blitter exactly.
+// Supersampled replay blitters use hi-buffer coordinates and do not record themselves.
 typedef enum
 {
 	BLIT2_COPY = 0,   // blit_sprite2

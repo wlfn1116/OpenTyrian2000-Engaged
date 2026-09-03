@@ -24,16 +24,12 @@
 extern bool isNetworkGame;
 void network_write_diagnostics(FILE *f);
 
-// Current-phase breadcrumb.
-// Game code sets this at coarse phase boundaries; the crash report prints it. Plain pointer
-// store/read, `volatile` so a fault handler on another thread observes the latest value.
+// Volatile phase breadcrumb read by fault handlers on other threads.
 static const char *volatile g_phase = "startup";
 void crashlog_set_phase(const char *phase) { if (phase != NULL) g_phase = phase; }
 const char *crashlog_get_phase(void) { return g_phase; }
 
-// Hang-watchdog threshold.
-// Lives here (portable TU) so the debug menu and config can read/write it on any platform; only
-// the Windows watchdog thread (crashlog.c) actually consumes it, re-reading it every second.
+// Portable watchdog setting consumed by the Windows watchdog thread.
 static int g_hangTimeout = CRASHLOG_HANG_TIMEOUT_DEFAULT;
 void crashlog_set_hang_timeout(int seconds)
 {
@@ -43,9 +39,7 @@ void crashlog_set_hang_timeout(int seconds)
 }
 int crashlog_get_hang_timeout(void) { return g_hangTimeout; }
 
-// Safe item-name lookups.
-// Item tables are empty until JE_loadItemDat() and ids can be garbage, so each helper name-checks
-// range + slot, else "?". trim_name() uses a rotating buffer for multi-name fprintf calls.
+// Fault-safe item names use "?" before data load or for invalid ids.
 static const char *trim_name(const char *s)
 {
 	static char buf[4][32];
@@ -159,9 +153,7 @@ static void write_player(FILE *f, int p)
 		fprintf(f, "  SuperArcade:  %d\n", (int)it->super_arcade_mode);
 }
 
-// Decode the endless active-mods bitmask (ENDLESS_MOD_*, endless.h) into readable names.
-// A local table keeps this fault-safe (no call into endless.c) and lists every set bit,
-// flagging any leftover unknown bits so a newly-added mod is still visible in the log.
+// Decode Endless modifiers locally and report unknown bits.
 static void write_endless_mods(FILE *f, Uint64 mods)
 {
 	static const struct { Uint64 bit; const char *name; } tbl[] = {
@@ -248,9 +240,7 @@ void crashlog_write_game_state(FILE *f)
 	fprintf(f, "  scroll: stopBackgrounds=%d(num=%d) forceEvents=%d  parkedAbove=%u stallTicks=%u\n",
 	        stopBackgrounds, (int)stopBackgroundNum, forceEvents,
 	        (unsigned)enemyParkedAbove, (unsigned)mapStopStallTicks);
-	// The clamp on every enemy-body contact hit (JE_playerMovement): 2 from level start, and only
-	// a script's change-difficulty event moves it. A 0 here means nothing can ram a ship for the
-	// rest of the level, which is what "collisions stopped hurting" looks like from the cockpit.
+	// Report the contact-damage clamp because zero disables enemy ramming damage.
 	fprintf(f, "  damageRate=%u\n", (unsigned)damageRate);
 	if (levelTimer)
 		fprintf(f, "  levelTimer countdown=%u\n", (unsigned)levelTimerCountdown);
@@ -266,9 +256,7 @@ void crashlog_write_game_state(FILE *f)
 	        c.explosions, MAX_EXPLOSIONS, c.repExplosions, MAX_REPEATING_EXPLOSIONS);
 	fprintf(f, "  Sparks:       %d live (cap %d)\n", c.sparks, MAX_SUPERPIXELS);
 
-	// Live enemies, including map-stop blockers.
-	// Read only static enemy arrays. "stuck-above" matches the watchdog's position
-	// test; "orphaned" also lacks a reachable member and is safe to cull.
+	// Read live enemies from static arrays; flag stuck and orphaned map-stop blockers.
 	{
 		int shown = 0;
 		fprintf(f, "\nLive enemies (idx: ex,ey exc,eyc excc,eycc link armor type edmg):\n");
@@ -360,9 +348,7 @@ void crashlog_write_game_state(FILE *f)
 		}
 	}
 
-	// Endless effects in campaign debug mode.
-	// Without this a crash under campaign mods reads as a plain campaign crash, and the mod bits,
-	// perk stacks and pinned levers that actually caused it are invisible.
+	// Include campaign debug modifiers, perks, and pinned settings in the report.
 	if (!endlessMode && endlessCampaignMods)
 	{
 		fprintf(f, "\nEndless effects (debug, in a normal game):\n");

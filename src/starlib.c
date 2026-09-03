@@ -59,9 +59,7 @@ static JE_shortint speedChange;
 
 static JE_byte pColor;
 
-// Fill a scale x scale block at hi-buffer pixel (hx, hy) with `col`, clipped to
-// the surface. Used to draw supersampled stars: each classic 1-pixel cell of the
-// star cross becomes an NxN block so the star keeps its on-screen size.
+// Draw one clipped supersampled star cell as a scale-by-scale block.
 static void star_fill_block(Uint8 *pixels, int pitch, int w, int h, int hx, int hy, int n, Uint8 col)
 {
 	int x0 = hx < 0 ? 0 : hx;
@@ -140,9 +138,7 @@ void JE_starlib_main(float step, SDL_Surface *target, int scale)  // step = frac
 
 	for (stars = star, i = starlib_MAX_STARS; i > 0; stars++, i--)
 	{
-		/* We don't want trails in our star field.  Erase the old graphic.
-		 * (Supersampled frames are drawn into a buffer the caller clears each
-		 * frame, so there is nothing to erase per-star.) */
+		/* Erase 1x stars here; the caller clears supersampled frames. */
 		if (scale == 1)
 		{
 			off = (stars->lastX) + (stars->lastY) * vga_width;

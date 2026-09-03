@@ -57,9 +57,7 @@ CustomWeaponSlot customWeaponLib[CUSTOM_WEAPON_LIB_MAX];
 int              customWeaponLibCount    = 0;
 int              customWeaponCurrentSlot = 0;
 
-// inline so the [lo, hi] guarantee is visible at the call site: nearly every array index and loop
-// bound in this file comes from here, and callers rely on it (baseMulti >= 1 is what keeps the
-// `i % baseMulti` fan-out below from dividing by zero).
+// Most indexes in this file pass through these clamps; baseMulti must stay nonzero.
 static inline int clampi(int v, int lo, int hi)
 {
 	return (v < lo) ? lo : (v > hi) ? hi : v;
@@ -138,9 +136,7 @@ int customBulletMaxPower(int presetIdx)
 	return clampi(customBulletPreset[presetIdx].maxPower, 1, CUSTOM_POWER_LEVELS);
 }
 
-// Keep a raw design within the engine's hard limits (bullet count, sound index).
-// Imported stock weapons are already valid; this mainly
-// guards hand-edited, randomized, or config-loaded designs.
+// Clamp imported, generated, and hand-edited designs to engine limits.
 static void sanitizeRawWeapon(JE_WeaponType *w)
 {
 	w->multi = (JE_byte)clampi(w->multi, 1, CUSTOM_BULLETS_MAX);
@@ -216,9 +212,7 @@ static int resolveSourceWeapon(int presetIdx, int mode, int basePower)
 		return wn;
 	}
 
-	// Sidekick source: a charge sidekick's escalating shots sit at wpnum + 0..pwr, and
-	// maxPower carries the shot count (pwr + 1). basePower selects the stage (1 =
-	// uncharged). A non-charge sidekick has maxPower 1, so this is just wpnum.
+	// Charge sidekicks use wpnum + stage; maxPower is the number of stages.
 	const int stages = clampi(bp->maxPower, 1, CUSTOM_POWER_LEVELS);
 	return bp->sourceWeapon + clampi(basePower, 1, stages) - 1;
 }
@@ -316,9 +310,7 @@ void customWeaponImportAllLevels(int presetIdx)
 	customWeaponName[sizeof(customWeaponName) - 1] = '\0';
 }
 
-// Append src's bullet segments onto dst, up to CUSTOM_BULLETS_MAX, while keeping volley-wide fields.
-// dst retains its fire rate, homing, spiral,
-// sound, trail, etc.; only the per-bullet shape/motion arrays grow. Bullets past the cap are dropped.
+// Append bullet segments without changing dst's volley-wide fields.
 static void combineWeaponInto(JE_WeaponType *dst, const JE_WeaponType *src)
 {
 	int n = clampi(dst->multi, 1, CUSTOM_BULLETS_MAX);
@@ -385,9 +377,7 @@ void customWeaponAddAllLevels(int presetIdx)
 	}
 	else
 	{
-		// Sidekick source (mode 0 only): combine each escalating charge shot onto the matching
-		// power level, repeating the top stage past the source's range so every custom level gets
-		// the look (a non-charge sidekick has one shot, which is added to all 11 levels).
+		// Repeat the top charge stage through the remaining custom power levels.
 		const int wn     = bp->sourceWeapon;
 		const int stages = clampi(bp->maxPower, 1, CUSTOM_POWER_LEVELS);
 		int lastValidWn = 0;
@@ -588,9 +578,7 @@ int customWeaponAddChargeState(void)
 		return -1;   // every power level is already a charge state
 
 	++customWeaponChargeStages;
-	// Jump to the new top stage's design so its shot can be tuned right away. Its starting
-	// content is whatever that power level already holds (a copy of the previous top when
-	// the weapon was imported, else the default); non-destructive, edit it from here.
+	// Select the new top stage for editing.
 	customWeaponEditLevel = customWeaponChargeStages - 1;
 	return customWeaponEditLevel;
 }
@@ -655,9 +643,7 @@ void customWeaponRandomize(void)
 	         parts1[customRand(COUNTOF(parts1))], parts2[customRand(COUNTOF(parts2))]);
 }
 
-// The sprite sheet a mount style draws its body from: front (2) and trailing-large (1)
-// use the 2x2 spriteSheet10, every other style the single-tile spriteSheet9 (mirrors the
-// sidekick draw in mainint.c).
+// Front and trailing-large mounts use the 2x2 sheet; the rest use single tiles.
 static Sprite2_array *sidekickSheet(int mount)
 {
 	return (mount == 1 || mount == 2) ? &spriteSheet10 : &spriteSheet9;
@@ -679,9 +665,7 @@ static void customSidekickMaterialize(int owner, const CustomWeaponSlot *design)
 	if (slot <= 0 || slot > OPTION_NUM)
 		return;
 
-	// A charge sidekick fires wpnum + charge (charge in 0..pwr), so it needs a valid
-	// weapon at each of those slots. chargeStages is the shot count (1..11), so
-	// pwr = count - 1, and the top stage stays within this owner's mode-0 levels.
+	// Reserve one mode-0 slot per charge stage.
 	const int pwr = clampi(design->chargeStages - 1, 0, CUSTOM_POWER_LEVELS - 1);
 
 	const int mount   = clampi(design->sidekickMount,     0, CUSTOM_SIDEKICK_MOUNTS - 1);
@@ -735,9 +719,7 @@ void customWeaponMaterializeOwner(int owner)
 			weapons[customScratchSlot(owner, m, p)] = design->raw[m][p];
 		}
 
-	// The reserved port: fire mode M, power level P (1..11) fires the matching slot.
-	// A single-mode weapon points op[1] at the mode-0 slots so a rear-gun toggle is a
-	// no-op instead of firing an undesigned bank.
+	// Single-mode rear guns map both modes to the same reserved slots.
 	SDL_strlcpy(weaponPort[port].name, design->name, sizeof(weaponPort[port].name));
 	weaponPort[port].opnum = (JE_byte)modes;
 	for (int p = 0; p < 11; ++p)
@@ -822,9 +804,7 @@ bool customWeaponEquip(void)
 
 // Import sources.
 
-// Copy a weapon/sidekick name for the picker, stripping the data's cosmetic
-// shop formatting (leading/trailing padding and the " Ammo <count>" suffix that
-// some sidekicks carry, e.g. "Phoenix Device Ammo 8" -> "Phoenix Device").
+// Strip shop padding and a trailing "Ammo N" from picker names.
 static void copyBulletName(char *dst, size_t dstsize, const char *src)
 {
 	if (dstsize == 0)
@@ -890,9 +870,7 @@ static void addPortPreset(int port)
 	bp->maxPower     = (JE_byte)maxLvl;
 }
 
-// Add one sidekick option as an import source. A non-charge sidekick is a single fixed
-// weapon; a charge sidekick (option pwr > 0) has pwr+1 escalating shots at wpnum + 0..pwr,
-// which maxPower records so its whole charge ramp can be imported.
+// Import the complete shot ramp for charge sidekicks.
 static void addOptionPreset(int opt)
 {
 	if (customBulletPresetCount >= CUSTOM_BULLET_PRESET_MAX)
@@ -995,9 +973,7 @@ static void deserializeRaw(JE_WeaponType *w, const char *str)
 			++str;
 	}
 
-	// Detect the per-bullet array width this blob was written with. The layout is 8 leading
-	// scalars + 7 arrays of width W + 6 trailing scalars = 14 + 7*W integers, so W = (cnt - 14) /
-	// 7.
+	// Serialized rows contain 14 scalars and seven arrays of width W.
 	int width = (cnt >= 14) ? (cnt - 14) / 7 : CUSTOM_BULLETS_MAX;
 	if (width < 1) width = 1;
 	if (width > CUSTOM_BULLETS_MAX) width = CUSTOM_BULLETS_MAX;
@@ -1608,9 +1584,7 @@ static void customWeaponClaimSlots(void)
 	customSidekickSlot = customSidekickOwnerSlot[owner];
 }
 
-/* Compile our own working copy plus any design the other player has published. Reloading the
- * item data wipes the reserved slots, and a network game does that at every level start, so the
- * peer's ship would otherwise be left holding an unbuilt placeholder weapon: a desync. */
+/* Item-data reloads clear reserved slots, so rebuild local and peer designs together. */
 static void customWeaponMaterializeAll(void)
 {
 	const int local = customWeaponLocalOwner();
@@ -1647,10 +1621,7 @@ void customWeaponInit(void)
 	if (customWeaponItemGraphic < 1)
 		customWeaponItemGraphic = clampi(weaponPort[1].itemgraphic, 1, 237);
 
-	// If nothing has been loaded (fresh run, or a config with no custom weapon),
-	// fill in a valid blank design (the editor's RESET restores the demo blaster
-	// instead). A loaded design has multi >= 1 on at least one slot, so this
-	// never clobbers it.
+	// Seed an empty library with a valid design.
 	bool anyDefined = false;
 	for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
 		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
@@ -1661,9 +1632,7 @@ void customWeaponInit(void)
 			for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
 				makeBlankWeapon(&customWeaponRaw[m][p]);
 
-	// Load the saved weapon library once. The working copy set up above seeds/overrides
-	// the "current" slot; later re-inits (episode reloads) keep the in-memory library and
-	// just re-materialize below.
+	// Read the library once; later item-data reloads only rebuild its reserved slots.
 	static bool libraryLoaded = false;
 	if (!libraryLoaded)
 	{

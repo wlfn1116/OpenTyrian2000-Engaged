@@ -234,9 +234,7 @@ typedef struct {
 	bool                guarded;  // true = no visit flavor may erase this row's sector
 } EndlessRareInjection;
 
-/* One salt block per row, all below ENDLESS_CHART_REROLL_SALT so no reroll count can alias one. A
- * block holds a run's window indices at ENDLESS_SCHED_STRIDE apart, which also caps the sub-ranges
- * one window can carry. A row's block number must stay unique and must not be reused. */
+/* Salt blocks are unique per row and stay below ENDLESS_CHART_REROLL_SALT. */
 #define ENDLESS_SCHED_SALT(row) (0x80000000ULL + (Uint64)(row) * 0x01000000ULL)
 #define ENDLESS_SCHED_STRIDE    64
 
@@ -263,15 +261,11 @@ static const EndlessRareInjection endlessRareInjections[] = {
 	RARE_SCHED(2, 17, endlessOverloadThemes, true),
 	// Warp Speed is a separate high-scroll threat.
 	RARE_FIXED(3, 13, ENDLESS_MOD_WARP, true),
-	// Hostile Turbodrive and Overdrive turn kill streaks into jammed guns and
-	// for Evil Overdrive weaker shots too. One schedule feeds all three mirrors, so the window is
-	// the cadence of "some evil sector"; each individual bit lands at about a third of it.
+	// One schedule feeds all three hostile drive variants.
 	RARE_SCHED(4, 12, endlessEvilThemes, true),
 	// Reactor Redline quickens guns on kills while applying Overheat damage.
 	RARE_SCHED(5, 50, endlessRedlineThemes, true),
-	// Tar Pit (SLUGGISH + GRAVITY): the ship crawls WHILE dragged down. Brutal but always flyable
-	// (endlessGravityDrift slows the pull with the ship), so this one keeps the full ramp. SLUGGISH
-	// stays out of the combinable pool, so this is the sole source of the pairing.
+	// Tar Pit is the only scheduled pairing of SLUGGISH and GRAVITY.
 	RARE_SCHED(6, 28, endlessSluggishThemes, false),
 	// Apex Swarm (every enemy elite), from the Apex-tier rare themes: bare Apex, or Apex plus one
 	// extra danger. Guarded, so no visit flavor can erase the zone it was scheduled for.
@@ -561,9 +555,7 @@ static Uint64 endlessPickSignatureTheme(int forCourse)
 	return endlessPickThemeMods(endlessHostileThemes, COUNTOF(endlessHostileThemes), sig, 0);
 }
 
-/* Where the next Shuffle draw comes from, and where the live chart's hand came off. Every deal
- * takes its hand off the front and leaves the cursor past it, so a Radar reroll spends the hand it
- * discarded. Both are run state and ride the save; see doc/notes.md#rng-and-level-shuffle. */
+/* Shuffle cursors are saved; rerolls consume their discarded hand. */
 int endlessShuffleNext = 0;
 int endlessShuffleHandStart = 0;
 int endlessShuffleHandDepth = -1;
@@ -577,9 +569,7 @@ void endlessShuffleSetNext(int position)
 	endlessShuffleNext = position;
 }
 
-/* Online: the cursor is the one chart input that accumulates rather than being recomputed, so it is
- * the one that can drift. A machine disagreeing with the charting seat's published hand re-anchors
- * onto it and deals again. See doc/notes.md#rng-and-level-shuffle. */
+/* Re-anchor a peer whose saved Shuffle cursor disagrees with the charting seat. */
 void endlessShuffleSyncHand(uint p, int handStart)
 {
 	if (p != endlessChartSeat || !endlessBaseRuleShuffled(endlessRunBaseRule)
@@ -881,9 +871,7 @@ static bool endlessRareSectorDue(const EndlessRareInjection *inj)
 	return false;
 }
 
-/* Place every sector due on this visit, in table order, each on its own route so no row can erase
- * another's guarantee. A slate too short to hold them all falls back to overwriting. Returns true
- * when a guarded row placed one, which the visit flavors below must then leave alone. */
+/* Give each due sector its own route when the slate has room. */
 static bool endlessInjectRareSectors(void)
 {
 	bool guarded = false;
@@ -1164,9 +1152,7 @@ static void endlessMakeCourseNamesUnique(void)
 	}
 }
 
-// Cache the authored base-level name behind each finalized course, so the Radar perk's
-// per-frame help line (endlessCourseHelp) reads a string instead of re-parsing levels*.dat
-// every frame.
+// Cache level names used by Radar help.
 void endlessNameCourseBaseLevels(void)
 {
 	for (int i = 0; i < endlessCourseCnt && i < ENDLESS_MAX_COURSES; ++i)
@@ -1212,9 +1198,7 @@ void endlessGenerateCourses(void)
 	const bool guardedSector = endlessInjectRareSectors();
 	endlessDedupeCourseMods(idx);
 
-	// Rare whole-visit flavors are mutually exclusive.
-	// Roll all visit flavors up front to preserve the seed stream. Precedence is Jackpot, Ambush,
-	// then Gauntlet; none apply at depth zero, and danger flavors remain capped below certainty.
+	// Roll mutually exclusive visit flavors up front to preserve the seed stream.
 	int gauntletPct = 14 + dangerRamp * 11 / 100;  // about 14 percent early, 25 percent at midpoint
 	if (gauntletPct > ENDLESS_DANGER_GAUNTLET_CAP_PCT)
 		gauntletPct = ENDLESS_DANGER_GAUNTLET_CAP_PCT;
@@ -1224,9 +1208,7 @@ void endlessGenerateCourses(void)
 	const bool jackpotRoll  = ((endlessRand() % (22 + dangerRamp * 22 / 100)) == 0);  // falls from about 1/22 to 1/99
 	const bool gauntletRoll = ((int)(endlessRand() % 100) < gauntletPct);
 	const bool ambushRoll   = ((int)(endlessRand() % 100) < ambushPct);
-	// Milestones ignore visit flavors after rolling them so the seed stream remains aligned.
-	// Jackpot replaces every route and Ambush collapses the slate, so neither may run on a zone
-	// carrying a guarded sector; Gauntlet preserves existing hostile routes and is left alone.
+	// Milestones ignore the rolled flavor without changing later draws.
 	const bool doJackpot  = jackpotRoll && (endlessRunDepth > 0) && !milestone && !guardedSector;
 	const bool doAmbush   = !doJackpot && ambushRoll && (endlessRunDepth > 0) && !milestone
 	                        && !guardedSector;
@@ -1257,9 +1239,7 @@ void endlessGenerateCourses(void)
 	endlessNameCourseBaseLevels();  // cache each course's base-level name for the Radar perk (after the sort)
 }
 
-/* Salt for a depth-keyed structural phase: this chart, and the zone it charts. A rerolled chart
- * brings its own levels, modifiers and music, while an unrerolled visit keeps the salt its seed has
- * always been played on. */
+/* A reroll gets a new structural salt for levels, modifiers, and music. */
 Uint64 endlessZonePhaseSalt(Uint64 phase)
 {
 	return (Uint64)endlessRunDepth * 2 + phase + ENDLESS_CHART_REROLL_SALT * endlessChartRerolls;
@@ -1321,9 +1301,7 @@ void endlessChartSyncRerolls(uint p, JE_byte rerolls)
 	endlessChartRedeal();
 }
 
-// Resolve a saved/chosen (episode, section) back to a real endless-safe level file. Prefer the
-// exact persisted file when present; v7 and older saves only have the section, so use its first
-// safe match. Returning false means the script entry has no corresponding binary level data.
+// Older saves lack the file number, so fall back to the first safe section match.
 bool endlessResolveCourseFile(int ep, JE_byte sec, JE_byte requestedFile, JE_byte *resolvedFile)
 {
 	JE_byte secs[64], files[64];

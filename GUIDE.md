@@ -202,12 +202,6 @@ load and save lists.
 Records are split by run mode, difficulty, Base Level rule, and crew size. A
 trailing `C` marks a run that used a custom weapon or edited ship.
 
-## Shop notes
-
-A two-mode gun is tagged **Dual-Mode** in the rear weapon list. The front bay
-always uses its first mode. The rear-list preview names the key that cycles the
-equipped mode.
-
 ## Arcade options
 
 Open **Setup > Enhancements > Gameplay > Arcade Modes**.

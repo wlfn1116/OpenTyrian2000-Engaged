@@ -119,9 +119,7 @@ bool show_fps = false;
 int current_fps = 0;
 static SDL_Rect last_output_rect = { 0, 0, vga_width, vga_height };
 
-// Output size (the same quantity calc_dst_render_rect fits the frame into) at the last
-// present. The event pump compares against this to notice a resolution change it must
-// repaint for; see video_repaint_if_stale().
+// Last presented output size, used to detect resolution changes that need repainting.
 static int last_present_w = 0, last_present_h = 0;
 
 SDL_Surface *VGAScreen, *VGAScreenSeg;
@@ -488,9 +486,7 @@ bool init_scaler(unsigned int new_scaler)
 	scaler = new_scaler;
 
 #ifdef PLATFORM_HANDHELD
-	// The window must stay at the panel's native size (the driver owns it) on these platforms;
-	// only the scaler's intermediate texture, recreated by init_texture() below, changes.
-	// The final present (calc_dst_render_rect) scales that texture to fill the window.
+	// Driver-owned panels keep their native window size; only the scaler texture changes.
 #else
 	if (fullscreen_display == -1)
 	{
@@ -716,9 +712,7 @@ static void update_native_scaler_dims(void)
 	scaler_set_native_size(w, h);
 }
 
-// Windowed size for the Native scaler (which has no fixed output size to restore):
-// the largest integer multiple of the logical screen that fits the desktop's usable
-// area; a big, clean window.
+// Native window size is the largest clean integer multiple that fits the desktop.
 static void native_windowed_size(int *out_w, int *out_h)
 {
 	int factor = 1;
@@ -815,9 +809,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 {
 	assert(src_surface->format->BitsPerPixel == 8);
 
-	// The Native scaler's output size tracks the window: if a resize, fullscreen
-	// toggle or scaling-mode change moved it since the last present, recreate the
-	// texture at the new exact size.
+	// Recreate Native's texture when the exact output size changes.
 	if (scaler_is_native(scaler))
 	{
 		update_native_scaler_dims();
@@ -907,9 +899,7 @@ void present_hi(SDL_Surface *hi)
 
 	if (!ensure_hi_texture(hi->w, hi->h))
 	{
-		// Can't build the hi texture (GPU limit / OOM): show the frame through the
-		// classic path rather than nothing. It arrives NxN, which the scaler can't
-		// take, so just present the logical screen; one soft frame, no crash.
+		// Fall back to the logical frame if the high-resolution texture cannot be built.
 		scale_and_flip(VGAScreen);
 		return;
 	}
@@ -953,9 +943,7 @@ void present_hi(SDL_Surface *hi)
 		SDL_UnlockTexture(hi_texture);
 	}
 
-	// Fit into the same on-screen rectangle the classic path would use (sized from
-	// the LOGICAL screen + the scaler texture), so supersampling only adds detail;
-	// it never zooms or resizes the output.
+	// Supersampling uses the classic destination rectangle and never changes output size.
 	SDL_Rect dst_rect;
 	calc_dst_render_rect(VGAScreen, &dst_rect);
 

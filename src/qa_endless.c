@@ -194,9 +194,7 @@ static const char *qa_drive_name(unsigned bit)
 
 /* ---- 1. the two-wallet economy ------------------------------------------------------ */
 
-/* Credit mode x Double Earnings x Scavenger stacks x which machine, against the real award
- * calls. The wallet arithmetic is the part a player sees; the ledger attribution underneath
- * is what the run summary prints, so both are checked. */
+/* Cross credit mode, earnings, Scavenger stacks, and peer; check both wallets and ledger. */
 static void qa_economy_matrix(void)
 {
 	char label[192];
@@ -263,9 +261,7 @@ static void qa_economy_matrix(void)
 		                == (Uint64)(shared ? 150 : (doubling ? 300 : 150))),
 		         label);
 
-		/* The run ledger follows the wallet of whoever is at this keyboard. Income into that
-		 * wallet has to land against the source that earned it, or the run summary reports
-		 * the wrong column. */
+		/* The local wallet's income must retain its source in the run ledger. */
 		if (payee == local)
 		{
 			qa_clear_ledger();
@@ -307,9 +303,7 @@ static void qa_economy_matrix(void)
 
 /* ---- 2. drives ---------------------------------------------------------------------- */
 
-/* Every pairing of what the two ships are flying, crossed with the Combo Feed setting and who
- * fired the killing shot. A drive is the one purchase whose whole value is that it belongs to
- * the ship that paid for it, so every cell checks both ships. */
+/* Cross both ships' drives, Combo Feed, and killer; verify each ship independently. */
 static void qa_drive_matrix(void)
 {
 	static const unsigned drives[4] = {
@@ -491,9 +485,7 @@ static void qa_perk_matrix(void)
 	qa_check(endlessPerkTotalOwned() == 1,
 	         "the perk surcharge counts only the buyer's own picks");
 
-	/* Adrenaline is personal on both halves: the ship's own stacks, and the ship's own hull that
-	 * arms them. A partner's damage arming it would have one ship's trouble firing the other's
-	 * perk, which is the shared model this run no longer uses. */
+	/* Adrenaline uses the damaged ship's hull and perk stacks. */
 	qa_clear_ships();
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkGrant(0, PERK_ADRENALINE, 1);
@@ -512,9 +504,7 @@ static void qa_perk_matrix(void)
 	endlessSetFxPlayer(0);
 	qa_clear_ships();
 
-	/* The registry pair the debug screen and the campaign-mods config both drive has to name one
-	 * row, not two: a get that read the combined holding would let the debug menu write its
-	 * partner's stacks into its own row the moment it was opened from either machine. */
+	/* Perk registry accessors must read and write one ship's row at a time. */
 	for (int local = 0; local <= 1; ++local)
 	{
 		qa_session((uint)local);
@@ -540,9 +530,7 @@ static void qa_perk_matrix(void)
 
 /* ---- 3b. per-ship reactive timers ---------------------------------------------------- */
 
-/* Drive one Endless ram kill through the real destruction walk and report what it paid, counted and
- * left behind. Shaped like qa_chain_kill_row: `tiles` bodies worth `evalue` each, linked together
- * when `linknum` is nonzero, at `eliteState` when that is a tier. */
+/* Run one Endless ram kill through the production destruction path and report its effects. */
 static void qa_ram_kill_row(int killer, int evalue, int tiles, JE_byte linknum, int eliteState,
                             long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped)
 {
@@ -581,9 +569,7 @@ static void qa_ram_kill_row(int killer, int evalue, int tiles, JE_byte linknum, 
 			*out_dropped = true;   // the row is all dead by now, so anything live is a drop
 }
 
-/* The reactive danger and perk timers belong to one hull each: the Aegis gate, the Static
- * Discharge recharge lockout, the Countermeasure Suite cooldown and the Shield Matrix interval.
- * A shared timer had one ship's event disarming or slowing the partner. */
+/* Reactive danger and perk timers belong to one hull each. */
 static void qa_reactive_state_matrix(void)
 {
 	qa_session(0);
@@ -813,9 +799,7 @@ static void qa_reactive_state_matrix(void)
 		}
 	}
 
-	/* An elite or a champion the wave destroys owes its bounty on top of its value, and it owes it
-	 * to the ship whose blast killed it. The banner beside the figure names that ship online, from
-	 * the same `killer` this checks the payment against. */
+	/* A wave kill pays value and bounty to the ship that owns the blast. */
 	static const struct { const char *tier; int state; } tiers[] = {
 		{ "elite",    2 },
 		{ "champion", 3 },
@@ -984,9 +968,7 @@ static void qa_reactive_state_matrix(void)
 
 /* ---- 4. the outpost, two shelves at once -------------------------------------------- */
 
-/* Both players shop the same outpost at the same time with their own wallet, their own prices
- * and their own shelves. Anything that escalates a price or moves an RNG stream has to move
- * only the acting player's. */
+/* Each shopper has an independent wallet, price ladder, shelf, and RNG stream. */
 static void qa_outpost_matrix(void)
 {
 	char label[192];
@@ -1117,9 +1099,7 @@ static void qa_outpost_matrix(void)
 
 /* ---- 4b. every E-Shop button, from both machines ------------------------------------ */
 
-/* Each buy is checked three ways: it is refused when the buyer cannot afford it, it charges and
- * delivers to the buyer alone when they can, and its refusal gate (already held, maxed out,
- * still recharging) holds. */
+/* Each purchase must enforce cost and ownership limits, then charge and deliver to one buyer. */
 static void qa_eshop_matrix(void)
 {
 	char label[224];
@@ -1217,9 +1197,7 @@ static void qa_eshop_matrix(void)
 		         "machine %d: sabotage refuses past its per-visit cap", local + 1);
 		qa_check(endlessCleanseMaxed() && !endlessTryBuyCleanse(), label);
 
-		/* The queue is the pair's, because the strips come off the sector both ships fly. A partner
-		 * who has bought none is still locked out once the cap is met, so neither pays for a strip
-		 * the launch pass would clamp away. */
+		/* The shared strip queue cap applies even when only one partner filled it. */
 		endlessCleanseChargeCount[me] = ENDLESS_CLEANSE_MAX_CHARGES - 1;
 		endlessCleanseChargeCount[them] = 1;
 		snprintf(label, sizeof(label),
@@ -1417,9 +1395,7 @@ static void qa_eshop_matrix(void)
 
 /* ---- 5. going down, and coming back ------------------------------------------------- */
 
-/* Order on a lethal hit is: a held revive token fires first, and only then does the ship enter
- * the DOWNED state. A downed ship spectates until the zone ends; if the partner finishes it,
- * the downed one is back at the outpost with full hull and no shield. */
+/* Revive tokens precede DOWNED; surviving to the outpost restores full hull without shield. */
 static void qa_death_revive_matrix(void)
 {
 	char label[224];
@@ -1609,9 +1585,7 @@ static void qa_danger_target_matrix(void)
 
 /* ---- 6b. the run keeps the difficulty it launched with ------------------------------ */
 
-/* Endless pins its rung: depth scaling is that mode's difficulty curve, and the vanilla
- * score-based drift moving underneath it would re-price every sector's danger and payout
- * mid-run. Solo and online alike, and whatever the player's own difficultyAdjust setting says. */
+/* Endless pins difficulty so vanilla score drift cannot alter depth scaling mid-run. */
 static void qa_endless_difficulty_pinned(void)
 {
 	const JE_boolean savedAdjust = difficultyAdjust;
@@ -1825,9 +1799,7 @@ static void qa_hp_scaling_matrix(void)
 		         && eliteMult == rungs[i].eliteMult && bossMult == rungs[i].bossMult, label);
 	}
 
-	/* The End is a GRAND milestone every 100th zone. Each raised curve has to arrive on the zone
-	 * before one, never a zone or two after: elites reach their ceiling by the first milestone,
-	 * the boss reaches its mid anchor there and its ceiling by the second. */
+	/* Raised curves reach their anchors before each hundred-zone milestone. */
 	int eliteCeiling, bossCeiling;
 	qa_hp_zone(400, &armorPct, &overflow100, &eliteCeiling, &bossCeiling);
 	static const struct { int zone, boss; } milestones[] = { { 100, 20 }, { 200, 32 }, { 300, 32 } };
@@ -1848,9 +1820,7 @@ static void qa_hp_scaling_matrix(void)
 	         bossCeiling);
 	qa_check(endlessEnemyHpMult100(true, ceiling100, 3) == 2 * ceiling100, label);
 
-	/* The boss multiplier is carried in hundredths, so it thickens a fraction at a time instead of
-	 * a whole multiplier every few zones. Its whole-number crossings have to stay where the stepped
-	 * curve puts them, or smoothing would have retuned the ramp. */
+	/* Hundredth-step smoothing must preserve the old curve's whole-number crossings. */
 	bool crossingsHeld = true, sawFraction = false, climbs = true;
 	int prev100 = 0;
 	for (int zone = 1; zone <= 260; ++zone)
@@ -2318,9 +2288,7 @@ static void qa_scenario_suite(void)
 		qa_check(endlessHardcore() == (modes[m] == ENDLESS_RUNMODE_HARDCORE), label);
 	}
 
-	/* The disconnect chain, end to end on one machine: the outpost checkpoint writes slot 22, the
-	 * dropped session reverts to that backup and saves it into a slot of its own, and the host
-	 * that later resumes it finds an Endless slot. */
+	/* A disconnect restores checkpoint slot 22 and leaves a resumable Endless save. */
 	{
 		JE_SaveFileType savedSlots[2] = { saveFiles[22 - 1], saveFiles[15 - 1] };
 		const NetworkGameType savedType = network_game_type;
@@ -2470,9 +2438,7 @@ static void qa_scenario_suite(void)
 	endlessRunDepth = 0;
 }
 
-/* A save stores both halves of the outpost: the partner's rows and stream ride the save
- * acknowledgement into the saver's own record, and a wire adopt hands the other seat its
- * half back. */
+/* Online saves preserve both players' outpost rows and RNG streams. */
 static void qa_resume_partner_matrix(void)
 {
 	char seedSaved[COUNTOF(endlessRunSeed)];
@@ -2536,9 +2502,7 @@ static void qa_resume_partner_matrix(void)
 
 /* ---- entry point -------------------------------------------------------------------- */
 
-/* The flip/spotlight derivation, online and offline alike. Network games used to clear the
- * smoothie flags wholesale, which silently disabled Topsy Turvy, the scripted inverted-control
- * levels, and the light cone for every online session. */
+/* Online and offline sessions derive Topsy Turvy, scripted flips, and spotlight identically. */
 static void qa_modifier_display_matrix(void)
 {
 	const JE_boolean savedInvert = smoothies[9 - 1];
@@ -2582,9 +2546,7 @@ static void qa_modifier_display_matrix(void)
 	isNetworkGame = savedNet;
 }
 
-/* Which run modes offer the death prompt at all, driven through its real gates. Relaxed offers
- * the three-choice menu when a launch snapshot exists; Standard and Hardcore skip it and lock
- * the pause menu instead, so a fatal hit has no quiet exit there. */
+/* Only Relaxed mode offers the death prompt when a launch snapshot exists. */
 static void qa_death_prompt_matrix(void)
 {
 	char label[128];

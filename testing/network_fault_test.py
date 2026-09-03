@@ -243,10 +243,7 @@ def run_scenario(
 
     base_env = os.environ.copy()
     base_env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
-    # Each peer gets its own scratch working and configuration directories. Unix builds use
-    # XDG_CONFIG_HOME rather than the cwd; sharing the runner's home leaks settings between
-    # scenarios and lets two peers race while writing the same configuration and save files.
-    # A caller may pass directories in to carry saves across stages (the resume scenario).
+    # Isolate each peer's work and config directories; callers may reuse them across stages.
     own_dirs = host_dir is None
     if own_dirs:
         host_dir = tempfile.mkdtemp(prefix="otnet_host_")
@@ -260,10 +257,7 @@ def run_scenario(
     join = subprocess.Popen(join_cmd, env=join_env, cwd=join_dir,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-    # Drain both pipes for the whole run. Reading only at the end deadlocks a talkative peer:
-    # the OS pipe buffer fills, its next print blocks, it stops servicing the socket, and the
-    # partner reads that silence as a lost connection. The long Endless run tripped this at
-    # whichever print happened to fill the buffer, which made it look like a netcode hang.
+    # Drain both pipes continuously so logging cannot block network progress.
     def pump(stream, sink: list[str]) -> None:
         for line in stream:
             sink.append(line)
@@ -429,9 +423,7 @@ def run_scenario(
             if "NET SAVE ROUTE PASS" not in out:
                 print(f"network fault test: the {who} routed online Save to Load")
                 return 1, transcript, injected
-        # The co-op Campaign board's inputs. A lobby row picks the episode, so neither peer runs
-        # the episode-select menu that normally records where a run began; a machine that left the
-        # field stale files the run under the wrong episode, or under none at all.
+        # Lobby-selected Campaign runs must still record their starting episode.
         cash = []
         for out, who in ((host_out, "host"), (join_out, "joiner")):
             mark = re.search(
@@ -571,9 +563,7 @@ def main() -> int:
             join_dir = tempfile.mkdtemp(prefix="otnet_join_")
             r1, t1, injected = run_scenario(
                 executable, data_dir, base_port, scenario, rounds,
-                # Profile 4 leaves player two carrying a compiled custom sidekick. Stage two
-                # starts fresh processes, so the pre-level resume exchange is the only way the
-                # host can materialize that peer-owned design before the first saved tick.
+                # Fresh stage-two processes must restore player two's compiled custom sidekick.
                 extra_common=["--test-net-gameplay-ticks", "200", "--test-net-save-exit",
                               "--test-net-loadout", "4"],
                 host_dir=host_dir, join_dir=join_dir)
@@ -589,9 +579,7 @@ def main() -> int:
             result = 1 if (r1 or r2) else 0
             transcript = f"[stage 1: play and save]\n{t1}[stage 2: resume]\n{t2}"
         elif scenario == 21:
-            # The Endless half of scenario 7. Its run lives in a sidecar the save record does not
-            # carry, so the resume has to hand the whole run over before either machine plays a
-            # tick, and both have to come up in the outpost the checkpoint was written in.
+            # Restore the Endless sidecar and checkpoint outpost before either peer advances.
             host_dir = tempfile.mkdtemp(prefix="otnet_host_")
             join_dir = tempfile.mkdtemp(prefix="otnet_join_")
             zone = ["--test-net-gameplay-ticks", "1000000",

@@ -48,9 +48,7 @@ int endlessOverdriveStacks[2] = { 0, 0 };
 // Absolute run depth at which kill-fire purchases unlock, or zero when available.
 int endlessBuffCooldownUntil[2] = { 0, 0 };
 
-// E-Shop state.
-// Buff "charge" scales the kill-fire window/damage with the cash paid (normalized by depth,
-// cap 20). Reset each run.
+// Buff charge scales with depth-normalized spending and is capped at 20.
 int endlessBuffCharge[2] = { 0, 0 };
 // Base kill-fire window for one ship, extended by what that ship paid for its drive:
 // charge 0 -> 1.0x (~2s), charge 10 -> 1.75x (~3.5s), charge 20 -> 2.5x (~5s).
@@ -1011,9 +1009,7 @@ void endlessApplyLevelPayout(Sint64 *interestOut, Sint64 *bonusOut)
 		*bonusOut = bonus;
 }
 
-/* Milestone approach intermissions, rebuilt from the campaign's danger screen on episode
- * 1's approach to MINES. Tiers share backdrop pic 5 and differ by text and palette tint;
- * doc/notes.md covers the backdrop constraints. */
+/* Milestone approach screens share backdrop 5; see doc/notes.md. */
 #define ENDLESS_APPROACH_PIC 5
 
 typedef struct
@@ -1208,9 +1204,7 @@ void endlessBetweenLevels(void)
 	mapPlanet[0] = 1;
 	mapSection[0] = 1;
 
-	// Endless has no data cubes. Clear any left over from a prior campaign game so they don't
-	// linger as icons in the buy/sell menu; the first endless shop opens before any level (and
-	// thus before endlessRegenerateLevel, which also zeroes these) has loaded.
+	// The first Endless shop opens before the usual level-load cleanup.
 	cubeMax = 0;
 	lastCubeMax = 0;
 
@@ -1236,9 +1230,7 @@ void endlessBetweenLevels(void)
 	if (endlessRunDepth == 0 && !endlessResumeVisit && !endlessLockedSortie && !endlessSortieValid())
 		endlessApplyStartingLoadout();
 
-	// The level-clear payout (bank interest + clear bonus) is applied earlier, on the
-	// level-end screen (endlessApplyLevelPayout, called from JE_endLevelAni), so the shop
-	// opens with the reward already banked.
+	// The level-end screen has already banked interest and the clear bonus.
 
 	// Generate a fresh visit only when no saved or locked outpost snapshot was restored.
 	if (endlessResumeVisit || endlessLockedSortie)
@@ -1250,9 +1242,7 @@ void endlessBetweenLevels(void)
 		// A new visit deals; whatever partner half a save stashed belonged to the old one.
 		endlessPartnerOutpostClear();
 
-		// Seed structural generation by depth. Player-timed draws cannot shift later zone layouts,
-		// and each player's own stream is forked from the same point so a shop reroll or a gamble
-		// on one machine never moves what the other is dealt.
+		// Fork personal shop RNG from the depth seed.
 		endlessReseedPlayers((Uint64)endlessRunDepth * 2);
 
 		endlessChartVisit();   // seeds the structural phase, then deals this visit's slate
@@ -1288,9 +1278,7 @@ void endlessBetweenLevels(void)
 		{
 			network_session_saveable = true;
 
-			// This write sits between the resume handshake and the shop's first frame, where a
-			// stall reads as a network hang. Logging a slow one attributes it to the install's
-			// disk (a cloud-synced folder, say) rather than the link.
+			// Log slow resume writes separately from network stalls.
 			const Uint32 saveMs = SDL_GetTicks() - saveStart;
 			if (saveMs > 2000)
 			{

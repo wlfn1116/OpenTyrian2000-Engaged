@@ -169,9 +169,7 @@ static bool endlessShuffleInTail(const int *order, int npool, int window, int en
 	return false;
 }
 
-/* Drop the second cut of a section the pool lists twice, so the bag holds each level once. A chart
- * tells routes apart by (episode, section), and a bag that promises every level before a repeat has
- * to count them the same way. Episode 1 section 3 is the only such pair. */
+/* Episode 1 section 3 appears twice in the pool but counts as one chart. */
 static int endlessDedupeLevelPool(EndlessLevelPoolEntry *pool, int npool)
 {
 	int kept = 0;
@@ -197,9 +195,7 @@ bool endlessShuffleSafeLevel(int position, int *epOut, JE_byte *secOut, JE_byte 
 	int order[ENDLESS_LEVEL_POOL_MAX];
 	endlessShuffleOrder(order, npool, refill);
 
-	// A refill must not hand back a piece the emptying bag closed on. Swapping any such piece
-	// out of the opening window and past it keeps the bagful a permutation. The window sizes
-	// and the too-small-pool case are in doc/notes.md#rng-and-level-shuffle.
+	// Move tail repeats past the refill window; see doc/notes.md#rng-and-level-shuffle.
 	const int tailWindow = ENDLESS_MAX_COURSES;
 	const int headWindow = 2 * ENDLESS_MAX_COURSES - 1;
 	if (refill > 0 && npool >= tailWindow + headWindow + 1)
@@ -427,9 +423,7 @@ void endlessResetZoneEffects(void)
 		endlessPlayerDowned[p] = false;
 }
 
-// Dormant dispenser bases: a coin per zone up to ENDLESS_DISPENSER_ALWAYS_ZONE,
-// where they stop being a surprise and become part of the furniture. The coin has
-// its own salt, so it consumes nothing from the other level-start phases.
+// Seed early dormant dispensers independently of other level-start phases.
 #define ENDLESS_DISPENSER_ALWAYS_ZONE 50
 
 bool endlessDispenserBaseRoll(void)

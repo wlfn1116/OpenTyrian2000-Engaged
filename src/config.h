@@ -125,9 +125,7 @@ typedef struct
 // First 10 are timed battle, next 10 are episodes
 extern T2KHighScoreType t2kHighScores[20][3];
 
-/* Which credit rule paid a co-op Campaign run. Shared pays every pickup into both wallets and
- * Double Earnings pays a split take twice, so the same play reaches roughly twice the combined
- * cash under either one. */
+/* Credit rule attached to a recorded co-op Campaign run. */
 enum
 {
 	COOP_CREDIT_UNKNOWN = 0,
@@ -137,9 +135,7 @@ enum
 	COOP_CREDIT_COUNT,
 };
 
-/* Online co-op Campaign leaves its own board: an arcade pair and a campaign pair earn on
- * completely different economies, so mixing them into the shared two-player table would compare
- * two things that are not comparable. One best run per episode, kept in opentyrian.cfg. */
+/* One co-op Campaign record per episode, separate from Arcade scores. */
 typedef struct
 {
 	Sint64 score;      // the two players' combined cash
@@ -224,9 +220,7 @@ static inline bool arcade_separate_mode(void)
 	return twoPlayerMode && !coop_mode_active() && arcadeSeparateMode;
 }
 
-/* Two full, independent ships each flying their own arsenal: online co-op of either kind, or
- * Separate arcade. It does not imply the co-op economy; credit settings and outposts stay
- * co-op-only. */
+/* True when both players own complete, independent ships. */
 static inline bool dual_ship_mode(void)
 {
 	return coop_mode_active() || arcade_separate_mode();
@@ -243,9 +237,7 @@ static inline bool split_arcade_mode(void)
 	return twoPlayerMode && !coop_mode_active() && !arcadeSeparateMode;
 }
 extern JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
-// Debug Mode only: run endless mode's EFFECT layer (difficulty levers, sector mutators, perks,
-// elites) inside a normal campaign/arcade game, without any of its structure. Lives beside
-// endlessMode because the pair is what endlessFxActive() reads; session-only, never saved.
+// Session-only switch for Endless combat effects outside Endless mode.
 extern JE_boolean endlessCampaignMods;
 extern JE_byte superArcadeMode;
 
@@ -354,9 +346,7 @@ enum
 	SUPER_SPARKS_OFF,       // no spark trail in any episode (ep1-3 behavior everywhere)
 	SUPER_SPARKS_COUNT
 };
-// The affected weapons, each with its own trail mode and classic-limit cap. Ice Beam and
-// Ice Blast share one entry: both fire the same spark-tagged sprite (634), so their trails
-// are indistinguishable in flight.
+// Ice Beam and Ice Blast share the same spark-tagged projectile sprite.
 typedef enum
 {
 	SSW_MEGA_PULSE = 0,  // Mega Pulse front gun (port 19, wpns 400-410; sprite 35, spark bank 7)
@@ -368,14 +358,10 @@ typedef enum
 extern int  superSparkMode[SSW_COUNT];       // SUPER_SPARKS_* : where each weapon leaves its trail
 extern bool superSparkClassicCap[SSW_COUNT]; // cap that trail at the classic limit even when extraSparks is on
 bool superSparkCapForSprite(JE_word sprite); // cap setting for a trail-tagged shot sprite (JE_doSP calls in shots.c)
-// The ep4/5 Beno Wallop Beam also fires a second bolt each volley (multi/max grow to 2)
-// that the ep1-3 record lacks entirely; this forces that double-bolt pattern in/out of
-// every episode with the same SUPER_SPARKS_* Auto/On/Off semantics (Auto = as shipped).
+// Override the episode 4/5 Wallop Beam double-bolt pattern.
 extern int wallopSecondBolt;
 
-// Items whose ep1-3 (tyrian.hdt) and ep4/5 (tyrian4/5.lvl) item data differ beyond the
-// superspark trail above (full diff of the two data sets): gameplay reworks, a blast sprite,
-// retuned sounds, one shop icon, two shop ship pictures.
+// Item-table differences exposed by the Episode Versions menu.
 enum
 {
 	EPDIFF_AUTO = 0,     // per-episode default: ep1-3 data in ep1-3, ep4/5 data in ep4/5
@@ -400,9 +386,7 @@ typedef enum
 } EpDiffWeapon;
 extern int epDiffMode[EDW_COUNT];  // EPDIFF_* : which episode's data each item uses
 
-// Per-gauge gradient direction for the three vertical HUD gauges (menu: Enhancements ->
-// Heads-Up Display -> Gauges). Each gauge can run its shade gradient up the column (Up = classic),
-// down it, or across the 9-pixel width (Left/Right). Default Up = the vanilla look.
+// Per-gauge shade direction. Up matches the shipped HUD.
 typedef enum
 {
 	GAUGE_GRAD_UP = 0,   // vertical, brightest at the top    (classic)
@@ -419,9 +403,7 @@ extern int gaugeGradArmor;      // GaugeGradientDir for the armor gauge
 extern bool gaugeFlashShield;
 extern bool gaugeFlashArmor;
 
-// Flare-family specials (Ice Beam, Fireball, Soul of Zinglon...) wash the whole screen in their
-// colour while they burn. Off keeps the playfield readable; level-scripted grades are unaffected.
-// Presentation-only, so the two sides of an online game may set it differently (tyrian2.c).
+// Presentation-only full-screen tint for flare-family specials.
 extern bool specialScreenTint;
 
 // Zica level 11 settings: shot layout, bolt length, and an optional level 10 beam.
@@ -456,9 +438,7 @@ extern bool guidedShotScreenAim;   // weapon-table homing steers toward an enemy
 extern bool shipEditorStars;
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
-/* Enhancement presets. The Enhancements menu's Preset row writes every enhancement setting at
- * once, and names whichever preset the live values still match. The set is enhancementSettings[]
- * in config.c; see doc/notes.md#menus-and-touch-ui. */
+/* Enhancement presets cover enhancementSettings[] only. */
 typedef enum
 {
 	ENH_PRESET_VANILLA = 0,  // reproduce the shipped DOS behavior wherever a setting can
@@ -512,9 +492,7 @@ bool save_record_is_dual_arcade(const JE_SaveFileType *rec);
 // The Super Arcade ship (1..SA), SA_SUPERTYRIAN, or SA_NONE each of the record's two ships flies.
 uint save_record_sa_ship(const JE_SaveFileType *rec, uint p);
 
-/* Which player number this machine was flying when it wrote a two-player slot, so a resume can
- * hand every player the seat they saved in. Returns 1 for a slot with nothing recorded; setting
- * anything but 2 forgets the slot. */
+/* Saved two-player seat; unset and invalid values read as player one. */
 uint save_slot_online_player(JE_byte slot);
 void save_slot_set_online_player(JE_byte slot, uint playerNum);
 

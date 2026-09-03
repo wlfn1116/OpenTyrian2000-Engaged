@@ -30,9 +30,7 @@
 #else
 #include "SDL_net.h"
 
-/* SDL_net's byte-order helpers store whole words, which is undefined behaviour on the
- * unaligned fields inside packed records (e.g. the cash slots of the shop-sync and
- * debug-sync blocks).  These byte-wise equivalents keep the same big-endian wire format. */
+/* Byte-wise big-endian access for unaligned packed fields. */
 static inline void net_bytes_write16(Uint16 value, void *areap)
 {
 	Uint8 *area = (Uint8 *)areap;
@@ -221,14 +219,10 @@ static inline int network_timed_battle_episode(int level)
 	return level <= 1 ? 1 : 5;
 }
 
-// Endless lobby settings, chosen by the host and adopted by the joiner from the connect packet.
-// Kept as plain ints so network.h stays independent of endless.h; the run applies them as the
-// EndlessRunMode / EndlessCourseChooser they stand for.
+// Plain ints keep this header independent of the Endless enums they carry.
 #define NET_ENDLESS_SEED_MAX 24
 extern char network_host_endless_seed[NET_ENDLESS_SEED_MAX];
-/* The seed the session actually runs on: the host's field, or a rolled one when it was left
- * blank for "(random)". Settled once by the host before the connect packet, adopted from it
- * by the joiner, and read by everything that starts or displays the run. */
+/* The resolved host seed used by both peers. */
 extern char network_endless_session_seed[NET_ENDLESS_SEED_MAX];
 void network_endless_session_begin(void);
 extern int  network_host_endless_run_mode;
@@ -382,9 +376,7 @@ void network_settings_restore(void);
  * 24 onward is the extensible tail (see network.c for field offsets). */
 #define NETWORK_SETTINGS_SIZE 48
 
-/* Publish the host's Endless run to the joiner, which is how a resumed online run starts both
- * machines from the same record. Chunked over the reliable channel and blocking until delivered;
- * the joiner calls network_endless_run_receive from its own wait loop. */
+/* Transfer a resumed Endless run over the reliable channel. */
 void network_endless_run_publish(void);
 bool network_endless_run_receive(Uint32 timeout_ms);
 
@@ -500,9 +492,7 @@ void network_debug_sync_send(void);
 /* pump only inspects the head, because the reliable queue is ordered and nothing can be lifted
  * out of the middle of it. */
 bool network_debug_sync_pump(bool in_level);
-/* The block itself, exposed the way network_settings_pack is: a round trip through these is what
- * catches a field the debug menu edits and the wire does not carry, which is otherwise only
- * visible as the two machines quietly simulating different games. adopt applies every clamp. */
+/* Pack and adopt the complete debug state; adoption applies the normal clamps. */
 int  network_debug_state_size(void);
 void network_debug_state_pack(Uint8 *buf);
 void network_debug_state_adopt(const Uint8 *buf, bool in_level);

@@ -48,9 +48,7 @@ typedef struct {
 #define SHOT_AIM_GUIDANCE   0x80
 #define SHOT_AIM_DELAY_MASK 0x7f
 
-// A shot velocity above 100 rides the ship: the move subtracts 120 and adds the ship's delta, so
-// 120 rests beside the ship and the shipped tables use 111 to 124 for beams that drift either way.
-// Steering clamps a riding velocity to this range, which keeps it riding.
+// Velocities 111..124 ride the ship; 120 has no relative drift.
 #define SHOT_ATTACHED_VEL_MIN  101  // ...on x this one value pins both axes; guidance re-encodes it
 #define SHOT_ATTACHED_VEL_REST 120
 #define SHOT_ATTACHED_VEL_MAX  199  // drift cap, well clear of the range the shipped tables use
@@ -72,9 +70,7 @@ void player_shot_set_direction(JE_integer shot_id, uint weapon_id, JE_real direc
 void player_shot_hit_offset(JE_word sprite_frame, int *out_dx, int *out_dy);
 void enemy_shot_hit_offset(JE_word sgr, JE_word animate, int *out_dx, int *out_dy);
 
-/** One course correction of a homing shot, run when its steering interval elapses. Weapon-table
- * homing keeps the stock rule, aiming at screen x only under guidedShotScreenAim; a
- * SHOT_AIM_GUIDANCE shot aims at screen x and retargets. */
+/** Apply one due homing correction; Guidance shots retarget and always use screen x. */
 void player_shot_aim_step(PlayerShotDataType *shot);
 
 /** Move and draw a shot without enemy collision. Returns false off-screen and reports the hit
@@ -103,10 +99,7 @@ JE_integer player_shot_create_twin(
  * steering and inherits an active Opening Salvo; returns MAX_PWEAPON when no slot is available. */
 JE_integer player_shot_create_deflected(const EnemyShotType *incoming, int damage, JE_byte playernum);
 
-/** Creates the chain-reaction child of a shot that just hit, at the impact point.
- * \a salvo_boost carries the parent's endless Opening Salvo tag onto every child bullet and
- * replaces the live salvo-window test.
- */
+/** Create a chain-reaction child at the impact, carrying the parent's Salvo tag. */
 JE_integer player_shot_create_chained(
 	JE_word px, JE_word py, JE_word mousex, JE_word mousey,
 	JE_word wpnum, JE_byte playernum, bool salvo_boost);

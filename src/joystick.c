@@ -186,9 +186,7 @@ void poll_joystick(int j)
 #if defined(__SWITCH__) || defined(__vita__)
 		if (switch_right_stick)
 		{
-			// direction d: 0=up, 1=right, 2=down, 3=left. The left stick binds axis (d+1)%2,
-			// negated for up/left; the right stick is those same two axes + 2. Take whichever
-			// stick is pushed further (mirrors check_assigned's max-over-slots semantics).
+			// Directions are up, right, down, left; use whichever stick is pushed farther.
 			int rs = SDL_JoystickGetAxis(joystick[j].handle, (d + 1) % 2 + 2);
 			if (d == 0 || d == 3)
 				rs = -rs;
@@ -219,9 +217,7 @@ void poll_joystick(int j)
 		joystick[j].input_pressed |= joystick[j].action_pressed[d];
 	}
 	
-	// "menu" (action[4]) acts as BACK / cancel in menus (Escape); matching how it toggles
-	// the in-game menu closed and the B-is-back convention; NOT as a second confirm. Only
-	// "fire" confirms/selects; change-fire / menu / pause all cancel.
+	// Fire confirms; change-fire, menu, and pause cancel.
 	joystick[j].confirm = joystick[j].action[0];
 	joystick[j].cancel = joystick[j].action[1] || joystick[j].action[4] || joystick[j].action[5];
 	
@@ -413,10 +409,7 @@ void reset_joystick_assignments(int j)
 				joystick[j].assignment[a][1].negative_axis = (a == 0 || a == 3);
 			}
 #if defined(__SWITCH__) || defined(__vita__)
-			// The consoles expose the d-pad as BUTTONS (they report 0 hats), so the hat
-			// default above never binds and the d-pad does nothing. Bind the d-pad buttons
-			// into the free second slot so it works out of the box.
-			// direction index a: 0=up, 1=right, 2=down, 3=left.
+			// Consoles expose the d-pad as buttons, so bind it in the second assignment slot.
 			else
 			{
 #if defined(__SWITCH__)
@@ -443,10 +436,7 @@ void reset_joystick_assignments(int j)
 			if (a == 8) btn = 10;       // assignment_names[8] = "menu"
 			else if (a == 9) btn = 11;  // assignment_names[9] = "pause"
 #elif defined(__vita__)
-			// Vita SDL button order: 0 triangle,1 circle,2 cross,3 square,4 L1,5 R1,
-			// 6 down,7 left,8 up,9 right,10 select,11 start. Map the actions (a-4) to a
-			// comfortable scheme: cross=fire, circle=change fire/cancel, L1/R1=left/right
-			// sidekick, start=menu, select=pause.
+			// Vita defaults: Cross fire, Circle change/cancel, shoulders sidekicks, Start menu.
 			static const int vita_action_btn[6] = { 2, 1, 4, 5, 11, 10 };
 			btn = vita_action_btn[a - 4];
 #endif
@@ -508,9 +498,7 @@ bool load_joystick_assignments(Config *config, int j)
 		}
 	}
 
-	// Configs predating the "menu"/"pause" actions load them unbound, so the pause/setup
-	// menu is unreachable from a controller. Give any still-unbound one its default
-	// button (matching reset_joystick_assignments).
+	// Fill missing menu and pause bindings in older controller configs.
 	for (size_t a = 8; a <= 9; ++a)  // assignment_names: 8 = "menu", 9 = "pause"
 	{
 		bool bound = false;

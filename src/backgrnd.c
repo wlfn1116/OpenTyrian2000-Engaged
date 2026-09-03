@@ -396,9 +396,7 @@ void draw_background_1(SDL_Surface *surface)
 
 		map += 14;
 	}
-	// Extra off-screen row(s) so the interpolation shift (up to a full tick's scroll) can't
-	// uncover the bottom; reuses the last row's tiles (map - 14) to avoid reading past the map.
-	// bgMarginRows grows under a speed modifier (scroll can exceed one tile per tick).
+	// Reuse the final map row below the screen; modifiers may require several margin rows.
 	for (int m = 0; m < bgMarginRows; ++m)
 		blit_background_row(surface, mapXPos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos, map - 14, mirror_w, col0);
 	rl_current_id = 0;
@@ -451,9 +449,7 @@ void draw_background_2(SDL_Surface *surface)
 		}
 	}
 
-	// Endless SMOOTH overclock: advance layer 2 by its fractional-carried extra px (computed once
-	// per tick in tyrian2.c), matching layer 1/event pace with the parallax ratio preserved but no
-	// velocity pulse. Ungated by the Y-delay to mirror layer 1; the wrap can cross several tiles.
+	// Apply Endless overclock with fractional carry while preserving layer 2 parallax.
 	if (background_advance)
 	{
 		backPos2 += endlessScrollExtraPx2;
@@ -553,9 +549,7 @@ void draw_background_3(SDL_Surface *surface)
 	bg_update_scroll_delta(3, (int)mapY3, (int)backPos3);
 
 	rl_current_id = RL_ID_BG_BASE + 3;
-	// background3x1 welds this layer to layer 1 (mapX3Ofs = mapXOfs), but the two record on opposite
-	// sides of the mid-tick parallax update, sampling that shared anchor a tick apart. Pan from the
-	// one layer 1 recorded; the integer stays mapX3Ofs, which is what the rows below blit at.
+	// A welded layer pans from layer 1's recorded anchor, not its later live offset.
 	const float x_anchor_f = (background3x1 && bg_layer_xofs_valid[1]) ? bg_layer_xofs[1] : mapX3Ofs_f;
 	bg_set_layer_dx(3, x_anchor_f, mapX3Ofs);
 	for (int i = -1; i < 7; i++)
@@ -572,9 +566,7 @@ void draw_background_3(SDL_Surface *surface)
 	rl_current_id = 0;
 }
 
-// Pixel-only body of JE_filterScreen: `col` recolours each playfield pixel's palette
-// bank (high nibble), `int_` adjusts brightness (low nibble), -99 skips a component.
-// No fade side effects, so the render list can replay it on interpolated frames.
+// Apply palette bank and brightness directly, without JE_filterScreen's fade side effects.
 void JE_filterScreenApply(SDL_Surface *surface, JE_shortint col, JE_shortint int_)
 {
 	Uint8 *s = NULL; /* screen pointer, 8-bit specific */
@@ -721,7 +713,7 @@ void lava_filter(SDL_Surface *dst, SDL_Surface *src)
 				--dst_pixel;
 				--src_pixel;
 
-				// value is average value of source pixel (2x), destination pixel above, and destination pixel below (all with waver)
+				// Average the doubled source with the destination pixels above and below.
 				// hue is red
 				Uint8 value = 0;
 
@@ -1009,9 +1001,7 @@ typedef struct
 #define STARFIELD_VISIBLE 184  // rows; stars draw above this. Matches the 184-row playfield so they
                                // fill it to the bottom (a shorter value leaves a black stripe on space levels).
 
-// Recycled stars respawn in a band just ABOVE the visible top edge (negative rows)
-// so they scroll smoothly into view instead of popping in at row 0. Respawn row is
-// -(MIN + a rotating offset in [0, SPREAD)).
+// Recycle stars through a rotating band above the screen to avoid visible pop-in.
 #define STARFIELD_SPAWN_MIN    4
 #define STARFIELD_SPAWN_SPREAD 32
 
@@ -1019,10 +1009,7 @@ typedef struct
 #define STARFIELD_SPEED_SCALE 1.0f
 static StarfieldStar starfield_stars[MAX_STARS];
 int starfield_speed;
-// Rotates the above-screen respawn height so consecutive recycles stagger across the
-// spawn band instead of clustering at one height. Deterministic / RNG-free; the
-// per-tick starfield must never touch mt_rand (that would perturb the gameplay RNG
-// stream the demos depend on).
+// Rotate respawn height without touching the gameplay RNG stream.
 static int starfield_spawn_phase;
 
 void initialize_starfield(void)

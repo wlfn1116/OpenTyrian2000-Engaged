@@ -47,9 +47,7 @@ char difficulty_name[7][21];
 char gameplay_name[GAMEPLAY_NAME_COUNT][26];
 char timed_battle_name[4][23];
 
-// Wait for menu input (key, mouse button, or motion); returns true if the mouse moved.
-// Poll at 1 ms so the caller's redraw loop and cursor can run at the
-// display refresh rate.
+// Wait for menu input; 1 ms polling keeps redraws and cursor motion responsive.
 static bool menuWaitForInput(void)
 {
 	const float startMouseX = mouse_xf;
@@ -116,10 +114,7 @@ bool gameplaySelect(void)
 		// Draw menu items.
 		for (size_t i = 0; i < menuItemsCount; ++i)
 		{
-			// "Endless" is inserted after the full-game entry; every other label still comes
-			// from gameplay_name[] (full game = [1], the rest map straight across after the
-			// insert: Arcade = [2], Timed = [3], 2P = [4], Network = [5]).
-			// The lobby now contains both online Arcade and Campaign.
+			// Endless is inserted after Full Game; later labels keep their gameplay_name indices.
 			const char *const text = (i == MENU_ITEM_ENDLESS)             ? "1 Player Endless"
 			                       : (i == MENU_ITEM_NETWORK)             ? "Online Multiplayer"
 			                       : (i == MENU_ITEM_1_PLAYER_FULL_GAME)  ? gameplay_name[1]
@@ -281,9 +276,7 @@ bool gameplaySelect(void)
 #ifdef WITH_NETWORK
 				JE_playSampleNum(S_SELECT);
 
-				// The lobby handles hosting/joining and only returns true once a peer is
-				// connected; anything else (backed out, failed) leaves nothing initialised
-				// and drops us back onto this menu.
+				// Continue only after the lobby returns with an initialized peer connection.
 				if (!networkLobby())
 				{
 					restart = true;
@@ -688,9 +681,7 @@ bool difficultySelect(void)
 	bool restart = true;
 
 	const size_t menuItemsCount = COUNTOF(difficulty_name) - 1;
-	// All difficulties are shown up front; the classic hidden-difficulty unlock codes
-	// (Shift+G for Impossible, Shift+] for Suicide, and typing L-O-R-D for Lord of Game) are
-	// no longer required.
+	// Show every difficulty without the classic unlock codes.
 	size_t menuItemsVisibleCount = menuItemsCount;
 	size_t selectedIndex = 1;
 
@@ -1066,9 +1057,7 @@ int networkHostStartSelect(void)
 	}
 }
 
-// Shown when an online session dies mid-game (peer quit, connection lost, desync): keep the
-// session's pre-level LAST LEVEL backup in a named slot, or let it go.  Same screen language
-// as the host's New Game / Load Game choice, with the session's cause of death on top.
+// Offer to keep the pre-level backup after an online session ends unexpectedly.
 bool networkDisconnectSavePrompt(const char *message)
 {
 	static const char *const menu_item[] = { "Save Game", "Don't Save" };

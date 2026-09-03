@@ -100,9 +100,7 @@ void rollback_state_register_globals(void)
 	REG(enemyStillExploding);
 	/* Level events 49-52 rewrite enemy template slot 0 mid-level. */
 	rollback_register("enemyDat[0]", &enemyDat[0], sizeof(enemyDat[0]));
-	/* Secret-orb warp latch (episodes.c).  The pickup is guarded by !bonusLevel;
-	 * left out of the registry, a re-simulated pickup found the flag already set
-	 * from the first pass and skipped the nextLevel warp assignment. */
+	/* Register the secret-orb latch so re-simulation repeats its warp assignment. */
 	REG(bonusLevel);
 
 	/* Enemy shots. */
@@ -248,18 +246,13 @@ void rollback_state_register_globals(void)
 	REG(map2YDelay);  REG(map2YDelayMax);
 	REG_ARR(smoothie_data);
 	REG(starfield_speed);
-	/* Script events toggle these mid-level, and smoothies[8] inverts the vertical control axis
-	 * and mirrors twiddle direction, so a replayed tick must start them from the same point or
-	 * inputs read differently. */
+	/* Scripted smoothie flags affect controls and must restore before replayed input. */
 	REG_ARR(smoothies);
 	REG(starShowVGASpecialCode);
 	REG(endlessScrollExtraPx1);
 	REG(endlessScrollExtraPx2);
 	REG(endlessScrollExtraPx3);
-	/* The smooth-scroll float mirrors are presentation-facing, but their values
-	 * are stamped into enemy[] (mapoffset_frac / scroll_yfrac) during the draw
-	 * pass. A replayed tick must start them from the same point or the
-	 * stamped bytes differ (the self-test caught exactly this). */
+	/* Restore smooth-scroll mirrors because the draw pass stamps them into enemy state. */
 	REG(mapXOfs_f);  REG(mapX2Ofs_f);  REG(mapX3Ofs_f);
 	REG(oldMapXOfs_f);  REG(oldMapX3Ofs_f);
 	REG_ARR(bgScrollDeltaY);

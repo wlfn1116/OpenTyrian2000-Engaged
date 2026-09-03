@@ -33,9 +33,7 @@ enum
 	RIGHT_SIDEKICK = 1
 };
 
-// Horizontal offset each way when BOTH sidekick slots hold a front-mounted (tr==2) option,
-// so the two pods sit side by side instead of overlapping. Shared by gameplay (mainint.c)
-// and the shop weapon preview (game_menu.c) so the two stay in sync.
+// Shared gameplay and preview offset for two front-mounted sidekicks.
 #define FRONT_OPTION_SPREAD 10
 
 // Large trailing companions draw below their stored position. Offset gameplay and preview shots
@@ -65,9 +63,7 @@ typedef struct
 }
 PlayerItems;
 
-/* Wallets are 64-bit and stay inside [0, CASH_MAX]: change one only through cash_add /
- * player_add_cash / player_set_cash, which stop a debit at zero and a credit at the ceiling, so no
- * price or payout can wrap it. 12 digits is beyond any run and inside every readout column. */
+/* Change wallets only through the clamped cash helpers. */
 #define CASH_MAX 999999999999LL
 
 static inline Sint64 cash_clamp(Sint64 v)
@@ -206,9 +202,7 @@ static inline bool all_players_alive(void)
 	return (player[0].is_alive && (!twoPlayerMode || player[1].is_alive));
 }
 
-/* Dead with no life left to come back on, once the wreck has finished exploding. Only the arcade
- * rules hand out lives, so anywhere else a finished explosion is already final. Every per-ship HUD
- * readout keys off this; see doc/notes.md#session-and-outpost. */
+/* True after the final wreck finishes and no Arcade life remains. */
 static inline bool player_is_out(uint p)
 {
 	return !player[p].is_alive && player[p].exploding_ticks == 0
@@ -230,9 +224,7 @@ extern bool coopSharedCredit;
 void coop_set_session_shared_credit(bool shared);
 bool coop_credit_is_shared(void);
 
-/* Individual credit splits between two wallets what one player would have earned alone. Double
- * Pickups pays every cash and gem pickup twice over to make up part of that; it is meaningless
- * under Shared, where both already collect in full, so the row only shows under Individual. */
+/* Double Earnings applies only to Individual credit. */
 // Online Arcade lobby preference: fly the classic linked pair, or two Separate personal
 // arcades. The session flag it arms is arcadeSeparateMode (config.h).
 extern bool arcadeSeparateShips;

@@ -726,9 +726,7 @@ static void qa_test_course_base_rule(void)
 
 #define QA_POOL_MAX (EPISODE_MAX * 64)
 
-/* The eligible pool, derived here rather than read from endless_level.c, so the bag is checked
- * against an independent expectation of what belongs in it. A section the level scripts load twice
- * counts once, the way a chart counts it. */
+/* Keep this expected pool independent of endless_level.c; duplicate script sections count once. */
 typedef struct { int ep; JE_byte sec; } QaPoolEntry;
 
 static int qa_level_pool(QaPoolEntry *pool)
@@ -899,9 +897,7 @@ static void qa_test_shuffle_spend(int npool)
 		qa_check(oneLevel, "Same Shuffle puts every charted route on its one drawn level");
 	}
 
-	/* A hand that straddles a refill still has to come out clean, and the hand after one must not
-	 * repeat the hand before it. Surveyor widens every chart to the slate maximum so each offset
-	 * really does reach the seam. */
+	/* A draw spanning a refill must stay unique, and the next draw must not repeat its tail. */
 	for (unsigned sample = 0; sample < 24; ++sample)
 	for (int offset = 1; offset < ENDLESS_MAX_COURSES; ++offset)
 	{
@@ -1092,9 +1088,7 @@ static void qa_test_course_shuffle_rule(void)
 	qa_test_shuffle_reroll_and_resume();
 }
 
-/* Radar's chart reroll. It has to deal a genuinely different visit, leave an unrerolled visit on
- * the salt every existing seed was played on, stay reproducible from the reroll count alone (which
- * is all that travels between two machines), and hand out exactly one reroll per outpost. */
+/* Radar rerolls must change the visit, preserve old seeds, and reproduce from the reroll count. */
 static void qa_test_course_reroll(void)
 {
 	char seed[ENDLESS_SEED_MAXLEN];
@@ -1407,9 +1401,7 @@ static void qa_test_record_readers(void)
 		         "erasing one rule's record leaves the varied-base one standing");
 	}
 
-	/* The record page opens on one figure per mode, so that figure has to be the deepest of the
-	 * four rules and carry whichever of them owns it, without ever reaching across the crew sizes
-	 * the rules sit inside. */
+	/* The records page shows the deepest run for the selected mode and crew size. */
 	endlessBestZoneDiff[ENDLESS_BASE_SAME_SHUFFLE][0][ENDLESS_RUNMODE_STANDARD][2] = 41;
 	endlessBestZoneDiffCustom[ENDLESS_BASE_SAME_SHUFFLE][0][ENDLESS_RUNMODE_STANDARD][2] = true;
 	qa_check(endlessBestZoneAnyRule(0, ENDLESS_RUNMODE_STANDARD) == 41
@@ -1628,9 +1620,7 @@ static void qa_test_weapon_editor(void)
 	customWeaponMaterialize();
 }
 
-/* The Online Campaign design exchange. Both machines fly both ships, so a design that decodes
- * to anything other than what was encoded is a desync; a short or hostile stream must be
- * refused rather than compiled. */
+/* Online Campaign designs must round-trip exactly and reject malformed streams. */
 static void qa_test_custom_weapon_wire(void)
 {
 	const int owner = CUSTOM_WEAPON_OWNERS - 1;
@@ -1904,9 +1894,7 @@ static void qa_test_cash_ledger(void)
 	endlessCashResync();
 }
 
-/* Elite and champion bounties across the whole session surface: both machines, both credit
- * modes, the Bounty perk, and Double Earnings, which covers bounties the way it covers every
- * other combat payment. */
+/* Check bounty payouts on both peers, in both credit modes, with all relevant modifiers. */
 static void qa_test_bounty_matrix(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -1973,9 +1961,7 @@ static void qa_test_bounty_matrix(void)
 	endlessActiveMods = savedMods;
 }
 
-/* Bounty Hunter's other half: the score-pickup multiplier. The cash belongs to whichever ship
- * flew over the pickup, so that ship's own row sizes it, and both machines collect for both
- * ships and must end on the same two wallets. */
+/* Score-pickup cash uses the collecting ship's Bounty Hunter stacks on both peers. */
 static void qa_test_score_pickup_multiplier(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -2051,9 +2037,7 @@ static void qa_test_score_pickup_multiplier(void)
 	thisPlayerNum = savedThis;
 }
 
-/* The level-clear payout, which each machine derives for BOTH ships: interest on each ship's
- * own bank plus each ship's clear bonus, identical whichever machine runs it. Paying only the
- * local wallet left each machine's view of the partner short and skipped Shared entirely. */
+/* Both peers derive both ships' interest and clear bonuses. */
 static void qa_test_zone_payout(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -2223,9 +2207,7 @@ static void qa_test_effect_gates(void)
  * frame pins it exactly; the shot loops in tyrian2.c add the target's own middle to the answer. */
 static void qa_test_shot_hitboxes(void)
 {
-	/* One frame of a 12-wide cell: an empty row, then a four-pixel run at columns 2 to 5 on each
-	 * of the next two rows. A control byte carries the opaque run in its high nibble and the
-	 * transparent skip in its low one, a zero run advances to the next row, and 0x0f ends it. */
+	/* A 12-pixel test cell with two four-pixel rows exercises the packed sprite controls. */
 	static const Uint8 body[] = {
 		0x0c,                                // row 0: 12 transparent columns, then the next row
 		0x42, 0x11, 0x11, 0x11, 0x11, 0x06,  // row 1: skip 2, four pixels, skip the rest
@@ -2279,9 +2261,7 @@ static bool qa_guidance_marked(JE_integer id)
 	return id < MAX_PWEAPON && (playerShotData[id].aimDelayMax & SHOT_AIM_GUIDANCE) != 0;
 }
 
-/* Guidance Package: which bays it steers at which stacks, what it will and will not aim at, and
- * the course correction itself. The stock weapon-table homing is checked beside it, since the two
- * share the move-side and the stock branch has to stay as shipped. */
+/* Check Guidance Package targeting without changing stock weapon-table homing. */
 static void qa_test_guidance_perk(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -2309,9 +2289,7 @@ static void qa_test_guidance_perk(void)
 	         "the guidance test's stock guns are the ones it assumes");
 	const int guidedOwn = weapons[guidedGun].aim - 5;
 
-	/* The field: one shootable hull whose screen x (ex + mapoffset) is left of the shot while its
-	 * map x is right of it, and three nearer things a steered shot must ignore: a pickup, an
-	 * invulnerable part and scenery. */
+	/* Only the shootable hull is valid; the nearer pickup, invulnerable part, and scenery are decoys. */
 	for (uint i = 0; i < COUNTOF(enemy); ++i)
 	{
 		memset(&enemy[i], 0, sizeof(enemy[i]));
@@ -2441,9 +2419,7 @@ static void qa_test_guidance_perk(void)
 	qa_check(s->aimAtEnemy == 0 && s->shotXM == 0,
 	         "...and flies straight once nothing shootable is left");
 
-	/* A shot riding the ship is steered inside the ship's frame: a riding velocity (120 sits still
-	 * beside the ship) takes the same nudge and never leaves its band, so the curve travels with the
-	 * ship; a free velocity never crosses into the band either. */
+	/* Steering must keep attached and free velocities in their respective ranges. */
 	enemyAvail[5] = 0;   // the hull to the upper right stands again
 	s->shotX = 100;
 	s->shotY = 150;
@@ -2567,9 +2543,7 @@ static void qa_test_guidance_perk(void)
 	guidedShotScreenAim = savedGuidedAim;
 }
 
-// The survey pickups' loot on the field after a drop-test kill. Each spawned pickup costs one
-// scatter draw in JE_setupEnemy (startxc is set on all three records), which the stream checks
-// add on.
+// Survey drop fixtures include JE_setupEnemy's scatter RNG draw for each pickup.
 static int qa_surveyor_count_loot(int *bombs, int *orbs, int *cubes, int *misplaced,
                                   JE_integer wantX, JE_integer wantY)
 {
@@ -2593,9 +2567,7 @@ static int qa_surveyor_count_loot(int *bombs, int *orbs, int *cubes, int *mispla
 	return loot;
 }
 
-/* Surveyor's kill drops: all three survey pickups appear at the kill anchor, one triple of draws
- * per linked hull with the loot at the hull's middle, deeper stacks shorten the odds, no draws
- * without the perk, and nothing lands in the slot the kill site still uses. */
+/* Surveyor rolls each linked hull once and places all drops at that hull's kill anchor. */
 static void qa_test_surveyor_drop_perk(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -2841,9 +2813,7 @@ static void qa_test_twin_pods_perk(void)
 	qa_check(endlessPerkTwinPodOffset(1, LEFT_SIDEKICK) == -off,
 	         "...and outside co-op a second ship flies off the only perk row there is");
 
-	/* Personal in co-op, and read off the named ship rather than the effect context: the partner's
-	 * pods stay single however the context is pointed, which is what keeps two machines simulating
-	 * the same volley from the same perk rows. */
+	/* Auxiliary Overdrive uses the firing ship's stacks, not the current effect context. */
 	coopEndlessMode = true;
 	endlessSetFxPlayer(0);
 	qa_check(endlessPerkTwinPodOffset(1, LEFT_SIDEKICK) == 0 && endlessPerkTwinPodOffset(0, LEFT_SIDEKICK) == -off,
@@ -2948,9 +2918,7 @@ static void qa_test_reinforced_prow_perk(void)
 	         "...only in an endless run");
 	endlessMode = true;
 
-	/* The ram site's own arithmetic: an open Opening Salvo window lifts the Reinforced Prow figure,
-	 * and Knife Fight's bonus comes off that same unlifted figure, the two summed. Neither bonus
-	 * reaches the ship's own share. */
+	/* Ram damage adds Salvo and Knife Fight bonuses without increasing self-damage. */
 	const int savedWindow = endlessSalvoWindow[0];
 	endlessSalvoWindow[0] = 0;
 	const int stockRam = endlessPerkProwRamDamage(2);
@@ -3394,9 +3362,7 @@ static void qa_test_countermeasure_burst(void)
 	coopEndlessMode = savedCoop;
 }
 
-/* Guided Aim (guidedShotScreenAim): the weapon-table homing picks and chases the enemy's screen x
- * instead of its map x. Nothing else about the stock rule moves: it still takes any non-free,
- * non-pickup slot and still veers off when its enemy dies. */
+/* Guided Aim changes the homing x-coordinate, not the stock target eligibility rules. */
 static void qa_test_guided_screen_aim(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -3785,9 +3751,7 @@ static void qa_test_elite_explosion_tint(void)
 	qa_check(sizeof(Explosion) == 14 && sizeof(rep_explosion_type) == 20,
 	         "the explosion pools keep the widths the replay fixtures were recorded at");
 
-	/* The packed bank-and-lift argument, through the blitter replay draws with. One opaque pixel:
-	 * a control byte carrying an opaque run of one in its high nibble and no skip in its low one,
-	 * the pixel, then the end marker. */
+	/* One opaque pixel is enough to verify the packed palette-bank and lift argument. */
 	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8)
 	{
 		union {
@@ -3900,9 +3864,7 @@ static bool qa_message_bar_differs(const Uint8 *was)
 	return memcmp(now, was, sizeof(now)) != 0;
 }
 
-/* The bounty line names the tier in the tier's own bank. The name is drawn as a string of its own,
- * so its width has to advance the cursor exactly as one string would: the words after it must land
- * on the columns they had, and nothing but the tier name may change bank. */
+/* The tier name uses its own palette bank without shifting the text that follows it. */
 static void qa_test_elite_message_tint(void)
 {
 	if (VGAScreenSeg == NULL || VGAScreenSeg->format->BitsPerPixel != 8)
@@ -3998,9 +3960,7 @@ static void qa_test_superspark_caps(void)
 
 		for (int m = 0; m < used; ++m)
 		{
-			/* Above 60000 is an option-shape shot, which takes the blended draw instead of the
-			 * trail branch. The trail's colour is the thousands digit shifted into a palette
-			 * bank, so only 1001..15999 is a graphic the data can have meant. */
+			/* Graphics above 60000 are option shapes; trail graphics are limited to 1001..15999. */
 			const JE_word sg = weapons[wpn].sg[m];
 			if (sg <= 1000 || sg / 1000 > 15)
 				continue;
@@ -4144,9 +4104,7 @@ static Uint32 qa_spark_rng_draws(bool silent, JE_word num)
 	return mt_rand_count;
 }
 
-/* JE_doSP is reached from simulation code, so its draws belong to the deterministic stream even
-   though the sparks themselves do not. Dropping the slot write on a silent re-simulation pass must
-   drop none of them, or the peers' generators separate and the run desyncs. */
+/* Silent re-simulation must consume the same spark RNG draws as a presented frame. */
 static void qa_test_superspark_rng_cost(void)
 {
 	qa_check(qa_spark_rng_draws(true, 7) == qa_spark_rng_draws(false, 7),
@@ -4172,9 +4130,7 @@ static bool qa_spark_brief_first(JE_byte life, JE_byte bright,
 	return false;
 }
 
-/* The Opening Salvo cue spawns through JE_doSPBrief, which cuts a spark's life to `life` ticks and
-   lifts its shade by `bright` so the shorter life does not spawn it dark. It is reached from the
-   shot draw, so its RNG cost has to match JE_doSP's spark for spark. */
+/* Brief sparks keep JE_doSP's RNG cost while applying their shorter life and brighter shade. */
 static void qa_test_superspark_brief(void)
 {
 	const bool savedExtra = extraSparks;
@@ -4246,9 +4202,7 @@ static void qa_spark_seeded_offset(Uint32 seed, int *dx, int *dy)
 	}
 }
 
-/* A seeded source's successive showers sit a fixed stride apart, and each has to get a fresh
-   direction out of it. The strides below are what the callers in tyrian2.c produce at their
-   emission cadences. See doc/notes.md#gauges-and-effects. */
+/* Successive showers use the caller strides documented in doc/notes.md#gauges-and-effects. */
 static void qa_test_superspark_seeded_spread(void)
 {
 	static const Uint32 strides[] = { 1u, 100u, 137u, 500u, 685u };
@@ -4287,9 +4241,7 @@ static void qa_test_superspark_seeded_spread(void)
 	JE_resetSP();
 }
 
-/* The two shapes the Chain Reaction pulse draws with. Both space their sparks by distance, so the
- * geometry has to hold at every size the perk reaches: a ring has to land on the radius it was asked
- * for, and a bolt has to stay on the line between the two things it connects. */
+/* Chain Reaction rings and bolts must preserve their geometry at every supported size. */
 static void qa_test_superspark_shapes(void)
 {
 	const bool savedExtra = extraSparks;
@@ -4467,9 +4419,7 @@ static void qa_test_vaporised_shot_sparks(void)
 	JE_resetSP();
 }
 
-/* The blood a Knife Fight hit draws: drops that run down from the hull that was hit, in the reddest
- * bank of the palette in use, deeper bonus for more of them, silent under a re-simulation and
- * bounded over a presented frame. */
+/* Knife Fight blood uses the hit hull, scales by bonus, and stays silent during re-simulation. */
 static void qa_test_knife_fight_blood(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -5052,9 +5002,7 @@ static void qa_test_lds_midi_detune(void)
 
 #endif /* WITH_MIDI */
 
-/* Enhancement presets (config.c): one probe per menu screen, proving that screen's settings reach
- * the preset table, plus the Custom set's round trip. Runs last in the suite, because it moves
- * the real settings and cannot restore what it cannot list. */
+/* Run preset coverage last because it temporarily changes the real settings. */
 static void qa_test_enhancement_presets(void)
 {
 	/* One setting per Enhancements screen and group. Each is poked away from the Engaged set the
@@ -5396,9 +5344,7 @@ static void qa_test_kill_fire_drives(void)
 		qa_check(endlessShipTintFilter() != 0, detail);
 	}
 
-	/* Two ships, two different drives bought at two different prices. Each has to come away with
-	 * its own window length: the kill loop reads the charge of the ship it is opening the window
-	 * for, not whichever ship the effect context happened to be pointing at. */
+	/* Each ship's Opening Salvo window comes from its own drive. */
 	endlessActiveMods = 0;
 	endlessPurchasedMods[0] = ENDLESS_MOD_TURBODRIVE;
 	endlessPurchasedMods[1] = ENDLESS_MOD_OVERBLAST;
@@ -5436,9 +5382,7 @@ static void qa_test_kill_fire_drives(void)
 	endlessMode = savedEndless;
 }
 
-/* The wiring, not the rules: the per-tick block in JE_playerMovement is what turns a drive into
- * a faster gun, and it used to run for player 1 alone. Re-create exactly what it does for each
- * ship in turn and check the cooldowns actually move for both. */
+/* The movement tick must apply each ship's drive to that ship's weapon cooldowns. */
 static void qa_test_kill_fire_wiring(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCoop = coopEndlessMode;
@@ -5493,9 +5437,7 @@ static void qa_test_kill_fire_wiring(void)
 	qa_check(dropped[0] == 0 && dropped[1] > 0,
 	         "a drive the second ship bought quickens the second ship alone");
 
-	/* Opening Salvo charges on an idle gun and is spent by the gun that fires, so one ship
-	 * shooting must not spend the other's charge; and the perk is personal, so a ship that
-	 * never picked it has no salvo to spend at all. */
+	/* Opening Salvo charge belongs to the ship that earned and spends it. */
 	endlessPerkTakenBy[0][PERK_SALVO] = 1;
 	endlessPerkTakenBy[1][PERK_SALVO] = 1;
 	endlessPerkRederive();
@@ -5509,9 +5451,7 @@ static void qa_test_kill_fire_wiring(void)
 	qa_check(endlessOpeningSalvoConsume() && endlessOpeningSalvoVolleyActive(),
 	         "...for the second ship to spend itself");
 
-	/* The generator gauge the HUD paints green reads the same per-ship state: full while a charge
-	 * is banked, receding while the spent window burns down, and untouched on the ship that did
-	 * not fire. Co-op draws it for whichever ship the machine flies, so both rows must answer. */
+	/* The Salvo gauge reports the local ship's banked charge and active window. */
 	endlessResetZonePerkTimers();
 	endlessSetFxPlayer(0);
 	qa_check(endlessOpeningSalvoGaugePercent() == 100, "a banked Opening Salvo fills its owner's gauge");
@@ -5539,9 +5479,7 @@ static void qa_test_kill_fire_wiring(void)
 	qa_check(!endlessOpeningSalvoConsume(),
 	         "a ship that never picked Opening Salvo has none to spend");
 
-	/* Where in the tick the window opens. The special fires before the weapon loop, so a salvo
-	 * armed down at the gun left the special that pressed the same button outside its own volley.
-	 * Drive the exported gate the shot section reaches ahead of JE_doSpecialShot. */
+	/* The Salvo window must open before a same-tick special fires. */
 	endlessPerkTakenBy[0][PERK_SALVO] = 1;
 	endlessPerkTakenBy[1][PERK_SALVO] = 1;
 	endlessPerkRederive();
@@ -5776,9 +5714,7 @@ static void qa_test_coop_combo_and_pickups(void)
 	qa_check(player[0].cash == 250 && player[1].cash == 250,
 	         "...and Shared pays the plain amount to both");
 
-	/* An elite bounty is kill cash and follows the shooter, and one nothing can claim has to pay
-	 * the same ship on both machines: paying "the local player" put it in a different wallet on
-	 * each side of the session. Run this as the joiner, where the two answers differ. */
+	/* On the joiner, an elite bounty still follows the shooter rather than the local seat. */
 	const JE_boolean savedNetGame = isNetworkGame;
 	const JE_byte savedPlayerNum = thisPlayerNum;
 	isNetworkGame = true;
@@ -5868,9 +5804,7 @@ static void qa_test_peer_left_level(void)
 #endif
 }
 
-/* The idle rule that ends a level-end or menu-frame confirmation wait when the peer stops
- * producing frames. The case that matters is a peer that gained frames after the wait began and
- * then left; the rule has to fire on it, and every advance has to buy the peer a fresh window. */
+/* Each peer advance renews the confirmation timeout; an idle peer must eventually release it. */
 static void qa_test_peer_idle_rule(void)
 {
 #ifdef WITH_NETWORK
@@ -5895,9 +5829,7 @@ static void qa_test_peer_idle_rule(void)
 #endif
 }
 
-/* Who owns the in-game menu a frame's request bits open. The property that matters is that the
- * two seats never disagree: a frame either opens no menu, or opens one with exactly one presser
- * and one waiter. */
+/* Both peers must agree on the one seat that opened a menu, or that none did. */
 static void qa_test_menu_claim(void)
 {
 #ifdef WITH_NETWORK
@@ -6423,9 +6355,7 @@ static void qa_test_network_settings(void)
 	coopSharedCredit = true;
 	coopDoubleEarnings = true;
 	vt_ship = true; smoothMotion = true; smoothScroll = true;
-	// Expert Mode multiplies enemy health, weapon energy and prices, so the pair has to agree on
-	// it before the first boss. Each tunable takes a distinct in-range value, so a slot wired to
-	// the wrong offset lands somewhere visible instead of on its neighbour's identical number.
+	// Distinct Expert values expose swapped settings while peers check the same rules.
 	expertMode = true;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = expertSettings[i].lo + expertSettings[i].step * (i + 1);
@@ -6879,9 +6809,7 @@ static void qa_test_modifier_online_parity(void)
 	endlessSetFxPlayer(0);
 }
 
-/* Sidekick simulation counters across rollback: ammo, refill, charge, the satellite angle, the
- * attachment latches, and the linked-pair state all live in registered state and must survive a
- * snapshot restore exactly. A counter outside the registry replays wrong after a correction. */
+/* Every sidekick simulation counter must survive a rollback snapshot exactly. */
 static void qa_test_sidekick_rollback_state(void)
 {
 	const Player savedPlayer = player[0];
@@ -6968,9 +6896,7 @@ static void qa_test_arcade_matrices(void)
 		linkTable &= linkGunWeapons[i] <= WEAP_NUM;
 	qa_check(linkTable, "every link-gun rear weapon maps to a real weapon entry");
 
-	// Split-HUD gauge geometry: a full two-player gauge (21 units, one row of top pad) must
-	// stay inside the 45-row band the wipe clears; painted rows outside it would never be
-	// erased. Painted directly at the two player strides and measured off the pixels.
+	// Both full split-HUD gauges must stay inside the 45-row cleared band.
 	if (VGAScreen != NULL && VGAScreen->format->BytesPerPixel == 1)
 	{
 		for (int stride = 0; stride < 2; ++stride)
@@ -7065,9 +6991,7 @@ static void qa_test_special_icon_tops(void)
 	JE_applyUnusedShopSprites();
 }
 
-/* What the health bars divide by. Boss armor varies: the difficulty curve scales it at spawn and
- * level scripts arm boss groups at their own values, so both bars have to measure a wound against
- * the armor that part actually started with. */
+/* Health bars divide by each boss part's spawn armor, including script and difficulty changes. */
 static void qa_test_health_bar_scale(void)
 {
 	struct JE_SingleEnemyType part = { 0 };
@@ -7250,9 +7174,7 @@ static void qa_test_dragonwing_row(void)
 	qa_check(player[0].armor == hull && shipGr == 0 && shipGrPtr == &spriteSheet9,
 	         "a seat flying the bought Dragonwing gets its hull and the sentinel graphic");
 
-	/* Graphic 0 is also how the linked pair marks its rear bay, which owns a fixed hull and no ship
-	 * of its own. A second seat that bought the Dragonwing has to resolve through the two-ship path
-	 * instead, or the two machines would fly different armor. */
+	/* Graphic 0 means the linked rear bay only outside a two-ship session. */
 	twoPlayerMode = true;
 	coopCampaignMode = true;
 	coopEndlessMode = false;
@@ -7457,9 +7379,7 @@ static bool qa_tag_is(const char *tag, const char *want)
 	return strcmp(tag, want) == 0;
 }
 
-/* Endless deals both weapon lists from one id pool, so every gun row names its issuing bay
- * (Dual-Mode outranks Rear in the rear list); that only means something if every real port
- * names one bay. A campaign shop fills its lists from separate data and never carries the mark. */
+/* Endless gun rows carry one issuing bay; campaign shop rows carry none. */
 static void qa_test_weapon_bay_tags(void)
 {
 	uint front = 0, rear = 0, unclassified = 0;
@@ -8032,9 +7952,7 @@ static void qa_test_twiddle_ships(void)
 	superTyrian = savedSuper;
 }
 
-/* Every input path resolves a flick the same way. The detector ignores a tick offering it two
- * directions, so SF_twiddleTarget collapses a flick inside the 2:1 cone to its dominant axis and
- * keeps both axes for anything shallower, which the detector reads as a neutral tick. */
+/* Flicks inside the 2:1 cone collapse to one axis; shallower diagonals remain neutral. */
 static void qa_test_twiddle_diagonals(void)
 {
 	enum { PX = 100, PY = 100 };
@@ -8143,9 +8061,7 @@ static void qa_test_twiddle_diagonals(void)
 	smoothies[9-1] = savedInvert;
 }
 
-/* The direction a target carries, decoded as the top of JE_SFCodes decodes it: 1..4 for
- * UP/DOWN/LEFT/RIGHT, 0 where there is no single direction (the detector turns that into code 9
- * or a neutral return). Keep it in step with that decode. */
+/* Target directions use JE_SFCodes values 1..4; ambiguous or absent input is 0. */
 static int qa_twiddle_code(int px, int py, int tx, int ty)
 {
 	const int count = (ty > py) + (ty < py) + (px < tx) + (px > tx);
@@ -8154,9 +8070,7 @@ static int qa_twiddle_code(int px, int py, int tx, int ty)
 	return (ty > py) * 1 + (ty < py) * 2 + (px < tx) * 3 + (px > tx) * 4;
 }
 
-/* The wire round trip. A peer never sees the displacement, only rb_move_bits, and rebuilds a
- * direction from them; the detector has to read that the way it reads the displacement itself,
- * upside down or not, or the two machines resolve one flick as two different codes. */
+/* Directions reconstructed from rb_move_bits must match local flick detection. */
 static void qa_test_twiddle_wire(void)
 {
 	enum { PX = 100, PY = 100 };
@@ -8238,9 +8152,7 @@ static void qa_test_twiddle_wire(void)
 	smoothies[9-1] = savedInvert;
 }
 
-/* Any tick that is not the combo's next code throws it away, except the code just consumed and a
- * tick with everything released. The expected direction with the fire button in the wrong state
- * goes too, which is what keeps ordinary flying from finishing a combo. */
+/* Unexpected input clears a combo, except a repeated code or a fully released tick. */
 static void qa_test_twiddle_strictness(void)
 {
 	const Player saved0 = player[0];
@@ -8318,9 +8230,7 @@ static void qa_test_twiddle_cooldown(void)
 	const Player saved0 = player[0];
 	SDL_Surface *const savedVGA = VGAScreen;
 
-	// The scratch slot takes an inert type: the effect switch has no case 0, so only the charge
-	// runs. Clearing the equipped special and the debug twiddle keeps every other fire gate shut,
-	// and stock (non-endless) charges keep the deducted amounts exact.
+	// Use inert special type 0 so the test exercises only charging and deduction.
 	special[SPECIAL_NUM].stype = 0;
 	special[SPECIAL_NUM].pwr = 20;  // a fixed shield charge
 	player[0].items.special = 0;
@@ -8826,9 +8736,7 @@ static void qa_test_save_fixtures(void)
 	snprintf(label, sizeof(label), "online outpost rows%s%s", detail[0] ? ": " : "", detail);
 	qa_check(rows, label);
 
-	/* A real pair of files from a build before opentyrian.sav imports over the live tables the way
-	 * first launch does. They sit in the fixture directory's `legacy` sibling. Restored afterwards,
-	 * apart from the endless slot cache, which the suite's own saves overwrite slot by slot. */
+	/* Import the legacy fixture pair, then restore the live save tables. */
 	JE_SaveFilesType savedSlots;
 	T2KHighScoreType savedBoards[20][3];
 	memcpy(savedSlots, saveFiles, sizeof(savedSlots));
@@ -9094,9 +9002,7 @@ int qa_run_replay_fixture(void)
 	demo_num = (Uint8)(qa_replay_demo - 1);
 	qa_fast_forward = true;
 
-	/* Chain Reaction is Endless-only, so the shipped demos never fire a pulse and the self-test
-	 * never sees the queue. Arming the effects over a campaign demo puts a wave in the air during
-	 * real play, so the frame-by-frame comparison reaches a queue with pulses standing in it. */
+	/* Arm Endless effects so campaign demos exercise the Chain Reaction queue. */
 	if (qa_replay_chain != 0)
 	{
 		endlessCampaignMods = true;
@@ -9106,9 +9012,7 @@ int qa_run_replay_fixture(void)
 		{
 			endlessPerkGrant(0, PERK_CHAINRXN, endlessPerkTable[PERK_CHAINRXN].maxStack);
 
-			/* A pulse is scaled by its owner's damage, so give that scale something to say and
-			 * something that moves: Heavy Rounds is a constant lift, while a kill-fire drive opens
-			 * and lapses as the demo kills, changing the figure the drain reads tick to tick. */
+			/* Use one fixed and one timed damage modifier to exercise pulse scaling. */
 			endlessPerkGrant(0, PERK_DAMAGE, endlessPerkTable[PERK_DAMAGE].maxStack);
 			endlessPlayerMods[0] |= ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_DMGUP;
 		}
@@ -9137,9 +9041,7 @@ int qa_run_replay_fixture(void)
 	return 0;
 }
 
-/* Headless Destruct with every frame replayed from its own snapshot.  It runs the production
- * minigame through JE_destructGame, so a field the rollback state walk fails to cover shows up
- * here rather than as an online desync nobody can reproduce. */
+/* Replay every headless Destruct frame from its snapshot to audit rollback coverage. */
 int qa_run_destruct_selftest(void)
 {
 	if (qa_destruct_selftest_ticks == 0)

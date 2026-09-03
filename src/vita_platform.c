@@ -18,9 +18,7 @@
 
 void vita_platform_init(void)
 {
-	// app0:data (the read-only data bundled in the VPK) is auto-mounted by the loader,
-	// and ux0:data always exists, so we only need to create our writable subfolder.
-	// sceIoMkdir no-ops (EEXIST) if it is already there.
+	// The loader mounts app0:data and provides ux0:data; create only our writable subfolder.
 	sceIoMkdir(VITA_USER_DIR, 0777);
 
 	// Make sure the IME sysmodule behind the text-entry dialog is resident before

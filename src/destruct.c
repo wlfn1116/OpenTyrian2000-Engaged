@@ -50,9 +50,7 @@
 
 #define MAX_KEY_OPTIONS 4
 
-/* Widescreen Destruct HUD layout. Each player's readout is a HUD_FRAME_W-wide frame lifted from
- * pic #11 with the drawn box sitting 1px inside it, so the frame's left edge is HUD_BOX_OFFSET
- * px right of DrawHUD's startX anchor. */
+/* Each HUD frame starts HUD_BOX_OFFSET pixels to the right of DrawHUD's anchor. */
 #define HUD_FRAME_W        144
 #define HUD_FRAME_LEFT_X   0
 #define HUD_FRAME_RIGHT_X  (vga_width - HUD_FRAME_W)
@@ -506,9 +504,7 @@ static JE_boolean destructFirstTime;
  * counter, because a rollback re-simulation has to restore and re-derive it. */
 static unsigned int de_endDelay;
 
-/* Clean copy of the HUD strip (rows 0..HUD_ROWS-1), captured by
- * DE_widenHUDBackdrop and repainted every tick by DE_RunTickDrawHUD so gameplay
- * pixels can't accumulate on the HUD art. */
+/* Clean HUD strip repainted each tick so gameplay pixels cannot accumulate on it. */
 static Uint8 hudBackdrop[HUD_ROWS * vga_width];
 
 static struct destruct_config_s config = { 40, 20, 20, 40, 10, false, false, {true, false}, {true, false} };
@@ -565,9 +561,7 @@ static Uint8 de_net_local_bits, de_net_peer_bits;
 
 /* QUIT ends both sides on the same frame; NEWMAP starts a fresh round for both. */
 
-/* Bits a rollback prediction may repeat: the ones a player holds down.  Change-unit and the two
- * weapon cycles are edge triggered (DE_NetLocalActions consumes the key as it reads it), so
- * predicting one would take an action the peer never took. */
+/* Prediction repeats held inputs, never edge-triggered unit or weapon changes. */
 #define DE_ROLLBACK_HELD_ACTIONS ((1 << MOVE_LEFT) | (1 << MOVE_RIGHT) | (1 << MOVE_UP) \
                                   | (1 << MOVE_DOWN) | (1 << MOVE_FIRE))
 #endif
@@ -776,9 +770,7 @@ static void DE_pinSessionConfig(void)
 	config.max_installations = 10;
 }
 
-/* One battle run headlessly with every frame replayed from its own snapshot; see
- * drb_selftest_tick.  Called in place of JE_destructMain, so it inherits the pools, sprites and
- * pinned config JE_destructGame has already set up. */
+/* Run one headless battle with every frame replayed from its snapshot. */
 static void DE_SnapshotSelfTest(void)
 {
 	JE_loadPic(VGAScreen, 11, false);
@@ -899,9 +891,7 @@ static void JE_destructMain(void)
 	while (true)
 	{
 #ifdef WITH_NETWORK
-		// Online, the battle was picked in the host's lobby and adopted from the connect
-		// packet; there is no mode select to disagree on.  Clamped again here because it
-		// indexes baseLookup/basetypes, and this is the last stop before it does.
+		// Clamp the host-selected battle before indexing baseLookup and basetypes.
 		if (de_net)
 			world.destructMode = (network_host_destruct_mode >= 0
 			                      && network_host_destruct_mode < DESTRUCT_MODES)
@@ -921,9 +911,7 @@ static void JE_destructMain(void)
 			DE_widenHUDBackdrop(VGAScreen);
 
 #ifdef WITH_NETWORK
-			// Every map derives from the shared session seed and the round number, so both
-			// machines generate identical worlds (and pick the same song) without exchanging
-			// a byte of them.
+			// Derive the map and song from the shared seed and round number.
 			if (de_net)
 				mt_srand(network_destruct_session_seed + 0x9E3779B9u * de_net_round++);
 #endif
@@ -953,9 +941,7 @@ static void JE_destructMain(void)
 	set_menu_centered(true);
 }
 
-/* Composed from the backdrop stashed in VGAScreen2 rather than drawn straight over the screen:
- * online the two lines at the bottom track both players' readiness, so the whole title is redrawn
- * every frame.  The two flags mean nothing offline, where the screen is composed once. */
+/* Compose from VGAScreen2 because online readiness redraws the title every frame. */
 static void DE_composeIntro(bool localReady, bool peerReady)
 {
 	memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->h * VGAScreen->pitch);
@@ -984,9 +970,7 @@ static void DE_composeIntro(bool localReady, bool peerReady)
 			JE_outText(VGAScreen, center_text(line, TINY_FONT), 130, line, 15, 2);
 		}
 
-		// In place of the offline hints below: online neither F1 nor F10 does anything (the help
-		// screen would stall the state stream, the AI toggle would fork the two sims), and this
-		// screen is a barrier, so what belongs here is where the pair stands.
+		// Online, replace unsafe help and AI controls with barrier status.
 		const char* const own = localReady ? "You are ready."
 		                                   : "Press any key when you are ready.";
 		const char* const other = peerReady ? "The other player is ready."
@@ -1016,9 +1000,7 @@ static void DE_netIntroBarrier(void)
 {
 	bool localReady = false, peerReady = false;
 
-	// Nothing counts until the press that opened this screen is let go: a key still down from the
-	// lobby confirms the barrier before it can be read, and a held pad button auto-repeats into
-	// fresh presses.
+	// Wait for release so the opening input cannot also confirm the barrier.
 	bool armed = false;
 	Uint32 armDeadline = SDL_GetTicks() + 500;
 
@@ -1235,9 +1217,7 @@ static void JE_generateTerrain(void)
 
 	play_song(goodsel[mt_rand() % 14] - 1);
 
-	/* JE_loadPic only fills the original 320px; the widescreen strip past it is never written, so
-	 * clear that sky (rows below the HUD) to black or it shows stale pixels from the previous game
-	 * that pile up across restarts. */
+	/* Clear the widescreen sky that JE_loadPic leaves untouched. */
 	fill_rectangle_xy(VGAScreen, LEGACY_WIDTH, HUD_ROWS, vga_width - 1, vga_height - 1, PIXEL_BLACK);
 
 	DE_generateBaseTerrain(world.mapFlags, world.baseMap);
@@ -1285,9 +1265,7 @@ static void DE_generateBaseTerrain(unsigned int mapFlags, unsigned int* baseWorl
 	/* Now compute a height for each of our lines. */
 	for (i = 1; i <= vga_width - 2; i++)
 	{
-		/* sim_ trig throughout the generator and the tick: the terrain is collision state and
-		 * libm's sinf/cosf differ across platforms (see sim_math.h); an online PC<->console
-		 * pair would grow different mountains from the same seed. */
+		/* Terrain is collision state, so generation uses deterministic sim_ trig. */
 		newheight = roundf(sim_sinf(sinewave * i) * HeightMul + sim_sinf(sinewave2 * i) * 15 +
 			sim_cosf(cosinewave * i) * 10 + sim_sinf(cosinewave2 * i) * 15) + 130;
 
@@ -1514,9 +1492,7 @@ static void JE_aliasDirt(SDL_Surface* screen)
 
 static void DE_widenHUDBackdrop(SDL_Surface* surface)
 {
-	/* HUD backdrop = top 12 rows of pic #11: two 320px box frames pinned flush to each screen
-	 * edge with the widened middle blacked out. Finished strip stashed in hudBackdrop for per-tick
-	 * repaints. */
+	/* Cache pic #11's HUD frames at the screen edges with a black center gap. */
 	enum
 	{
 		LEFT_SRC_X  = 2,    /* left frame's authored x in pic #11 */
@@ -1588,9 +1564,7 @@ static bool JE_stabilityCheck(unsigned int x, unsigned int y)
 
 static void DE_blendTempPixel(int x, int y)
 {
-	/* Fade any explosion pixel (palette 241..255 fades dark-red -> bright-yellow),
-	 * optionally alias dirt, then copy the temp-screen pixel to VGAScreen.  Shared
-	 * by the playfield and HUD-gap passes of JE_tempScreenChecking. */
+	/* Fade explosion colors, optionally alias dirt, then copy the pixel to VGAScreen. */
 	Uint8* temps = (Uint8*)destructTempScreen->pixels + y * destructTempScreen->pitch + x;
 
 	if (*temps >= 241)
@@ -1609,9 +1583,7 @@ static void JE_tempScreenChecking(void) /*and copy to vgascreen*/
 		for (int x = 0; x < VGAScreen->pitch; x++)
 			DE_blendTempPixel(x, y);
 
-	/* The gap between the two HUD boxes is live playfield as well, all the way to
-	 * the top of the screen, so gameplay passing through it isn't clipped against
-	 * the black HUD strip. */
+	/* The gap between HUD boxes remains live playfield up to the top edge. */
 	for (int y = 0; y < HUD_ROWS; y++)
 		for (int x = HUD_GAP_LEFT; x < HUD_FRAME_RIGHT_X; x++)
 			DE_blendTempPixel(x, y);
@@ -1911,9 +1883,7 @@ static void DE_pixCoolScaled(SDL_Surface* hi, int hx, int hy, Uint8 c, int scale
 	DE_pixScaled(hi, hx,         hy + scale, c - 2, scale);
 }
 
-/* Block-expand the clean terrain (VGAScreen right after JE_tempScreenChecking)
- * into destruct_bg_hi.  Runs once per tick; the terrain is static within a tick.
- * The HUD box rows are stale here but get repainted on top per frame (DE_ExpandHUD). */
+/* Expand the tick's clean terrain once; DE_ExpandHUD repaints the stale HUD rows later. */
 static void DE_ExpandBackgroundHi(int scale)
 {
 	for (int y = 0; y < vga_height; ++y)
@@ -1933,9 +1903,7 @@ static void DE_ExpandBackgroundHi(int scale)
 	}
 }
 
-/* Repaint the two HUD boxes (rows 0..HUD_ROWS-1, the flush-mounted left/right frames) on top of
- * the composed frame, block-expanded from the 1x HUD that DE_RunTickDrawHUD drew into VGAScreen
- * this tick. */
+/* Expand this tick's 1x HUD boxes over the composed frame. */
 static void DE_ExpandHUD(SDL_Surface* hi, int scale)
 {
 	static const int spans[2][2] = { { 0, HUD_GAP_LEFT }, { HUD_FRAME_RIGHT_X, vga_width } };
@@ -2137,9 +2105,7 @@ static Uint8 DE_TouchActions(void)
 
 #ifdef WITH_NETWORK
 
-/* Local action bits for this tick.  Online, BOTH keyboard layouts drive the local side --
- * whichever side that is -- so the arrow-key layout and the CVAZ layout both work, and the pad
- * maps to the local side alone.  Edge-triggered keys are consumed exactly as offline. */
+/* Online, both keyboard layouts and the gamepad drive only the local side. */
 static Uint8 DE_NetLocalActions(void)
 {
 	Uint8 bits = 0;
@@ -2218,9 +2184,7 @@ static Uint32 de_net_float_bits(float f)
 	return u;
 }
 
-/* Desync canary: a summary of everything both netcodes are supposed to keep identical.  Pixel
- * state (the dirt) is left out as too expensive per tick; a divergence there moves a unit or
- * shot within a few ticks and lands in here anyway. */
+/* The desync canary omits expensive dirt pixels; their effects soon reach the hashed state. */
 static Uint32 DE_NetSimHash(void)
 {
 	Uint32 h = 2166136261u;
@@ -2332,9 +2296,7 @@ static void DE_StateRestore(const void* src)
 	world.VGAScreen = screen;
 }
 
-/* One lockstep exchange, run at the top of every online tick: sample local input, publish it,
- * block until the peer's packet for the same logical tick is here, and settle what the tick is
- * (simulate / new round / session over). */
+/* Exchange inputs at the start of each lockstep tick and agree on its outcome. */
 static enum de_state_t DE_NetExchange(void)
 {
 	touch_ui_flush_keys();
@@ -2361,9 +2323,7 @@ static enum de_state_t DE_NetExchange(void)
 	const Uint8 peerActions  = packet_state_in[0]->data[4];
 	const Uint8 peerControls = packet_state_in[0]->data[5];
 
-	/* Both canaries were written before their tick's inputs applied, so a mismatch is a real
-	 * divergence, not skew.  One report per session; play continues (the classic destruct rule
-	 * of thumb: a desynced artillery duel is still more fun than a halted one). */
+	/* Pre-input canaries make a mismatch a real divergence rather than frame skew. */
 	if (!de_net_desync_noted)
 	{
 		const Uint32 theirRand = SDLNet_Read32(&packet_state_in[0]->data[NET_STATE_RAND]);
@@ -2440,9 +2400,7 @@ static Uint8 DE_SelfTestActions(void)
 	return bits;
 }
 
-/* The rollback counterpart of DE_NetApplyMoves, at the same point of the tick.  A live pass reads
- * the keyboard and records what it read; a re-simulation replays that record instead, so the
- * frames behind a correction consume exactly the input they consumed the first time. */
+/* Live ticks record input here; re-simulation replays that same record. */
 static void DE_RollbackApplyMoves(void)
 {
 	if (!drb_resim())
@@ -2484,9 +2442,7 @@ static enum de_state_t DE_RunTick(void)
 	touch_ui_set_layout(TOUCH_LAYOUT_DESTRUCT);
 
 #ifdef WITH_NETWORK
-	// The lockstep exchange leads the tick so its verdicts (leave, new round) settle
-	// before any sim state moves, the explosion-glow fade below included.  Rollback settles
-	// the same verdicts at the bottom instead, once both machines' input for the frame is in.
+	// Lockstep settles verdicts before simulation; rollback settles them after input arrives.
 	if (de_net && !de_net_rollback)
 	{
 		const enum de_state_t netVerdict = DE_NetExchange();
@@ -2531,9 +2487,7 @@ de_sim_pass:
 
 	if (destructFirstTime)
 	{
-		/* The fade belongs to the first live pass only.  A correction that reaches back to frame 1
-		 * restores the flag with everything else, and fading a palette that is already up would
-		 * stall the battle for the fade's own 25 ticks. */
+		/* Run the opening fade only on the first live pass. */
 		if (de_present && !drb_resim())
 			fade_palette(colors, 25, 0, 255);
 		destructFirstTime = false;
@@ -2562,9 +2516,7 @@ de_sim_pass:
 		de_endDelay = 80;
 	}
 
-	/* Under rollback the verdict is held for the driver below, which only lets the round end once
-	 * both machines have confirmed the frames behind it.  Every other path has nothing to confirm
-	 * and leaves on the spot, ahead of this tick's sounds, the way it always has. */
+	/* Rollback holds the verdict until both peers confirm the preceding frames. */
 	if (de_round_over && !drb_active())
 		return STATE_RELOAD;
 
@@ -2608,9 +2560,7 @@ de_sim_pass:
 		if (drb_selftest_tick())
 			goto de_sim_pass;
 	}
-	/* Rollback driver: publish this frame's input, take in the peer's, and either correct the
-	 * timeline or let the frame stand.  It runs before the delay below so a correction is
-	 * replayed inside the tick's own slack rather than a frame late. */
+	/* Run rollback before the delay so corrections fit inside the current tick. */
 	else if (de_net_rollback)
 	{
 		switch (drb_driver(de_round_over))
@@ -2635,9 +2585,7 @@ de_sim_pass:
 		wait_delay();
 
 #ifdef WITH_NETWORK
-	// Online, leaving and reloading are netcode verdicts, settled by the lockstep exchange up top
-	// or by the rollback driver above; a local key acting here would end one machine's round and
-	// not the other's.
+	// Online round exits come only from the netcode verdict.
 	if (de_net)
 		return STATE_CONTINUE;
 #endif
@@ -2953,9 +2901,7 @@ static void DE_RunTickShots(void)
 		/* If the shot can bounce off the map, bounce it */
 		if (shotBounce[shotRec[i].shottype])
 		{
-			/* The ceiling follows the sky window: between the HUD boxes a bouncing shot may climb to the
-			 * top of the screen instead of rebounding off thin air at y=14 in the middle of the open
-			 * window. */
+			/* The sky window between HUD boxes raises the shot ceiling to the screen edge. */
 			const float ceiling = (shotRec[i].x >= HUD_GAP_LEFT && shotRec[i].x < HUD_FRAME_RIGHT_X)
 			                    ? 1.0f : 14.0f;
 			if (shotRec[i].y > 199 || shotRec[i].y < ceiling)
@@ -2991,9 +2937,7 @@ static void DE_RunTickShots(void)
 			continue;
 		}
 
-		/* Draw the shot (and its trail) first; even above the map, so it shows
-		 * in the playfield gap between the HUD boxes.  Only while it's actually
-		 * on-screen; collisions are gated separately below. */
+		/* Draw on-screen shots above the map so they remain visible in the HUD gap. */
 		tempPosX = roundf(shotRec[i].x);
 		tempTrails = (shotColor[shotRec[i].shottype] << 4) - 3;
 
@@ -3016,9 +2960,7 @@ static void DE_RunTickShots(void)
 			}
 		}
 
-		/* Skip collision checks above the map -- except in the sky window between the HUD boxes,
-		 * where the playfield runs to the top of the screen and whatever stands up there (a wall top,
-		 * a ring's dirt at rows 12-14) has to be solid. */
+		/* Above-map collision remains active only in the HUD sky window. */
 		{
 			const bool inSky = tempPosX >= HUD_GAP_LEFT && tempPosX < HUD_FRAME_RIGHT_X;
 			if (shotRec[i].y <= (inSky ? 0 : 14))
@@ -3431,9 +3373,7 @@ static void DE_RunTickGetInput(void)
 		}
 	}
 
-	// Controller support: map the pad to each human player's destruct moves. Destruct is
-	// otherwise keyboard-only, so this is the only way to play it on the Switch (no keyboard).
-	// One controller drives every human player (a 2-player match would need two pads).
+	// One controller drives every human Destruct player; consoles have no keyboard fallback.
 	if (joysticks > 0)
 	{
 		poll_joystick(0);

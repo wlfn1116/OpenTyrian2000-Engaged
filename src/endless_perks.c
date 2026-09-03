@@ -56,9 +56,7 @@ bool endlessPerkPending = false;             // a perk pick is queued for the ne
 JE_byte endlessPerkOwned[PERK_COUNT];        // combined view of the rows below, for diagnostics
 JE_byte endlessPerkTakenBy[2][PERK_COUNT];   // who picked what; each machine owns its own row
 
-/* Perks are personal: a stack affects only the ship that picked it, and every effect reads the
- * owning ship's row (solo play is row 0). endlessPerkOwned keeps the capped combined view for
- * diagnostics; nothing gameplay-facing reads it. */
+/* Gameplay reads per-player perk rows; endlessPerkOwned is diagnostic only. */
 JE_byte endlessPerkEffective(uint p, int id)
 {
 	if (p >= COUNTOF(endlessPerkTakenBy) || id < 0 || id >= PERK_COUNT)
@@ -78,9 +76,7 @@ static JE_byte perkMine(int id)
 	return endlessPerkEffective(endlessEconomyIndex(), id);
 }
 
-// The stacks in effect for a named ship, for effects that know which ship they belong to instead of
-// leaning on the effect context. Only co-op deals a second row, so everywhere else ship 0 holds the
-// only picks; endlessFxPlayer normalizes the same way.
+// Solo and non-co-op modes keep their perk stacks in row zero.
 static JE_byte perkShip(uint p, int id)
 {
 	return endlessPerkEffective(coopEndlessMode ? p : 0, id);
@@ -165,9 +161,7 @@ int endlessPerkArmorBonus(void)
 	return bonus;
 }
 
-// Turn a PERCENT-PER-TICK rate into whole steps, carrying the remainder in *accum so a
-// fractional rate (say 20%/tick = one step every fifth tick) comes out smooth instead of
-// lumpy. A rate of 0 clears the carry, so a perk that stops applying leaves no drip behind.
+// Carry fractional percent-per-tick rates between updates; zero clears the carry.
 static int endlessAccumSteps(int *accum, int rate)
 {
 	if (rate == 0)
@@ -181,9 +175,7 @@ static int endlessAccumSteps(int *accum, int rate)
 	return steps;
 }
 
-/* Personal on both halves: the stacks are the ship's own, and so is the hull that arms them. A
- * partner in trouble used to arm it too, which under personal perks would have let one ship's
- * damage drive the other ship's perk. */
+/* Arm personal effects from the owning ship's hull. */
 bool endlessAdrenalineActive(void)
 {
 	const uint p = endlessFxPlayer();
@@ -275,9 +267,7 @@ int endlessPerkShieldWait(int base)
 	                          ENDLESS_PERK_SHIELDRGN_STEP, ENDLESS_PERK_SHIELDRGN_MIN);
 }
 
-// Rapid Recharge perk, third effect: shortens the charge-sidekick charge interval from `base`
-// (mainint.c), floored; a no-op outside endless / with no stacks. Magazine sidekicks refill quicker
-// via the decrements above, so this is what the perk does for the charge-type ones instead.
+// Rapid Recharge shortens charge-sidekick intervals; magazines use the refill path above.
 int endlessPerkChargeTicks(int base)
 {
 	return endlessPerkShorten(base, PERK_SPECIALCD,
@@ -299,9 +289,7 @@ bool endlessPerkRadarActive(void)
 	return endlessFxActive() && perkMine(PERK_RADAR) > 0;
 }
 
-/* Add Surveyor routes after the RNG roll so the seed stream remains unchanged. The slate is
- * shared, so the stacks that widen it are the charting seat's own; both machines derive that
- * seat identically, and the slates stay in step. */
+/* Add Surveyor routes after RNG generation, using the charting player's stacks. */
 int endlessPerkSurveyorRoutes(void)
 {
 	if (!endlessFxActive())
@@ -378,9 +366,7 @@ int endlessOpeningSalvoGaugePercent(void)
 	return (endlessSalvoIdle[endlessFxPlayer()] >= ENDLESS_PERK_SALVO_IDLE) ? 100 : 0;
 }
 
-// x2.5 a magnitude no per-shot salvo tag can reach while a window is up: a special that fires
-// nothing (repulsor push, heal, invuln duration), the Zinglon pillar, and a ram.
-// The floor matters: the repulsor hands this a 1, which would otherwise scale back to itself.
+// Non-projectile effects use a fixed 2.5x Opening Salvo multiplier.
 int endlessOpeningSalvoScale(int value)
 {
 	if (!endlessOpeningSalvoVolleyActive() || value <= 0)
@@ -403,9 +389,7 @@ int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 	return shieldAbsorbed * tpwr * ENDLESS_PERK_KINETIC_PCT * stacks / 100;
 }
 
-/* Ticks a hit takes off a special recharge clock. A share of the remaining time rather than a flat
- * count, because specials range from a 15-tick link recharge to a 250-tick one; the floor of a tick
- * per stack still clears an almost-expired clock. */
+/* Refund a share of the remaining special recharge, at least one tick per stack. */
 int endlessPerkKineticCooldownCut(int remaining)
 {
 	const int stacks = endlessFxActive() ? perkFx(PERK_KINETIC) : 0;
@@ -417,9 +401,7 @@ int endlessPerkKineticCooldownCut(int remaining)
 	return (cut > remaining) ? remaining : cut;
 }
 
-/* Whole sidekick rounds a hit gives back. A hit is worth a fraction of a round per stack and the
- * remainder carries, so one stack still pays out over several hits. Stateful: call once per hit
- * and honour the answer. */
+/* Carry fractional sidekick refunds; call once per hit. */
 int endlessPerkKineticAmmoRounds(void)
 {
 	if (!endlessFxActive())
@@ -438,9 +420,7 @@ int endlessPerkKineticChargeStages(void)
 	return endlessFxActive() ? perkFx(PERK_KINETIC) * ENDLESS_PERK_KINETIC_STAGES : 0;
 }
 
-/* What a twiddle's shield or armor charge deducts after the discount, rounded to the nearest point
- * but never down to free. `listCost` is the charge the twiddle would have taken unaided, the
- * proportional ones included, and the caller keeps that list price as the effect's magnitude. */
+/* Discount twiddle costs without rounding a nonzero charge down to free. */
 int endlessPerkKineticTwiddleCost(int listCost)
 {
 	const int stacks = endlessFxActive() ? perkFx(PERK_KINETIC) : 0;
@@ -517,9 +497,7 @@ int endlessPerkProwContactPercent(void)
 	return 100 - perkFx(PERK_PROW) * ENDLESS_PERK_PROW_TAKEN_PCT;
 }
 
-/* Knife Fight measures from hull to hull. The ship is its 24x28 sprite, blitted 5 left and 7 up
- * of its position; a tile is the 12x14 cell at its position, or the four cells around it when
- * size is 1. */
+/* Knife Fight measures the gap between sprite bounds, not anchor points. */
 #define KNIFE_SHIP_HALF_W 12
 #define KNIFE_SHIP_HALF_H 14
 static int knife_box_gap(int cx0, int cy0, int hw0, int hh0, int cx1, int cy1, int hw1, int hh1)
@@ -538,9 +516,7 @@ static int knife_tile_gap(int shipX, int shipY, unsigned g)
 	                     enemy[g].ex + enemy[g].mapoffset + 6, enemy[g].ey + 7, 6 * half, 7 * half);
 }
 
-/* The gap in px between ship p's hull and the nearest live tile of the hull `slot` belongs to: every
- * tile sharing a nonzero link is one hull, so a boss is measured to whichever part is closest, and a
- * lone enemy is measured to itself. */
+/* Measure to the nearest live tile in the enemy's linked hull. */
 int endlessShipHullGapPx(uint p, unsigned slot)
 {
 	if (p >= COUNTOF(player) || slot >= COUNTOF(enemy))
@@ -581,9 +557,7 @@ int endlessPerkKnifeFightPercent(unsigned slot)
 	return (full * left + ENDLESS_PERK_KNIFE_FADE_PX / 2) / ENDLESS_PERK_KNIFE_FADE_PX;
 }
 
-// Knife Fight in armor points, from the raw damage of a hit before any enemy-health scaling, so
-// it is measured across the same accumulator as Executioner is (tyrian2.c) and holds against a
-// boss.
+// Apply Knife Fight before enemy-health scaling.
 int endlessPerkKnifeFightBonus(int damage, int pct)
 {
 	if (damage <= 0 || pct <= 0)
@@ -708,9 +682,7 @@ void endlessRegenHitTaken(void)
 // Pulse application lives at the player-shot kill sites in tyrian2.c.
 bool endlessPerkChainReactionActive(void) { return endlessFxActive() && perkFx(PERK_CHAINRXN) > 0; }
 
-// The ship whose stacks decide a pulse: the one that made the kill, or, when nothing can be
-// credited with it, whichever ship holds more (endlessCountKill credits an unclaimed kill to
-// both).
+// Unclaimed kills use the ship with more Chain Reaction stacks.
 uint endlessPerkChainOwner(int killer)
 {
 	if (!endlessCoop())

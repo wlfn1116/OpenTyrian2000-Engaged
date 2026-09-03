@@ -50,9 +50,7 @@ typedef struct
 	Uint8 kind;
 	int x, y;
 
-	// Target/source buffer: 0 = main playfield buffer, 1 = background scratch
-	// (VGAScreen2). Smoothie levels draw backgrounds to the scratch, then a filter
-	// blends it into the main buffer. Always 0 on non-smoothie levels.
+	// 0 = main playfield, 1 = feedback background scratch.
 	Uint8 surface;
 
 	// Cross-frame identity and tick displacement. Interpolated IDs replay backward from (x,y);
@@ -70,9 +68,7 @@ typedef struct
 	// sprite (table) family
 	unsigned int table;
 
-	// background row; bg_mirror_w/bg_col0 = Extra Parallax edge mirror (see
-	// bg_mirror_tile in backgrnd.c): map-row width in tiles (0 = off) and the
-	// map-column index of map[0].
+	// Extra Parallax mirror width and map[0] column; width 0 disables it.
 	Uint8 **map;
 	Sint8 bg_mirror_w;
 	Sint8 bg_col0;
@@ -83,9 +79,7 @@ typedef struct
 	float star_dy;
 	Uint8 star_color;
 
-	// superpixel (explosion spark): per-tick motion, brightness, colour. Velocity is
-	// constant, so the motion is self-contained (no cross-frame matching, like a star).
-	// sp_bright = the shade lift described at rl_superpixel_value.
+	// Self-contained superpixel motion, brightness, and colour.
 	int sp_dx, sp_dy;
 	Uint8 sp_z, sp_color, sp_bright;
 
@@ -108,14 +102,10 @@ typedef struct
 	bool black;
 	Uint8 filter;
 
-	// Per-axis ship attachment for tracking shots (bit0 = X, bit1 = Y, bit2 = player
-	// index). An attached axis is drawn at the ship's render-rate position instead of
-	// interpolated, so the laser/main-pulse base stays on the gun. 0 = not attached.
+	// Tracking-shot attachment: bit 0 X, bit 1 Y, bit 2 player; 0 means detached.
 	Uint8 ship_attach;
 
-	// Sub-pixel remainder of an offset the sim rounded to whole pixels (the satellite
-	// orbit), plus its change since the previous tick. A display replay adds it so the
-	// entity follows the exact path instead of the rounded one; exact replays ignore it.
+	// Current and previous sub-pixel remainders discarded by simulation rounding.
 	float sub_x, sub_y;
 	float sub_dx, sub_dy;
 
@@ -125,9 +115,7 @@ typedef struct
 	float par_anchor;
 	Uint8 par_layer;
 
-	// Vertical layer binding. par_ybase is the whole-pixel phase correction;
-	// par_yfrac is the layer phase and par_yown100 the entity motion in hundredths.
-	// Layer 0 is unbound.
+	// Vertical layer phase and entity motion; layer 0 is unbound.
 	int par_ybase;
 	float par_yfrac;
 	int par_yown100;
@@ -139,46 +127,31 @@ RenderCmd;
 // Replay turns this off so re-issued blits are not recorded again.
 extern bool render_list_recording;
 
-// Id stamped onto subsequent recorded commands; the game sets it before drawing a
-// logical entity (enemy slot, ship, background layer, ...) so the entity can be
-// matched across frames. 0 = untagged/static (never interpolated).
+// Stable entity ID for cross-frame matching; 0 is static and never interpolated.
 extern int rl_current_id;
 
 // Per-axis ship attachment for the next recorded command(s) (see ship_attach in
 // RenderCmd). Shots set this around their blit; 0 otherwise.
 extern int rl_shot_attach;
 
-// Sub-pixel parallax fraction stamped onto the next recorded command(s) (see par_frac in
-// RenderCmd). blit_enemy sets this around its blit to the fraction its whole-pixel
-// tempMapXOfs dropped (tempMapXOfs_frac); 0 otherwise.
+// Parallax fraction stamped onto subsequent commands; 0 otherwise.
 extern float rl_current_par_frac;
 
-// Background layer and absolute un-floored X anchor associated with rl_current_par_frac.
-// Bound enemy sprites/bars set these so finalize can normalize them to the exact anchor their
-// background recorded, independent of draw order. Layer 0 means no background binding.
+// Background layer and absolute X anchor; layer 0 is unbound.
 extern int rl_current_par_layer;
 extern float rl_current_par_anchor;
 
-// Vertical binding stamped onto the next recorded command(s) (see RenderCmd above).
-// Enemy sprites and bars set the layer, whole-pixel draw-phase correction, and the
-// layer's fractional phase together; layer 0 means no vertical background binding.
+// Vertical layer, whole-pixel correction, and fractional phase for subsequent commands.
 extern float rl_current_par_yfrac;
 extern int rl_current_par_ybase, rl_current_par_ylayer;
 
-// Per-tick velocity (px/tick) stamped onto the next recorded command(s): a shot's
-// real motion (sxm/sym), set around its blit, 0 otherwise. Drives forward
-// extrapolation (see the dx/dy note in RenderCmd).
+// Per-tick velocity stamped onto subsequent commands for extrapolation.
 extern int rl_current_vel_x, rl_current_vel_y;
 
-// Per-tick acceleration (px/tick^2) stamped onto the next recorded command(s): a
-// shot's sxc/syc (shotXC/shotYC), set around its blit, 0 otherwise. Extrapolation
-// leads by velocity + acceleration so a decelerating shot doesn't overshoot and snap
-// back (see acc_x/acc_y in RenderCmd).
+// Per-tick acceleration stamped onto subsequent commands for extrapolation.
 extern int rl_current_acc_x, rl_current_acc_y;
 
-// Sub-pixel remainder (px, |v| <= 0.5) of an offset the sim rounded away, stamped onto
-// the next recorded command(s): the orbiting satellite's, set around its blit, 0
-// otherwise. See sub_x/sub_y in RenderCmd.
+// Sub-pixel remainder stamped onto subsequent commands; magnitude is at most 0.5 px.
 extern float rl_current_sub_x, rl_current_sub_y;
 
 // Identity ranges must not overlap and must stay below RL_ID_MAX.
@@ -198,9 +171,7 @@ enum
 	RL_ID_SHIP_BAR_BASE = 14006,  // + player
 	RL_ID_SIDEKICK_BASE = 15000, // + player*2 + slot
 	RL_ID_LINKGUN_BASE = 15010,  // + 0..2: linked-Dragonwing turret aim markers.  The three
-	                             // marker shots are recreated every tick, so their pool slots
-	                             // (and with them RL_ID_PSHOT_BASE ids) can drift and break
-	                             // cross-frame pairing; stable ids let the aim swing interpolate.
+	                             // Marker shots need stable IDs because their pool slots drift.
 	RL_ID_MAX = 16384,
 };
 
@@ -239,9 +210,7 @@ void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale);
 // holes after its background moves. Coordinates are relative to game_screen.
 void rl_mark_overlay_rect(int x, int y, int w, int h);
 
-// Capture the residual: pixels in `reference` (the authoritative frame) that a
-// blit-only replay doesn't reproduce; non-blit draws like superpixels and boss-
-// health bars. `scratch` is a same-size 8-bit work surface. Call after the tick draws.
+// Capture non-blit pixels missing from a replay into a same-size 8-bit scratch surface.
 void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch);
 
 // Capture residual from a before/after diff of the authoritative frame.
@@ -254,10 +223,7 @@ void rl_clear_ship_override(void);
 float rl_get_ship_override_dx(int player);
 float rl_get_ship_override_dy(int player);
 
-// The ship's authoritative per-tick velocity (player 0/1), set once per tick. A
-// ship-attached shot that also moves relative to the ship (orbiting asteroid killer)
-// records ship-move + own-move; subtracting this recovers the own-move so it can be
-// interpolated (smooth orbit).
+// Authoritative ship velocity used to recover relative motion from attached shots.
 void rl_set_ship_vel(int player, int vx, int vy);
 
 // Completeness gate: clear scratch, replay the captured list into it, and return the

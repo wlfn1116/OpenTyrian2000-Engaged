@@ -29,10 +29,7 @@ extern unsigned int song_playing;
 
 extern bool audio_disabled, music_disabled, samples_disabled;
 
-// Selected music synthesizer. The MIDI devices (FLUIDSYNTH/NATIVE_MIDI) only
-// produce sound in builds compiled WITH_MIDI; otherwise music_device is forced
-// to OPL at init. These are always declared so config/menu code compiles either
-// way (see loudness.c).
+// MIDI choices require WITH_MIDI; other builds force OPL during initialization.
 extern char soundfont[4096];  // path to a General-MIDI SoundFont (.sf2), used by FLUIDSYNTH
 
 // True when FLUIDSYNTH is the active MIDI backend and a readable SoundFont is

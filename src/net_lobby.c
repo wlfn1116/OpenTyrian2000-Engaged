@@ -52,9 +52,7 @@
  * menus.c); centring on vga_width instead would drift when the menu is blitted over. */
 #define LOBBY_XCENTER  (320 / 2)
 
-// The font has no glyph for '&', '<', '>', '@', '^', '_' or '`' (they silently vanish) and
-// treats '~' as a brightness toggle, so every string here avoids them; hence "and", and
-// "Address" rather than an '@'-style label.
+// Lobby text must avoid missing small-font glyphs and the '~' brightness marker.
 
 static char lobby_status[64];  // transient one-line feedback under the menu
 
@@ -68,9 +66,7 @@ static const int lobby_difficulties[] =
 	DIFFICULTY_LORD_OF_GAME,
 };
 
-/* Row labels, help lines and value names for the host and Endless settings pages. At file
- * scope so qa_test_net_lobby_strings below can measure each against its row budget; a row
- * that outgrows it overlaps its neighbour only on whichever machine opens that screen. */
+/* File-scope strings let the QA suite check every lobby row's width. */
 static const char *const lobbyHostLabel[] =
 {
 	"Listen Port", "Game Type", "Mode", "Battle Mode", "Episode", "Endless Setup", "Difficulty",
@@ -282,9 +278,7 @@ bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t b
 
 	const bool confirmed = console_swkbd(kb, sizeof(kb), buf_size - 1, kb, prompt, numeric);
 
-	// Drop the button that opened this field along with anything the keyboard left behind,
-	// so the menu we return to does not act on it a second time.  Same wind-down the desktop
-	// field does on its way in.
+	// Consume the press that opened the field before returning to the menu.
 	wait_noinput(true, true, true);
 	service_SDL_events(true);
 	newkey = newmouse = false;
@@ -372,9 +366,7 @@ bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t b
 		{
 			switch (lastkey_scan)
 			{
-			// service_wait_delay() pumps events without clearing the "new input" flags, so
-			// both exits have to consume the keypress themselves; otherwise the menu we
-			// return to sees it still pending and acts on it a second time.
+			// service_wait_delay() leaves new-input flags set; consume the exit press here.
 			case SDL_SCANCODE_ESCAPE:
 				JE_playSampleNum(S_SPRING);
 				newkey = newmouse = false;
@@ -785,9 +777,7 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
-		// Drop whatever opened this screen before waiting for a fresh press, like every other
-		// lobby loop: the Enter or click that started the search stays latched through the
-		// whole discovery window and would read here as an instant join of the top host.
+		// Do not let the press that started discovery select the first result.
 		service_SDL_events(true);
 
 		JE_mouseStart();
@@ -900,9 +890,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	size_t selectedIndex = ITEM_START;
 	int wAction[COUNTOF(lobbyHostAction)] = { 0 };
 
-	// Eight small-font rows, the help line, and the two actions, fitted between the title
-	// (large_font tops out 20px tall, so it can reach y=40) and the 200-row screen.
-	// Nine rows at most (a co-op lobby paying Individual), fitted between the title and the help.
+	// Fit up to nine rows between the title and help line.
 	const int ySettings = 44;
 	const int dySettings = 11;
 	const int hSetting = 10;
@@ -921,10 +909,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		if (!net_rollback)
 			net_desync_recovery = false;
 
-		/* Both co-op types give the two slots the same kind of ship, so which one the host takes
-		 * decides nothing there; that row only exists to pick the Dragonwing in Arcade, and Credit
-		 * is the opposite way round. Endless always starts at episode 1 and brings its own settings
-		 * page instead. */
+		/* Host side matters only to Linked Arcade. */
 		const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
 		const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
 		/* These modes give each player a complete ship. SuperTyrian selects its variant here;
@@ -934,9 +919,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		/* Destruct brings its own battle-mode row and mans a side rather than flying a ship, so it
 		 * has no episode and no difficulty ladder. */
 		const bool destruct = network_game_type == NETWORK_GAME_DESTRUCT;
-		/* Arcade's Timed Battle: three fixed levels raced for cash, so the row that names an
-		 * episode names a battle instead. Held on the same row rather than a second one -- the
-		 * session plays exactly one of the two, and only one can ever be answered. */
+		/* Timed Battle reuses the episode row for its three fixed levels. */
 		const bool timedBattle = network_timed_battle();
 
 		bool hidden[SETTING_COUNT];
@@ -963,9 +946,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		while (selectedIndex < SETTING_COUNT && hidden[selectedIndex])
 			selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
 
-		/* One row wears two names: SuperTyrian's variant sits where every other type keeps its
-		 * difficulty, because that is what it is on the wire (Standard is Lord of Game, Scrollock
-		 * is Suicide), and PACKET_DETAILS already carries it. */
+		/* SuperTyrian encodes its variant in the difficulty field. */
 		const char *itemLabel[SETTING_COUNT];
 		for (int i = 0; i < SETTING_COUNT; ++i)
 			itemLabel[i] = lobbyHostLabel[i];
@@ -1009,9 +990,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		for (int i = 0; i < SETTING_COUNT; ++i)
 			rowY[i] = hidden[i] ? -1 : ySettings + dySettings * shown++;
 
-		// Size the block to its widest visible row and hang the columns off its edges, so no
-		// value shifts the labels as it changes.  The floor keeps a screenful of short values
-		// from looking cramped; the ceiling keeps a long data-file name inside the 320px field.
+		// Keep label and value columns fixed while values change.
 		int blockW = 150;
 		for (int i = 0; i < SETTING_COUNT; ++i)
 		{
@@ -1154,9 +1133,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				action = true;
 				break;
 
-			// Every cycling row answers to left/right as well, the way every other
-			// setting in the game does.  The port and the Endless page open a screen of
-			// their own, so those stay Enter-only.
+			// Rows that open another screen remain Enter-only.
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
 				if (selectedIndex < SETTING_COUNT && selectedIndex != ITEM_PORT
@@ -1259,27 +1236,19 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			break;
 
 		case ITEM_NETCODE:
-			// Rollback (local input lands the same tick, the peer is predicted and
-			// corrected) vs the original delay-based lockstep.  Host-authoritative:
-			// the joiner adopts it from the settings block (bit 4) like every other
-			// sim-binding choice.
+			// The host publishes the netcode choice in settings bit 4.
 			JE_playSampleNum(S_CLICK);
 			net_rollback = !net_rollback;
 			break;
 
 		case ITEM_RECOVERY:
-			// On a detected desync the host streams its state and the joiner adopts
-			// it; one hitch instead of a divergent rest-of-level.  The host's
-			// value binds the session (settings block bit 6), like every other
-			// sim-affecting setting; rollback sessions only, and off the page otherwise.
+			// The host publishes rollback recovery in settings bit 6.
 			JE_playSampleNum(S_CLICK);
 			net_desync_recovery = !net_desync_recovery;
 			break;
 
 		case ITEM_MODE:
-			// Linked flies the classic Silver + Dragonwing pair; Separate gives each player their
-			// own single-player-style arcade ship, and Timed Battle races that pair of ships
-			// through one battle level for cash. Host-authoritative (settings bits 11 and 13-15).
+			// Arcade mode is host-owned and stored in settings bits 11 and 13-15.
 			JE_playSampleNum(S_CLICK);
 			lobbySetArcadeMode((lobbyArcadeMode() + cycleDir + (int)COUNTOF(lobbyModeValue))
 			                   % (int)COUNTOF(lobbyModeValue));
@@ -1300,17 +1269,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			break;
 
 		case ITEM_CREDIT:
-			// Shared pays a kill or a score pickup to both players in full; Individual pays
-			// the shot's owner or the collector.  The host's value binds the session (settings
-			// block bit 9) so both machines award the same cash.
+			// Credit is host-owned and stored in settings bit 9.
 			JE_playSampleNum(S_CLICK);
 			coopSharedCredit = !coopSharedCredit;
 			break;
 
 		case ITEM_SPEED:
-			// Forced on both players for the session: the host applies it at connect and
-			// the joiner adopts it from the settings block (see network_connect).  Destruct
-			// hides the row and pins Normal instead.
+			// The host's speed applies to both players; Destruct is always Normal.
 			JE_playSampleNum(S_CLICK);
 			network_host_game_speed += cycleDir;
 			if (network_host_game_speed > 5)
@@ -1372,9 +1337,7 @@ static bool lobbyStartSession(bool as_host)
 	networkHostPlayerNum = (as_host && slotChoiceApplies && network_host_player == 2) ? 2 : 1;
 	thisPlayerNum = as_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
-	// Settle the run seeds before the connect packet goes out with them; the joiner takes both
-	// from there. A blank Endless field rolls one, so "(random)" means a different run each time
-	// it is hosted; the Destruct terrain seed is always rolled fresh.
+	// Resolve random seeds before building the connect packet.
 	if (as_host)
 	{
 		network_endless_session_begin();
@@ -1463,9 +1426,7 @@ bool networkLobby(void)
 
 	for (;;)
 	{
-		// A render cap below the 35Hz sim rate throttles the lockstep session to this
-		// machine's render rate for BOTH players (the present sits inside the tick loop),
-		// so the lobby refuses to start a netgame under one.  Uncapped (0) is fine.
+		// A cap below 35 FPS would throttle both players' simulation.
 		const bool fpsLocked = fps_cap > 0 && fps_cap < 35;
 
 		char nameItem[48];
@@ -1723,9 +1684,7 @@ bool networkLobby(void)
 
 /* ---- string checks ------------------------------------------------------------------- */
 
-/* Run by qa_test_online_suite. Rows are label + 20px gap + value hung off a block clamped to
- * 300px, so a pair past that is two columns drawn into each other; help lines are centred on a
- * 320px field. */
+/* Verify row pairs against the 300-pixel lobby block and help against 320 pixels. */
 
 static bool lobbyStringDrawable(const char *s)
 {

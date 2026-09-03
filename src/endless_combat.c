@@ -181,9 +181,7 @@ static int endlessRampAt100(const EndlessRampAnchor *pts, unsigned count, int ef
 	return pts[count - 1].mult100;
 }
 
-// Boss HP. The first segment is the curve the mode shipped with, so every zone below depth 64
-// is untouched; the two after it carry the raised ceiling, landing 20x and 32x on the zones
-// before a GRAND milestone.
+// Preserve the original curve through depth 63, then ramp to 20x and 32x.
 static const EndlessRampAnchor endlessBossAnchors[] = {
 	{   0,  100 },   // 1x at the surface
 	{  64,  900 },   // 9x, zone 53 on Normal
@@ -332,9 +330,7 @@ int endlessExtraEnemyShots(void)
 	return extra;
 }
 
-// Which side the tide fan leans toward right now: held for one second of game
-// time (35 sim ticks), then flipped, so every volley in that second sweeps the
-// same way.
+// Hold each tide direction for one second of simulation time.
 int endlessFanPhaseNow(void)
 {
 	return (endlessZoneTicks / 35) & 1;
@@ -460,9 +456,7 @@ void endlessResetElites(void)
 	endlessEliteRngState = endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x50000000);
 }
 
-// Both special-enemy curves pivot at this effective depth, zone 99 on Normal, and both reach their
-// ceiling at zone 199. Each spreads its rise up to the pivot over this constant, so moving the
-// pivot moves the whole early ramp and both ceilings with it.
+// Elite and champion curves pivot at zone 99 and reach their ceilings at 199 on Normal.
 #define ENDLESS_SPECIAL_PIVOT_DEPTH 122
 
 // Natural special-enemy share before modifier overrides. 2% at the surface, 60% at the pivot.
@@ -671,9 +665,7 @@ long endlessChampionBounty(void)
 	return b * endlessPerkCashPercent() / 100;
 }
 
-/* Bounty Hunter's second effect. The cash goes to whoever flew over the pickup, so the multiplier
- * reads that ship's own row rather than the fx context. Both machines run every pickup for both
- * ships, so the two wallets agree. */
+/* Bounty Hunter uses the collecting ship's stacks. */
 long endlessScorePickupValue(uint p, long value)
 {
 	if (!endlessFxActive() || value <= 0 || !endlessPerkEffective(p, PERK_BOUNTY))
@@ -703,9 +695,7 @@ Uint8 endlessEliteTint(int eliteState)
 	return (eliteState == 3) ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER;
 }
 
-// A body the level holds invulnerable takes no tier of its own, yet it is usually one piece of a
-// structure whose damageable parts did. Lend it the group's bank so the whole hull reads as one
-// elite; colour only, and no tier, bounty or health follows it.
+// Invulnerable linked parts borrow the group's tint, but none of its tier rules.
 Uint8 endlessEliteShellTint(JE_byte linknum, JE_byte armorleft)
 {
 	if (linknum == 0 || armorleft < 255)
@@ -721,9 +711,7 @@ int endlessEliteContactPercent(int eliteState)
 	return (eliteState == 3) ? 150 : 125;
 }
 
-/* An invulnerable ship rams in Endless, so Failsafe and the invulnerability specials feed a ram
- * build, but it lands only every so many ticks of its window: the cadence is read off the ticks
- * left, so it needs no state of its own. See doc/notes.md#perks. */
+/* Invulnerable ramming is paced from the remaining invulnerability ticks. */
 #define ENDLESS_RAM_INVULN_CADENCE 10
 bool endlessRamWhileInvulnerable(uint invulnerableTicks)
 {
@@ -838,9 +826,7 @@ void endlessGrantSpecial(uint p)
 	for (size_t len = strlen(name); len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\t'); )
 		name[--len] = '\0';
 
-	// Two ships share one message bar, so name whoever the grant went to, in the same
-	// "<who> got <what>" phrasing the weapon-ball pickups use. Solo keeps the label,
-	// which is what tells you a datacube/orb handed out a special at all.
+	// Name the recipient because both ships share this message bar.
 	char msg[64];
 	if (dual_ship_mode())
 		snprintf(msg, sizeof(msg), "%s %s %s", JE_getName((JE_byte)(p + 1)), miscTextB[4-1], name);
@@ -849,9 +835,7 @@ void endlessGrantSpecial(uint p)
 	JE_drawTextWindow(msg);
 }
 
-// Pickups endlessGrantSpecial answers. The conditions mirror JE_playerCollide's two pickup
-// branches, so the "?" art can only appear where a special is handed out. See
-// doc/notes.md#special-pickups.
+// Match the two pickup branches in JE_playerCollide.
 bool endlessSpecialPickup(int slot)
 {
 	if (!endlessMode || slot < 0 || slot >= (int)COUNTOF(enemy) || enemyAvail[slot] == 1)
@@ -996,9 +980,7 @@ int endlessKillBuffColorBank(void)
 	return (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERDRIVE) ? 7 : 12;
 }
 
-// The buff's current fire-rate MULTIPLIER (1 = none; 2x..10x from the combo ramp). Derived from
-// the decrement count the fire block actually applies, plus 1 for the weapon's own per-tick
-// decrement, so the HUD figure can't drift from the real rate.
+// Derive the displayed multiplier from the fire block's actual decrement.
 int endlessKillBuffFireMultiplier(void)
 {
 	if (!endlessTurbodriveActive())
@@ -1262,9 +1244,7 @@ int endlessShockwaveRadius(int linknum, int eliteState)
 	return (eliteState == 3) ? ENDLESS_SHOCKWAVE_CHAMPION_RADIUS : ENDLESS_SHOCKWAVE_ELITE_RADIUS;
 }
 
-/* Which ship a homing or course-correcting shot goes for: the nearer one still flying. A downed
- * co-op partner neither triggers a reactive danger nor attracts one, so the survivor is the only
- * target while they spectate. Integer distance keeps the choice identical on both machines. */
+/* Target the nearer live ship. Integer distance keeps peers in step. */
 uint endlessDangerTargetPlayer(int fromX, int fromY)
 {
 	if (!coopEndlessMode)
@@ -1288,9 +1268,7 @@ uint endlessDangerTargetPlayer(int fromX, int fromY)
 	return best;
 }
 
-/* Which ship a homing enemy chases, rolled once when it is created. Vanilla tracking always
- * went for ship one, so in co-op the homing modifiers left the second player alone entirely; a
- * coin toss per enemy splits the pressure. */
+/* Choose a homing enemy's target once, when it is created. */
 uint endlessRollHomingTarget(void)
 {
 	if (!coopEndlessMode)
@@ -1691,9 +1669,7 @@ void endless_combat_register_rollback(void)
 	rollback_register("ec.scrollCarry", scrollExtraCarry, sizeof(scrollExtraCarry));
 	rollback_register("ec.scrollTrem",  scrollExtraTrem, sizeof(scrollExtraTrem));
 
-	/* Everything below is decided inside a tick, so a re-simulation has to replay it from the same
-	 * value. The one-shot latches matter most: an unregistered dedup guard makes its event
-	 * unrepeatable, and an unregistered revive latch resurrects or kills the wrong ship. */
+	/* Register all tick state, including one-shot latches, for rollback. */
 	rollback_register("endless.eliteLink", endlessEliteLink, sizeof(endlessEliteLink));
 	rollback_register("endless.martyrLink", &endlessMartyrLastLink, sizeof(endlessMartyrLastLink));
 	rollback_register("endless.shockLink", &endlessShockwaveLastLink, sizeof(endlessShockwaveLastLink));

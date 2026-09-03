@@ -34,9 +34,7 @@
 #include <stdio.h>
 
 #ifdef PLATFORM_HANDHELD
-// Touch-drag -> ship travel multiplier. The base 4.0 cancels VT_MOUSE_SENS (0.25) so at the
-// slider's middle the ship tracks the finger 1:1; the Touch Sensitivity slider scales it
-// linearly around SHIP_SENS_DEFAULT.
+// The base multiplier cancels VT_MOUSE_SENS so the middle setting tracks touch 1:1.
 #define TOUCH_SHIP_SENS_BASE 4.0f
 #endif
 
@@ -241,14 +239,10 @@ void service_SDL_events(JE_boolean clear_new)
 {
 	SDL_Event ev;
 
-	// Beat the watchdog BEFORE the re-simulation gate below: a burst of rollback
-	// re-simulation is real forward progress, and skipping the heartbeat during
-	// one once let the watchdog "rescue" a perfectly healthy client mid-burst.
+	// Count rollback re-simulation as progress before the input gate.
 	watchdog_heartbeat();
 
-	// A rollback re-simulation replays a past tick: pumping the OS queue here
-	// would feed it fresh input and make the replay diverge from the original
-	// run.  Every input the replayed tick needs comes from the recorded tuples.
+	// Re-simulation consumes recorded input and must not pump fresh OS events.
 	if (rollback_resim)
 		return;
 
@@ -302,9 +296,7 @@ void service_SDL_events(JE_boolean clear_new)
 				}
 				break;
 
-			// The renderer's backbuffer / all textures were reset (GPU context loss,
-			// which some drivers do during a fullscreen transition). Re-present so the
-			// window isn't left black on a state that won't redraw itself.
+			// Re-present after a renderer reset so static screens do not remain black.
 			case SDL_RENDER_TARGETS_RESET:
 			case SDL_RENDER_DEVICE_RESET:
 				video_repaint_if_stale(true);
@@ -350,9 +342,7 @@ void service_SDL_events(JE_boolean clear_new)
 					mouseWindowYRelative += ev.motion.yrel;
 				}
 
-				// Show the OS cursor only outside the rendered frame. A pillarboxed menu
-				// spans mouse_x in [-offset, vga_width - offset), so widen the bounds by the
-				// centering offset, else the OS cursor reappears over the side gradients.
+				// Include pillarbox gradients when deciding whether to show the OS cursor.
 				{
 					const int menuXOffset = video_get_menu_x_offset();
 					SDL_ShowCursor(mouse_x < -menuXOffset || mouse_x >= vga_width - menuXOffset ||

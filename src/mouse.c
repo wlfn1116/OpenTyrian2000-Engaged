@@ -142,9 +142,7 @@ void JE_mouseStart(void)
 
 		mouseButton = mousedown ? lastmouse_but : 0; /* incorrect, possibly unimportant */
 
-		// Defer to JE_showVGA when the cursor belongs on the final frame: the pillarbox
-		// gradient must build from clean edge columns, and supersampling draws the
-		// cursor on the hi frame at its fractional position.
+		// Let JE_showVGA draw cursors that belong on the final composed frame.
 		if (video_get_menu_x_offset() != 0 || effective_supersample() > 1)
 		{
 			mouseGrabbed = false;
@@ -170,9 +168,7 @@ void JE_mouseStart(void)
 	 }
 }
 
-// Composite the cursor onto the final pillarboxed menu frame (dst) at the live pointer
-// position shifted by the centering offset. Called by JE_showVGA after the side gradient
-// is built, so the cursor draws cleanly over the full width.
+// Draw the live cursor over the completed pillarboxed menu frame.
 void JE_drawMouseToMenuScreen(SDL_Surface *dst, int x_offset)
 {
 	if (!has_mouse || !cursorPresentPending)

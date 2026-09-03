@@ -1,6 +1,4 @@
-# Generate Vita LiveArea assets as indexed PNGs, required by the VPK promoter.
-# GDI+ reaches indexed PNG reliably by quantizing through GIF first.
-# Source art: switch/icon.jpg; output: vita/sce_sys.
+# Build indexed Vita LiveArea PNGs from switch/icon.jpg via GIF quantization.
 Add-Type -AssemblyName System.Drawing
 
 $root   = $PSScriptRoot
