@@ -261,6 +261,14 @@ static bool lobbyWaitForInput(void)
 	}
 }
 
+static char lobbyEntryChar(bool (*filter)(char), char c)
+{
+	if (c == ',' && filter == networkFilterAddress)
+		return '.';
+
+	return c;
+}
+
 bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
                       bool (*filter)(char), bool numeric)
 {
@@ -292,8 +300,9 @@ bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t b
 	size_t out = 0;
 	for (const char *c = kb; *c != '\0' && out + 1 < buf_size; ++c)
 	{
-		if (filter(*c))
-			buf[out++] = *c;
+		const char ch = lobbyEntryChar(filter, *c);
+		if (filter(ch))
+			buf[out++] = ch;
 	}
 	buf[out] = '\0';
 
@@ -351,7 +360,7 @@ bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t b
 		{
 			for (const char *c = last_text; *c != '\0'; ++c)
 			{
-				const char ch = *c;
+				const char ch = lobbyEntryChar(filter, *c);
 				if (len + 1 < buf_size && filter(ch))
 					buf[len++] = ch;
 			}
@@ -396,8 +405,9 @@ bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t b
 						size_t out = 0;
 						for (const char *c = clip; *c != '\0' && out + 1 < sizeof(pasted) && out + 1 < buf_size; ++c)
 						{
-							if (filter(*c))
-								pasted[out++] = *c;
+							const char ch = lobbyEntryChar(filter, *c);
+							if (filter(ch))
+								pasted[out++] = ch;
 						}
 						pasted[out] = '\0';
 						SDL_free(clip);
