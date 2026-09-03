@@ -110,7 +110,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       92           /* Nanorepair waits on a calm full shield. */
+#define NET_VERSION       93           /* Boosted scroll repays a scripted enemy's lost approach. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

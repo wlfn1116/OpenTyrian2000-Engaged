@@ -2827,6 +2827,38 @@ static int enemy_fixed_move_y(unsigned int i)
 	return (move - scalable) + scaled;
 }
 
+enum { ENEMY_APPROACH_DEBT_MAX_PX100 = 25000 };
+
+static int enemy_unscaled_own_y(const struct JE_SingleEnemyType *e)
+{
+	const int scalable = (tempScrollYLayer == 0 || tempScrollBaseStep <= 0)
+	                     ? 0 : enemy_scalable_fixed_y(e->fixedmovey, e->eyc);
+	return e->eyc + e->fixedmovey - scalable;
+}
+
+static void enemy_approach_debt_accrue(unsigned int i)
+{
+	struct JE_SingleEnemyType *const e = &enemy[i];
+	const int boost = endlessScrollBoostPercent();
+
+	if (boost == 0)
+	{
+		e->approach_debt_y100 = 0;
+		return;
+	}
+
+	if (eventScrollBaseStep[1] <= 0 || skyGlueThisEnemy)
+		return;
+
+	int owed = e->approach_debt_y100 + enemy_unscaled_own_y(e) * boost;
+	if (owed > ENEMY_APPROACH_DEBT_MAX_PX100)
+		owed = ENEMY_APPROACH_DEBT_MAX_PX100;
+	else if (owed < -ENEMY_APPROACH_DEBT_MAX_PX100)
+		owed = -ENEMY_APPROACH_DEBT_MAX_PX100;
+
+	e->approach_debt_y100 = (JE_integer)owed;
+}
+
 // Presentation-only enemy velocity fallback for blinking sprites. Recycled slots discard it.
 static int    rl_enemy_hint_px[100], rl_enemy_hint_py[100];
 static int    rl_enemy_hint_vx[100], rl_enemy_hint_vy[100];
@@ -3140,6 +3172,62 @@ static bool enemy_has_visible_pixel(unsigned int i)
 		return sprite2_is_blank(*enemy[i].sprite2s, index) &&
 		       sprite_cell_in_window(baseX, baseY, wx0, wx1, wy0, wy1);
 	}
+}
+
+static bool enemy_approach_in_group(unsigned int g, unsigned int i, JE_byte link)
+{
+	if (enemyAvail[g] == 1)
+		return false;
+
+	return (link == 0) ? g == i : enemy[g].linknum == link;
+}
+
+static void enemy_approach_debt_settle(unsigned int i)
+{
+	if (enemyAvail[i] == 1)
+		return;
+
+	const JE_byte link = enemy[i].linknum;
+
+	for (unsigned int g = 0; g < i; g++)
+		if (enemy_approach_in_group(g, i, link))
+			return;
+
+	int topY = 0, topDebt100 = 0;
+	bool haveTop = false, owed = false;
+
+	for (unsigned int g = 0; g < 100; g++)
+	{
+		if (!enemy_approach_in_group(g, i, link))
+			continue;
+
+		if (enemy[g].eyc > 0 || enemy[g].eycc > 0 || enemy[g].fixedmovey > 0)
+			return;
+
+		if (enemy[g].ey >= 0 || enemy_has_visible_pixel(g))
+			return;
+
+		owed = owed || enemy[g].approach_debt_y100 != 0;
+
+		if (!haveTop || enemy[g].ey < topY)
+		{
+			topY = enemy[g].ey;
+			topDebt100 = enemy[g].approach_debt_y100;
+			haveTop = true;
+		}
+	}
+
+	if (!owed)
+		return;
+
+	const int shift = topDebt100 / 100;
+
+	for (unsigned int g = 0; g < 100; g++)
+		if (enemy_approach_in_group(g, i, link))
+		{
+			enemy[g].ey += shift;
+			enemy[g].approach_debt_y100 = 0;
+		}
 }
 
 // True when a live enemy is frozen above shot reach. Horizontal movement does
@@ -3728,6 +3816,8 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 			enemy[i].ex += enemy[i].exc;
 			if (enemy[i].ex < -80 || enemy[i].ex > vga_width + 20)
 				goto enemy_gone;
+
+			enemy_approach_debt_accrue(i);
 
 			enemy[i].ey += enemy[i].eyc;
 			if (enemy[i].ey < -112 || enemy[i].ey > 190)
@@ -10496,6 +10586,7 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	enemy->fixedmovey_carry = 0;
 	enemy->fixedmovey_carry_base = 0;
 	enemy->fixedmovey_carry_move = 0;
+	enemy->approach_debt_y100 = 0;
 
 	enemy->filter = 0x00;
 
@@ -11095,6 +11186,11 @@ void JE_eventSystem(void)
 					enemy[i].enemycycle = eventRec[eventLoc-1].eventdat5;
 			}
 		}
+
+		for (int i = initial_i; i < max_i; i++)
+			if (all_enemies || enemy[i].linknum == eventRec[eventLoc-1].eventdat4)
+				enemy_approach_debt_settle(i);
+
 		break;
 	}
 
