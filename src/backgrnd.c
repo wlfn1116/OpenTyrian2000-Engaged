@@ -119,9 +119,9 @@ JE_byte map1YDelay, map1YDelayMax, map2YDelay, map2YDelayMax;
 JE_boolean  anySmoothies;
 JE_byte     smoothie_data[9]; /* [1..9] */
 
-void JE_darkenBackground(JE_word neat)  /* wild detail level */
+void darken_background_apply(SDL_Surface *surface, JE_word neat)
 {
-	Uint8 *s = VGAScreen->pixels; /* screen pointer, 8-bit specific */
+	Uint8 *s = surface->pixels; /* screen pointer, 8-bit specific */
 	int x, y;
 	
 	s += PLAYFIELD_LEFT;
@@ -130,11 +130,36 @@ void JE_darkenBackground(JE_word neat)  /* wild detail level */
 	{
 		for (x = PLAYFIELD_WIDTH; x; x--)
 		{
-			*s = ((((*s & 0x0f) << 4) - (*s & 0x0f) + ((((x - neat - y) >> 2) + *(s - 2) + (y == 184 ? 0 : *(s - (VGAScreen->pitch - 1)))) & 0x0f)) >> 4) | (*s & 0xf0);
+			*s = ((((*s & 0x0f) << 4) - (*s & 0x0f) + ((((x - neat - y) >> 2) + *(s - 2) + (y == 184 ? 0 : *(s - (surface->pitch - 1)))) & 0x0f)) >> 4) | (*s & 0xf0);
 			s++;
 		}
-		s += VGAScreen->pitch - PLAYFIELD_WIDTH;
+		s += surface->pitch - PLAYFIELD_WIDTH;
 	}
+}
+
+void darken_background_apply_scaled(SDL_Surface *surface, JE_word neat, int scale)
+{
+	const int pitch = surface->pitch;
+
+	for (int hy = 0; hy < 184 * scale; ++hy)
+	{
+		const int y = 184 - hy / scale;
+		Uint8 *s = (Uint8 *)surface->pixels + hy * pitch + PLAYFIELD_LEFT * scale;
+		for (int hx = 0; hx < PLAYFIELD_WIDTH * scale; ++hx, ++s)
+		{
+			const int x = PLAYFIELD_WIDTH - hx / scale;
+			const int above = (y == 184) ? 0 : *(s - scale * pitch + scale);
+			const int mix = (((x - neat - y) >> 2) + *(s - 2 * scale) + above) & 0x0f;
+			*s = ((((*s & 0x0f) << 4) - (*s & 0x0f) + mix) >> 4) | (*s & 0xf0);
+		}
+	}
+}
+
+void JE_darkenBackground(JE_word neat)  /* wild detail level */
+{
+	if (render_list_recording)
+		rl_rec_darken(neat);
+	darken_background_apply(VGAScreen, neat);
 }
 
 // Mirror out-of-row columns so wider parallax never reads the adjacent map row.
@@ -355,6 +380,14 @@ void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map,
 	}
 }
 
+static Uint8 **bg_margin_row(Uint8 **next, int m, int width, Uint8 **end)
+{
+	Uint8 **row = next + width * m;
+	while (row >= next && row + BG_TILE_COUNT + BG_EDGE_TILES > end)
+		row -= width;
+	return row;
+}
+
 // Prepare a row walk, preserving mirror phase while guarding the map base.
 static Uint8 **bg_mirror_setup(Uint8 **map, Uint8 **base, int width, int col0, int *out_w, int *out_c0)
 {
@@ -396,9 +429,11 @@ void draw_background_1(SDL_Surface *surface)
 
 		map += 14;
 	}
-	// Reuse the final map row below the screen; modifiers may require several margin rows.
+	// Continue the map below the screen; modifiers may require several margin rows.
+	Uint8 **const end = (Uint8 **)&megaData1.mainmap[0][0] + COUNTOF(megaData1.mainmap) * 14;
 	for (int m = 0; m < bgMarginRows; ++m)
-		blit_background_row(surface, mapXPos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos, map - 14, mirror_w, col0);
+		blit_background_row(surface, mapXPos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos,
+		                    bg_margin_row(map, m, 14, end), mirror_w, col0);
 	rl_current_id = 0;
 }
 
@@ -429,8 +464,10 @@ void draw_background_2(SDL_Surface *surface)
 			map += 14;
 		}
 		// Extra bottom margin row(s) for the interpolation (see draw_background_1).
+		Uint8 **const end = (Uint8 **)&megaData2.mainmap[0][0] + COUNTOF(megaData2.mainmap) * 14;
 		for (int m = 0; m < bgMarginRows; ++m)
-			blit_background_row(surface, x, ((7 + m) * 28) + backPos2, map - 14, mirror_w, col0);
+			blit_background_row(surface, x, ((7 + m) * 28) + backPos2,
+			                    bg_margin_row(map, m, 14, end), mirror_w, col0);
 		rl_current_id = 0;
 	}
 
@@ -483,8 +520,10 @@ void draw_background_2_blend(SDL_Surface *surface)
 		map += 14;
 	}
 	// Extra bottom margin row(s) for the interpolation (see draw_background_1).
+	Uint8 **const end = (Uint8 **)&megaData2.mainmap[0][0] + COUNTOF(megaData2.mainmap) * 14;
 	for (int m = 0; m < bgMarginRows; ++m)
-		blit_background_row_blend(surface, mapX2Pos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos2, map - 14, mirror_w, col0);
+		blit_background_row_blend(surface, mapX2Pos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos2,
+		                          bg_margin_row(map, m, 14, end), mirror_w, col0);
 	rl_current_id = 0;
 	
 	/*Set Movement of background*/
@@ -561,8 +600,10 @@ void draw_background_3(SDL_Surface *surface)
 	}
 	// Extra bottom margin row(s) for the interpolation (see draw_background_1; bg3 rows
 	// are 15 map entries wide).
+	Uint8 **const end = (Uint8 **)&megaData3.mainmap[0][0] + COUNTOF(megaData3.mainmap) * 15;
 	for (int m = 0; m < bgMarginRows; ++m)
-		blit_background_row(surface, mapX3Pos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos3, map - 15, mirror_w, col0);
+		blit_background_row(surface, mapX3Pos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos3,
+		                    bg_margin_row(map, m, 15, end), mirror_w, col0);
 	rl_current_id = 0;
 }
 

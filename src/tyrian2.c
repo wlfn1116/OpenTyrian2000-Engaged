@@ -1374,6 +1374,7 @@ float debug_interp_alpha = 0.0f;  // last presented interpolation fraction (perf
 static SDL_Surface *render_gs = NULL;
 static SDL_Surface *smoothie_frame = NULL;
 static SDL_Surface *smoothie_present_frame = NULL;  // separate foreground target for cached plasma
+static SDL_Surface *feedback_work = NULL;
 
 // Resize a lazy 8-bit surface; feedback filters rebuild discarded content from black.
 static SDL_Surface *ensure_scaled_surface(SDL_Surface **surf, int scale)
@@ -1404,10 +1405,17 @@ static SDL_Surface *get_smoothie_present_frame(int scale)
 	return ensure_scaled_surface(&smoothie_present_frame, scale);
 }
 
+static SDL_Surface *get_feedback_work(void)
+{
+	return ensure_scaled_surface(&feedback_work, 1);
+}
+
 // Supersampled present path: the interpolated playfield renders NxN into pf_hi, composites into
 // vga_hi with the 1x HUD block-expanded on top, then presents via present_hi().
 static SDL_Surface *pf_hi = NULL;   // NxN playfield replay target (normal levels)
 static SDL_Surface *vga_hi = NULL;  // NxN final frame (playfield composite + HUD)
+static SDL_Surface *vga_hi_ref = NULL;
+static int vga_hi_ref_scale = 0;
 
 void tyrian2_deinit(void)
 {
@@ -1417,6 +1425,11 @@ void tyrian2_deinit(void)
 	smoothie_frame = NULL;
 	SDL_FreeSurface(smoothie_present_frame);
 	smoothie_present_frame = NULL;
+	SDL_FreeSurface(feedback_work);
+	feedback_work = NULL;
+	SDL_FreeSurface(vga_hi_ref);
+	vga_hi_ref = NULL;
+	vga_hi_ref_scale = 0;
 	SDL_FreeSurface(pf_hi);
 	pf_hi = NULL;
 	SDL_FreeSurface(vga_hi);
@@ -1427,6 +1440,43 @@ static bool ensure_hi_buffers(int scale)
 {
 	return ensure_scaled_surface(&pf_hi, scale) != NULL
 	    && ensure_scaled_surface(&vga_hi, scale) != NULL;
+}
+
+static void note_hi_present(int scale)
+{
+	vga_hi_ref_scale = 0;
+	if (ensure_scaled_surface(&vga_hi_ref, 1) == NULL)
+		return;
+	memcpy(vga_hi_ref->pixels, VGAScreenSeg->pixels, (size_t)VGAScreenSeg->h * VGAScreenSeg->pitch);
+	vga_hi_ref_scale = scale;
+}
+
+bool present_overlay_on_last_hi_frame(void)
+{
+	const int scale = vga_hi_ref_scale;
+	if (scale <= 1 || scale != effective_supersample() || vga_hi == NULL || pf_hi == NULL ||
+	    vga_hi->w != vga_width * scale || pf_hi->w != vga_width * scale ||
+	    vga_hi_ref->pitch != VGAScreenSeg->pitch)
+		return false;
+
+	memcpy(pf_hi->pixels, vga_hi->pixels, (size_t)vga_hi->h * vga_hi->pitch);
+	for (int y = 0; y < vga_height; ++y)
+	{
+		const Uint8 *const live = (const Uint8 *)VGAScreenSeg->pixels + y * VGAScreenSeg->pitch;
+		const Uint8 *const ref = (const Uint8 *)vga_hi_ref->pixels + y * vga_hi_ref->pitch;
+		for (int x = 0; x < vga_width; ++x)
+		{
+			if (live[x] == ref[x])
+				continue;
+			Uint8 *d = (Uint8 *)pf_hi->pixels + (y * scale) * pf_hi->pitch + x * scale;
+			for (int k = 0; k < scale; ++k, d += pf_hi->pitch)
+				memset(d, live[x], (size_t)scale);
+		}
+	}
+	if (mouse_cursor_wants_hi())
+		JE_drawMouseToHiFrame(pf_hi, scale, video_get_menu_x_offset());
+	present_hi(pf_hi);
+	return true;
 }
 
 static void ship_pred_on_tick(void)
@@ -1493,7 +1543,8 @@ static void update_ship_override(float alpha)
 		int vx = ship_vel_x[p], vy = ship_vel_y[p];
 		// A large jump (warp, dragonwing spawn, level start) isn't real velocity;
 		// snap rather than fling the ship along a bogus extrapolation.
-		if (vx > 40 || vx < -40 || vy > 40 || vy < -40)
+		const bool snapped = vx > 40 || vx < -40 || vy > 40 || vy < -40;
+		if (snapped)
 		{
 			vx = 0;
 			vy = 0;
@@ -1528,6 +1579,9 @@ static void update_ship_override(float alpha)
 			                        rsm_y[p] - (float)ship_tick_y[p]);
 			continue;
 		}
+		if (endLevel && levelEnd > 0 && !snapped)
+			--vy;
+
 		// Float offset: the replay rounds it at the render scale, so a supersampled
 		// ship glides on the sub-pixel grid instead of stepping whole pixels.
 		rl_set_ship_override(p, vx * alpha, vy * alpha);
@@ -2172,21 +2226,34 @@ void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
 
 // Soul of Zinglon light pillar, drawn at display rate from the per-tick request (zinglonPillar*).
 // cx is in HI units; temp is the 1x half-width.
-static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scale)
+static void draw_zinglon_pillar(SDL_Surface *surface, int cx, float temp, int scale)
 {
 	const int bottom = 184 * scale;
-	int x0 = cx - temp * scale;
-	int x1 = cx + temp * scale + (scale - 1);
+	const int half = round_signed(temp * scale);
+	int x0 = cx - half;
+	int x1 = cx + half + (scale - 1);
 	if (x0 < 0) x0 = 0;
 	JE_barBright(surface, x0, 0, x1, bottom);
-	x0 = cx - (temp + 2) * scale;
-	x1 = cx + (temp + 2) * scale + (scale - 1);
+	x0 = cx - half - 2 * scale;
+	x1 = cx + half + 2 * scale + (scale - 1);
 	if (x0 < 0) x0 = 0;
 	JE_barBright(surface, x0, 0, x1, bottom);
 }
 
+static float zinglon_width_prev[2], zinglon_width_cur[2];
+
+static void zinglon_pillar_tick(void)
+{
+	for (uint p = 0; p < COUNTOF(zinglonPillarActive); ++p)
+	{
+		zinglon_width_prev[p] = zinglon_width_cur[p];
+		zinglon_width_cur[p] = zinglonPillarActive[p] ? (float)zinglonPillarTemp[p] : 0.0f;
+	}
+}
+
 /* Both ships off the same per-tick request. */
-static void draw_active_zinglon_pillars(SDL_Surface *surface, int scale, bool interpolate)
+static void draw_active_zinglon_pillars(SDL_Surface *surface, int scale, bool interpolate,
+                                        float alpha)
 {
 	for (uint p = 0; p < COUNTOF(zinglonPillarActive); ++p)
 	{
@@ -2194,7 +2261,10 @@ static void draw_active_zinglon_pillars(SDL_Surface *surface, int scale, bool in
 			continue;
 		const float offset = interpolate ? rl_get_ship_override_dx(p) : 0.0f;
 		const int cx = round_signed(((float)zinglonPillarCX[p] + offset) * scale);
-		draw_zinglon_pillar(surface, cx, zinglonPillarTemp[p], scale);
+		const float grow = zinglon_width_cur[p] - zinglon_width_prev[p];
+		const float width = interpolate ? zinglon_width_prev[p] + grow * alpha
+		                                : (float)zinglonPillarTemp[p];
+		draw_zinglon_pillar(surface, cx, width, scale);
 	}
 }
 
@@ -2389,6 +2459,7 @@ static void draw_lives_gauge(int lives)
 }
 
 static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha);
+static void boss_bar_present_tick(void);
 
 void JE_starShowVGA(void)
 {
@@ -2399,11 +2470,14 @@ void JE_starShowVGA(void)
 		return;
 	}
 
+	zinglon_pillar_tick();
+	boss_bar_present_tick();
+
 	if (!playerEndLevel && !skipStarShowVGA)
 	{
 		// Zinglon pillar at the tick position: baseline for the non-interpolated
 		// present paths; the interp loop below redraws it shifted after replay.
-		draw_active_zinglon_pillars(game_screen, 1, false);
+		draw_active_zinglon_pillars(game_screen, 1, false, 1.0f);
 
 		composite_playfield(game_screen, false);
 
@@ -2433,14 +2507,18 @@ void JE_starShowVGA(void)
 			SDL_Surface *const interp_buf  = anySmoothies ? (tick_plasma ? get_smoothie_present_frame(rss)
 			                                                        : (pss == rss ? plasma_buf : pf_hi))
 			                               : (use_hi ? pf_hi : game_screen);
-			SDL_Surface *const bg_feedback = anySmoothies ? get_render_gs(pss) : NULL;
+			SDL_Surface *const bg_feedback = anySmoothies ? get_render_gs(1) : NULL;
+			SDL_Surface *const plasma_work = (anySmoothies && pss > 1) ? get_feedback_work()
+			                                                           : plasma_buf;
 			bool tick_plasma_ready = false;
 
 			if (can_interp && interp_buf != NULL
-			    && (!anySmoothies || (plasma_buf != NULL && bg_feedback != NULL)))
+			    && (!anySmoothies
+			        || (plasma_buf != NULL && bg_feedback != NULL && plasma_work != NULL)))
 			{
 				// Carry leftover display time into the next fixed simulation tick.
-				const float period = (float)frameCountMax * get_delay_period();
+				const float period = ((pentiumMode && !isNetworkGame) ? 2.5f : (float)frameCountMax)
+				                   * get_delay_period();
 
 				if (!sim_timing_init)
 				{
@@ -2454,6 +2532,7 @@ void JE_starShowVGA(void)
 
 				if (tick_plasma)
 				{
+					rl_feedback_trim(bg_feedback, 0);
 					memcpy(plasma_buf->pixels, bg_feedback->pixels,
 					       (size_t)bg_feedback->h * bg_feedback->pitch);
 					rl_replay_bg(plasma_buf, 1.0f, pss, false);
@@ -2503,8 +2582,11 @@ void JE_starShowVGA(void)
 						{
 							// Pass 1: derive this frame's background by filtering a copy of
 							// the fixed plasma base with the interpolated backgrounds.
-							memcpy(plasma_buf->pixels, bg_feedback->pixels,
+							memcpy(plasma_work->pixels, bg_feedback->pixels,
 							       (size_t)bg_feedback->h * bg_feedback->pitch);
+							rl_feedback_replay(plasma_work, alpha);
+							if (plasma_work != plasma_buf)
+								expand_frame_to_hi(plasma_work, plasma_buf, pss);
 							rl_replay_bg(plasma_buf, alpha, pss, split_bg);
 							if (interp_buf != plasma_buf)
 							{
@@ -2523,9 +2605,10 @@ void JE_starShowVGA(void)
 
 					// Zinglon pillar onto the freshly-interpolated frame, centred on the
 					// ship's render-rate position so it glides rather than snapping.
-					draw_active_zinglon_pillars(interp_buf, rss, true);
+					draw_active_zinglon_pillars(interp_buf, rss, true, alpha);
 
 					draw_boss_bar_present(interp_buf, rss, alpha);
+					hud_killfire_bar_present(interp_buf, rss, alpha);
 					hud_special_light_present(interp_buf, rss, alpha);
 
 					if (use_hi)
@@ -2540,10 +2623,12 @@ void JE_starShowVGA(void)
 							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
 						gauge_bars_present(vga_hi, rss, alpha);
 						JE_drawPerfOverlay(vga_hi, rss);
+						note_hi_present(rss);
 						present_hi(vga_hi);
 					}
 					else
 					{
+						vga_hi_ref_scale = 0;
 						composite_playfield(interp_buf, true);
 
 						// Gauges at the interpolated level: they rise and fall smoothly
@@ -2566,6 +2651,7 @@ void JE_starShowVGA(void)
 			}
 			else
 			{
+				vga_hi_ref_scale = 0;
 				JE_drawPerfOverlay(VGAScreenSeg, 1);
 				JE_showVGA();
 				service_wait_delay();
@@ -2580,7 +2666,13 @@ void JE_starShowVGA(void)
 					memcpy(bg_feedback->pixels, plasma_buf->pixels,
 					       (size_t)plasma_buf->h * plasma_buf->pitch);
 				else
-					rl_replay_bg(bg_feedback, 1.0f, pss, false);
+					rl_feedback_commit(bg_feedback,
+					                   (can_interp && !tick_plasma && rl_feedback_has_memory())
+					                   ? RL_FEEDBACK_TICKS : 0);
+			}
+			else
+			{
+				rl_feedback_reset();
 			}
 		}
 		else
@@ -4918,6 +5010,8 @@ start_level_first:
 	rollback_level_start();
 	// Reset per-tick ship motion at each level boundary.
 	ship_pred_have_tick = false;
+	rl_feedback_reset();
+	rl_forget_previous();
 	memset(ship_vel_x, 0, sizeof(ship_vel_x));
 	memset(ship_vel_y, 0, sizeof(ship_vel_y));
 	for (int p = 0; p < 2; ++p)
@@ -6205,6 +6299,11 @@ draw_player_shot_loop_end:
 				{
 					// Combine slot and generation to avoid pairing recycled explosions.
 					rl_current_id = RL_ID_EXPL_BASE + j * 4 + (explosions[j].id_gen & 3);
+					rl_current_vel_x = (explosions[j].fixedPosition && explosions[j].followPlayer)
+					                   ? explosionFollowAmountX : 0;
+					rl_current_vel_y = explosions[j].deltaY
+					                 + (!explosions[j].fixedPosition ? explodeMove
+					                    : explosions[j].followPlayer ? explosionFollowAmountY : 0);
 					const int ex = explosions[j].x, ey = explosions[j].y;
 					const unsigned int frame = explosions[j].sprite + 1;
 					const Uint8 tint = explosions[j].filter;  // endless elite / champion
@@ -6222,6 +6321,8 @@ draw_player_shot_loop_end:
 					else
 						blit_sprite2(VGAScreen, ex, ey, explosionSpriteSheet, frame);
 					rl_current_id = 0;
+					rl_current_vel_x = 0;
+					rl_current_vel_y = 0;
 				}
 
 				explosions[j].ttl--;
@@ -7073,6 +7174,45 @@ static void compose_wipe_frame(WipeKind kind, int z, const Uint8 *pic_buffer)
 	}
 }
 
+static void compose_wipe_frame_hi(WipeKind kind, int n, SDL_Surface *old_hi, SDL_Surface *new_hi,
+                                  SDL_Surface *canvas, int scale)
+{
+	const int H = vga_height * scale, W = vga_width * scale;
+
+	for (int y = 0; y < H; ++y)
+	{
+		Uint8 *const dst = (Uint8 *)canvas->pixels + y * canvas->pitch;
+		const Uint8 *src;
+
+		switch (kind)
+		{
+		case WIPE_U:
+			src = (y < n) ? (const Uint8 *)new_hi->pixels + (H - n + y) * new_hi->pitch
+			              : (const Uint8 *)old_hi->pixels + (y - n) * old_hi->pitch;
+			memcpy(dst, src, (size_t)W);
+			break;
+
+		case WIPE_V:
+			src = (y < H - n) ? (const Uint8 *)old_hi->pixels + y * old_hi->pitch
+			                  : (const Uint8 *)new_hi->pixels + (y - (H - n)) * new_hi->pitch;
+			memcpy(dst, src, (size_t)W);
+			break;
+
+		case WIPE_R:
+			memcpy(dst, (const Uint8 *)old_hi->pixels + y * old_hi->pitch + n, (size_t)(W - n));
+			memcpy(dst + W - n, (const Uint8 *)new_hi->pixels + y * new_hi->pitch, (size_t)n);
+			break;
+		}
+	}
+}
+
+static SDL_Surface *wipe_hi_surface(SDL_Surface **surf, int scale)
+{
+	if (*surf == NULL)
+		*surf = SDL_CreateRGBSurface(0, vga_width * scale, vga_height * scale, 8, 0, 0, 0, 0);
+	return *surf;
+}
+
 // Animate a full-screen wipe at tick rate or display rate, with the same duration
 // and final image. Input skips to the end.
 static void animate_picture_wipe(WipeKind kind, const Uint8 *pic_buffer)
@@ -7086,6 +7226,21 @@ static void animate_picture_wipe(WipeKind kind, const Uint8 *pic_buffer)
 		const Uint64 begin = SDL_GetPerformanceCounter();
 		const float counter_to_ms = 1000.0f / (float)freq;
 
+		const int ss = effective_supersample();
+		SDL_Surface *old_hi = NULL, *new_hi = NULL, *canvas = NULL, *frame = NULL;
+		SDL_Surface *const pic_view = (ss > 1)
+		    ? SDL_CreateRGBSurfaceFrom((void *)pic_buffer, vga_width, vga_height, 8,
+		                               VGAScreen->pitch, 0, 0, 0, 0)
+		    : NULL;
+		const bool hi = pic_view != NULL && wipe_hi_surface(&old_hi, ss) != NULL &&
+		                wipe_hi_surface(&new_hi, ss) != NULL &&
+		                wipe_hi_surface(&canvas, ss) != NULL && wipe_hi_surface(&frame, ss) != NULL;
+		if (hi)
+		{
+			expand_frame_to_hi(VGAScreen2, old_hi, ss);
+			expand_frame_to_hi(pic_view, new_hi, ss);
+		}
+
 		for (;;)
 		{
 			if (newkey)
@@ -7098,7 +7253,27 @@ static void animate_picture_wipe(WipeKind kind, const Uint8 *pic_buffer)
 				z = steps - 1;
 
 			compose_wipe_frame(kind, z, pic_buffer);
-			JE_showVGA();
+			if (hi)
+			{
+				const int lead = (kind == WIPE_U) ? ss : 0;
+				const int n_max = (steps - 1) * ss + lead;
+				int n = done ? n_max : (int)(t * steps * ss) + lead;
+				if (n > n_max)
+					n = n_max;
+				compose_wipe_frame_hi(kind, n, old_hi, new_hi, canvas, ss);
+
+				expand_frame_to_hi(video_compose_frame(), frame, ss);
+				const int x_offset = video_get_menu_x_offset();
+				const int copy_w = (x_offset > 0 ? LEGACY_WIDTH : vga_width) * ss;
+				for (int row = 0; row < vga_height * ss; ++row)
+					memcpy((Uint8 *)frame->pixels + row * frame->pitch + x_offset * ss,
+					       (const Uint8 *)canvas->pixels + row * canvas->pitch, (size_t)copy_w);
+				present_hi(frame);
+			}
+			else
+			{
+				JE_showVGA();
+			}
 
 			if (done)
 				break;
@@ -7107,6 +7282,12 @@ static void animate_picture_wipe(WipeKind kind, const Uint8 *pic_buffer)
 				limit_render_fps();
 			service_SDL_events(false);
 		}
+
+		SDL_FreeSurface(pic_view);
+		SDL_FreeSurface(old_hi);
+		SDL_FreeSurface(new_hi);
+		SDL_FreeSurface(canvas);
+		SDL_FreeSurface(frame);
 	}
 	else
 	{
@@ -11735,9 +11916,10 @@ static void draw_boss_bar_gauge(SDL_Surface *dst, int scale, int gx, int gy, int
 	bbfill(dst, gx, gy, gx + gw - 1, gy + gh - 1, scale, (Uint8)FRAME);
 	bbfill(dst, ix, iy, ix + iw - 1, iy + ih - 1, scale, (Uint8)TRACK);
 
-	const int fillLen = (int)(along * fraction + 0.5f);
+	const int fillLen = (int)(along * fraction * scale + 0.5f);
 	if (fillLen <= 0)
 		return;  // boss at (near) zero: just the empty groove shows
+	const int capLen = (fillLen < scale) ? fillLen : scale;
 
 	// Glossy fill: a brightness gradient across the thickness (highlight near the
 	// first edge, darker at the far edge), lifted by the hit-flash amount.
@@ -11749,16 +11931,20 @@ static void draw_boss_bar_gauge(SDL_Surface *dst, int scale, int gx, int gy, int
 			col = BASE + 15;
 
 		if (horizontal)
-			bbfill(dst, ix, iy + c, ix + fillLen - 1, iy + c, scale, (Uint8)col);
+			fill_rectangle_xy(dst, ix * scale, (iy + c) * scale, ix * scale + fillLen - 1,
+			                  (iy + c + 1) * scale - 1, (Uint8)col);
 		else
-			bbfill(dst, ix + c, iy + ih - fillLen, ix + c, iy + ih - 1, scale, (Uint8)col);
+			fill_rectangle_xy(dst, (ix + c) * scale, (iy + ih) * scale - fillLen,
+			                  (ix + c + 1) * scale - 1, (iy + ih) * scale - 1, (Uint8)col);
 	}
 
 	// Bright leading-edge cap at the tip of the fill for a crisp, readable edge.
 	if (horizontal)
-		bbfill(dst, ix + fillLen - 1, iy, ix + fillLen - 1, iy + ih - 1, scale, (Uint8)(BASE + 15));
+		fill_rectangle_xy(dst, ix * scale + fillLen - capLen, iy * scale, ix * scale + fillLen - 1,
+		                  (iy + ih) * scale - 1, (Uint8)(BASE + 15));
 	else
-		bbfill(dst, ix, iy + ih - fillLen, ix + iw - 1, iy + ih - fillLen, scale, (Uint8)(BASE + 15));
+		fill_rectangle_xy(dst, ix * scale, (iy + ih) * scale - fillLen, (ix + iw) * scale - 1,
+		                  (iy + ih) * scale - fillLen + capLen - 1, (Uint8)(BASE + 15));
 }
 
 // Shared by draw_boss_bars_enhanced and boss_bar_right_edge_x (below), so the two can never
@@ -11774,6 +11960,28 @@ static int boss_flash_render(int color, float alpha)
 	if (f < 0)
 		f = 0;
 	return f;
+}
+
+static Uint8 boss_fill_prev[2], boss_fill_cur[2], boss_fill_link[2];
+
+static void boss_bar_present_tick(void)
+{
+	for (unsigned int b = 0; b < COUNTOF(boss_bar); b++)
+	{
+		if (boss_bar[b].link_num != boss_fill_link[b])
+		{
+			boss_fill_link[b] = boss_bar[b].link_num;
+			boss_fill_cur[b] = boss_bar[b].fill;
+		}
+		boss_fill_prev[b] = boss_fill_cur[b];
+		boss_fill_cur[b] = boss_bar[b].fill;
+	}
+}
+
+static float boss_bar_present_fill(unsigned int b, float alpha)
+{
+	const float fill = boss_fill_prev[b] + (boss_fill_cur[b] - boss_fill_prev[b]) * alpha;
+	return fill / (float)BOSS_BAR_FULL;
 }
 
 // Blank rows or columns left between a bar's frame and the nearest HUD ink.
@@ -11870,7 +12078,8 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 			const int hit = boss_flash_render(boss_bar[b].color, flashAlpha);
 
 			draw_boss_bar_gauge(dst, scale, bx, by, bw, THICK, true,
-			                    boss_bar[b].fill / (float)BOSS_BAR_FULL,
+			                    decrement ? boss_bar[b].fill / (float)BOSS_BAR_FULL
+			                              : boss_bar_present_fill(b, flashAlpha),
 			                    (lift > hit) ? lift : hit, base);
 
 			if (decrement && boss_bar[b].color > 0)
@@ -11924,7 +12133,8 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 			const int hit = boss_flash_render(boss_bar[b].color, flashAlpha);
 
 			draw_boss_bar_gauge(dst, scale, bx, vTop, THICK, vBot - vTop + 1, false,
-			                    boss_bar[b].fill / (float)BOSS_BAR_FULL,
+			                    decrement ? boss_bar[b].fill / (float)BOSS_BAR_FULL
+			                              : boss_bar_present_fill(b, flashAlpha),
 			                    (lift > hit) ? lift : hit, base);
 
 			if (decrement && boss_bar[b].color > 0)
@@ -12160,32 +12370,52 @@ void draw_boss_bar(void)
 		draw_boss_bars_classic(bars);
 }
 
-// Redraw enhanced boss bars with an interpolated hit flash.
-static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
+static void boss_bar_x_scaled(SDL_Surface *dst, int x1, int y1, int x2, int y2, int scale, int col)
 {
-	if (bossBarStyle != BOSS_BAR_ENHANCED)
-		return;
+	fill_rectangle_xy(dst, x1, y1 * scale, x2, (y1 + 1) * scale - 1, (Uint8)(col + 1));
+	fill_rectangle_xy(dst, x1, (y1 + 1) * scale, x2, y2 * scale - 1, (Uint8)col);
+	fill_rectangle_xy(dst, x1, y2 * scale, x2, (y2 + 1) * scale - 1, (Uint8)(col - 1));
+}
 
-	bool flashing = false;
-	for (unsigned int b = 0; b < COUNTOF(boss_bar); b++)
+static void draw_boss_bars_classic_present(SDL_Surface *dst, int scale, float alpha,
+                                           unsigned int bars)
+{
+	const int center_x = PLAYFIELD_LEFT + PLAYFIELD_WIDTH / 2;
+
+	for (unsigned int b = 0; b < bars; b++)
 	{
-		if (boss_bar[b].link_num == 0)
-			continue;
+		int x;
+		if (bars == 2)
+			x = center_x + ((b == 0) ? -30 : 30);
+		else
+			x = center_x + ((levelTimer) ? 95 : 0);
+		const int y = (levelTimer) ? 15 : 7;
 
 		int base, lift;
 		boss_bar_colours(boss_bar[b].link_num, &base, &lift);
-		if (boss_bar[b].color > 0 || lift > 0)
-			flashing = true;
-	}
-	if (!flashing)
-		return;
+		const int hit = boss_flash_render(boss_bar[b].color, alpha);
+		const int flash = (lift > hit) ? lift : hit;
+		const float fill = boss_bar_present_fill(b, alpha) * BOSS_BAR_FULL;
 
+		boss_bar_x_scaled(dst, (x - 25) * scale, y, (x + 26) * scale - 1, y + 5, scale, base + 3);
+		boss_bar_x_scaled(dst, x * scale - (int)(fill * scale / 10.0f), y,
+		                  (x + 1) * scale - 1 + (int)((fill + 5.0f) * scale / 10.0f), y + 5, scale,
+		                  base + 6 + flash);
+	}
+}
+
+// Redraw boss bars with an interpolated fill and hit flash.
+static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
+{
 	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
 	                        + (boss_bar[1].link_num != 0 ? 1 : 0);
 	if (bars == 0)
 		return;
 
-	draw_boss_bars_enhanced(dst, scale, alpha, false, bars);
+	if (bossBarStyle == BOSS_BAR_ENHANCED)
+		draw_boss_bars_enhanced(dst, scale, alpha, false, bars);
+	else
+		draw_boss_bars_classic_present(dst, scale, alpha, bars);
 }
 
 // Shift needed to clear a right-side enhanced boss bar, or 0. Keep this geometry in sync with

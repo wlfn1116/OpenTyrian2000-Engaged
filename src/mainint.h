@@ -183,6 +183,7 @@ void hud_special_light_rearm(uint p);
 // Repaint the ready light for one displayed frame: the meter at `alpha` between the previous and
 // current tick's fill, at `scale` into the supersampled playfield, over what the residual re-applied.
 void hud_special_light_present(SDL_Surface *dst, int scale, float alpha);
+void hud_killfire_bar_present(SDL_Surface *dst, int scale, float alpha);
 void JE_mainKeyboardInput(void);
 void JE_pauseGame(void);
 

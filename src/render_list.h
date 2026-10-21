@@ -43,6 +43,7 @@ typedef enum
 	RC_BLUR,            // like RC_ICED_BLUR but preserves the source pixel hue
 	RC_SUPERPIXEL,      // explosion spark (JE_drawSP): 5-pixel additive blend, foreground
 	RC_HP_BAR,          // enemy health bar; interpolates with its enemy (same id matching)
+	RC_DARKEN,
 } RenderCmdKind;
 
 typedef struct
@@ -95,6 +96,8 @@ typedef struct
 	int filt_col;
 	int filt_bright;
 	int filt_dbright;
+
+	int darken_neat, darken_dneat;
 
 	// modifiers
 	Uint8 hue;
@@ -158,6 +161,7 @@ extern float rl_current_sub_x, rl_current_sub_y;
 enum
 {
 	RL_ID_FILTER = 8,        // full-screen colour filter (one per tick; brightness interpolates)
+	RL_ID_DARKEN = 9,
 	RL_ID_BG_BASE = 16,      // + layer (1..3)
 	RL_ID_ENEMY_BASE = 2000, // + slot
 	RL_ID_ENEMYBAR_BASE = 2500, // + slot (enemy health bar; interpolates with its enemy)
@@ -172,6 +176,7 @@ enum
 	RL_ID_SIDEKICK_BASE = 15000, // + player*2 + slot
 	RL_ID_LINKGUN_BASE = 15010,  // + 0..2: linked-Dragonwing turret aim markers.  The three
 	                             // Marker shots need stable IDs because their pool slots drift.
+	RL_ID_SHIP_SHADOW_BASE = 15020,
 	RL_ID_MAX = 16384,
 };
 
@@ -181,6 +186,7 @@ void rl_end_record(void);
 // Abandon a recording mid-tick (rollback re-simulation): discard the partial
 // list and keep the last complete frame as the interpolation baseline.
 void rl_abort_record(void);
+void rl_forget_previous(void);
 void rl_deinit(void);
 
 // Number of commands captured for the current frame.
@@ -205,6 +211,14 @@ void rl_replay_fg(SDL_Surface *dst, float alpha, int scale,
 // Replay at (x,y) - (dx,dy)*(1-alpha), then apply the residual.
 // Feedback mode preserves the destination for smoothie trails.
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale);
+
+enum { RL_FEEDBACK_TICKS = 4 };
+
+void rl_feedback_reset(void);
+bool rl_feedback_has_memory(void);
+void rl_feedback_replay(SDL_Surface *dst, float alpha);
+void rl_feedback_trim(SDL_Surface *base, int keep);
+void rl_feedback_commit(SDL_Surface *base, int keep);
 
 // Mark an opaque overlay for full residual capture; diff-only capture can leave
 // holes after its background moves. Coordinates are relative to game_screen.
@@ -246,6 +260,7 @@ void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, 
 // interpolated replay so they produce identical pixels).
 void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity, Uint8 groove);
 void rl_rec_filter_screen(int col, int brightness);
+void rl_rec_darken(int neat);
 void rl_rec_smoothie_filter(RenderCmdKind kind);  // RC_ICED_BLUR / RC_LAVA_FILTER / RC_WATER_FILTER / RC_BLUR
 
 // Plotted value of one superpixel tap over background `bg`: the z-driven shade, lifted `bright`

@@ -69,6 +69,8 @@ extern int starfield_speed;
 extern bool background_advance;
 
 void JE_darkenBackground(JE_word neat);
+void darken_background_apply(SDL_Surface *surface, JE_word neat);
+void darken_background_apply_scaled(SDL_Surface *surface, JE_word neat, int scale);
 
 // Edge mirroring reflects columns outside the map row; mirror_w 0 keeps stock reads.
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0);

@@ -151,6 +151,8 @@ static int joystick_config = 0; // which joystick is being configured in menu
 
 static JE_word yLoc;
 static JE_shortint yChg;
+static JE_word datacube_scroll_from;
+static bool datacube_smooth = false;
 static int newPal, curPal, oldPal;
 static JE_boolean quikSave;
 static JE_byte oldMenu;
@@ -690,6 +692,7 @@ enum { SIM_BOX_X0 = 8, SIM_BOX_Y0 = 8, SIM_BOX_X1 = 143, SIM_BOX_Y1 = 182 };
 // Supersampled present: the NxN replay of the recorded frame, and the frame handed to
 // present_hi. Kept allocated (like the gameplay hi buffers) and resized on a factor change.
 static SDL_Surface *sim_hi_replay = NULL, *sim_hi_frame = NULL;
+static SDL_Surface *datacube_hi_canvas = NULL;
 
 void game_menu_deinit(void)
 {
@@ -697,6 +700,8 @@ void game_menu_deinit(void)
 	sim_hi_replay = NULL;
 	SDL_FreeSurface(sim_hi_frame);
 	sim_hi_frame = NULL;
+	SDL_FreeSurface(datacube_hi_canvas);
+	datacube_hi_canvas = NULL;
 }
 
 static SDL_Surface *sim_ensure_hi(SDL_Surface **surf, int scale)
@@ -846,6 +851,89 @@ static void menuWaitWithSmoothCursor(void)
 		if (!output_vsync)
 			limit_render_fps();
 	}
+}
+
+static void datacube_text_hi(SDL_Surface *dst, int x, float y, const char *s, int scale)
+{
+	const int yh = (int)lrintf(y * scale);
+	int bright = 0;
+
+	for (int i = 0; s[i] != '\0'; ++i)
+	{
+		const int sprite_id = font_ascii[(unsigned char)s[i]];
+
+		if (s[i] == ' ')
+		{
+			x += 6;
+		}
+		else if (s[i] == '~')
+		{
+			bright = (bright == 0) ? 4 : 0;
+		}
+		else if (sprite_id != -1 && sprite_exists(TINY_FONT, sprite_id))
+		{
+			blit_sprite_table_scaled(dst, (x + 1) * scale, yh + scale, TINY_FONT, sprite_id, scale,
+			                         BLITT_DARK, 0, 0, false);
+			blit_sprite_table_scaled(dst, x * scale, yh, TINY_FONT, sprite_id, scale,
+			                         BLITT_HV_UNSAFE, 14, (Sint8)(3 + bright), false);
+			x += sprite(TINY_FONT, sprite_id)->width + 1;
+		}
+	}
+}
+
+static bool datacube_present_hi(const struct cube_struct *c, float y_loc, int scale)
+{
+	SDL_Surface *const canvas = sim_ensure_hi(&datacube_hi_canvas, scale);
+	SDL_Surface *const frame = sim_ensure_hi(&sim_hi_frame, scale);
+	if (canvas == NULL || frame == NULL)
+		return false;
+
+	fill_rectangle_xy(canvas, 160 * scale, 49 * scale, 311 * scale - 1, 157 * scale - 1, 228);
+	const int first = (int)(y_loc / 12.0f);
+	float y = 50.0f - (y_loc - 12.0f * (float)first);
+	for (int line = first + 1; line <= first + 10 && line <= c->last_line; ++line)
+	{
+		datacube_text_hi(canvas, 161, y, c->text[line - 1], scale);
+		y += 12.0f;
+	}
+
+	const int x_offset = video_get_menu_x_offset();
+	expand_frame_to_hi(video_compose_frame(), frame, scale);
+	for (int row = 49 * scale; row < 157 * scale; ++row)
+		memcpy((Uint8 *)frame->pixels + row * frame->pitch + (160 + x_offset) * scale,
+		       (const Uint8 *)canvas->pixels + row * canvas->pitch + 160 * scale,
+		       (size_t)(151 * scale));
+
+	JE_drawMouseToHiFrame(frame, scale, x_offset);
+	present_hi(frame);
+	return true;
+}
+
+static void datacube_smooth_present(const struct cube_struct *c, JE_word from, JE_word to)
+{
+	const float period = get_delay_period();
+	Uint32 remaining;
+	do
+	{
+		remaining = getDelayTicks();
+		float alpha = (period > 0.0f) ? 1.0f - (float)remaining / period : 1.0f;
+		if (alpha < 0.0f)
+			alpha = 0.0f;
+		else if (alpha > 1.0f)
+			alpha = 1.0f;
+
+		JE_mouseStart();
+		const int ss = effective_supersample();
+		const float y_loc = (float)from + ((float)to - (float)from) * alpha;
+		if (ss <= 1 || !datacube_present_hi(c, y_loc, ss))
+			JE_showVGA();
+		JE_mouseReplace();
+
+		if (!output_vsync)
+			limit_render_fps();
+		service_SDL_events(false);
+	}
+	while (remaining > 0);
 }
 
 /* Add or remove the two Debug Mode rows from the buy/sell menu. */
@@ -3246,6 +3334,7 @@ void JE_itemScreen(void)
 						yLoc = 0;
 					}
 
+					datacube_scroll_from = yLoc;
 					yLoc += yChg;
 					temp = yLoc / 12;
 					temp2 = yLoc % 12;
@@ -3277,16 +3366,22 @@ void JE_itemScreen(void)
 					if (temp2 == 0)
 						yChg = 0;
 
-					JE_mouseStart();
-
-					JE_showVGA();
-
-					if (backFromHelp)
+					const int scroll_step = yLoc - datacube_scroll_from;
+					datacube_smooth = smoothMotion && effective_supersample() > 1 &&
+					                  !backFromHelp && scroll_step != 0 && abs(scroll_step) <= 2;
+					if (!datacube_smooth)
 					{
-						fade_palette(colors, 10, 0, 255);
-						backFromHelp = false;
+						JE_mouseStart();
+
+						JE_showVGA();
+
+						if (backFromHelp)
+						{
+							fade_palette(colors, 10, 0, 255);
+							backFromHelp = false;
+						}
+						JE_mouseReplace();
 					}
-					JE_mouseReplace();
 
 					setDelay(1);
 				}
@@ -3419,7 +3514,11 @@ void JE_itemScreen(void)
 					}
 				}
 
-				menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
+				if (curMenu == MENU_DATA_CUBE_SUB && datacube_smooth)
+					datacube_smooth_present(&cube[curSel[MENU_DATA_CUBES] - 2],
+					                        datacube_scroll_from, yLoc);
+				else
+					menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
 
 				push_joysticks_as_keyboard();
 				service_SDL_events(false);
@@ -6085,6 +6184,35 @@ void JE_genItemMenu(JE_byte itemNum)
 
 void JE_scaleInPicture(SDL_Surface *dst, const SDL_Surface *src)
 {
+	if (smoothMotion)
+	{
+		const int last = vga_width / 2;
+		const float duration = (float)((last - 2) / 2 + 1) * get_delay_period();
+		const float counter_to_ms = 1000.0f / (float)SDL_GetPerformanceFrequency();
+		const Uint64 begin = SDL_GetPerformanceCounter();
+
+		for (;;)
+		{
+			if (JE_anyButton())
+				break;
+
+			float t = (float)(SDL_GetPerformanceCounter() - begin) * counter_to_ms / duration;
+			if (t > 1.0f)
+				t = 1.0f;
+			const int i = 2 + (int)((float)(last - 2) * t);
+
+			JE_scaleBitmap(dst, src, last - i, 0, last + i - 1,
+			               100 + roundf(i * 200.0f / vga_width) - 1);
+			JE_showVGA();
+
+			if (t >= 1.0f)
+				break;
+			if (!output_vsync)
+				limit_render_fps();
+		}
+		return;
+	}
+
 	// Scale to vga_width so the final frame samples the full surface 1:1.
 	for (int i = 2; i <= vga_width / 2; i += 2)
 	{

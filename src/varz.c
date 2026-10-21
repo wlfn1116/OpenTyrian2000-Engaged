@@ -700,6 +700,8 @@ void JE_drawOptionsHUD(void)
 	}
 
 	Player *this_player = &player[hud_sidekick_player_index()];
+	const bool was_recording = render_list_recording;
+	render_list_recording = false;
 
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{
@@ -713,6 +715,8 @@ void JE_drawOptionsHUD(void)
 			blit_sprite(VGAScreenSeg, hud_x, y, OPTION_SHAPES, this_option->icongr - 1);  // sidekick HUD icon
 		draw_segmented_gauge(VGAScreenSeg, hud_x, y + 13, 112, 2, 2, AMMO_GAUGE_STEP(this_player->sidekick[i].ammo_max), this_player->sidekick[i].ammo);
 	}
+
+	render_list_recording = was_recording;
 }
 
 void JE_drawOptionLevel(void)

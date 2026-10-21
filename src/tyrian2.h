@@ -27,6 +27,7 @@ void intro_logos(void);
 
 // Block-expand an 8-bit frame onto a supersampled one, every pixel a scale x scale block.
 void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale);
+bool present_overlay_on_last_hi_frame(void);
 
 #define BOSS_BAR_FULL 254  // the fill value of a boss bar at full health
 

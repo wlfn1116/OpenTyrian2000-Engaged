@@ -1699,12 +1699,13 @@ static void qa_test_fixed_pool_layout(void)
 	         && RL_ID_ENEMYBAR_BASE + (int)COUNTOF(enemy) <= RL_ID_PSHOT_BASE
 	         && RL_ID_PSHOT_BASE + MAX_PWEAPON <= RL_ID_ESHOT_BASE
 	         && RL_ID_ESHOT_BASE + ENEMY_SHOT_MAX <= RL_ID_EXPL_BASE
-	         && RL_ID_EXPL_BASE + MAX_EXPLOSIONS <= RL_ID_SHIP_BASE,
+	         && RL_ID_EXPL_BASE + MAX_EXPLOSIONS * 4 <= RL_ID_SHIP_BASE,
 	         "render identities leave non-overlapping headroom for every fixed object pool");
 	qa_check(RL_ID_SHIP_BASE + 2 <= RL_ID_SHIP_TRIM_BASE
 	         && RL_ID_SHIP_TRIM_BASE + 2 <= RL_ID_SIDEKICK_BASE
 	         && RL_ID_SIDEKICK_BASE + 4 <= RL_ID_LINKGUN_BASE
-	         && RL_ID_LINKGUN_BASE + 3 < RL_ID_MAX,
+	         && RL_ID_LINKGUN_BASE + 3 <= RL_ID_SHIP_SHADOW_BASE
+	         && RL_ID_SHIP_SHADOW_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
 	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 161
 #ifdef WITH_NETWORK
@@ -9017,6 +9018,7 @@ int qa_run_replay_fixture(void)
 			endlessPlayerMods[0] |= ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_DMGUP;
 		}
 	}
+
 
 	rollback_selftest_ticks = 0;
 	rollback_selftest_failures = 0;

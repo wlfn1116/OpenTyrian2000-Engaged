@@ -2038,7 +2038,7 @@ static void DE_ComposeFrame(SDL_Surface* hi, int scale, float alpha)
 	DE_ExpandHUD(hi, scale);   /* HUD last, on top, matching the classic draw order */
 }
 
-/* Present interpolated, supersampled frames until a full tick period has elapsed, then return
+/* Present interpolated frames until a full tick period has elapsed, then return
  * so the caller runs the next simulation tick. */
 static void DE_SmoothPresent(int scale)
 {
@@ -2072,7 +2072,17 @@ static void DE_SmoothPresent(int scale)
 		}
 
 		DE_ComposeFrame(destruct_hi, scale, destruct_sim_accum / period);
-		present_hi(destruct_hi);
+		if (scale > 1)
+		{
+			present_hi(destruct_hi);
+		}
+		else
+		{
+			SDL_Surface *const saved = VGAScreen;
+			VGAScreen = destruct_hi;
+			JE_showVGA();
+			VGAScreen = saved;
+		}
 
 		if (!output_vsync)
 			limit_render_fps();
@@ -2464,9 +2474,9 @@ de_sim_pass:
 	JE_tempScreenChecking();
 
 	/* The smooth present kicks in once we're past the first (fade-in) tick, when the user has
-	 * Smooth Motion on and supersampling is running. */
+	 * Smooth Motion on. */
 	const int de_ss = effective_supersample();
-	const bool smooth = de_present && smoothMotion && de_ss > 1 && !destructFirstTime
+	const bool smooth = de_present && smoothMotion && !destructFirstTime
 	                    && DE_ensureSmoothBuffers(de_ss);
 	if (smooth)
 		DE_ExpandBackgroundHi(de_ss);
@@ -2578,7 +2588,7 @@ de_sim_pass:
 #endif
 
 	/* Present the tick.  In smooth mode this loop spans the tick period, drawing
-	 * interpolated supersampled frames; otherwise just wait out the period. */
+	 * interpolated frames; otherwise just wait out the period. */
 	if (smooth)
 		DE_SmoothPresent(de_ss);
 	else if (de_present)

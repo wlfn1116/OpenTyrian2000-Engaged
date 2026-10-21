@@ -292,7 +292,7 @@ void JE_outCharGlow(JE_word x, JE_word y, const char *s)
 					if (levelWarningDisplay)
 						JE_updateWarning(VGAScreen);
 
-					SDL_Delay(16);
+					SDL_Delay(1);
 				} while (!(getDelayTicks() == 0 || ESCPressed));
 
 				JE_showVGA();
@@ -309,6 +309,8 @@ void JE_drawPortConfigButtons(void) // rear weapon pattern indicator
 
 	const int x_lit = HUD_X(285);
 	const int x_unlit = HUD_X(302);
+	const bool was_recording = render_list_recording;
+	render_list_recording = false;
 	if (player[player_index].weapon_mode == 1)
 	{
 		blit_sprite(VGAScreenSeg, x_lit, 44, OPTION_SHAPES, 18);  // lit
@@ -319,6 +321,7 @@ void JE_drawPortConfigButtons(void) // rear weapon pattern indicator
 		blit_sprite(VGAScreenSeg, x_lit, 44, OPTION_SHAPES, 19);  // unlit
 		blit_sprite(VGAScreenSeg, x_unlit, 44, OPTION_SHAPES, 18);  // lit
 	}
+	render_list_recording = was_recording;
 }
 
 static bool helpSystemPage(Uint8 *topic, bool *restart);
@@ -6837,6 +6840,116 @@ static bool credits_line_blank(const char *s)
 	return s[0] == '\0' || strcmp(s, ".") == 0;
 }
 
+static SDL_Surface *credits_hi_canvas = NULL, *credits_hi_frame = NULL;
+
+static SDL_Surface *credits_hi_surface(SDL_Surface **surf, int scale)
+{
+	const int w = vga_width * scale, h = vga_height * scale;
+	if (*surf != NULL && ((*surf)->w != w || (*surf)->h != h))
+	{
+		SDL_FreeSurface(*surf);
+		*surf = NULL;
+	}
+	if (*surf == NULL)
+		*surf = SDL_CreateRGBSurface(0, w, h, 8, 0, 0, 0, 0);
+	return *surf;
+}
+
+static void credits_text_hi(SDL_Surface *dst, int x_hi, int y_hi, const char *s,
+                            unsigned int filter, int brightness, int scale)
+{
+	int x = 0, bright = 0;
+
+	for (int i = 0; s[i] != '\0'; ++i)
+	{
+		const int sprite_id = font_ascii[(unsigned char)s[i]];
+
+		if (s[i] == ' ')
+		{
+			x += 6;
+		}
+		else if (s[i] == '~')
+		{
+			bright = (bright == 0) ? 4 : 0;
+		}
+		else if (sprite_id != -1 && sprite_exists(TINY_FONT, sprite_id))
+		{
+			blit_sprite_table_scaled(dst, x_hi + x * scale, y_hi, SMALL_FONT_SHAPES, sprite_id,
+			                         scale, BLITT_HV, (Uint8)filter, (Sint8)(brightness + bright),
+			                         false);
+			x += sprite(SMALL_FONT_SHAPES, sprite_id)->width + 1;
+		}
+	}
+}
+
+static void credits_present_hi(const char *text, size_t stride, int lines, int ticks, bool held,
+                               float alpha, float ship_x0, float ship_x1, bool ship_snap,
+                               unsigned int ship_sprite, JE_byte pic, JE_byte fade, int scale)
+{
+	SDL_Surface *const canvas = credits_hi_surface(&credits_hi_canvas, scale);
+	SDL_Surface *const frame = credits_hi_surface(&credits_hi_frame, scale);
+	if (canvas == NULL || frame == NULL)
+	{
+		JE_showVGA();
+		return;
+	}
+
+	SDL_FillRect(canvas, NULL, 0);
+
+	blit_sprite_table_scaled(canvas, (319 - sprite(EXTRA_SHAPES, pic)->width) * scale,
+	                         (100 - (sprite(EXTRA_SHAPES, pic)->height / 2)) * scale,
+	                         EXTRA_SHAPES, pic, scale, BLITT_HV, 0x0, (Sint8)(fade - 15), false);
+
+	float t = held ? (float)ticks : (float)ticks - 1.0f + alpha;
+	if (t < 0.0f)
+		t = 0.0f;
+
+	const float ship_x = ship_snap ? ship_x1 : ship_x0 + (ship_x1 - ship_x0) * alpha;
+	const float ship_t = (ship_snap || held) ? (float)ticks : t;
+	const float ship_y = (float)(vga_height - 16) - fmodf(ship_t, (float)vga_height);
+	const int sx = (int)lrintf(ship_x * scale), sy = (int)lrintf(ship_y * scale);
+	static const int part_dx[4] = { 0, 12, 0, 12 }, part_dy[4] = { 0, 0, 14, 14 };
+	static const unsigned int part_index[4] = { 0, 1, 19, 20 };
+	for (int k = 0; k < 4; ++k)
+		blit_sprite2_scaled(canvas, sx + part_dx[k] * scale, sy + part_dy[k] * scale, spriteSheet9,
+		                    ship_sprite + part_index[k], scale, BLIT2_COPY, 0);
+
+	const float scroll = t / 3.0f;
+	const int bottom_line = (int)floorf(scroll / 20.0f);
+	float y = 20.0f - (scroll - 20.0f * (float)bottom_line);
+
+	for (int line = bottom_line - 10; line < bottom_line; ++line)
+	{
+		const char *const row = text + (size_t)line * stride;
+		if (line >= 0 && line < lines && strcmp(row, ".") != 0 && strlen(row))
+		{
+			const Uint8 color = row[0] - 65;
+			const char *const s = &row[1];
+			const int x = 110 - JE_textWidth(s, SMALL_FONT_SHAPES) / 2;
+			const int y_whole = (int)floorf(y);
+
+			credits_text_hi(canvas, (x + abs((y_whole / 18) % 4 - 2) - 1) * scale,
+			                (int)lrintf((y - 1.0f) * scale), s, color, -8, scale);
+			credits_text_hi(canvas, x * scale, (int)lrintf(y * scale), s, color, -2, scale);
+		}
+
+		y += 20.0f;
+	}
+
+	fill_rectangle_xy(canvas, 0, 0, 320 * scale - 1, 11 * scale - 1, 0);
+	fill_rectangle_xy(canvas, 0, (vga_height - 10) * scale, vga_width * scale - 1,
+	                  vga_height * scale - 1, 0);
+
+	expand_frame_to_hi(video_compose_frame(), frame, scale);
+	const int x_offset = video_get_menu_x_offset();
+	const int copy_w = (x_offset > 0 ? LEGACY_WIDTH : vga_width) * scale;
+	for (int row = 0; row < vga_height * scale; ++row)
+		memcpy((Uint8 *)frame->pixels + row * frame->pitch + x_offset * scale,
+		       (const Uint8 *)canvas->pixels + row * canvas->pitch, (size_t)copy_w);
+
+	present_hi(frame);
+}
+
 void JE_playCredits(void)
 {
 	// Append the fork credit in memory without changing tyrian.cdt.
@@ -6907,8 +7020,12 @@ void JE_playCredits(void)
 	Uint64 cred_last = SDL_GetPerformanceCounter();
 	float cred_accum = 0.0f;
 
+	int prev_ticks = -1;
 	for (int ticks = 0; ticks < ticks_max; ++ticks)
 	{
+		const JE_integer prev_shipx = shipx;
+		const bool held = (ticks == prev_ticks);
+		prev_ticks = ticks;
 		setDelay(1);
 		JE_clr256(VGAScreen);
 
@@ -7031,10 +7148,23 @@ void JE_playCredits(void)
 		if (smoothMotion)
 		{
 			// Present the level-clear animation throughout each simulation tick.
+			const int ss = effective_supersample();
 			bool creditsDone = false;
 			for (;;)
 			{
-				JE_showVGA();
+				if (ss > 1)
+				{
+					float alpha = cred_accum / cred_period;
+					if (alpha > 1.0f)
+						alpha = 1.0f;
+					credits_present_hi(&credstr[0][0], sizeof(credstr[0]), lines_max, ticks, held,
+					                   alpha, prev_shipx / 40.0f, shipx / 40.0f,
+					                   ticks % vga_height == 0, ship_sprite, currentpic, fade, ss);
+				}
+				else
+				{
+					JE_showVGA();
+				}
 				if (!output_vsync)
 					limit_render_fps();
 				if (JE_anyButton())
@@ -7071,6 +7201,10 @@ void JE_playCredits(void)
 	fade_black(10);
 
 	free_sprites(EXTRA_SHAPES);
+	SDL_FreeSurface(credits_hi_canvas);
+	credits_hi_canvas = NULL;
+	SDL_FreeSurface(credits_hi_frame);
+	credits_hi_frame = NULL;
 }
 
 void JE_endLevelAni(void)
@@ -7855,6 +7989,10 @@ static float hud_light_fill_prev = 0.0f, hud_light_fill_cur = 0.0f;
 static int   hud_light_x = 0, hud_light_y = 0;
 static bool  hud_light_shown = false;
 
+static float hud_killfire_prev = 0.0f, hud_killfire_cur = 0.0f;
+static int   hud_killfire_x0 = 0, hud_killfire_x1 = 0, hud_killfire_y0 = 0, hud_killfire_bank = 0;
+static bool  hud_killfire_shown = false;
+
 static void hud_special_light_tick_begin(void)
 {
 	hud_light_sampled_this_tick = false;
@@ -7914,6 +8052,7 @@ void hud_special_light_reset(void)
 	hud_light_flash = 0;
 	hud_light_fill_prev = hud_light_fill_cur = 0.0f;
 	hud_light_shown = false;
+	hud_killfire_shown = false;
 }
 
 /* Paint a fractional charged/spent boundary from the bottom of the meter. */
@@ -7948,6 +8087,28 @@ void hud_special_light_present(SDL_Surface *dst, int scale, float alpha)
 	hud_special_light_paint(dst, scale, hud_light_x, hud_light_y,
 	                        hud_light_fill_prev + (hud_light_fill_cur - hud_light_fill_prev) * alpha,
 	                        bright);
+}
+
+void hud_killfire_bar_present(SDL_Surface *dst, int scale, float alpha)
+{
+	if (!hud_killfire_shown)
+		return;
+
+	const int x0 = hud_killfire_x0 * scale;
+	const int x1 = (hud_killfire_x1 + 1) * scale - 1;
+	const int y0 = hud_killfire_y0;
+	fill_rectangle_xy(dst, x0, y0 * scale, x1, (y0 + 3) * scale - 1,
+	                  (Uint8)(hud_killfire_bank * 16 + 2));
+
+	const float fill = hud_killfire_prev + (hud_killfire_cur - hud_killfire_prev) * alpha;
+	if (fill <= 0.0f)
+		return;
+	int right = x0 + (int)((fill + 1.0f) * scale + 0.5f) - 1;
+	if (right > x1)
+		right = x1;
+	for (int r = 0; r < 3; ++r)
+		fill_rectangle_xy(dst, x0, (y0 + r) * scale, right, (y0 + r + 1) * scale - 1,
+		                  (Uint8)(hud_killfire_bank * 16 + 11 - r));
 }
 
 // Full meter: nothing burning and nothing left to recharge.
@@ -8331,6 +8492,7 @@ void JE_inGameDisplays(void)
 
 	// Show the local ship's Endless kill buff in the bottom-right. Shift it up or
 	// left when a boss bar occupies that corner.
+	bool killfire_drawn = false;
 	endlessSetFxPlayer(gameplay_local_player_index());
 	if (endlessFxActive() && endlessTurbodriveActive())
 	{
@@ -8395,6 +8557,18 @@ void JE_inGameDisplays(void)
 		const int barX = rightX - bw;
 		const int barY0 = vga_height - 28 + yBase - yShift;
 		const int barY1 = vga_height - 26 + yBase - yShift;
+		if (!rollback_resim_silent)
+		{
+			const float fill = (mt > 0) ? (float)(bw * endlessKillBuffTicksLeft()) / (float)mt
+			                            : 0.0f;
+			hud_killfire_prev = hud_killfire_shown ? hud_killfire_cur : fill;
+			hud_killfire_cur = fill;
+			hud_killfire_x0 = barX;
+			hud_killfire_x1 = rightX;
+			hud_killfire_y0 = barY0;
+			hud_killfire_bank = bank;
+			killfire_drawn = true;
+		}
 		rl_mark_overlay_rect(barX, barY0, rightX - barX + 1, barY1 - barY0 + 1);
 		fill_rectangle_xy(VGAScreen, barX, barY0, rightX, barY1, bank * 16 + 2);  // dark track
 		// Fill with a very weak vertical gradient within the buff's palette bank: brightest on the
@@ -8406,6 +8580,8 @@ void JE_inGameDisplays(void)
 				fill_rectangle_xy(VGAScreen, barX, y, barX + fillw, y, bank * 16 + shade);
 			}
 	}
+	if (!rollback_resim_silent)
+		hud_killfire_shown = killfire_drawn;
 
 	/*Special Weapon?*/
 	const uint local_player = gameplay_local_player_index();
@@ -8736,7 +8912,8 @@ void JE_pauseGame(void)
 		JE_dString(VGAScreenSeg, 120, 90, miscText[22], FONT_SHAPES);
 
 		VGAScreen = VGAScreenSeg;
-		JE_showVGA();
+		if (!present_overlay_on_last_hi_frame())
+			JE_showVGA();
 	}
 
 	set_volume(tyrMusicVolume / 2, fxVolume);
@@ -10162,7 +10339,9 @@ redo:
 		this_player->last_y_explosion_follow = this_player->y;
 
 		// Tag the ship (shadow + hull) for cross-frame interpolation.
-		rl_current_id = RL_ID_SHIP_BASE + playerNum_;
+		rl_current_id = RL_ID_SHIP_SHADOW_BASE + playerNum_;
+		rl_shot_attach = 3 | ((playerNum_ - 1) << 2);
+		rl_current_sub_x = (float)mapX2Ofs - mapX2Ofs_f;
 
 		// Recenter the cast shadow against background-2 parallax. Extra Parallax
 		// widens that sweep, so it needs the larger midpoint offset.
@@ -10200,6 +10379,10 @@ redo:
 				}
 			}
 		}
+
+		rl_current_id = RL_ID_SHIP_BASE + playerNum_;
+		rl_shot_attach = 0;
+		rl_current_sub_x = 0.0f;
 
 		// Noclip transparent mode draws the hull semi-transparent (same blended blit
 		// as the post-hit invulnerability flash), so it reads as a "ghost" ship.
@@ -10711,9 +10894,10 @@ redo:
 				rl_current_id = RL_ID_SIDEKICK_BASE + playerNum_ * 2 + (int)i;
 				// Pods and satellites are ship-relative, so attach both axes to the
 				// render-rate ship. Their own offset or orbit still interpolates.
-				rl_shot_attach = (this_player->sidekick[i].style == 0 || this_player->sidekick[i].style == 4)
-				               ? (3 | ((playerNum_ - 1) << 2))
-				               : 0;
+				const uint style = this_player->sidekick[i].style;
+				const bool rigid = style == 0 || style == 4
+				                || (style == 2 && optionAttachmentLinked[i]);
+				rl_shot_attach = rigid ? (3 | ((playerNum_ - 1) << 2)) : 0;
 				if (this_player->sidekick[i].style == 4)
 				{
 					// Preserve the orbit's discarded sub-pixel remainder for replay.

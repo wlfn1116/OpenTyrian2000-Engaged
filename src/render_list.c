@@ -169,6 +169,13 @@ void rl_end_record(void)
 	}
 }
 
+void rl_forget_previous(void)
+{
+	counts[cur_buf] = 0;
+	bg_filter_end[cur_buf] = 0;
+	bg_tail_layers[cur_buf] = 0;
+}
+
 // Drop a partial recording and restore the last complete frame as current.
 void rl_abort_record(void)
 {
@@ -347,6 +354,19 @@ void rl_rec_filter_screen(int col, int brightness)
 	c->filt_dbright = 0;
 }
 
+void rl_rec_darken(int neat)
+{
+	RenderCmd *c = rl_push();
+	if (c == NULL)
+		return;
+	c->kind = RC_DARKEN;
+	c->id = RL_ID_DARKEN;
+	c->x = 0;
+	c->y = 0;
+	c->darken_neat = neat;
+	c->darken_dneat = 0;
+}
+
 void rl_rec_smoothie_filter(RenderCmdKind kind)
 {
 	RenderCmd *c = rl_push();
@@ -400,16 +420,21 @@ static inline float rl_sub_disp(int own, float sub, float sub_d, float inv)
 
 // Canonical vertical transform shared by background rows and bound entities.
 // Layer and entity motion are rounded together to avoid one-pixel phase splits.
-static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, int own100)
+static inline int rl_layer_y_offset_at(float rate, float frac, float inv, int scale, int own100)
 {
-	const float rate = now ? bg_layer_dy_now[layer] : bg_layer_dy[layer];
-	const float frac = now ? bg_layer_yfrac_now[layer] : bg_layer_yfrac[layer];
 	// Subtract exact hundredths to keep half-pixel endpoints rounding consistently.
 	const int rate100 = rl_iround(rate * 100.0f);
 	const int frac100 = rl_iround(frac * 100.0f);
 	const double offset = ((double)frac100 - (double)(rate100 + own100) * (double)inv) *
 	                      (double)scale / 100.0;
 	return rl_round_offset(offset);
+}
+
+static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, int own100)
+{
+	const float rate = now ? bg_layer_dy_now[layer] : bg_layer_dy[layer];
+	const float frac = now ? bg_layer_yfrac_now[layer] : bg_layer_yfrac[layer];
+	return rl_layer_y_offset_at(rate, frac, inv, scale, own100);
 }
 
 // Filtered layers may use a lower scale or hold at the tick endpoint.
@@ -604,6 +629,11 @@ void rl_finalize(void)
 			    c->filt_col != prev[pi].filt_col || db > 14 || db < -14)
 				db = 0;
 			c->filt_dbright = db;
+		}
+		else if (c->kind == RC_DARKEN)
+		{
+			const int dn = c->darken_neat - prev[pi].darken_neat;
+			c->darken_dneat = (dn > 16 || dn < -16) ? 0 : dn;
 		}
 		else if (dx > 40 || dx < -40 ||
 		         (par_ybound_match
@@ -942,9 +972,35 @@ typedef enum
 }
 rl_phase;
 
-static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool apply_residual,
-                             bool use_override, bool feedback, rl_phase phase, int scale,
-                             int bg_scale, float bg_inv, bool split_bg)
+typedef struct
+{
+	const RenderCmd *cmds;
+	size_t count;
+	size_t filter_end;
+	Uint8 tail_layers;
+	float layer_frac[4], layer_dx[4], layer_dy[4], layer_yfrac[4];
+	bool smooth_y;
+	int extra_px3;
+}
+RlTickView;
+
+static void rl_current_view(RlTickView *v)
+{
+	v->cmds = bufs[cur_buf];
+	v->count = counts[cur_buf];
+	v->filter_end = bg_filter_end[cur_buf];
+	v->tail_layers = bg_tail_layers[cur_buf];
+	memcpy(v->layer_frac, bg_layer_frac, sizeof(v->layer_frac));
+	memcpy(v->layer_dx, bg_layer_dx, sizeof(v->layer_dx));
+	memcpy(v->layer_dy, bg_layer_dy, sizeof(v->layer_dy));
+	memcpy(v->layer_yfrac, bg_layer_yfrac, sizeof(v->layer_yfrac));
+	v->smooth_y = bg_smooth_y_active;
+	v->extra_px3 = endlessScrollExtraPx3;
+}
+
+static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, float alpha,
+                             bool apply_residual, bool use_override, bool feedback, rl_phase phase,
+                             int scale, int bg_scale, float bg_inv, bool split_bg)
 {
 	const bool was_recording = render_list_recording;
 	render_list_recording = false;  // re-issued blits must not record themselves
@@ -956,7 +1012,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 	// Where the two split passes divide the list. The unsplit phases keep the whole background,
 	// so their boundary sits past the end.
 	const bool split = (phase == RL_PHASE_BG_HEAD || phase == RL_PHASE_BG_TAIL);
-	const size_t filter_end = split ? bg_filter_end[cur_buf] : counts[cur_buf];
+	const size_t filter_end = split ? v->filter_end : v->count;
 
 	// A is the playfield; B is the feedback scratch surface used by background phases.
 	SDL_Surface *const A = dst;
@@ -974,14 +1030,15 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 	if (!feedback && phase == RL_PHASE_ALL)
 		JE_clr256(A);
 
-	RenderCmd *const cur = bufs[cur_buf];
-	const size_t n = counts[cur_buf];
+	const RenderCmd *const cur = v->cmds;
+	const size_t n = v->count;
 	for (size_t i = 0; i < n; ++i)
 	{
 		const RenderCmd *const c = &cur[i];
 
 		const bool is_filter = rl_cmd_is_filter(c->kind);
-		const bool is_bg = (c->kind == RC_BG_ROW || c->kind == RC_BG_ROW_BLEND || c->kind == RC_STAR);
+		const bool is_bg = (c->kind == RC_BG_ROW || c->kind == RC_BG_ROW_BLEND ||
+		                    c->kind == RC_STAR || c->kind == RC_DARKEN);
 		const bool post_filter_bg = is_bg && i >= filter_end;
 		// Only main-surface commands form the visible tail. Scratch rows after the last filter have
 		// no consumer, so the split path can omit them altogether.
@@ -1032,6 +1089,16 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 				JE_filterScreenApply(A, (JE_shortint)c->filt_col, (JE_shortint)bright);
 			else
 				filter_screen_apply_scaled(A, (JE_shortint)c->filt_col, (JE_shortint)bright, scale);
+			continue;
+		}
+
+		if (c->kind == RC_DARKEN)
+		{
+			const JE_word neat = (JE_word)(c->darken_neat - rl_iround(c->darken_dneat * inv));
+			if (scale == 1)
+				darken_background_apply(src, neat);
+			else
+				darken_background_apply_scaled(src, neat, scale);
 			continue;
 		}
 
@@ -1087,7 +1154,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			{
 				const int L = c->id - RL_ID_BG_BASE;
 				if (use_override)
-					x = c->x * scale + rl_iround((bg_layer_frac[L] - bg_layer_dx[L] * inv) * scale);
+					x = c->x * scale + rl_iround((v->layer_frac[L] - v->layer_dx[L] * inv) * scale);
 				else if (c->dx && inv != 0.0f)
 					x -= rl_iround(c->dx * inv * scale);  // exact / smoothie: classic whole-pixel
 			}
@@ -1111,7 +1178,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			else if (use_override && c->par_layer >= 1 && c->par_layer <= 3)
 			{
 				const int L = c->par_layer;
-				const bool tail_layer = split_bg && (bg_tail_layers[cur_buf] & (1u << L));
+				const bool tail_layer = split_bg && (v->tail_layers & (1u << L));
 				const int layer_scale = tail_layer ? scale : bg_scale;
 				const float layer_inv = tail_layer ? inv : bg_inv;
 				x = c->x * scale +
@@ -1143,19 +1210,19 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 				if (vext)
 					y += rl_iround(vext * alpha * scale);
 			}
-			else if (bg_row && bg_smooth_y_active && use_override)
+			else if (bg_row && v->smooth_y && use_override)
 			{
 				// Smooth vertical scroll at its fractional rate.
 				// Layer 3 is recorded after its base step, so remove only modifier motion.
 				const int L = c->id - RL_ID_BG_BASE;
-				const int phase_base = (L == 3) ? -endlessScrollExtraPx3 : 0;
+				const int phase_base = (L == 3) ? -v->extra_px3 : 0;
 				y = (c->y + phase_base) * scale +
-				    rl_layer_y_offset(L, false, inv, scale, 0);
+				    rl_layer_y_offset_at(v->layer_dy[L], v->layer_yfrac[L], inv, scale, 0);
 			}
 			else if (use_override && c->par_ylayer != 0)
 			{
 				const int L = c->par_ylayer;
-				const bool tail_layer = split_bg && (bg_tail_layers[cur_buf] & (1u << L));
+				const bool tail_layer = split_bg && (v->tail_layers & (1u << L));
 				const int layer_scale = tail_layer ? scale : bg_scale;
 				const float layer_inv = tail_layer ? inv : bg_inv;
 				y = (c->y + c->par_ybase) * scale +
@@ -1211,7 +1278,9 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 
 void rl_replay(SDL_Surface *dst)
 {
-	rl_replay_common(dst, 0.0f, 0.0f, false, false, false, RL_PHASE_ALL,
+	RlTickView v;
+	rl_current_view(&v);
+	rl_replay_common(dst, &v, 0.0f, 0.0f, false, false, false, RL_PHASE_ALL,
 	                 1, 1, 0.0f, false);  // exact positions (inv=0, alpha=0)
 }
 
@@ -1223,7 +1292,9 @@ void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
 		alpha = 1.0f;
 
 	// Non-feedback levels replay once, then add residual overlays.
-	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, feedback, RL_PHASE_ALL,
+	RlTickView v;
+	rl_current_view(&v);
+	rl_replay_common(dst, &v, 1.0f - alpha, alpha, true, true, feedback, RL_PHASE_ALL,
 	                 scale, scale, 1.0f - alpha, false);
 }
 
@@ -1234,7 +1305,9 @@ void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split)
 		alpha = 0.0f;
 	else if (alpha > 1.0f)
 		alpha = 1.0f;
-	rl_replay_common(dst, 1.0f - alpha, alpha, false, true, true,
+	RlTickView v;
+	rl_current_view(&v);
+	rl_replay_common(dst, &v, 1.0f - alpha, alpha, false, true, true,
 	                 split ? RL_PHASE_BG_HEAD : RL_PHASE_BG,
 	                 scale, scale, 1.0f - alpha, split);
 }
@@ -1247,7 +1320,9 @@ void rl_replay_bg_tail(SDL_Surface *dst, float alpha, int scale)
 		alpha = 0.0f;
 	else if (alpha > 1.0f)
 		alpha = 1.0f;
-	rl_replay_common(dst, 1.0f - alpha, alpha, false, true, false, RL_PHASE_BG_TAIL,
+	RlTickView v;
+	rl_current_view(&v);
+	rl_replay_common(dst, &v, 1.0f - alpha, alpha, false, true, false, RL_PHASE_BG_TAIL,
 	                 scale, scale, 1.0f - alpha, true);
 }
 
@@ -1264,8 +1339,122 @@ void rl_replay_fg(SDL_Surface *dst, float alpha, int scale,
 		bg_alpha = 0.0f;
 	else if (bg_alpha > 1.0f)
 		bg_alpha = 1.0f;
-	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, false, RL_PHASE_FG,
+	RlTickView v;
+	rl_current_view(&v);
+	rl_replay_common(dst, &v, 1.0f - alpha, alpha, true, true, false, RL_PHASE_FG,
 	                 scale, bg_scale, 1.0f - bg_alpha, split);
+}
+
+typedef struct
+{
+	RlTickView view;
+	RenderCmd *cmds;
+	size_t cap;
+}
+RlFeedbackTick;
+
+static RlFeedbackTick feedback_ticks[RL_FEEDBACK_TICKS + 1];
+static int feedback_first = 0, feedback_count = 0;
+
+void rl_feedback_reset(void)
+{
+	feedback_first = 0;
+	feedback_count = 0;
+}
+
+bool rl_feedback_has_memory(void)
+{
+	const RenderCmd *const cur = bufs[cur_buf];
+	for (size_t i = 0; i < counts[cur_buf]; ++i)
+	{
+		if (rl_cmd_is_filter(cur[i].kind) && cur[i].kind != RC_WATER_FILTER)
+			return true;
+	}
+	return false;
+}
+
+static void rl_feedback_apply(SDL_Surface *dst, const RlFeedbackTick *t, float alpha)
+{
+	rl_replay_common(dst, &t->view, 1.0f - alpha, alpha, false, true, true, RL_PHASE_BG,
+	                 1, 1, 1.0f - alpha, false);
+}
+
+static bool rl_feedback_push(void)
+{
+	if (feedback_count == (int)COUNTOF(feedback_ticks))
+		return false;
+
+	RlFeedbackTick *const t =
+	    &feedback_ticks[(feedback_first + feedback_count) % (int)COUNTOF(feedback_ticks)];
+	const RenderCmd *const cur = bufs[cur_buf];
+	const size_t n = counts[cur_buf];
+
+	size_t kept = 0;
+	for (size_t i = 0; i < n; ++i)
+	{
+		const RenderCmd *const c = &cur[i];
+		if (!rl_cmd_is_filter(c->kind) && c->kind != RC_BG_ROW && c->kind != RC_BG_ROW_BLEND &&
+		    c->kind != RC_STAR && c->kind != RC_DARKEN)
+			continue;
+
+		if (kept == t->cap)
+		{
+			const size_t ncap = t->cap ? t->cap * 2 : 512;
+			RenderCmd *const grown = realloc(t->cmds, ncap * sizeof(*grown));
+			if (grown == NULL)
+				return false;
+			t->cmds = grown;
+			t->cap = ncap;
+		}
+		t->cmds[kept++] = *c;
+	}
+
+	rl_current_view(&t->view);
+	t->view.cmds = t->cmds;
+	t->view.count = kept;
+	t->view.filter_end = kept;
+	t->view.tail_layers = 0;
+	++feedback_count;
+	return true;
+}
+
+void rl_feedback_trim(SDL_Surface *base, int keep)
+{
+	if (keep < 0)
+		keep = 0;
+	while (feedback_count > keep)
+	{
+		rl_feedback_apply(base, &feedback_ticks[feedback_first], 1.0f);
+		feedback_first = (feedback_first + 1) % (int)COUNTOF(feedback_ticks);
+		--feedback_count;
+	}
+}
+
+void rl_feedback_replay(SDL_Surface *dst, float alpha)
+{
+	if (alpha < 0.0f)
+		alpha = 0.0f;
+	else if (alpha > 1.0f)
+		alpha = 1.0f;
+	for (int k = 0; k < feedback_count; ++k)
+		rl_feedback_apply(dst, &feedback_ticks[(feedback_first + k) % (int)COUNTOF(feedback_ticks)],
+		                  alpha);
+}
+
+void rl_feedback_commit(SDL_Surface *base, int keep)
+{
+	if (keep > RL_FEEDBACK_TICKS)
+		keep = RL_FEEDBACK_TICKS;
+	if (keep > 0 && rl_feedback_push())
+	{
+		rl_feedback_trim(base, keep);
+		return;
+	}
+
+	rl_feedback_trim(base, 0);
+	RlTickView v;
+	rl_current_view(&v);
+	rl_replay_common(base, &v, 0.0f, 1.0f, false, true, true, RL_PHASE_BG, 1, 1, 0.0f, false);
 }
 
 // Append one residual pixel (offset + value). Returns false if growth failed
@@ -1322,6 +1511,13 @@ void rl_deinit(void)
 			rl_scratch_b[i] = NULL;
 		}
 	}
+	for (unsigned i = 0; i < COUNTOF(feedback_ticks); ++i)
+	{
+		free(feedback_ticks[i].cmds);
+		feedback_ticks[i].cmds = NULL;
+		feedback_ticks[i].cap = 0;
+	}
+	rl_feedback_reset();
 	render_list_recording = false;
 }
 
