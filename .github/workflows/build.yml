@@ -648,7 +648,8 @@ jobs:
     needs: data
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container: vitasdk/vitasdk:latest
+    container:
+      image: vitasdk/vitasdk:2026.08-20260912@sha256:2e92c60b69cb06d3f20814f6c882e943d8efd80fc96e643e043803bc702fc4ac
     steps:
       - uses: actions/checkout@v5
 
