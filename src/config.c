@@ -709,10 +709,6 @@ bool load_opentyrian_config(void)
 		const char* scaler_name;
 		if (config_get_string_option(section, "scaler", &scaler_name))
 			set_scaler_by_name(scaler_name);
-#ifdef __vita__
-		// Vita always boots at 1x software scale.
-		set_scaler_by_name("None");
-#endif
 
 		const char* scaling_mode;
 		if (config_get_string_option(section, "scaling_mode", &scaling_mode))

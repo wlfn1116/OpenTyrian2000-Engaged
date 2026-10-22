@@ -7818,7 +7818,7 @@ void JE_drawPerfOverlay(SDL_Surface *dst, int scale)
 	static const char *const rowsPaths[VIDEO_ROWS_SITES] = {
 		[VIDEO_ROWS_HI] = "HI", [VIDEO_ROWS_FIT] = "NATIVE", [VIDEO_ROWS_REPLAY] = "REPLAY",
 		[VIDEO_ROWS_COMPOSE] = "COMPOSE", [VIDEO_ROWS_SMOOTHIE] = "SMOOTHIE",
-		[VIDEO_ROWS_TICK] = "TICK", [VIDEO_ROWS_FLAT] = "1X",
+		[VIDEO_ROWS_TICK] = "TICK", [VIDEO_ROWS_FLAT] = "PLAIN",
 	};
 	bool rowsShown = false;
 	for (int site = 0; site < VIDEO_ROWS_SITES; ++site)

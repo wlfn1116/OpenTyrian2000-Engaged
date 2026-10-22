@@ -396,6 +396,7 @@ rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
 superpixel_type superpixels[MAX_SUPERPIXELS]; /* [0..MaxSP] */
 static unsigned int last_superpixel;           // shared cursor, exactly as when one window existed
 static unsigned int last_uncapped_superpixel;  // write cursor for the high window
+static unsigned int sp_live_lo = MAX_SUPERPIXELS, sp_live_hi;
 
 /*Temporary Numbers*/
 JE_byte temp, temp2, temp3;
@@ -2535,6 +2536,10 @@ static unsigned int next_superpixel(bool classic_cap)
 
 	if (++last_uncapped_superpixel >= MAX_SUPERPIXELS || last_uncapped_superpixel < SUPERPIXELS_CLASSIC)
 		last_uncapped_superpixel = SUPERPIXELS_CLASSIC;
+	if (last_uncapped_superpixel < sp_live_lo)
+		sp_live_lo = last_uncapped_superpixel;
+	if (last_uncapped_superpixel > sp_live_hi)
+		sp_live_hi = last_uncapped_superpixel;
 	return last_uncapped_superpixel;
 }
 
@@ -2549,6 +2554,15 @@ void JE_beginSPPass(void)
 	sp_pass_advanced = false;
 }
 
+static void sp_rewind(unsigned int i)
+{
+	if (superpixels[i].z == 0 || superpixels[i].z >= SUPERPIXEL_SPAWN_Z)
+		return;
+	superpixels[i].x -= superpixels[i].delta_x;
+	superpixels[i].y -= superpixels[i].delta_y;
+	++superpixels[i].z;
+}
+
 void JE_discardSPPass(void)
 {
 	last_superpixel = sp_pass_superpixel;
@@ -2557,14 +2571,10 @@ void JE_discardSPPass(void)
 	if (sp_pass_advanced)
 	{
 		/* Rewind JE_drawSP's step; retired and newly spawned sparks did not take it. */
-		for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
-		{
-			if (superpixels[i].z == 0 || superpixels[i].z >= SUPERPIXEL_SPAWN_Z)
-				continue;
-			superpixels[i].x -= superpixels[i].delta_x;
-			superpixels[i].y -= superpixels[i].delta_y;
-			++superpixels[i].z;
-		}
+		for (unsigned int i = 0; i < SUPERPIXELS_CLASSIC; ++i)
+			sp_rewind(i);
+		for (unsigned int i = sp_live_lo; i <= sp_live_hi; ++i)
+			sp_rewind(i);
 	}
 	sp_pass_advanced = false;
 }
@@ -2578,6 +2588,8 @@ void JE_resetSP(void)
 	sp_pass_uncapped = SUPERPIXELS_CLASSIC;
 	sp_pass_advanced = false;
 	memset(superpixels, 0, sizeof(superpixels));
+	sp_live_lo = MAX_SUPERPIXELS;
+	sp_live_hi = 0;
 }
 
 // The simulation-RNG shower behind JE_doSP and JE_doSPBrief; `life` is the spawn z.
@@ -2820,51 +2832,70 @@ void enemy_shot_vaporise_sparks(unsigned int slot)
 	              color, false, ENDLESS_SPARK_BRIGHT, false, seed);
 }
 
+static void sp_step(unsigned int i)
+{
+	if (superpixels[i].z)
+	{
+		superpixels[i].x += superpixels[i].delta_x;
+		superpixels[i].y += superpixels[i].delta_y;
+
+		if (superpixels[i].x < (unsigned)VGAScreen->w && superpixels[i].y < (unsigned)VGAScreen->h
+		    && !(superpixels[i].occluded && sp_hidden((int)superpixels[i].x, (int)superpixels[i].y))
+		    && (!superpixelClipActive
+		        || (superpixels[i].x >= (unsigned)superpixelClipX0
+		            && superpixels[i].x < (unsigned)superpixelClipX1
+		            && superpixels[i].y >= (unsigned)superpixelClipY0
+		            && superpixels[i].y < (unsigned)superpixelClipY1)))
+		{
+			const Uint8 z = superpixels[i].z;
+			const Uint8 color = superpixels[i].color;
+			const Uint8 bright = superpixels[i].bright;
+
+			// Record for the render list so the spark interpolates smoothly at the
+			// display rate (constant velocity -> the per-tick delta is self-contained).
+			if (render_list_recording)
+				rl_rec_superpixel(superpixels[i].x, superpixels[i].y, superpixels[i].delta_x,
+				                  superpixels[i].delta_y, z, color, bright);
+
+			Uint8 *s = (Uint8 *)VGAScreen->pixels; /* screen pointer, 8-bit specific */
+			s += superpixels[i].y * VGAScreen->pitch;
+			s += superpixels[i].x;
+
+			*s = rl_superpixel_value(*s, z, color, bright);
+			if (superpixels[i].x > 0)
+				*(s - 1) = rl_superpixel_value(*(s - 1), z >> 1, color, bright >> 1);
+			if (superpixels[i].x < VGAScreen->w - 1u)
+				*(s + 1) = rl_superpixel_value(*(s + 1), z >> 1, color, bright >> 1);
+			if (superpixels[i].y > 0)
+				*(s - VGAScreen->pitch) = rl_superpixel_value(*(s - VGAScreen->pitch), z >> 1, color, bright >> 1);
+			if (superpixels[i].y < VGAScreen->h - 1u)
+				*(s + VGAScreen->pitch) = rl_superpixel_value(*(s + VGAScreen->pitch), z >> 1, color, bright >> 1);
+		}
+
+		superpixels[i].z--;
+	}
+}
+
 void JE_drawSP(void)
 {
 	sp_pass_advanced = true;  // a rollback discarding this pass has a step to rewind
 
-	for (int i = MAX_SUPERPIXELS; i--; )
+	unsigned int live_lo = MAX_SUPERPIXELS, live_hi = 0;
+	for (unsigned int i = sp_live_hi + 1; i-- > sp_live_lo; )
 	{
-		if (superpixels[i].z)
+		sp_step(i);
+		if (superpixels[i].z != 0)
 		{
-			superpixels[i].x += superpixels[i].delta_x;
-			superpixels[i].y += superpixels[i].delta_y;
-
-			if (superpixels[i].x < (unsigned)VGAScreen->w && superpixels[i].y < (unsigned)VGAScreen->h
-			    && !(superpixels[i].occluded && sp_hidden((int)superpixels[i].x, (int)superpixels[i].y))
-			    && (!superpixelClipActive
-			        || (superpixels[i].x >= (unsigned)superpixelClipX0 && superpixels[i].x < (unsigned)superpixelClipX1
-			            && superpixels[i].y >= (unsigned)superpixelClipY0 && superpixels[i].y < (unsigned)superpixelClipY1)))
-			{
-				const Uint8 z = superpixels[i].z;
-				const Uint8 color = superpixels[i].color;
-				const Uint8 bright = superpixels[i].bright;
-
-				// Record for the render list so the spark interpolates smoothly at the
-				// display rate (constant velocity -> the per-tick delta is self-contained).
-				if (render_list_recording)
-					rl_rec_superpixel(superpixels[i].x, superpixels[i].y, superpixels[i].delta_x,
-					                  superpixels[i].delta_y, z, color, bright);
-
-				Uint8 *s = (Uint8 *)VGAScreen->pixels; /* screen pointer, 8-bit specific */
-				s += superpixels[i].y * VGAScreen->pitch;
-				s += superpixels[i].x;
-
-				*s = rl_superpixel_value(*s, z, color, bright);
-				if (superpixels[i].x > 0)
-					*(s - 1) = rl_superpixel_value(*(s - 1), z >> 1, color, bright >> 1);
-				if (superpixels[i].x < VGAScreen->w - 1u)
-					*(s + 1) = rl_superpixel_value(*(s + 1), z >> 1, color, bright >> 1);
-				if (superpixels[i].y > 0)
-					*(s - VGAScreen->pitch) = rl_superpixel_value(*(s - VGAScreen->pitch), z >> 1, color, bright >> 1);
-				if (superpixels[i].y < VGAScreen->h - 1u)
-					*(s + VGAScreen->pitch) = rl_superpixel_value(*(s + VGAScreen->pitch), z >> 1, color, bright >> 1);
-			}
-
-			superpixels[i].z--;
+			if (live_hi == 0)
+				live_hi = i;
+			live_lo = i;
 		}
 	}
+	sp_live_lo = live_lo;
+	sp_live_hi = live_hi;
+
+	for (unsigned int i = SUPERPIXELS_CLASSIC; i-- > 0; )
+		sp_step(i);
 
 	sp_occluder_count = 0;  // the boxes describe the frame just drawn; the next one republishes
 }

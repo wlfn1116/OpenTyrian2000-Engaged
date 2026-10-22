@@ -63,7 +63,9 @@ error `0x8010113D`.
 Bindings and touch sensitivity are configurable. Text fields use the system
 IME. Rear touch and MIDI are disabled.
 
-Smooth Motion is available, but Sub-pixel rendering is fixed at 1x.
+Smooth Motion is available. The game starts at 1x with the None scaler. A
+larger Scaler or Sub-pixel setting works but costs more CPU and GPU time, so it
+may not hold 60 fps.
 
 ## Online play
 

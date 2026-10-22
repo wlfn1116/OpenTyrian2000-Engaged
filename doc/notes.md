@@ -77,8 +77,9 @@ For low-resolution feedback with a supersampled foreground:
 3. Draw the background tail at the foreground factor.
 4. Draw foreground commands over both.
 
-Vita keeps the 1x endpoint in `smoothie_frame` and composites display-rate
-foreground into `smoothie_present_frame`.
+At 1x with Smooth FX off, the Vita keeps the tick's endpoint in
+`smoothie_frame` and composites display-rate foreground into
+`smoothie_present_frame`.
 
 ### Display-rate ship movement
 
@@ -106,6 +107,14 @@ special meter, and the Zinglon pillar. Their state still advances once per tick.
 Supersparks share one ring. `JE_beginSPPass` and `JE_discardSPPass` undo a
 presented pass that gets replaced. Seeded presentation effects must not draw from
 the simulation RNG.
+
+The ring has 101 classic slots and an upper window that Extra Sparks sweeps.
+`JE_drawSP` steps the live range of the upper window (`sp_live_lo` to
+`sp_live_hi`) and then the classic slots, both from the top down, which is the
+order of a full scan. Every spawn must take its slot from `next_superpixel`,
+which widens that range; a spark written any other way would never be drawn.
+`qa_test_spark_ring_bounds` compares bounded passes with a full-ring scan
+through cursor wraps and rewinds.
 
 ### Coordinates
 
@@ -142,18 +151,23 @@ pool of helper threads. Seven sites use it:
 | `VIDEO_ROWS_COMPOSE` | `COMPOSE` | Playfield composite and HUD expansion at hi-res |
 | `VIDEO_ROWS_SMOOTHIE` | `SMOOTHIE` | Every smoothie pass in the present loop |
 | `VIDEO_ROWS_TICK` | `TICK` | Replays run once per tick |
-| `VIDEO_ROWS_FLAT` | `1X` | `nn_32` palette conversion at 1x |
+| `VIDEO_ROWS_FLAT` | `PLAIN` | `nn_32`, the None and 2x to 5x scalers |
 
 `SMOOTHIE` covers the feedback replays, the background pass and its filters,
 the expand, the background tail and the foreground. `TICK` covers the residual
 reference replay, feedback trim and commit, and `rl_replay_bg_tick`, which
-builds the Vita's cached plasma.
+builds the Vita's cached plasma. `PLAIN` converts each source row once and
+copies it into the other output rows of its scale, so a band covers whole
+source rows. Unless the Native scaler is selected, menus and gameplay with
+Sub-pixel Off or Smooth Motion Off present through it.
 
 Output is the same on any number of threads. Every platform sends tick replays
 through `TICK`. On the Switch, Smooth Motion with the default 4x scaler also
-uses `HI`, `COMPOSE`, and `REPLAY` or `SMOOTHIE`. The Vita never supersamples:
-normal levels replay through `REPLAY` at 1x, smoothie levels draw their
-foreground through `SMOOTHIE` at 1x, and every frame converts through `1X`.
+uses `HI`, `COMPOSE`, and `REPLAY` or `SMOOTHIE`. By default the Vita renders
+at 1x: normal levels replay through `REPLAY` at 1x, smoothie levels draw their
+foreground through `SMOOTHIE` at 1x, and every frame converts through `PLAIN`.
+A Vita player who raises Sub-pixel above 1x, directly or through Auto and a
+larger Scaler, gets the same hi-res sites as the Switch.
 
 - The pool starts with the first job of at least 64K pixels (a 1x frame has
   71,200), unless Render Threads is 1. `video_rows_max_threads()` sizes it to
@@ -172,7 +186,7 @@ foreground through `SMOOTHIE` at 1x, and every frame converts through `1X`.
   taking turns. The timing covers the rows plus `SDL_UnlockTexture`, where
   OpenGL drivers copy the texture on the CPU. A larger count wins only when its
   best time is under 90% of the current pick's.
-- `HI`, `NATIVE`, `COMPOSE` and `1X` run once per frame and time each call. A
+- `HI`, `NATIVE`, `COMPOSE` and `PLAIN` run once per frame and time each call. A
   new pixel count starts a new tuning run.
 - `REPLAY`, `SMOOTHIE` and `TICK` can run several times per frame with jobs of
   different sizes, so they tune on rounds. Every call in a round uses the
@@ -286,12 +300,12 @@ followed by exactly one present.
 `qa_test_present_paths` checks the present and Native paths pixel by pixel
 against a direct lookup and against one thread, compares every pool size from
 two threads up with one thread, and fails if the pool does not start on a
-multi-core machine. It also converts a 1x frame through `nn_32` on one thread
-and on the whole pool. `video_test_rows_stats` drives `video_rows` through an
-Auto tuning run and both fixed settings, and checks the per-site counts and
-modes. `video_test_rows_rounds` checks that the calls of a round share a thread
-count, that a tuning run ends after its rounds, and that a round with a
-different largest job restarts it.
+multi-core machine. It also converts frames through `nn_32` at 1x to 5x, on one
+thread and on the whole pool. `video_test_rows_stats` drives `video_rows`
+through an Auto tuning run and both fixed settings, and checks the per-site
+counts and modes. `video_test_rows_rounds` checks that the calls of a round
+share a thread count, that a tuning run ends after its rounds, and that a round
+with a different largest job restarts it.
 
 `qa_test_background_bands` draws random background rows in thread bands and
 compares them with one full-surface pass. `qa_test_filter_subrows` runs each
@@ -299,6 +313,26 @@ scaled filter one sub-row set at a time in a rotated order, and across threads,
 against the scalar loops. `qa_test_flat_bands` draws every 1x replay drawer
 over random band cuts, edges and wraps included, against one full-surface pass,
 and `rl_test_superpixel_bands` does the same for sparks at 1x to 4x.
+
+### Pixel loops
+
+`swar.h` holds two layers for 8-bit pixel loops:
+
+- `Swar8` packs eight lanes into a `uint64_t`, or four into a `uint32_t` on
+  32-bit targets such as the Vita.
+- `Vec8` is a 16-lane SSE2 or NEON vector. `VEC8_BYTES` is 16 when the compiler
+  targets SSE2 (`__SSE2__` or x64 MSVC) or NEON (`__ARM_NEON`), and 0 otherwise.
+
+Loops run 16-byte vectors first, then SWAR words, then single pixels. Vectors
+cover the 1x tile rows, the expanded hi-res rows, the screen grade, iced blur
+and blur, the scaled lava and water spans, and the spotlight's dark spans. The
+1x lava and water loops stay SWAR because their waver changes every 8 pixels.
+In-place lava and darken stay scalar because each pixel reads neighbours the
+same pass already rewrote.
+
+Every path must reproduce the frozen scalar copies in `qa_test_swar_pixel_loops`
+byte for byte. Windows x64 tests the SSE2 path; the Linux aarch64 suite in CI
+tests the NEON path.
 
 ## Endless
 
@@ -898,8 +932,9 @@ avoid blocking the game loop; crash and hang reports may symbolize. Console log
 cleanup removes only recognized OpenTyrian names.
 
 Switch must keep its SDL window resizable for dock changes and save controller
-changes immediately. Vita presents at native size, forces 1x supersampling,
-keeps presenting during IME use, and uses front touch only.
+changes immediately. Vita boots with the None scaler, resolves Sub-pixel Auto to
+the scaler factor without the desktop's 2x minimum, keeps presenting during IME
+use, and uses front touch only.
 
 ## Level and data formats
 

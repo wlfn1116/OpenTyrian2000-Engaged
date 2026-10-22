@@ -4095,6 +4095,113 @@ static void qa_test_superspark_discarded_pass(void)
 	extraSparks = savedExtra;
 }
 
+static void qa_reference_spark_pass(superpixel_type *sp, SDL_Surface *s)
+{
+	for (int i = MAX_SUPERPIXELS; i--; )
+	{
+		if (sp[i].z == 0)
+			continue;
+		sp[i].x += sp[i].delta_x;
+		sp[i].y += sp[i].delta_y;
+		if (sp[i].x < (unsigned)s->w && sp[i].y < (unsigned)s->h)
+		{
+			const Uint8 z = sp[i].z, color = sp[i].color, bright = sp[i].bright;
+			Uint8 *const p = (Uint8 *)s->pixels + sp[i].y * s->pitch + sp[i].x;
+			*p = rl_superpixel_value(*p, z, color, bright);
+			if (sp[i].x > 0)
+				p[-1] = rl_superpixel_value(p[-1], z >> 1, color, bright >> 1);
+			if (sp[i].x < s->w - 1u)
+				p[1] = rl_superpixel_value(p[1], z >> 1, color, bright >> 1);
+			if (sp[i].y > 0)
+				p[-s->pitch] = rl_superpixel_value(p[-s->pitch], z >> 1, color, bright >> 1);
+			if (sp[i].y < s->h - 1u)
+				p[s->pitch] = rl_superpixel_value(p[s->pitch], z >> 1, color, bright >> 1);
+		}
+		--sp[i].z;
+	}
+}
+
+static void qa_reference_spark_rewind(superpixel_type *sp)
+{
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		if (sp[i].z == 0 || sp[i].z >= SUPERPIXEL_SPAWN_Z)
+			continue;
+		sp[i].x -= sp[i].delta_x;
+		sp[i].y -= sp[i].delta_y;
+		++sp[i].z;
+	}
+}
+
+static void qa_test_spark_ring_bounds(void)
+{
+	if (VGAScreen == NULL || VGAScreen->format->BitsPerPixel != 8)
+		return;
+
+	const bool savedExtra = extraSparks, savedRecording = render_list_recording;
+	const bool savedSilent = rollback_resim_silent, savedClip = superpixelClipActive;
+	extraSparks = true;
+	render_list_recording = false;
+	rollback_resim_silent = false;
+	superpixelClipActive = false;
+
+	const size_t screenBytes = (size_t)VGAScreen->pitch * VGAScreen->h;
+	Uint8 *const savedScreen = malloc(screenBytes);
+	SDL_Surface *const refScreen =
+	    SDL_CreateRGBSurface(0, VGAScreen->w, VGAScreen->h, 8, 0, 0, 0, 0);
+	superpixel_type *const ref = malloc(sizeof(superpixels));
+	bool same = savedScreen != NULL && refScreen != NULL && ref != NULL
+	         && refScreen->pitch == VGAScreen->pitch;
+	if (savedScreen != NULL)
+		memcpy(savedScreen, VGAScreen->pixels, screenBytes);
+
+	JE_resetSP();
+	mt_srand(20261022u);
+	Uint32 seed = 0x5b0d5u;
+	for (int pass = 0; pass < 140 && same; ++pass)
+	{
+		seed = seed * 1664525u + 1013904223u;
+		const int showers = 1 + (int)(seed >> 30);
+		for (int k = 0; k < showers; ++k)
+		{
+			seed = seed * 1664525u + 1013904223u;
+			const JE_word x = (JE_word)((seed >> 4) % (Uint32)(VGAScreen->w + 20));
+			const JE_word y = (JE_word)((seed >> 14) % (Uint32)(VGAScreen->h + 20));
+			const JE_word num = (JE_word)(200 + (seed >> 22) % 600);
+			const JE_byte width = (JE_byte)(2 + seed % 12), color = (JE_byte)(seed & 0xF0);
+			JE_doSP(x, y, num, width, color, (seed & 0x100) != 0);
+		}
+
+		memcpy(ref, superpixels, sizeof(superpixels));
+		memcpy(refScreen->pixels, VGAScreen->pixels, screenBytes);
+		JE_beginSPPass();
+		JE_drawSP();
+		qa_reference_spark_pass(ref, refScreen);
+		same = memcmp(ref, superpixels, sizeof(superpixels)) == 0
+		    && memcmp(refScreen->pixels, VGAScreen->pixels, screenBytes) == 0;
+
+		if (same && pass % 5 == 2)
+		{
+			JE_discardSPPass();
+			qa_reference_spark_rewind(ref);
+			same = memcmp(ref, superpixels, sizeof(superpixels)) == 0;
+		}
+	}
+
+	JE_resetSP();
+	if (savedScreen != NULL)
+		memcpy(VGAScreen->pixels, savedScreen, screenBytes);
+	free(savedScreen);
+	free(ref);
+	SDL_FreeSurface(refScreen);
+	extraSparks = savedExtra;
+	render_list_recording = savedRecording;
+	rollback_resim_silent = savedSilent;
+	superpixelClipActive = savedClip;
+	qa_check(same,
+	         "spark passes over the live slots match a full-ring scan, through wraps and rewinds");
+}
+
 /* Generator draws one shower takes, counted from a fresh seed. */
 static Uint32 qa_spark_rng_draws(bool silent, JE_word num)
 {
@@ -8824,7 +8931,8 @@ static void qa_test_present_paths(void)
 
 	detail[0] = '\0';
 	const bool nnRows = video_scale_test_nn_rows(detail, sizeof(detail));
-	snprintf(label, sizeof(label), "1x, threaded 1x and 2x scaler rows match a direct lookup%s%s",
+	snprintf(label, sizeof(label),
+	         "plain scaler rows at 1x to 5x, on one thread and the pool, match a direct lookup%s%s",
 	         detail[0] ? ": " : "", detail);
 	qa_check(nnRows, label);
 
@@ -10379,6 +10487,7 @@ int qa_run_unit_suite(void)
 	qa_test_superspark_brief();
 	qa_test_superspark_seeded_spread();
 	qa_test_superspark_shapes();
+	qa_test_spark_ring_bounds();
 	qa_test_vaporised_shot_sparks();
 	qa_test_knife_fight_blood();
 	qa_test_online_ship_style();

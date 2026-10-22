@@ -39,8 +39,11 @@ Graphics settings are under **Setup > Graphics**.
 
 The simulation remains fixed at 35 Hz. Demos always use fixed-step movement.
 
-Vita resolves Sub-pixel to 1x. Its **Smooth FX** switch controls whether
-feedback backgrounds update at display rate or once per simulation tick.
+On Vita, Sub-pixel Auto follows the Scaler, so the default None scaler renders
+at 1x. A larger Scaler or a fixed Sub-pixel value raises the rendering
+resolution; it costs more CPU and GPU time and may not hold 60 fps.
+**Smooth FX** draws ice, water and lava at the display rate and at the
+Sub-pixel resolution; turning it off is cheaper.
 
 ## Endless mode
 

@@ -189,7 +189,18 @@ static int bg_edge_px(int mirror_w, int x, int surface_w, int scale)
 
 static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool blend)
 {
-	for (int i = 0; i < BG_TILE_W; i += SWAR8_BYTES)
+	int i = 0;
+#if VEC8_BYTES
+	for (; i + VEC8_BYTES <= BG_TILE_W; i += VEC8_BYTES)
+	{
+		const Vec8 s = flip ? vec8_reverse(vec8_read(data + BG_TILE_W - VEC8_BYTES - i))
+		                    : vec8_read(data + i);
+		const Vec8 d = vec8_read(dst + i);
+		const Vec8 v = blend ? vec8_or(vec8_and(s, vec8_splat(0xF0)), vec8_avg_low(s, d)) : s;
+		vec8_write(dst + i, vec8_select(d, v, vec8_nonzero(s)));
+	}
+#endif
+	for (; i < BG_TILE_W; i += SWAR8_BYTES)
 	{
 		const Swar8 s = flip ? swar8_reverse(swar8_read(data + BG_TILE_W - SWAR8_BYTES - i))
 		                     : swar8_read(data + i);
@@ -370,6 +381,17 @@ static void blit_background_row_scaled_px(SDL_Surface *surface, int x, int y, Ui
 static inline void blit_expanded_row(Uint8 *dst, const Uint8 *src, int n, bool blend)
 {
 	int i = 0;
+#if VEC8_BYTES
+	for (; i + VEC8_BYTES <= n; i += VEC8_BYTES)
+	{
+		const Vec8 s = vec8_read(src + i);
+		if (vec8_is_zero(s))
+			continue;
+		const Vec8 d = vec8_read(dst + i);
+		const Vec8 v = blend ? vec8_or(vec8_and(s, vec8_splat(0xF0)), vec8_avg_low(s, d)) : s;
+		vec8_write(dst + i, vec8_select(d, v, vec8_nonzero(s)));
+	}
+#endif
 	for (; i + SWAR8_BYTES <= n; i += SWAR8_BYTES)
 	{
 		const Swar8 s = swar8_read(src + i);
@@ -720,10 +742,17 @@ void draw_background_3(SDL_Surface *surface)
 static void filter_hue_rows(Uint8 *s, int pitch, int width, int rows, Uint8 hue)
 {
 	const Swar8 hues = SWAR8(hue);
+#if VEC8_BYTES
+	const Vec8 vhues = vec8_splat(hue);
+#endif
 
 	for (; rows > 0; --rows, s += pitch)
 	{
 		int x = 0;
+#if VEC8_BYTES
+		for (; x + VEC8_BYTES <= width; x += VEC8_BYTES)
+			vec8_write(s + x, vec8_or(vhues, vec8_and(vec8_read(s + x), vec8_splat(0x0F))));
+#endif
 		for (; x + SWAR8_BYTES <= width; x += SWAR8_BYTES)
 			swar8_write(s + x, hues | (swar8_read(s + x) & SWAR8(0x0F)));
 		for (; x < width; ++x)
@@ -757,10 +786,33 @@ static void filter_value_rows(Uint8 *s, int pitch, int width, int rows, int brig
 		mode = 3;
 		addend = SWAR8(brightness - 0xF);
 	}
+#if VEC8_BYTES
+	const Vec8 vadd = vec8_splat((uint8_t)addend);
+#endif
 
 	for (; rows > 0; --rows, s += pitch)
 	{
 		int x = 0;
+#if VEC8_BYTES
+		for (; x + VEC8_BYTES <= width; x += VEC8_BYTES)
+		{
+			const Vec8 px = vec8_read(s + x);
+			Vec8 values = vec8_splat(0);
+			if (mode != 0)
+			{
+				const Vec8 sum = vec8_add(vec8_and(px, vec8_splat(0x0F)), vadd);
+				const Vec8 bit = vec8_and(sum, vec8_splat(0x10));
+				const Vec8 mask = vec8_sub(bit, vec8_shr4(bit));
+				if (mode == 1)
+					values = vec8_and(sum, mask);
+				else if (mode == 2)
+					values = vec8_or(vec8_and(sum, vec8_splat(0x0F)), mask);
+				else
+					values = vec8_andnot(vec8_splat(0x0F), mask);
+			}
+			vec8_write(s + x, vec8_or(vec8_and(px, vec8_splat(0xF0)), values));
+		}
+#endif
 		for (; x + SWAR8_BYTES <= width; x += SWAR8_BYTES)
 		{
 			const Swar8 px = swar8_read(s + x);
@@ -1028,10 +1080,21 @@ static void average_rows(Uint8 *dst, int dst_pitch, const Uint8 *src, int src_pi
                          int width, int rows, int hue)
 {
 	const Swar8 hues = SWAR8(hue < 0 ? 0 : hue);
+#if VEC8_BYTES
+	const Vec8 vhues = vec8_splat((uint8_t)(hue < 0 ? 0 : hue));
+#endif
 
 	for (; rows > 0; --rows, dst += dst_pitch, src += src_pitch)
 	{
 		int x = 0;
+#if VEC8_BYTES
+		for (; x + VEC8_BYTES <= width; x += VEC8_BYTES)
+		{
+			const Vec8 s = vec8_read(src + x);
+			const Vec8 h = hue < 0 ? vec8_and(s, vec8_splat(0xF0)) : vhues;
+			vec8_write(dst + x, vec8_or(h, vec8_avg_low(s, vec8_read(dst + x))));
+		}
+#endif
 		for (; x + SWAR8_BYTES <= width; x += SWAR8_BYTES)
 		{
 			const Swar8 s = swar8_read(src + x);
@@ -1121,6 +1184,19 @@ static inline void lava_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, bo
 
 	for (int x = x0; x < x1; )
 	{
+#if VEC8_BYTES
+		if (x >= ia && x + VEC8_BYTES <= ib)
+		{
+			const Vec8 low = vec8_splat(0x0F);
+			Vec8 v = vec8_shl1(vec8_and(vec8_read(sp + x + waver), low));
+			v = vec8_add(v, vec8_and(vec8_read(dp + x + waver + row_step), low));
+			if (above)
+				v = vec8_add(v, vec8_and(vec8_read(dp + x + waver - row_step), low));
+			vec8_write(dp + x, vec8_or(vec8_and(vec8_shr2(v), low), vec8_splat(0x70)));
+			x += VEC8_BYTES;
+			continue;
+		}
+#endif
 		if (x >= ia && x + SWAR8_BYTES <= ib)
 		{
 			const Uint8 *const s = sp + x + waver;
@@ -1203,6 +1279,9 @@ static inline void water_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, U
                                      int waver, int x0, int x1)
 {
 	const Swar8 hues = SWAR8(hue);
+#if VEC8_BYTES
+	const Vec8 vhues = vec8_splat(hue);
+#endif
 
 	int ia = MAX(x0, -waver), ib = MIN(x1, W - waver);
 	if (ib < ia)
@@ -1210,6 +1289,18 @@ static inline void water_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, U
 
 	for (int x = x0; x < x1; )
 	{
+#if VEC8_BYTES
+		if (x >= ia && x + VEC8_BYTES <= ib)
+		{
+			const Vec8 s = vec8_read(sp + x);
+			const Vec8 below = vec8_read(dp + x + waver + row_step);
+			const Vec8 water = vec8_or(vhues, vec8_avg_low(s, below));
+			const Vec8 blue = vec8_nonzero(vec8_and(s, vec8_splat(0x30)));
+			vec8_write(dp + x, vec8_select(s, water, blue));
+			x += VEC8_BYTES;
+			continue;
+		}
+#endif
 		if (x >= ia && x + SWAR8_BYTES <= ib)
 		{
 			const Swar8 s = swar8_read(sp + x);
@@ -1325,6 +1416,14 @@ void blur_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, i
 static void spotlight_dark(Uint8 *dst, const Uint8 *src, int n)
 {
 	int i = 0;
+#if VEC8_BYTES
+	for (; i + VEC8_BYTES <= n; i += VEC8_BYTES)
+	{
+		const Vec8 v = vec8_read(src + i);
+		const Vec8 hue = vec8_and(v, vec8_splat(0xF0));
+		vec8_write(dst + i, vec8_or(hue, vec8_and(vec8_shr2(v), vec8_splat(0x03))));
+	}
+#endif
 	for (; i + SWAR8_BYTES <= n; i += SWAR8_BYTES)
 	{
 		const Swar8 v = swar8_read(src + i);

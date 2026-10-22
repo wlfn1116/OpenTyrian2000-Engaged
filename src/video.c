@@ -63,7 +63,6 @@ static void update_native_scaler_dims(void);
 static void native_output_size(int *out_w, int *out_h);
 
 // Native supersample factor. Round the output/logical ratio up so every output pixel is sampled.
-#ifndef __vita__  // unused there: the Vita forces 1x below
 static int display_supersample_factor(void)
 {
 	int w = vga_width, h = vga_height;
@@ -79,7 +78,6 @@ static int display_supersample_factor(void)
 		factor = RENDER_SUPERSAMPLE_LIMIT;
 	return factor;
 }
-#endif
 
 // Auto follows the scaler factor; Native follows the display and ignores RENDER_SUPERSAMPLE_MAX.
 int effective_supersample(void)
@@ -87,10 +85,6 @@ int effective_supersample(void)
 	if (!smoothMotion)
 		return 1;
 
-#ifdef __vita__
-	// The Vita GPU can't sustain the NxN sub-pixel present (render at N* then downscale).
-	return 1;
-#else
 	int factor = render_supersample;
 	if (factor == RENDER_SUPERSAMPLE_NATIVE)
 		return display_supersample_factor();
@@ -102,17 +96,18 @@ int effective_supersample(void)
 		else
 			factor = scalers[scaler].width / vga_width;
 
+#ifndef __vita__
 		// A 1x scaler would resolve Auto to 1x; no sub-pixel motion at all, a
 		// pointless state. Auto therefore supersamples at least 2x.
 		if (factor < 2)
 			factor = 2;
+#endif
 	}
 	if (factor < 1)
 		factor = 1;
 	else if (factor > RENDER_SUPERSAMPLE_MAX)
 		factor = RENDER_SUPERSAMPLE_MAX;
 	return factor;
-#endif
 }
 
 bool show_fps = false;
@@ -971,7 +966,7 @@ static VideoRowsSite video_rows_sites[VIDEO_ROWS_SITES] = {
 };
 static const char *const video_rows_site_names[VIDEO_ROWS_SITES] = {
 	"hi-res present", "Native scaler", "playfield replay", "hi-res compose", "smoothie layers",
-	"tick replay", "1x present"
+	"tick replay", "plain scaler"
 };
 
 static int SDLCALL video_rows_worker(void *arg)

@@ -152,60 +152,96 @@ uint scaler_plain_equivalent(uint index)
 	return index;  // no plain scaler of that size (cannot happen with the current table)
 }
 
+typedef struct
+{
+	const Uint8 *src;
+	int src_pitch;
+	Uint8 *dst;
+	int dst_pitch;
+	int width, scale;
+	size_t row_bytes;
+} NnRows;
+
+static void nn_rows_32(void *p, int row_begin, int row_end)
+{
+	const NnRows *const job = p;
+	const int width = job->width, scale = job->scale;
+
+	for (int y = row_begin; y < row_end; ++y)
+	{
+		const Uint8 *const src = job->src + (size_t)y * job->src_pitch;
+		Uint8 *const row = job->dst + (size_t)y * scale * job->dst_pitch;
+		Uint32 *dst = (Uint32 *)row;
+
+		switch (scale)
+		{
+		case 2:
+			for (int x = 0; x < width; ++x, dst += 2)
+			{
+				const Uint32 color = rgb_palette[src[x]];
+				dst[0] = color;
+				dst[1] = color;
+			}
+			break;
+		case 3:
+			for (int x = 0; x < width; ++x, dst += 3)
+			{
+				const Uint32 color = rgb_palette[src[x]];
+				dst[0] = color;
+				dst[1] = color;
+				dst[2] = color;
+			}
+			break;
+		case 4:
+			for (int x = 0; x < width; ++x, dst += 4)
+			{
+				const Uint32 color = rgb_palette[src[x]];
+				dst[0] = color;
+				dst[1] = color;
+				dst[2] = color;
+				dst[3] = color;
+			}
+			break;
+		default:
+			for (int x = 0; x < width; ++x)
+			{
+				const Uint32 color = rgb_palette[src[x]];
+				for (int k = 0; k < scale; ++k)
+					*dst++ = color;
+			}
+			break;
+		}
+
+		for (int k = 1; k < scale; ++k)
+			memcpy(row + (size_t)k * job->dst_pitch, row, job->row_bytes);
+	}
+}
+
 void nn_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 {
-	Uint8 *src = src_surface->pixels, *src_temp;
-	Uint8 *dst, *dst_temp;
-
-	int src_pitch = src_surface->pitch;
-	int dst_pitch;
-
-	const int dst_Bpp = 4;         // dst_surface->format->BytesPerPixel
 	int dst_width, dst_height;
 	SDL_QueryTexture(dst_texture, NULL, NULL, &dst_width, &dst_height);
-	
+
 	const int height = vga_height, // src_surface->h
 	          width = vga_width,   // src_surface->w
 	          scale = dst_width / width;
 	assert(scale == dst_height / height);
 
-	void* tmp_ptr;
+	void *tmp_ptr;
+	int dst_pitch;
 	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
-	dst = tmp_ptr;
 
 	if (scale == 1)
 	{
-		video_palette_rows(src, src_pitch, dst, dst_pitch, width, height, dst_texture);
+		video_palette_rows(src_surface->pixels, src_surface->pitch, tmp_ptr, dst_pitch, width,
+		                   height, dst_texture);
 		return;
 	}
 
-	for (int y = height; y > 0; y--)
-	{
-		src_temp = src;
-		dst_temp = dst;
-
-		for (int x = width; x > 0; x--)
-		{
-			const Uint32 color = rgb_palette[*src];
-			for (int z = scale; z > 0; z--)
-			{
-				*(Uint32 *)dst = color;
-				dst += dst_Bpp;
-			}
-			src++;
-		}
-		
-		src = src_temp + src_pitch;
-		dst = dst_temp + dst_pitch;
-		
-		for (int z = scale; z > 1; z--)
-		{
-			memcpy(dst, dst_temp, dst_width * dst_Bpp);
-			dst += dst_pitch;
-		}
-	}
-
-	SDL_UnlockTexture(dst_texture);
+	const NnRows job = { src_surface->pixels, src_surface->pitch, tmp_ptr, dst_pitch, width, scale,
+	                     (size_t)dst_width * 4 };
+	video_rows(VIDEO_ROWS_FLAT, nn_rows_32, (void *)&job, height, dst_width * dst_height,
+	           dst_texture);
 }
 
 void nn_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
@@ -435,10 +471,12 @@ bool video_scale_test_nn_rows(char *detail, size_t detailSize)
 		fault = "could not wrap the source frame";
 
 	const int saved_threads = render_threads;
-	for (int run = 0; run < 3 && fault == NULL; ++run)
+	char message[96];
+	for (int run = 0; run < 10 && fault == NULL; ++run)
 	{
-		const int scale = run < 2 ? 1 : 2;
-		render_threads = run == 1 ? video_rows_max_threads() : 1;
+		const int scale = 1 + run / 2;
+		const bool pool = (run & 1) != 0;
+		render_threads = pool ? video_rows_max_threads() : 1;
 		const int w = vga_width * scale, h = vga_height * scale;
 		SDL_Surface *const target = SDL_CreateRGBSurface(0, w, h, 32, 0, 0, 0, 0);
 		SDL_Renderer *const renderer = target != NULL ? SDL_CreateSoftwareRenderer(target) : NULL;
@@ -455,6 +493,11 @@ bool video_scale_test_nn_rows(char *detail, size_t detailSize)
 		}
 		else
 		{
+			if (SDL_LockTexture(texture, NULL, &pixels, &pitch) == 0)
+			{
+				memset(pixels, 0xcd, (size_t)pitch * h);
+				SDL_UnlockTexture(texture);
+			}
 			nn_32(src, texture);
 			if (SDL_LockTexture(texture, NULL, &pixels, &pitch) != 0)
 			{
@@ -468,10 +511,15 @@ bool video_scale_test_nn_rows(char *detail, size_t detailSize)
 					const Uint32 *const row = (const Uint32 *)row_bytes;
 					const Uint8 *const src_row = src_pixels + (size_t)(y / scale) * SRC_PITCH;
 					for (int x = 0; x < w && fault == NULL; ++x)
+					{
 						if (row[x] != rgb_palette[src_row[x / scale]])
-							fault = run == 0 ? "1x scaler rows differ from a direct lookup"
-							      : run == 1 ? "threaded 1x scaler rows differ from a direct lookup"
-							                 : "2x scaler rows differ from a direct lookup";
+						{
+							snprintf(message, sizeof(message),
+							         "%dx scaler rows%s differ from a direct lookup", scale,
+							         pool ? " on the pool" : "");
+							fault = message;
+						}
+					}
 				}
 				SDL_UnlockTexture(texture);
 			}
