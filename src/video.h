@@ -113,6 +113,11 @@ enum
 {
 	VIDEO_ROWS_HI,
 	VIDEO_ROWS_FIT,
+	VIDEO_ROWS_REPLAY,
+	VIDEO_ROWS_COMPOSE,
+	VIDEO_ROWS_SMOOTHIE,
+	VIDEO_ROWS_TICK,
+	VIDEO_ROWS_FLAT,
 	VIDEO_ROWS_SITES
 };
 typedef enum
@@ -123,6 +128,7 @@ typedef enum
 	VIDEO_ROWS_TUNING,
 	VIDEO_ROWS_ONE_THREAD,
 	VIDEO_ROWS_THREADED,
+	VIDEO_ROWS_FIXED,
 } VideoRowsMode;
 typedef struct
 {
@@ -133,13 +139,16 @@ typedef struct
 	double one_ms;
 	double many_ms;
 } VideoRowsStats;
+extern int render_threads;
+int video_rows_max_threads(void);
 void video_rows(int site, VideoRowsFn fn, void *job, int rows, int pixels, SDL_Texture *unlock);
 bool video_rows_threaded(VideoRowsFn fn, void *job, int rows);
-void video_rows_stats(VideoRowsStats *stats);
+void video_rows_stats(int site, VideoRowsStats *stats);
 void video_palette_rows(const Uint8 *src, int src_pitch, Uint8 *dst, int dst_pitch, int width,
-                        int rows);
+                        int rows, SDL_Texture *unlock);
 bool video_test_parallel_rows(char *detail, size_t detailSize);
 bool video_test_rows_stats(char *detail, size_t detailSize);
+bool video_test_rows_rounds(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.

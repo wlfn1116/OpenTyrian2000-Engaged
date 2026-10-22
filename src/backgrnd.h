@@ -79,6 +79,17 @@ void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, 
 // each tile pixel is drawn as a scale x scale block, fully clipped, never recorded.
 void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale, bool blend, int mirror_w, int col0);
 
+typedef struct
+{
+	int x, y;
+	Uint8 **map;
+	bool blend;
+	int mirror_w, col0;
+} BgRowDraw;
+
+void blit_background_row_scaled_batch(SDL_Surface *surface, const BgRowDraw *rows, size_t count,
+                                      int y_offset, int scale);
+
 // Update layer 1's scroll anchor even when Astral Zone skips drawing the layer.
 void bg_publish_layer_1_phase(void);
 
@@ -92,6 +103,8 @@ void JE_advanceLevelFade(void);
 void JE_filterScreenApply(SDL_Surface *surface, JE_shortint col, JE_shortint generic_int);
 // JE_filterScreenApply on an NxN supersampled surface (playfield region x scale).
 void filter_screen_apply_scaled(SDL_Surface *surface, JE_shortint col, JE_shortint generic_int, int scale);
+void filter_screen_apply_scaled_band(SDL_Surface *band, JE_shortint col, JE_shortint generic_int,
+                                     int scale, int y_offset);
 
 void JE_checkSmoothies(void);
 void lava_filter(SDL_Surface *dst, SDL_Surface *src);
@@ -107,6 +120,14 @@ void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void iced_blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
+void lava_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                int sub_last);
+void water_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                 int sub_last);
+void iced_blur_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                     int sub_last);
+void blur_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                int sub_last);
 
 void spotlight_filter_row(Uint8 *dst, const Uint8 *src, int width, int y, int lightx, int lighty,
                           int band, int scale);
@@ -119,5 +140,7 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed);
 void draw_starfield_star(SDL_Surface* surface, int x, int y, Uint8 color);
 // Star at HI-buffer coordinates: centre + halo drawn as scale x scale blocks.
 void draw_starfield_star_scaled(SDL_Surface* surface, int x, int y, Uint8 color, int scale);
+void draw_starfield_star_band(SDL_Surface *band, int x, int y, Uint8 color, int scale,
+                              int y_offset);
 
 #endif /* BACKGRND_H */

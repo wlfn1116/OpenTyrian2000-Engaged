@@ -131,18 +131,33 @@ collision ceilings, and shot trails must respect that gap. Clamp wall writes to
 
 ### Frame-row threads
 
-`video_rows` in `video.c` splits a frame's rows between the main thread and a
-pool of helper threads. It serves the `present_hi` palette conversion of
-supersampled frames (`VIDEO_ROWS_HI`) and the Native scaler `nn_fit_32/16`
-(`VIDEO_ROWS_FIT`). Output is the same on any number of threads.
+`video_rows` in `video.c` splits a job's rows between the main thread and a
+pool of helper threads. Seven sites use it:
 
-On the Switch, Smooth Motion with the default 4x scaler sends supersampled
-frames through `present_hi`. The Vita boots with the None scaler and never
-supersamples, so its frames reach the pool only when the player picks the
-Native scaler.
+| Site | Overlay | Work |
+| --- | --- | --- |
+| `VIDEO_ROWS_HI` | `HI` | `present_hi` palette conversion of hi-res frames |
+| `VIDEO_ROWS_FIT` | `NATIVE` | The Native scaler `nn_fit_32/16` |
+| `VIDEO_ROWS_REPLAY` | `REPLAY` | The normal-level playfield replay, at any scale |
+| `VIDEO_ROWS_COMPOSE` | `COMPOSE` | Playfield composite and HUD expansion at hi-res |
+| `VIDEO_ROWS_SMOOTHIE` | `SMOOTHIE` | Every smoothie pass in the present loop |
+| `VIDEO_ROWS_TICK` | `TICK` | Replays run once per tick |
+| `VIDEO_ROWS_FLAT` | `1X` | `nn_32` palette conversion at 1x |
 
-- The pool starts with the first job of at least 128K pixels. It uses
-  `SDL_GetCPUCount() - 1` helpers, at most three. Switch and Vita give games
+`SMOOTHIE` covers the feedback replays, the background pass and its filters,
+the expand, the background tail and the foreground. `TICK` covers the residual
+reference replay, feedback trim and commit, and `rl_replay_bg_tick`, which
+builds the Vita's cached plasma.
+
+Output is the same on any number of threads. Every platform sends tick replays
+through `TICK`. On the Switch, Smooth Motion with the default 4x scaler also
+uses `HI`, `COMPOSE`, and `REPLAY` or `SMOOTHIE`. The Vita never supersamples:
+normal levels replay through `REPLAY` at 1x, smoothie levels draw their
+foreground through `SMOOTHIE` at 1x, and every frame converts through `1X`.
+
+- The pool starts with the first job of at least 64K pixels (a 1x frame has
+  71,200), unless Render Threads is 1. `video_rows_max_threads()` sizes it to
+  the CPU count, at most 16 threads (15 helpers). Switch and Vita give games
   three cores, so they count exactly three CPUs and run two helpers.
 - A startup self-test runs a small job through the helpers, which must each
   finish within two seconds and match a single-threaded result. If the test
@@ -152,21 +167,82 @@ Native scaler.
 - When a helper misses the deadline, all helpers are detached and the
   semaphores and test buffers stay allocated, so a late helper never touches
   freed memory.
-- Each path then alternates one and several threads for 16 frames, timing the
-  rows plus `SDL_UnlockTexture`, where OpenGL drivers copy the texture on the
-  CPU. Threads stay on only when their best time is under 90% of the
-  one-thread best. A new pixel count starts a new tuning run.
+- On Auto, each site tunes its own thread count. It times 1, 2, 4, 8 and 16
+  threads up to the pool size, plus the pool size itself, eight times each,
+  taking turns. The timing covers the rows plus `SDL_UnlockTexture`, where
+  OpenGL drivers copy the texture on the CPU. A larger count wins only when its
+  best time is under 90% of the current pick's.
+- `HI`, `NATIVE`, `COMPOSE` and `1X` run once per frame and time each call. A
+  new pixel count starts a new tuning run.
+- `REPLAY`, `SMOOTHIE` and `TICK` can run several times per frame with jobs of
+  different sizes, so they tune on rounds. Every call in a round uses the
+  round's thread count, the round's time is the sum of its calls, and
+  `video_rows_end_frame` closes the round after each present in
+  `scale_and_flip` and `present_hi`. Tick replays get their own rounds because
+  they use their own site. A round whose largest job differs from the previous
+  round's restarts the tuning run. A round that never reaches a present, as in
+  a fast-forwarded test replay, stays open on its first thread count.
+- `video_rows` never runs more threads than the job has rows.
+- Render Threads is `render_threads` in `video.c`, saved as
+  `[video] render_threads`, with 0 for Auto. A number skips tuning and uses
+  that many threads, capped at the pool size; 1 never starts the pool. The
+  config loader lowers a value above `video_rows_max_threads()`.
 - A job finishes before `video_rows` returns, and `deinit_video` joins the
   helpers. A band function may write only its own rows and must treat
   everything else as read-only.
 
-Each tuning run ends with one line on stderr:
+Band replay lives in `rl_replay_common` (`render_list.c`). Every replay draws in
+bands, in every phase and at every scale, unless `rl_band_reserve` cannot size
+the item list. The usual loop still computes each command's position, then
+collects it with its target surface, the playfield or the feedback scratch.
+`rl_band_draw` sends the pending items through `video_rows`, and `rl_band_rows`
+draws them into copies of the surfaces that start at the band's first row.
+
+- Smoothie filters and darken are barriers: the pending items are drawn first,
+  then the barrier runs on the whole surface. Darken stays on one thread
+  because it reads the row above in the same pass.
+- The playfield clear and the lazy scratch clear run inside the next batch of
+  bands.
+- At 1x, sprites, background rows and health bars use the same drawers as a
+  sequential replay, on the band copy with the row shifted by the band's first
+  row. Table sprites, background rows and the unclipped sprite2 filter clip by
+  address range, so a sprite that wraps across a band edge lands in the band
+  that owns the address. The sprite2 clip variants clip whole rows against the
+  surface height.
+- Above 1x, background rows go through `blit_background_row_scaled_batch`, so
+  each band has its own scratch buffer.
+- Stars, sparks and the grade use band versions at every scale
+  (`draw_starfield_star_band`, `rl_draw_superpixel_band`,
+  `filter_screen_apply_scaled_band`). Their visibility tests use absolute rows.
+- A drawer may run in bands only if it writes only its own rows, reads only the
+  pixels it writes, keeps no state between calls, and tests visibility in
+  absolute rows.
+
+The scaled smoothie filters split by sub-row set.
+`*_filter_scaled_subrows(dst, src, scale, sub_first, sub_last)` processes the
+rows whose index modulo `scale` lies in `[sub_first, sub_last)`. Each filter
+row reads only its own row and the rows `scale` above and below it, so the sets
+are independent. `rl_replay_common` dispatches `rl_filter_rows` with one row
+per set, so a 4x filter uses at most four threads. 1x filters stay on one
+thread; lava and water chain every row there.
+
+`compose_hi_frame` (`tyrian2.c`) runs the playfield composite and the HUD
+expansion as one job over the 200 1x rows; the two write separate parts of
+`vga_hi`. The spotlight anchor is computed once before the dispatch. The
+smoothie expand into the hi-res buffer runs through
+`expand_frame_to_hi_threaded` on `SMOOTHIE`; menus keep the one-thread
+`expand_frame_to_hi`.
+
+Each tuning run ends with one line on stderr per site:
 
 ```text
-video: hi-res present rows on threads (0.197 ms on one thread, 0.062 ms on 4)
+video: playfield replay rows on 8 threads (0.383 ms on 1, 0.206 ms on 2, 0.113 ms on 4, 0.065 ms on 8, 0.073 ms on 16)
 ```
 
-The same line with `rows on one thread` means the threads lost the timing.
+The line names the count each site settled on, then the best time for every
+count it tried. For `REPLAY`, `SMOOTHIE` and `TICK` the times are round totals.
+`rows on one thread` means no larger count beat one thread by 10%. A fixed
+Render Threads value prints nothing, since nothing is tuned.
 `video: frame rows stay on one thread` means the pool did not start.
 
 Linux and macOS show these lines in the terminal that started the game. The
@@ -175,27 +251,54 @@ to keep them. The Switch and Vita builds do not save stderr, so read the
 decision from the debug perf overlay there.
 
 To show the overlay, turn on Debug Mode in Setup > Diagnostics, then pick
-Debug Menu > Perf Overlay from the in-game menu during a level. Its `ROWS`
-line, under `ALPHA`, reads `video_rows_stats` and describes the frame presented
-before it. `HI` names the `present_hi` path and `NATIVE` the Native scaler.
+Debug Menu > Perf Overlay from the in-game menu during a level. Two lines under
+`FPS` break the frame time down, averaged over one-second windows:
+
+| Value | Meaning |
+| --- | --- |
+| `TICK` | Game logic and tick drawing, between `JE_starShowVGA` calls |
+| `DRAW` | Frame start to the present call: replay, compositing, HUD |
+| `PRES` | The present call: conversion, upload, SDL present, vsync wait |
+| `MAX` | Longest gap between two presents in the window |
+
+`TICK` is per simulation tick; the others are per presented frame. Gaps of a
+second or more, such as menus and pauses, are left out. `frame_times` in
+`tyrian2.c` collects the values, and `frame_times_get` returns the last window.
+
+Under `ALPHA`, one `ROWS` line appears for each site used since the previous
+overlay draw, read from `video_rows_stats`. The labels follow the site table
+above. For the round sites the two times are round totals.
 
 | Line | Meaning |
 | --- | --- |
-| `ROWS HI 4T 0.20/0.06ms` | 4 threads; best one-thread and threaded times |
-| `ROWS HI 1T 0.20/0.25ms` | One thread; the threads lost the timing |
-| `ROWS HI TUNING` | The 16-frame comparison is still running |
-| `ROWS NATIVE 1T SMALL` | One thread; under 128K pixels or one row |
-| `ROWS OFF` | The pool did not start |
-| `ROWS UNUSED` | The last frame skipped both paths, as on a default Vita |
+| `ROWS HI 8T 0.16/0.03ms` | 8 threads; best one- and 8-thread times |
+| `ROWS REPLAY 1T 0.36/0.40ms` | One thread; fastest larger count second |
+| `ROWS HI TUNING` | The thread-count comparison is still running |
+| `ROWS HI 8T SET` | Render Threads fixed at 8, so nothing is timed |
+| `ROWS NATIVE 1T SMALL` | One thread; under 64K pixels or one row |
+| `ROWS HI OFF` | The pool did not start |
+| `ROWS UNUSED` | No site ran since the previous overlay draw |
 
-The overlay shows `ROWS UNUSED` when the call count from `video_rows_stats` has
-not moved since its previous draw. That relies on every overlay draw being
+Each site keeps a call count, and its line appears when the count has moved
+since the previous overlay draw. That relies on every overlay draw being
 followed by exactly one present.
 
-`qa_test_present_paths` checks both paths pixel by pixel against a direct
-lookup and against one thread, and fails if the pool does not start on a
-multi-core machine. `video_test_rows_stats` drives `video_rows` through a
-tuning run and checks what `video_rows_stats` reports.
+`qa_test_present_paths` checks the present and Native paths pixel by pixel
+against a direct lookup and against one thread, compares every pool size from
+two threads up with one thread, and fails if the pool does not start on a
+multi-core machine. It also converts a 1x frame through `nn_32` on one thread
+and on the whole pool. `video_test_rows_stats` drives `video_rows` through an
+Auto tuning run and both fixed settings, and checks the per-site counts and
+modes. `video_test_rows_rounds` checks that the calls of a round share a thread
+count, that a tuning run ends after its rounds, and that a round with a
+different largest job restarts it.
+
+`qa_test_background_bands` draws random background rows in thread bands and
+compares them with one full-surface pass. `qa_test_filter_subrows` runs each
+scaled filter one sub-row set at a time in a rotated order, and across threads,
+against the scalar loops. `qa_test_flat_bands` draws every 1x replay drawer
+over random band cuts, edges and wraps included, against one full-surface pass,
+and `rl_test_superpixel_bands` does the same for sparks at 1x to 4x.
 
 ## Endless
 

@@ -8817,8 +8817,14 @@ static void qa_test_present_paths(void)
 	qa_check(rowStats, label);
 
 	detail[0] = '\0';
+	const bool rowRounds = video_test_rows_rounds(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "frame-row rounds tune on whole frames%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(rowRounds, label);
+
+	detail[0] = '\0';
 	const bool nnRows = video_scale_test_nn_rows(detail, sizeof(detail));
-	snprintf(label, sizeof(label), "1x and 2x scaler rows match a direct lookup%s%s",
+	snprintf(label, sizeof(label), "1x, threaded 1x and 2x scaler rows match a direct lookup%s%s",
 	         detail[0] ? ": " : "", detail);
 	qa_check(nnRows, label);
 
@@ -8933,6 +8939,192 @@ static void qa_test_scaled_sprite_blocks(void)
 	SDL_FreeSurface(b);
 	qa_check(same,
 	         "scaled sprite blocks match the per-pixel blit, clipped edges and padding included");
+}
+
+static void qa_scalar_sprite_table_scaled(SDL_Surface *surface, int x, int y,
+                                          const Sprite *cur_sprite, int scale, BlitTableOp op,
+                                          Uint8 hue, Sint8 value, bool black)
+{
+	const Uint8 *data = cur_sprite->data;
+	const Uint8 *const data_ul = data + cur_sprite->size;
+	const unsigned int width = cur_sprite->width;
+	unsigned int x_offset = 0;
+
+	hue <<= 4;
+
+	int cx = x, cy = y;
+
+	for (; data < data_ul; ++data)
+	{
+		switch (*data)
+		{
+		case 255:
+			data++;
+			cx += *data * scale;
+			x_offset += *data;
+			break;
+
+		case 254:
+			cx += (width - x_offset) * scale;
+			x_offset = width;
+			break;
+
+		case 253:
+			cx += scale;
+			x_offset++;
+			break;
+
+		default:
+			if (cy >= surface->h)
+				return;
+
+			{
+				int x0 = cx < 0 ? 0 : cx;
+				int y0 = cy < 0 ? 0 : cy;
+				int x1 = cx + scale, y1 = cy + scale;
+				if (x1 > surface->w)
+					x1 = surface->w;
+				if (y1 > surface->h)
+					y1 = surface->h;
+
+				Uint8 flat = 0;
+				bool have_flat = false;
+				switch (op)
+				{
+				case BLITT_COPY:
+					flat = *data;
+					have_flat = true;
+					break;
+				case BLITT_HV_UNSAFE:
+					flat = hue | (Uint8)((*data & 0x0f) + value);
+					have_flat = true;
+					break;
+				case BLITT_HV:
+				{
+					Uint8 temp_value = (*data & 0x0f) + value;
+					if (temp_value > 0xf)
+						temp_value = (temp_value >= 0x1f) ? 0x0 : 0xf;
+					flat = hue | temp_value;
+					have_flat = true;
+					break;
+				}
+				case BLITT_DARK:
+					if (black)
+					{
+						flat = 0x00;
+						have_flat = true;
+					}
+					break;
+				default:
+					break;
+				}
+
+				for (int yy = y0; yy < y1; ++yy)
+				{
+					Uint8 *p = (Uint8 *)surface->pixels + yy * surface->pitch + x0;
+					for (int xx = x0; xx < x1; ++xx, ++p)
+					{
+						if (have_flat)
+						{
+							*p = flat;
+							continue;
+						}
+						switch (op)
+						{
+						case BLITT_BLEND:
+							*p = (*data & 0xf0) | (((*p & 0x0f) + (*data & 0x0f)) / 2);
+							break;
+						case BLITT_HV_BLEND:
+						{
+							Uint8 temp_value = (*data & 0x0f) + value;
+							if (temp_value > 0xf)
+								temp_value = (temp_value >= 0x1f) ? 0x0 : 0xf;
+							*p = hue | (((*p & 0x0f) + temp_value) / 2);
+							break;
+						}
+						case BLITT_DARK:
+							*p = (*p & 0xf0) | ((*p & 0x0f) / 2);
+							break;
+						default:
+							break;
+						}
+					}
+				}
+			}
+
+			cx += scale;
+			x_offset++;
+			break;
+		}
+		if (x_offset >= width)
+		{
+			cy += scale;
+			cx = x;
+			x_offset = 0;
+		}
+	}
+}
+
+static void qa_test_scaled_table_sprites(void)
+{
+	static Uint8 pixels[] = {
+		0x21, 0x22, 253, 0x23, 255, 2, 0x24, 0x25,
+		254,
+		0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+		255, 5, 0x41, 0x42, 0x43,
+		0x51, 254,
+	};
+	enum { TABLE = EXTRA_SHAPES, INDEX = 0 };
+	const Sprite saved_sprite = sprite_table[TABLE].sprite[INDEX];
+	const unsigned int saved_count = sprite_table[TABLE].count;
+	const Sprite test_sprite = { 8, 5, (Uint16)sizeof(pixels), pixels };
+	sprite_table[TABLE].sprite[INDEX] = test_sprite;
+	if (sprite_table[TABLE].count <= INDEX)
+		sprite_table[TABLE].count = INDEX + 1;
+
+	static const struct { BlitTableOp op; bool black; } ops[] = {
+		{ BLITT_COPY, false }, { BLITT_BLEND, false }, { BLITT_HV_UNSAFE, false },
+		{ BLITT_HV, false }, { BLITT_HV_BLEND, false }, { BLITT_DARK, false }, { BLITT_DARK, true },
+	};
+	static const Sint8 values[] = { 3, -9, 14 };
+	enum { W = 53, H = 31, PITCH = W + 11 };
+	static Uint8 buf_a[PITCH * H], buf_b[PITCH * H];
+	SDL_Surface *const a = SDL_CreateRGBSurfaceFrom(buf_a, W, H, 8, PITCH, 0, 0, 0, 0);
+	SDL_Surface *const b = SDL_CreateRGBSurfaceFrom(buf_b, W, H, 8, PITCH, 0, 0, 0, 0);
+	Uint32 seed = 0x7ab1e5u;
+	bool same = a != NULL && b != NULL;
+
+	for (int scale = 1; scale <= 6 && same; ++scale)
+	{
+		const int spots[][2] = {
+			{ 2, 3 }, { -3 * scale, -scale }, { W - 5 * scale, H - 2 * scale },
+			{ 1 - 8 * scale, 2 }, { W - 1, 0 }, { W + 1, 1 }, { 0, H }, { 4, -5 * scale },
+		};
+		for (size_t s = 0; s < COUNTOF(spots) && same; ++s)
+		{
+			for (size_t o = 0; o < COUNTOF(ops) && same; ++o)
+			{
+				for (size_t v = 0; v < COUNTOF(values) && same; ++v)
+				{
+					for (size_t i = 0; i < sizeof(buf_a); ++i)
+					{
+						seed = seed * 1664525u + 1013904223u;
+						buf_a[i] = buf_b[i] = (Uint8)(seed >> 24);
+					}
+					qa_scalar_sprite_table_scaled(a, spots[s][0], spots[s][1], &test_sprite, scale,
+					                              ops[o].op, 5, values[v], ops[o].black);
+					blit_sprite_table_scaled(b, spots[s][0], spots[s][1], TABLE, INDEX, scale,
+					                         ops[o].op, 5, values[v], ops[o].black);
+					same = memcmp(buf_a, buf_b, sizeof(buf_a)) == 0;
+				}
+			}
+		}
+	}
+	SDL_FreeSurface(a);
+	SDL_FreeSurface(b);
+	sprite_table[TABLE].sprite[INDEX] = saved_sprite;
+	sprite_table[TABLE].count = saved_count;
+	qa_check(same, "scaled table sprites match the per-pixel blit, clipped edges included");
 }
 
 /* Exercises each Custom Endless pool through the public shuffle. */
@@ -9765,6 +9957,351 @@ static void qa_test_swar_pixel_loops(void)
 	render_list_recording = saved_recording;
 }
 
+typedef struct
+{
+	SDL_Surface *dst;
+	const BgRowDraw *rows;
+	size_t count;
+	int scale;
+} QaBgBandJob;
+
+static void qa_bg_band_rows(void *p, int row_begin, int row_end)
+{
+	const QaBgBandJob *const job = p;
+	SDL_Surface band = *job->dst;
+	band.pixels = (Uint8 *)job->dst->pixels + (size_t)row_begin * job->dst->pitch;
+	band.h = row_end - row_begin;
+	blit_background_row_scaled_batch(&band, job->rows, job->count, row_begin, job->scale);
+}
+
+static void qa_test_background_bands(void)
+{
+	for (size_t t = 0; t < COUNTOF(qa_swar_tiles); ++t)
+		for (size_t i = 0; i < sizeof(qa_swar_tiles[t]); ++i)
+			qa_swar_tiles[t][i] = (qa_swar_next() % 6 == 0) ? 0 : (Uint8)(qa_swar_next() >> 24);
+
+	BgRowDraw rows[12];
+	bool same = true, made = true;
+	for (int trial = 0; trial < 60 && same && made; ++trial)
+	{
+		const int scale = 2 + trial % 4;
+		const int w = vga_width * scale, h = vga_height * scale;
+		SDL_Surface *const a = qa_swar_surface(w, h);
+		SDL_Surface *const b = qa_swar_surface(w, h);
+		made = a != NULL && b != NULL;
+		if (made)
+		{
+			qa_swar_fill(a);
+			qa_swar_copy(b, a);
+			qa_swar_fill_cells(qa_swar_range(0, 60));
+			const size_t count = (size_t)qa_swar_range(1, (int)COUNTOF(rows));
+			for (size_t r = 0; r < count; ++r)
+			{
+				const int mirror_w = (qa_swar_next() & 1) ? 14 : 0;
+				const int col0 = mirror_w ? qa_swar_range(-3, 3) : 0;
+				rows[r].map = qa_swar_map(mirror_w, col0);
+				rows[r].x = qa_swar_range(-40 * scale, 60 * scale);
+				rows[r].y = qa_swar_range(-60 * scale, h + 30 * scale);
+				rows[r].blend = (qa_swar_next() & 1) != 0;
+				rows[r].mirror_w = mirror_w;
+				rows[r].col0 = col0;
+			}
+
+			for (size_t r = 0; r < count; ++r)
+				blit_background_row_scaled(a, rows[r].x, rows[r].y, rows[r].map, scale,
+				                           rows[r].blend, rows[r].mirror_w, rows[r].col0);
+			QaBgBandJob job = { b, rows, count, scale };
+			video_rows_threaded(qa_bg_band_rows, &job, h);
+			same = qa_swar_same(a, b);
+		}
+		SDL_FreeSurface(a);
+		SDL_FreeSurface(b);
+	}
+	qa_check(made && same, "background rows drawn in thread bands match one full-surface pass");
+}
+
+typedef struct
+{
+	int filter;
+	SDL_Surface *dst, *src;
+	int scale;
+} QaFilterRowsJob;
+
+static void qa_filter_subrows(int filter, SDL_Surface *dst, SDL_Surface *src, int scale,
+                              int sub_first, int sub_last)
+{
+	switch (filter)
+	{
+	case 0:
+		lava_filter_scaled_subrows(dst, src, scale, sub_first, sub_last);
+		break;
+	case 1:
+		water_filter_scaled_subrows(dst, src, scale, sub_first, sub_last);
+		break;
+	case 2:
+		iced_blur_filter_scaled_subrows(dst, src, scale, sub_first, sub_last);
+		break;
+	default:
+		blur_filter_scaled_subrows(dst, src, scale, sub_first, sub_last);
+		break;
+	}
+}
+
+static void qa_filter_rows_job(void *p, int sub_first, int sub_last)
+{
+	const QaFilterRowsJob *const job = p;
+	qa_filter_subrows(job->filter, job->dst, job->src, job->scale, sub_first, sub_last);
+}
+
+static void qa_test_filter_subrows(void)
+{
+	const JE_byte saved_water_hue = smoothie_data[1];
+	bool made = true, any_order = true, threaded = true;
+	for (int filter = 0; filter < 4 && made; ++filter)
+	{
+		for (int scale = 2; scale <= 5 && made; ++scale)
+		{
+			const int w = vga_width * scale, h = vga_height * scale;
+			SDL_Surface *const s1 = qa_swar_surface(w, h);
+			SDL_Surface *const d1 = qa_swar_surface(w, h);
+			SDL_Surface *const s2 = qa_swar_surface(w, h);
+			SDL_Surface *const d2 = qa_swar_surface(w, h);
+			SDL_Surface *const d3 = qa_swar_surface(w, h);
+			made = s1 != NULL && d1 != NULL && s2 != NULL && d2 != NULL && d3 != NULL;
+			for (int trial = 0; made && trial < 4; ++trial)
+			{
+				smoothie_data[1] = (JE_byte)(qa_swar_next() >> 24);
+				qa_swar_fill(s1);
+				qa_swar_fill(d1);
+				qa_swar_copy(s2, s1);
+				qa_swar_copy(d2, d1);
+				qa_swar_copy(d3, d1);
+
+				const bool in_place = trial % 2 == 1;
+				SDL_Surface *const src1 = in_place ? d1 : s1;
+				switch (filter)
+				{
+				case 0:
+					qa_scalar_lava_filter_scaled(d1, src1, scale);
+					break;
+				case 1:
+					qa_scalar_water_filter_scaled(d1, src1, scale);
+					break;
+				default:
+					qa_scalar_average(d1, src1, scale, filter == 3);
+					break;
+				}
+
+				for (int j = 0; j < scale; ++j)
+				{
+					const int sub = (scale - 1 - j + trial) % scale;
+					qa_filter_subrows(filter, d2, in_place ? d2 : s2, scale, sub, sub + 1);
+				}
+				QaFilterRowsJob job = { filter, d3, in_place ? d3 : s2, scale };
+				video_rows_threaded(qa_filter_rows_job, &job, scale);
+
+				if (!qa_swar_same(d1, d2))
+					any_order = false;
+				if (!qa_swar_same(d1, d3))
+					threaded = false;
+			}
+			SDL_FreeSurface(s1);
+			SDL_FreeSurface(d1);
+			SDL_FreeSurface(s2);
+			SDL_FreeSurface(d2);
+			SDL_FreeSurface(d3);
+		}
+	}
+	smoothie_data[1] = saved_water_hue;
+	qa_check(made && any_order,
+	         "scaled smoothie filters give the same frame one sub-row set at a time, in any order");
+	qa_check(made && threaded,
+	         "scaled smoothie filters split by sub-row set across threads match one pass");
+}
+
+typedef struct
+{
+	int what;
+	int x, y;
+	int a, b;
+	Uint8 **map;
+	int mirror_w, col0;
+} QaFlatDraw;
+
+enum { QA_FLAT_KINDS = 21, QA_FLAT_TABLE = EXTRA_SHAPES, QA_FLAT_INDEX = 0 };
+
+static void qa_flat_draw(SDL_Surface *s, const QaFlatDraw *d, Sprite2_array sheet, int y_offset,
+                         bool band)
+{
+	const int x = d->x, y = d->y - y_offset;
+	const Uint8 hue = (Uint8)(d->a & 0x0f);
+	const Sint8 value = (Sint8)(d->b % 31 - 15);
+	const int bank = (d->b & 1) ? -1 : hue;
+	const Uint8 opacity = (Uint8)(d->b % 17);
+	const JE_shortint grade_col = (JE_shortint)(d->a % 9 == 0 ? -99 : d->a % 16);
+	const JE_shortint grade_bright = (JE_shortint)(d->b % 11 == 0 ? -99 : d->b % 40 - 20);
+	switch (d->what)
+	{
+	case 0:  blit_sprite2_clip(s, x, y, sheet, 1); break;
+	case 1:  blit_sprite2_blend_clip(s, x, y, sheet, 1); break;
+	case 2:  blit_sprite2_darken_clip(s, x, y, sheet, 1); break;
+	case 3:  blit_sprite2_solid_clip(s, x, y, sheet, 1, (Uint8)d->a); break;
+	case 4:  blit_sprite2_filter(s, x, y, sheet, 1, (Uint8)(d->a & 0xf0)); break;
+	case 5:  blit_sprite2_filter_clip(s, x, y, sheet, 1, (Uint8)(d->a & 0xf0)); break;
+	case 6:  blit_sprite2_filter_bright_clip(s, x, y, sheet, 1, (Uint8)d->a); break;
+	case 7:  blit_sprite2_blend_filter_clip(s, x, y, sheet, 1, (Uint8)d->a); break;
+	case 8:  blit_sprite2_alpha_clip(s, x, y, sheet, 1, bank, opacity); break;
+	case 9:  blit_sprite(s, x, y, QA_FLAT_TABLE, QA_FLAT_INDEX); break;
+	case 10: blit_sprite_blend(s, x, y, QA_FLAT_TABLE, QA_FLAT_INDEX); break;
+	case 11: blit_sprite_hv(s, x, y, QA_FLAT_TABLE, QA_FLAT_INDEX, hue, value); break;
+	case 12: blit_sprite_hv_blend(s, x, y, QA_FLAT_TABLE, QA_FLAT_INDEX, hue, value); break;
+	case 13: blit_sprite_hv_unsafe(s, x, y, QA_FLAT_TABLE, QA_FLAT_INDEX, hue, value); break;
+	case 14: blit_sprite_dark(s, x, y, QA_FLAT_TABLE, QA_FLAT_INDEX, (d->b & 1) != 0); break;
+	case 15: blit_sprite_alpha(s, x, y, QA_FLAT_TABLE, QA_FLAT_INDEX, bank, opacity); break;
+	case 16: blit_background_row(s, x, y, d->map, d->mirror_w, d->col0); break;
+	case 17: blit_background_row_blend(s, x, y, d->map, d->mirror_w, d->col0); break;
+	case 18:
+		rl_draw_hp_bar(s, x, y, d->a % 40 + 1, d->b % 45, (Uint8)d->a, (d->b & 2) != 0,
+		               (Uint8)(d->b * 37), (Uint8)(d->a >> 1));
+		break;
+	case 19:
+		if (band)
+			draw_starfield_star_band(s, x, d->y, (Uint8)d->a, 1, y_offset);
+		else
+			draw_starfield_star(s, x, d->y, (Uint8)d->a);
+		break;
+	default:
+		if (band)
+			filter_screen_apply_scaled_band(s, grade_col, grade_bright, 1, y_offset);
+		else
+			JE_filterScreenApply(s, grade_col, grade_bright);
+		break;
+	}
+}
+
+static void qa_test_flat_bands(void)
+{
+	const bool saved_resim = rollback_resim_silent;
+	const bool saved_recording = render_list_recording;
+	const JE_boolean saved_filtration = filtrationAvail;
+	const JE_boolean saved_transparent = explosionTransparent;
+	SDL_Surface *const saved_vga = VGAScreen;
+	rollback_resim_silent = false;
+	render_list_recording = false;
+	filtrationAvail = true;
+	explosionTransparent = true;
+
+	static const Uint8 rle[] = {
+		0x52, 0x21, 0x22, 0x23, 0x24, 0x25, 0x31, 0x96, 0x97, 0x98, 0x01,
+		0xc0, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x00,
+		0x16, 0xe1, 0x05,
+		0x40, 0x41, 0x42, 0x43, 0x44, 0x44, 0x5a, 0x5b, 0x5c, 0x5d, 0x00,
+		0x2a, 0x77, 0x78, 0x00,
+		0x0f,
+	};
+	static Uint16 sheet_words[(2 + sizeof(rle) + 1) / 2];
+	Uint8 *const sheet_bytes = (Uint8 *)sheet_words;
+	sheet_bytes[0] = 2;
+	sheet_bytes[1] = 0;
+	memcpy(sheet_bytes + 2, rle, sizeof(rle));
+	const Sprite2_array sheet = { 2 + sizeof(rle), sheet_bytes };
+
+	static Uint8 table_pixels[] = {
+		0x21, 0x22, 253, 0x23, 255, 2, 0x24, 0x25,
+		254,
+		0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+		255, 5, 0x41, 0x42, 0x43,
+		0x51, 254,
+	};
+	const Sprite saved_sprite = sprite_table[QA_FLAT_TABLE].sprite[QA_FLAT_INDEX];
+	const unsigned int saved_count = sprite_table[QA_FLAT_TABLE].count;
+	sprite_table[QA_FLAT_TABLE].sprite[QA_FLAT_INDEX] =
+	    (Sprite){ 8, 5, (Uint16)sizeof(table_pixels), table_pixels };
+	if (sprite_table[QA_FLAT_TABLE].count <= QA_FLAT_INDEX)
+		sprite_table[QA_FLAT_TABLE].count = QA_FLAT_INDEX + 1;
+
+	for (size_t t = 0; t < COUNTOF(qa_swar_tiles); ++t)
+		for (size_t i = 0; i < sizeof(qa_swar_tiles[t]); ++i)
+			qa_swar_tiles[t][i] = (qa_swar_next() % 6 == 0) ? 0 : (Uint8)(qa_swar_next() >> 24);
+
+	enum { W = vga_width, H = vga_height, PITCH = W + 12 };
+	static Uint8 buf_a[PITCH * H], buf_b[PITCH * H];
+	SDL_Surface *const a = SDL_CreateRGBSurfaceFrom(buf_a, W, H, 8, PITCH, 0, 0, 0, 0);
+	SDL_Surface *const b = SDL_CreateRGBSurfaceFrom(buf_b, W, H, 8, PITCH, 0, 0, 0, 0);
+	bool same = a != NULL && b != NULL;
+	VGAScreen = a;
+
+	QaFlatDraw draws[16];
+	for (int trial = 0; trial < 600 && same; ++trial)
+	{
+		for (size_t i = 0; i < sizeof(buf_a); ++i)
+			buf_a[i] = buf_b[i] = (qa_swar_next() % 3 == 0) ? 0 : (Uint8)(qa_swar_next() >> 24);
+		qa_swar_fill_cells(qa_swar_range(0, 60));
+
+		const int count = qa_swar_range(1, (int)COUNTOF(draws));
+		for (int k = 0; k < count; ++k)
+		{
+			QaFlatDraw *const d = &draws[k];
+			d->what = (trial * 7 + k) % QA_FLAT_KINDS;
+			d->x = qa_swar_range(-30, W + 10);
+			d->y = qa_swar_range(-35, H + 5);
+			d->a = qa_swar_range(0, 255);
+			d->b = qa_swar_range(0, 255);
+			d->mirror_w = (qa_swar_next() & 1) ? 14 : 0;
+			d->col0 = d->mirror_w ? qa_swar_range(-3, 3) : 0;
+			d->map = qa_swar_map(d->mirror_w, d->col0);
+		}
+
+		int cuts[6];
+		const int bands = qa_swar_range(2, 5);
+		cuts[0] = 0;
+		cuts[bands] = H;
+		for (int k = 1; k < bands; ++k)
+			cuts[k] = qa_swar_range(1, H - 1);
+		for (int k = 2; k < bands; ++k)
+		{
+			for (int j = k; j > 1 && cuts[j - 1] > cuts[j]; --j)
+			{
+				const int t = cuts[j];
+				cuts[j] = cuts[j - 1];
+				cuts[j - 1] = t;
+			}
+		}
+
+		for (int k = 0; k < count; ++k)
+			qa_flat_draw(a, &draws[k], sheet, 0, false);
+		for (int band = 0; band < bands; ++band)
+		{
+			SDL_Surface view = *b;
+			view.pixels = buf_b + (size_t)cuts[band] * PITCH;
+			view.h = cuts[band + 1] - cuts[band];
+			view.clip_rect = (SDL_Rect){ 0, 0, view.w, view.h };
+			for (int k = 0; k < count; ++k)
+				qa_flat_draw(&view, &draws[k], sheet, cuts[band], true);
+		}
+		same = memcmp(buf_a, buf_b, sizeof(buf_a)) == 0;
+	}
+
+	SDL_FreeSurface(a);
+	SDL_FreeSurface(b);
+	VGAScreen = saved_vga;
+	sprite_table[QA_FLAT_TABLE].sprite[QA_FLAT_INDEX] = saved_sprite;
+	sprite_table[QA_FLAT_TABLE].count = saved_count;
+	filtrationAvail = saved_filtration;
+	explosionTransparent = saved_transparent;
+	rollback_resim_silent = saved_resim;
+	render_list_recording = saved_recording;
+	qa_check(same, "1x replay drawers split into row bands match one full-surface pass");
+
+	char detail[160] = "";
+	const bool sparks = rl_test_superpixel_bands(detail, sizeof(detail));
+	char label[256];
+	snprintf(label, sizeof(label),
+	         "explosion sparks split into row bands match one pass at 1x to 4x%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(sparks, label);
+}
+
 int qa_run_unit_suite(void)
 {
 	qa_checks = qa_failures = 0;
@@ -9863,6 +10400,7 @@ int qa_run_unit_suite(void)
 	qa_test_save_fixtures();
 	qa_test_present_paths();
 	qa_test_scaled_sprite_blocks();
+	qa_test_scaled_table_sprites();
 	qa_test_resync_serialization();
 	qa_test_courses();
 	qa_test_finale_mods();
@@ -9874,6 +10412,9 @@ int qa_run_unit_suite(void)
 	qa_test_item_data_settings();
 	qa_test_firing_sound_levels();
 	qa_test_swar_pixel_loops();
+	qa_test_background_bands();
+	qa_test_filter_subrows();
+	qa_test_flat_bands();
 #ifdef WITH_MIDI
 	qa_test_lds_midi_detune();
 #endif

@@ -1944,6 +1944,27 @@ void blit_sprite2x2_alpha(SDL_Surface *surface, int x, int y, Sprite2_array spri
 
 // Supersampled blits used by render-list replay.
 
+static inline void fill_span(Uint8 *p, Uint8 v, int n)
+{
+	const Uint64 word = (Uint64)v * 0x0101010101010101ull;
+	for (; n >= 8; n -= 8, p += 8)
+		memcpy(p, &word, 8);
+	if (n >= 4)
+	{
+		memcpy(p, &word, 4);
+		p += 4;
+		n -= 4;
+	}
+	if (n >= 2)
+	{
+		memcpy(p, &word, 2);
+		p += 2;
+		n -= 2;
+	}
+	if (n > 0)
+		*p = v;
+}
+
 // Draw one source pixel as a scale x scale block, clipped on all edges.
 static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Uint8 d, Blit2Op op, Uint8 filter)
 {
@@ -1960,7 +1981,7 @@ static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Ui
 	if (op == BLIT2_COPY)
 	{
 		for (int yy = y0; yy < y1; ++yy)
-			memset((Uint8 *)surface->pixels + yy * surface->pitch + x0, d, (size_t)(x1 - x0));
+			fill_span((Uint8 *)surface->pixels + yy * surface->pitch + x0, d, x1 - x0);
 		return;
 	}
 
@@ -2107,16 +2128,14 @@ void blit_sprite_table_scaled(SDL_Surface *surface, int x, int y, unsigned int t
 					break;
 				}
 
-				for (int yy = y0; yy < y1; ++yy)
+				for (int yy = y0; have_flat && yy < y1; ++yy)
+					fill_span((Uint8 *)surface->pixels + yy * surface->pitch + x0, flat, x1 - x0);
+
+				for (int yy = y0; !have_flat && yy < y1; ++yy)
 				{
 					Uint8 *p = (Uint8 *)surface->pixels + yy * surface->pitch + x0;
 					for (int xx = x0; xx < x1; ++xx, ++p)
 					{
-						if (have_flat)
-						{
-							*p = flat;
-							continue;
-						}
 						switch (op)
 						{
 						case BLITT_BLEND:

@@ -2052,70 +2052,154 @@ static void composite_playfield(SDL_Surface *playfield, bool interpolate)
 
 // composite_playfield at NxN: same three modes (normal copy, vertical flip, spotlight) on the
 // supersampled playfield, writing into vga_hi's playfield region.
-static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int scale,
-                                   bool interpolate)
+typedef struct
 {
+	const SDL_Surface *playfield;
+	const SDL_Surface *hud;
+	SDL_Surface *out;
+	int scale;
+	int lightx, lighty;
+} HiCompose;
+
+static void composite_playfield_hi(const HiCompose *job, int first, int last)
+{
+	const int scale = job->scale;
 	const int width = PLAYFIELD_WIDTH * scale;
 	const int rows = 184 * scale;
-	const JE_byte *src = (const JE_byte *)playfield->pixels + PLAYFIELD_LEFT * scale;
-	Uint8 *s = (Uint8 *)out->pixels;
+	const int src_pitch = job->playfield->pitch;
+	const JE_byte *const src = (const JE_byte *)job->playfield->pixels + PLAYFIELD_LEFT * scale;
+	Uint8 *s = (Uint8 *)job->out->pixels + (size_t)first * job->out->pitch;
 
-	if (starShowVGASpecialCode == 1)
+	for (int y = first; y < last; ++y, s += job->out->pitch)
 	{
-		src += (size_t)playfield->pitch * (rows - 1);
-		for (int y = 0; y < rows; y++)
-		{
-			memmove(s, src, width);
-			s += out->pitch;
-			src -= playfield->pitch;
-		}
+		if (starShowVGASpecialCode == 1)
+			memmove(s, src + (size_t)src_pitch * (rows - 1 - y), width);
+		else if (starShowVGASpecialCode == 2 && processorType >= 2)
+			spotlight_filter_row(s, src + (size_t)src_pitch * y, width, rows - y, job->lightx,
+			                     job->lighty, 5 * scale, scale);
+		else
+			memmove(s, src + (size_t)src_pitch * y, width);
 	}
-	else if (starShowVGASpecialCode == 2 && processorType >= 2)
+}
+
+static void expand_row_to_hi(Uint8 *d, const Uint8 *sp, int count, int scale)
+{
+	switch (scale)
+	{
+	case 1:
+		memcpy(d, sp, (size_t)count);
+		break;
+	case 2:
+		for (int x = 0; x < count; ++x)
+		{
+			const Uint8 v = *sp++;
+			*d++ = v; *d++ = v;
+		}
+		break;
+	case 3:
+		for (int x = 0; x < count; ++x)
+		{
+			const Uint8 v = *sp++;
+			*d++ = v; *d++ = v; *d++ = v;
+		}
+		break;
+	case 4:
+		for (int x = 0; x < count; ++x)
+		{
+			const Uint8 v = *sp++;
+			*d++ = v; *d++ = v; *d++ = v; *d++ = v;
+		}
+		break;
+	case 5:
+		for (int x = 0; x < count; ++x)
+		{
+			const Uint8 v = *sp++;
+			*d++ = v; *d++ = v; *d++ = v; *d++ = v; *d++ = v;
+		}
+		break;
+	default:
+		for (int x = 0; x < count; ++x)
+		{
+			const Uint8 v = *sp++;
+			for (int k = 0; k < scale; ++k)
+				*d++ = v;
+		}
+		break;
+	}
+}
+
+// Block-expand the 1x HUD into the supersampled frame.
+static void expand_hud_to_hi(const HiCompose *job, int first, int last)
+{
+	const int scale = job->scale;
+	for (int y = first; y < last; ++y)
+	{
+		const int x_start = (y < 184) ? PLAYFIELD_WIDTH : 0;
+		const Uint8 *sp = (const Uint8 *)job->hud->pixels + y * job->hud->pitch + x_start;
+		Uint8 *const d0 = (Uint8 *)job->out->pixels + (y * scale) * job->out->pitch
+		                  + x_start * scale;
+
+		expand_row_to_hi(d0, sp, vga_width - x_start, scale);
+
+		const int row_bytes = (vga_width - x_start) * scale;
+		for (int k = 1; k < scale; ++k)
+			memcpy(d0 + k * job->out->pitch, d0, row_bytes);
+	}
+}
+
+static void compose_hi_rows(void *p, int row_begin, int row_end)
+{
+	const HiCompose *const job = p;
+	composite_playfield_hi(job, row_begin * job->scale, MIN(row_end, 184) * job->scale);
+	expand_hud_to_hi(job, row_begin, row_end);
+}
+
+static void compose_hi_frame(SDL_Surface *playfield, SDL_Surface *hud, SDL_Surface *out, int scale,
+                             bool interpolate)
+{
+	HiCompose job = { playfield, hud, out, scale, 0, 0 };
+	if (starShowVGASpecialCode == 2 && processorType >= 2)
 	{
 		// Scaled before rounding, so under supersampling the cone glides on the sub-pixel grid
 		// with the ship.
 		float litx, lity;
 		spotlight_anchor(interpolate, &litx, &lity);
 		const float edge = (float)(PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5);
-		const int lighty = round_signed((172.0f - lity) * (float)scale);
-		const int lightx = round_signed((edge - litx) * (float)scale);
-		const int band = 5 * scale;
-
-		for (int y = rows; y; y--)
-		{
-			spotlight_filter_row(s, src, width, y, lightx, lighty, band, scale);
-			s += out->pitch;
-			src += playfield->pitch;
-		}
+		job.lighty = round_signed((172.0f - lity) * (float)scale);
+		job.lightx = round_signed((edge - litx) * (float)scale);
 	}
-	else
+	video_rows(VIDEO_ROWS_COMPOSE, compose_hi_rows, &job, vga_height, out->w * out->h, NULL);
+}
+
+typedef struct
+{
+	SDL_Surface *src, *hi;
+	int scale;
+} HiExpand;
+
+static void expand_rows_to_hi(void *p, int row_begin, int row_end)
+{
+	const HiExpand *const job = p;
+	const int scale = job->scale;
+	for (int y = row_begin; y < row_end; ++y)
 	{
-		for (int y = 0; y < rows; y++)
-		{
-			memmove(s, src, width);
-			s += out->pitch;
-			src += playfield->pitch;
-		}
+		const Uint8 *sp = (const Uint8 *)job->src->pixels + y * job->src->pitch;
+		Uint8 *const d0 = (Uint8 *)job->hi->pixels + (y * scale) * job->hi->pitch;
+
+		expand_row_to_hi(d0, sp, job->src->w, scale);
+
+		const int row_bytes = job->src->w * scale;
+		for (int k = 1; k < scale; ++k)
+			memcpy(d0 + k * job->hi->pitch, d0, row_bytes);
 	}
 }
 
-// Block-expand the 1x HUD into the supersampled frame.
-static void expand_hud_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
+static void expand_frame_to_hi_threaded(SDL_Surface *src, SDL_Surface *hi, int scale)
 {
-	for (int y = 0; y < vga_height; ++y)
-	{
-		const int x_start = (y < 184) ? PLAYFIELD_WIDTH : 0;
-		const Uint8 *sp = (const Uint8 *)src->pixels + y * src->pitch + x_start;
-		Uint8 *const d0 = (Uint8 *)hi->pixels + (y * scale) * hi->pitch + x_start * scale;
+	assert(scale >= 1 && hi->w >= src->w * scale && hi->h >= src->h * scale);
 
-		Uint8 *d = d0;
-		for (int x = x_start; x < vga_width; ++x, ++sp, d += scale)
-			memset(d, *sp, scale);
-
-		const int row_bytes = (vga_width - x_start) * scale;
-		for (int k = 1; k < scale; ++k)
-			memcpy(d0 + k * hi->pitch, d0, row_bytes);
-	}
+	HiExpand job = { src, hi, scale };
+	video_rows(VIDEO_ROWS_SMOOTHIE, expand_rows_to_hi, &job, src->h, hi->w * hi->h, NULL);
 }
 
 // Expand a lower-resolution feedback or preview surface into the high-resolution frame.
@@ -2123,59 +2207,8 @@ void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
 {
 	assert(scale >= 1 && hi->w >= src->w * scale && hi->h >= src->h * scale);
 
-	for (int y = 0; y < src->h; ++y)
-	{
-		const Uint8 *sp = (const Uint8 *)src->pixels + y * src->pitch;
-		Uint8 *const d0 = (Uint8 *)hi->pixels + (y * scale) * hi->pitch;
-
-		Uint8 *d = d0;
-		switch (scale)
-		{
-		case 1:
-			memcpy(d, sp, (size_t)src->w);
-			break;
-		case 2:
-			for (int x = 0; x < src->w; ++x)
-			{
-				const Uint8 v = *sp++;
-				*d++ = v; *d++ = v;
-			}
-			break;
-		case 3:
-			for (int x = 0; x < src->w; ++x)
-			{
-				const Uint8 v = *sp++;
-				*d++ = v; *d++ = v; *d++ = v;
-			}
-			break;
-		case 4:
-			for (int x = 0; x < src->w; ++x)
-			{
-				const Uint8 v = *sp++;
-				*d++ = v; *d++ = v; *d++ = v; *d++ = v;
-			}
-			break;
-		case 5:
-			for (int x = 0; x < src->w; ++x)
-			{
-				const Uint8 v = *sp++;
-				*d++ = v; *d++ = v; *d++ = v; *d++ = v; *d++ = v;
-			}
-			break;
-		default:
-			for (int x = 0; x < src->w; ++x)
-			{
-				const Uint8 v = *sp++;
-				for (int k = 0; k < scale; ++k)
-					*d++ = v;
-			}
-			break;
-		}
-
-		const int row_bytes = src->w * scale;
-		for (int k = 1; k < scale; ++k)
-			memcpy(d0 + k * hi->pitch, d0, row_bytes);
-	}
+	HiExpand job = { src, hi, scale };
+	expand_rows_to_hi(&job, 0, src->h);
 }
 
 // Soul of Zinglon light pillar, drawn at display rate from the per-tick request (zinglonPillar*).
@@ -2415,6 +2448,60 @@ static void draw_lives_gauge(int lives)
 static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha);
 static void boss_bar_present_tick(void);
 
+static struct
+{
+	Uint64 tick_start;
+	Uint64 window_start;
+	Uint64 last_present;
+	Uint64 tick_sum, draw_sum, present_sum, worst;
+	unsigned ticks, frames;
+	FrameTimes shown;
+} frame_times;
+
+static void frame_times_tick_end(Uint64 now)
+{
+	const Uint64 spent = now - frame_times.tick_start;
+	if (frame_times.tick_start != 0 && spent < SDL_GetPerformanceFrequency())
+	{
+		frame_times.tick_sum += spent;
+		++frame_times.ticks;
+	}
+}
+
+static void frame_times_present(Uint64 frame_start, Uint64 present_start)
+{
+	const Uint64 now = SDL_GetPerformanceCounter();
+	const Uint64 freq = SDL_GetPerformanceFrequency();
+	frame_times.draw_sum += present_start - frame_start;
+	frame_times.present_sum += now - present_start;
+	++frame_times.frames;
+
+	const Uint64 interval = now - frame_times.last_present;
+	if (frame_times.last_present != 0 && interval < freq && interval > frame_times.worst)
+		frame_times.worst = interval;
+	frame_times.last_present = now;
+
+	if (frame_times.window_start == 0)
+		frame_times.window_start = now;
+	if (now - frame_times.window_start < freq)
+		return;
+
+	const float ms = 1000.0f / (float)freq;
+	frame_times.shown.tick_ms = frame_times.ticks != 0
+	                          ? (float)frame_times.tick_sum * ms / (float)frame_times.ticks : 0.0f;
+	frame_times.shown.draw_ms = (float)frame_times.draw_sum * ms / (float)frame_times.frames;
+	frame_times.shown.present_ms = (float)frame_times.present_sum * ms / (float)frame_times.frames;
+	frame_times.shown.worst_ms = (float)frame_times.worst * ms;
+	frame_times.tick_sum = frame_times.draw_sum = frame_times.present_sum = frame_times.worst = 0;
+	frame_times.ticks = frame_times.frames = 0;
+	frame_times.window_start = now;
+}
+
+void frame_times_get(FrameTimes *times)
+{
+	*times = frame_times.shown;
+}
+
 void JE_starShowVGA(void)
 {
 	if (qa_fast_forward)
@@ -2423,6 +2510,9 @@ void JE_starShowVGA(void)
 		skipStarShowVGA = false;
 		return;
 	}
+
+	const Uint64 entry = SDL_GetPerformanceCounter();
+	frame_times_tick_end(entry);
 
 	zinglon_pillar_tick();
 	boss_bar_present_tick();
@@ -2489,7 +2579,7 @@ void JE_starShowVGA(void)
 					rl_feedback_trim(bg_feedback, 0);
 					memcpy(plasma_buf->pixels, bg_feedback->pixels,
 					       (size_t)bg_feedback->h * bg_feedback->pitch);
-					rl_replay_bg(plasma_buf, 1.0f, pss, false);
+					rl_replay_bg_tick(plasma_buf, pss);
 					tick_plasma_ready = true;
 				}
 
@@ -2540,11 +2630,11 @@ void JE_starShowVGA(void)
 							       (size_t)bg_feedback->h * bg_feedback->pitch);
 							rl_feedback_replay(plasma_work, alpha);
 							if (plasma_work != plasma_buf)
-								expand_frame_to_hi(plasma_work, plasma_buf, pss);
+								expand_frame_to_hi_threaded(plasma_work, plasma_buf, pss);
 							rl_replay_bg(plasma_buf, alpha, pss, split_bg);
 							if (interp_buf != plasma_buf)
 							{
-								expand_frame_to_hi(plasma_buf, interp_buf, rss / pss);
+								expand_frame_to_hi_threaded(plasma_buf, interp_buf, rss / pss);
 								rl_replay_bg_tail(interp_buf, alpha, rss);
 							}
 						}
@@ -2569,8 +2659,7 @@ void JE_starShowVGA(void)
 					{
 						// Expand the static HUD, then redraw its three moving gauges at
 						// supersampled resolution for sub-pixel motion.
-						composite_playfield_hi(interp_buf, vga_hi, rss, true);
-						expand_hud_to_hi(VGAScreenSeg, vga_hi, rss);
+						compose_hi_frame(interp_buf, VGAScreenSeg, vga_hi, rss, true);
 						if (power_gauge_active)
 							draw_power_gauge(vga_hi, rss,
 							                 (float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
@@ -2578,7 +2667,9 @@ void JE_starShowVGA(void)
 						gauge_bars_present(vga_hi, rss, alpha);
 						JE_drawPerfOverlay(vga_hi, rss);
 						note_hi_present(rss);
+						const Uint64 present_start = SDL_GetPerformanceCounter();
 						present_hi(vga_hi);
+						frame_times_present(now, present_start);
 					}
 					else
 					{
@@ -2594,7 +2685,9 @@ void JE_starShowVGA(void)
 						gauge_bars_present(NULL, 1, alpha);
 
 						JE_drawPerfOverlay(VGAScreenSeg, 1);
+						const Uint64 present_start = SDL_GetPerformanceCounter();
 						JE_showVGA();
+						frame_times_present(now, present_start);
 					}
 
 					if (!output_vsync)
@@ -2607,7 +2700,9 @@ void JE_starShowVGA(void)
 			{
 				vga_hi_ref_scale = 0;
 				JE_drawPerfOverlay(VGAScreenSeg, 1);
+				const Uint64 present_start = SDL_GetPerformanceCounter();
 				JE_showVGA();
+				frame_times_present(entry, present_start);
 				service_wait_delay();
 				setDelay(frameCountMax);
 			}
@@ -2632,12 +2727,15 @@ void JE_starShowVGA(void)
 		else
 		{
 			JE_drawPerfOverlay(VGAScreenSeg, 1);
+			const Uint64 present_start = SDL_GetPerformanceCounter();
 			JE_showVGA();
+			frame_times_present(entry, present_start);
 		}
 	}
 
 	quitRequested = false;
 	skipStarShowVGA = false;
+	frame_times.tick_start = SDL_GetPerformanceCounter();
 }
 
 // Expand the bottom-right playfield edge to the HUD by copying a

@@ -11,6 +11,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -691,15 +692,23 @@ static void rl_superpixel_block(SDL_Surface *dst, int x, int y, int scale, Uint8
 
 // Supersampled explosion spark: the same 5-tap pattern as rl_draw_superpixel with
 // each tap a scale x scale block (halo taps one whole 1x pixel = `scale` away).
-static void rl_draw_superpixel_scaled(SDL_Surface *dst, int x, int y, Uint8 z, Uint8 color, Uint8 bright, int scale)
+static void rl_draw_superpixel_band(SDL_Surface *band, int full_h, int x, int y, int y_offset,
+                                    Uint8 z, Uint8 color, Uint8 bright, int scale)
 {
-	if (x < -(scale - 1) || y < -(scale - 1) || x >= dst->w || y >= dst->h)
+	if (x < -(scale - 1) || y < -(scale - 1) || x >= band->w || y >= full_h)
 		return;
-	rl_superpixel_block(dst, x, y, scale, z, color, bright);
-	rl_superpixel_block(dst, x - scale, y, scale, z >> 1, color, bright >> 1);
-	rl_superpixel_block(dst, x + scale, y, scale, z >> 1, color, bright >> 1);
-	rl_superpixel_block(dst, x, y - scale, scale, z >> 1, color, bright >> 1);
-	rl_superpixel_block(dst, x, y + scale, scale, z >> 1, color, bright >> 1);
+	y -= y_offset;
+	rl_superpixel_block(band, x, y, scale, z, color, bright);
+	rl_superpixel_block(band, x - scale, y, scale, z >> 1, color, bright >> 1);
+	rl_superpixel_block(band, x + scale, y, scale, z >> 1, color, bright >> 1);
+	rl_superpixel_block(band, x, y - scale, scale, z >> 1, color, bright >> 1);
+	rl_superpixel_block(band, x, y + scale, scale, z >> 1, color, bright >> 1);
+}
+
+static void rl_draw_superpixel_scaled(SDL_Surface *dst, int x, int y, Uint8 z, Uint8 color,
+                                      Uint8 bright, int scale)
+{
+	rl_draw_superpixel_band(dst, dst->h, x, y, 0, z, color, bright, scale);
 }
 
 // Plot one clipped bar pixel. Alpha blending retains the bar's palette bank and
@@ -998,9 +1007,138 @@ static void rl_current_view(RlTickView *v)
 	v->extra_px3 = endlessScrollExtraPx3;
 }
 
+typedef struct
+{
+	const RenderCmd *c;
+	int x, y;
+	bool to_b;
+} RlBandItem;
+
+static RlBandItem *rl_band_items;
+static size_t rl_band_cap;
+
+typedef struct
+{
+	SDL_Surface *a, *b;
+	size_t first, count;
+	int scale;
+	bool clear_a, clear_b;
+} RlBandJob;
+
+typedef struct
+{
+	int kind;
+	SDL_Surface *dst, *src;
+	int scale;
+} RlFilterJob;
+
+static bool rl_band_reserve(size_t n)
+{
+	if (n <= rl_band_cap)
+		return true;
+	RlBandItem *const grown = realloc(rl_band_items, n * sizeof(*grown));
+	if (grown == NULL)
+		return false;
+	rl_band_items = grown;
+	rl_band_cap = n;
+	return true;
+}
+
+static SDL_Surface rl_band_view(const SDL_Surface *s, int row_begin, int row_end)
+{
+	SDL_Surface band = *s;
+	const int end = MIN(row_end, s->h);
+	band.pixels = (Uint8 *)s->pixels + (size_t)row_begin * s->pitch;
+	band.h = end > row_begin ? end - row_begin : 0;
+	band.clip_rect = (SDL_Rect){ 0, 0, band.w, band.h };
+	return band;
+}
+
+static void rl_band_rows(void *p, int row_begin, int row_end)
+{
+	const RlBandJob *const job = p;
+	SDL_Surface band_a = rl_band_view(job->a, row_begin, row_end);
+	SDL_Surface band_b = job->b != NULL ? rl_band_view(job->b, row_begin, row_end) : band_a;
+	if (job->clear_a)
+		JE_clr256(&band_a);
+	if (job->clear_b)
+		JE_clr256(&band_b);
+
+	for (size_t i = job->first; i < job->first + job->count; ++i)
+	{
+		const RlBandItem *const it = &rl_band_items[i];
+		const RenderCmd *const c = it->c;
+		SDL_Surface *const band = it->to_b ? &band_b : &band_a;
+		const int full_h = it->to_b ? job->b->h : job->a->h;
+		switch (c->kind)
+		{
+		case RC_BG_ROW:
+		case RC_BG_ROW_BLEND:
+			if (job->scale == 1)
+			{
+				rl_draw_cmd(band, c, it->x, it->y - row_begin);
+			}
+			else
+			{
+				const BgRowDraw row = { it->x, it->y, c->map, c->kind == RC_BG_ROW_BLEND,
+				                        c->bg_mirror_w, c->bg_col0 };
+				blit_background_row_scaled_batch(band, &row, 1, row_begin, job->scale);
+			}
+			break;
+		case RC_STAR:
+			draw_starfield_star_band(band, it->x, it->y, c->star_color, job->scale, row_begin);
+			break;
+		case RC_SUPERPIXEL:
+			rl_draw_superpixel_band(band, full_h, it->x, it->y, row_begin, c->sp_z, c->sp_color,
+			                        c->sp_bright, job->scale);
+			break;
+		case RC_FILTER_SCREEN:
+			filter_screen_apply_scaled_band(band, (JE_shortint)c->filt_col, (JE_shortint)it->x,
+			                                job->scale, row_begin);
+			break;
+		default:
+			if (job->scale == 1)
+				rl_draw_cmd(band, c, it->x, it->y - row_begin);
+			else
+				rl_draw_cmd_scaled(band, c, it->x, it->y - row_begin, job->scale);
+			break;
+		}
+	}
+}
+
+static void rl_band_draw(RlBandJob *job, size_t end, int site)
+{
+	job->count = end - job->first;
+	if (job->count != 0 || job->clear_a || job->clear_b)
+		video_rows(site, rl_band_rows, job, job->a->h, job->a->w * job->a->h, NULL);
+	job->first = end;
+	job->clear_a = false;
+	job->clear_b = false;
+}
+
+static void rl_filter_rows(void *p, int sub_first, int sub_last)
+{
+	const RlFilterJob *const job = p;
+	switch (job->kind)
+	{
+	case RC_ICED_BLUR:
+		iced_blur_filter_scaled_subrows(job->dst, job->src, job->scale, sub_first, sub_last);
+		break;
+	case RC_LAVA_FILTER:
+		lava_filter_scaled_subrows(job->dst, job->src, job->scale, sub_first, sub_last);
+		break;
+	case RC_BLUR:
+		blur_filter_scaled_subrows(job->dst, job->src, job->scale, sub_first, sub_last);
+		break;
+	default:
+		water_filter_scaled_subrows(job->dst, job->src, job->scale, sub_first, sub_last);
+		break;
+	}
+}
+
 static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, float alpha,
                              bool apply_residual, bool use_override, bool feedback, rl_phase phase,
-                             int scale, int bg_scale, float bg_inv, bool split_bg)
+                             int scale, int bg_scale, float bg_inv, bool split_bg, int site)
 {
 	const bool was_recording = render_list_recording;
 	render_list_recording = false;  // re-issued blits must not record themselves
@@ -1025,13 +1163,16 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 
 	// B is rebuilt each frame. Foreground and visible tail phases draw straight onto A, so they
 	// skip B.
-	if (B != NULL)
-		JE_clr256(B);
-	if (!feedback && phase == RL_PHASE_ALL)
-		JE_clr256(A);
-
+	bool b_cleared = false;
 	const RenderCmd *const cur = v->cmds;
 	const size_t n = v->count;
+	const bool band = rl_band_reserve(n);
+	const bool clear_a = !feedback && phase == RL_PHASE_ALL;
+	if (clear_a && !band)
+		JE_clr256(A);
+
+	RlBandJob job = { A, B, 0, 0, scale, clear_a, false };
+	size_t band_count = 0;
 	for (size_t i = 0; i < n; ++i)
 	{
 		const RenderCmd *const c = &cur[i];
@@ -1053,9 +1194,19 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 		// In the FG pass, entities draw straight onto the display buffer (the plasma
 		// copy); the B/A ping-pong source only matters while evolving the plasma.
 		SDL_Surface *const src = (c->surface && B != NULL) ? B : A;
+		if (src == B && !b_cleared)
+		{
+			if (band)
+				job.clear_b = true;
+			else
+				JE_clr256(B);
+			b_cleared = true;
+		}
 
 		if (is_filter)
 		{
+			if (band)
+				rl_band_draw(&job, band_count, site);
 			if (scale == 1)
 			{
 				switch (c->kind)
@@ -1065,6 +1216,11 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 				case RC_BLUR:         blur_filter(A, src);      break;
 				default:              water_filter(A, src);     break;  // RC_WATER_FILTER
 				}
+			}
+			else if (band)
+			{
+				RlFilterJob filter = { c->kind, A, src, scale };
+				video_rows(site, rl_filter_rows, &filter, scale, A->w * A->h, NULL);
 			}
 			else
 			{
@@ -1085,7 +1241,9 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 			int bright = c->filt_bright;
 			if (inv != 0.0f && c->filt_dbright != 0)
 				bright -= rl_iround(c->filt_dbright * inv);
-			if (scale == 1)
+			if (band)
+				rl_band_items[band_count++] = (RlBandItem){ c, bright, 0, false };
+			else if (scale == 1)
 				JE_filterScreenApply(A, (JE_shortint)c->filt_col, (JE_shortint)bright);
 			else
 				filter_screen_apply_scaled(A, (JE_shortint)c->filt_col, (JE_shortint)bright, scale);
@@ -1094,6 +1252,8 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 
 		if (c->kind == RC_DARKEN)
 		{
+			if (band)
+				rl_band_draw(&job, band_count, site);
 			const JE_word neat = (JE_word)(c->darken_neat - rl_iround(c->darken_dneat * inv));
 			if (scale == 1)
 				darken_background_apply(src, neat);
@@ -1107,7 +1267,10 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 			// Interpolate the fixed-x star row. Wraps set star_dy to 0 and snap to the top;
 			// supersampling places slow drift on the finer pixel grid.
 			const float sy = c->star_y - c->star_dy * inv;
-			if (scale == 1)
+			if (band)
+				rl_band_items[band_count++] = (RlBandItem){ c, c->star_x * scale,
+				                                            (int)(sy * scale + 0.5f), src == B };
+			else if (scale == 1)
 				draw_starfield_star(src, c->star_x, (int)(sy + 0.5f), c->star_color);
 			else
 				draw_starfield_star_scaled(src, c->star_x * scale, (int)(sy * scale + 0.5f), c->star_color, scale);
@@ -1120,7 +1283,9 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 			// recorded per-tick delta is self-contained; no cross-frame matching).
 			const int sx = c->x * scale - rl_iround(c->sp_dx * inv * scale);
 			const int sy = c->y * scale - rl_iround(c->sp_dy * inv * scale);
-			if (scale == 1)
+			if (band)
+				rl_band_items[band_count++] = (RlBandItem){ c, sx, sy, src == B };
+			else if (scale == 1)
 				rl_draw_superpixel(src, sx, sy, c->sp_z, c->sp_color, c->sp_bright);
 			else
 				rl_draw_superpixel_scaled(src, sx, sy, c->sp_z, c->sp_color, c->sp_bright, scale);
@@ -1238,11 +1403,15 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 				y -= rl_iround(c->dy * inv * scale);
 			}
 		}
-		if (scale == 1)
+		if (band)
+			rl_band_items[band_count++] = (RlBandItem){ c, x, y, src == B };
+		else if (scale == 1)
 			rl_draw_cmd(src, c, x, y);  // backgrounds -> B, entities/filters-out -> A
 		else
 			rl_draw_cmd_scaled(src, c, x, y, scale);
 	}
+	if (band)
+		rl_band_draw(&job, band_count, site);
 
 	VGAScreen = saved;
 	render_list_recording = was_recording;
@@ -1281,7 +1450,7 @@ void rl_replay(SDL_Surface *dst)
 	RlTickView v;
 	rl_current_view(&v);
 	rl_replay_common(dst, &v, 0.0f, 0.0f, false, false, false, RL_PHASE_ALL,
-	                 1, 1, 0.0f, false);  // exact positions (inv=0, alpha=0)
+	                 1, 1, 0.0f, false, VIDEO_ROWS_TICK);  // exact positions (inv=0, alpha=0)
 }
 
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
@@ -1295,7 +1464,7 @@ void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
 	RlTickView v;
 	rl_current_view(&v);
 	rl_replay_common(dst, &v, 1.0f - alpha, alpha, true, true, feedback, RL_PHASE_ALL,
-	                 scale, scale, 1.0f - alpha, false);
+	                 scale, scale, 1.0f - alpha, false, VIDEO_ROWS_REPLAY);
 }
 
 // Feedback pass 1 stops at the final filter; a split tail may use a higher scale.
@@ -1309,7 +1478,15 @@ void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split)
 	rl_current_view(&v);
 	rl_replay_common(dst, &v, 1.0f - alpha, alpha, false, true, true,
 	                 split ? RL_PHASE_BG_HEAD : RL_PHASE_BG,
-	                 scale, scale, 1.0f - alpha, split);
+	                 scale, scale, 1.0f - alpha, split, VIDEO_ROWS_SMOOTHIE);
+}
+
+void rl_replay_bg_tick(SDL_Surface *dst, int scale)
+{
+	RlTickView v;
+	rl_current_view(&v);
+	rl_replay_common(dst, &v, 0.0f, 1.0f, false, true, true, RL_PHASE_BG, scale, scale, 0.0f, false,
+	                 VIDEO_ROWS_TICK);
 }
 
 // Replay the post-filter background tail at the foreground factor before any entities. Keeping it
@@ -1323,7 +1500,7 @@ void rl_replay_bg_tail(SDL_Surface *dst, float alpha, int scale)
 	RlTickView v;
 	rl_current_view(&v);
 	rl_replay_common(dst, &v, 1.0f - alpha, alpha, false, true, false, RL_PHASE_BG_TAIL,
-	                 scale, scale, 1.0f - alpha, true);
+	                 scale, scale, 1.0f - alpha, true, VIDEO_ROWS_SMOOTHIE);
 }
 
 // Draw foreground over the completed feedback surface, then grade and add overlays.
@@ -1342,7 +1519,7 @@ void rl_replay_fg(SDL_Surface *dst, float alpha, int scale,
 	RlTickView v;
 	rl_current_view(&v);
 	rl_replay_common(dst, &v, 1.0f - alpha, alpha, true, true, false, RL_PHASE_FG,
-	                 scale, bg_scale, 1.0f - bg_alpha, split);
+	                 scale, bg_scale, 1.0f - bg_alpha, split, VIDEO_ROWS_SMOOTHIE);
 }
 
 typedef struct
@@ -1373,10 +1550,10 @@ bool rl_feedback_has_memory(void)
 	return false;
 }
 
-static void rl_feedback_apply(SDL_Surface *dst, const RlFeedbackTick *t, float alpha)
+static void rl_feedback_apply(SDL_Surface *dst, const RlFeedbackTick *t, float alpha, int site)
 {
 	rl_replay_common(dst, &t->view, 1.0f - alpha, alpha, false, true, true, RL_PHASE_BG,
-	                 1, 1, 1.0f - alpha, false);
+	                 1, 1, 1.0f - alpha, false, site);
 }
 
 static bool rl_feedback_push(void)
@@ -1424,7 +1601,7 @@ void rl_feedback_trim(SDL_Surface *base, int keep)
 		keep = 0;
 	while (feedback_count > keep)
 	{
-		rl_feedback_apply(base, &feedback_ticks[feedback_first], 1.0f);
+		rl_feedback_apply(base, &feedback_ticks[feedback_first], 1.0f, VIDEO_ROWS_TICK);
 		feedback_first = (feedback_first + 1) % (int)COUNTOF(feedback_ticks);
 		--feedback_count;
 	}
@@ -1438,7 +1615,7 @@ void rl_feedback_replay(SDL_Surface *dst, float alpha)
 		alpha = 1.0f;
 	for (int k = 0; k < feedback_count; ++k)
 		rl_feedback_apply(dst, &feedback_ticks[(feedback_first + k) % (int)COUNTOF(feedback_ticks)],
-		                  alpha);
+		                  alpha, VIDEO_ROWS_SMOOTHIE);
 }
 
 void rl_feedback_commit(SDL_Surface *base, int keep)
@@ -1454,7 +1631,8 @@ void rl_feedback_commit(SDL_Surface *base, int keep)
 	rl_feedback_trim(base, 0);
 	RlTickView v;
 	rl_current_view(&v);
-	rl_replay_common(base, &v, 0.0f, 1.0f, false, true, true, RL_PHASE_BG, 1, 1, 0.0f, false);
+	rl_replay_common(base, &v, 0.0f, 1.0f, false, true, true, RL_PHASE_BG, 1, 1, 0.0f, false,
+	                 VIDEO_ROWS_TICK);
 }
 
 // Append one residual pixel (offset + value). Returns false if growth failed
@@ -1503,6 +1681,9 @@ void rl_deinit(void)
 	res_val = NULL;
 	res_count = 0;
 	res_cap = 0;
+	free(rl_band_items);
+	rl_band_items = NULL;
+	rl_band_cap = 0;
 	for (unsigned i = 0; i < COUNTOF(rl_scratch_b); ++i)
 	{
 		if (rl_scratch_b[i] != NULL)
@@ -1544,6 +1725,25 @@ static void rl_capture_overlay_rects(SDL_Surface *reference)
 	}
 }
 
+static void rl_res_push_diff(const Uint8 *keep, const Uint8 *other, size_t n)
+{
+	size_t i = 0;
+	for (; i + 8 <= n; i += 8)
+	{
+		Uint64 a, b;
+		memcpy(&a, keep + i, 8);
+		memcpy(&b, other + i, 8);
+		if (a == b)
+			continue;
+		for (size_t j = i; j < i + 8; ++j)
+			if (keep[j] != other[j] && !rl_res_push((int)j, keep[j]))
+				return;
+	}
+	for (; i < n; ++i)
+		if (keep[i] != other[i] && !rl_res_push((int)i, keep[i]))
+			return;
+}
+
 void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch)
 {
 	JE_clr256(scratch);
@@ -1553,15 +1753,7 @@ void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch)
 	res_ref_pitch = reference->pitch;
 
 	const size_t n = (size_t)reference->h * reference->pitch;
-	const Uint8 *const ref = (const Uint8 *)reference->pixels;
-	const Uint8 *const sc = (const Uint8 *)scratch->pixels;
-	for (size_t i = 0; i < n; ++i)
-	{
-		if (ref[i] == sc[i])
-			continue;
-		if (!rl_res_push((int)i, ref[i]))
-			break;
-	}
+	rl_res_push_diff((const Uint8 *)reference->pixels, (const Uint8 *)scratch->pixels, n);
 
 	rl_capture_overlay_rects(reference);
 }
@@ -1573,15 +1765,7 @@ void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after)
 	res_ref_pitch = after->pitch;
 
 	const size_t n = (size_t)after->h * after->pitch;
-	const Uint8 *const b = (const Uint8 *)before->pixels;
-	const Uint8 *const a = (const Uint8 *)after->pixels;
-	for (size_t i = 0; i < n; ++i)
-	{
-		if (a[i] == b[i])
-			continue;
-		if (!rl_res_push((int)i, a[i]))
-			break;
-	}
+	rl_res_push_diff((const Uint8 *)after->pixels, (const Uint8 *)before->pixels, n);
 
 	rl_capture_overlay_rects(after);
 }
@@ -1599,4 +1783,96 @@ size_t rl_replay_and_compare(SDL_Surface *scratch, SDL_Surface *reference)
 		if (a[i] != b[i])
 			++mismatch;
 	return mismatch;
+}
+
+bool rl_test_superpixel_bands(char *detail, size_t detailSize)
+{
+	const char *fault = NULL;
+	Uint32 seed = 0x5a5b5c5du;
+	for (int scale = 1; scale <= 4 && fault == NULL; ++scale)
+	{
+		const int w = vga_width * scale, h = vga_height * scale;
+		SDL_Surface *const a = SDL_CreateRGBSurface(0, w, h, 8, 0, 0, 0, 0);
+		SDL_Surface *const b = SDL_CreateRGBSurface(0, w, h, 8, 0, 0, 0, 0);
+		if (a == NULL || b == NULL)
+			fault = "allocation failed";
+
+		for (int trial = 0; trial < 60 && fault == NULL; ++trial)
+		{
+			const size_t bytes = (size_t)a->pitch * (size_t)h;
+			for (size_t i = 0; i < bytes; ++i)
+			{
+				seed = seed * 1664525u + 1013904223u;
+				((Uint8 *)a->pixels)[i] = ((Uint8 *)b->pixels)[i] = (Uint8)(seed >> 24);
+			}
+
+			int cuts[6];
+			seed = seed * 1664525u + 1013904223u;
+			const int bands = 2 + (int)((seed >> 16) % 4);
+			cuts[0] = 0;
+			cuts[bands] = h;
+			for (int k = 1; k < bands; ++k)
+			{
+				seed = seed * 1664525u + 1013904223u;
+				cuts[k] = 1 + (int)((seed >> 8) % (Uint32)(h - 1));
+			}
+			for (int k = 2; k < bands; ++k)
+			{
+				for (int j = k; j > 1 && cuts[j - 1] > cuts[j]; --j)
+				{
+					const int t = cuts[j];
+					cuts[j] = cuts[j - 1];
+					cuts[j - 1] = t;
+				}
+			}
+
+			int sparks[24][5];
+			for (int k = 0; k < 24; ++k)
+			{
+				for (int f = 0; f < 5; ++f)
+				{
+					seed = seed * 1664525u + 1013904223u;
+					sparks[k][f] = (int)(seed >> 9);
+				}
+				sparks[k][0] = sparks[k][0] % (w + 2 * scale) - scale;
+				if (k % 2 == 0)
+				{
+					const int near = cuts[sparks[k][1] % (bands + 1)];
+					sparks[k][1] = near + sparks[k][2] % (2 * scale + 1) - scale;
+				}
+				else
+				{
+					sparks[k][1] = sparks[k][1] % (h + 2 * scale) - scale;
+				}
+			}
+
+			for (int k = 0; k < 24; ++k)
+			{
+				const int x = sparks[k][0], y = sparks[k][1];
+				const Uint8 z = (Uint8)sparks[k][2], color = (Uint8)sparks[k][3];
+				const Uint8 bright = (Uint8)sparks[k][4];
+				if (scale == 1)
+					rl_draw_superpixel(a, x, y, z, color, bright);
+				else
+					rl_draw_superpixel_scaled(a, x, y, z, color, bright, scale);
+			}
+			for (int band = 0; band < bands; ++band)
+			{
+				SDL_Surface view = rl_band_view(b, cuts[band], cuts[band + 1]);
+				for (int k = 0; k < 24; ++k)
+					rl_draw_superpixel_band(&view, h, sparks[k][0], sparks[k][1], cuts[band],
+					                        (Uint8)sparks[k][2], (Uint8)sparks[k][3],
+					                        (Uint8)sparks[k][4], scale);
+			}
+			if (memcmp(a->pixels, b->pixels, bytes) != 0)
+				fault = scale == 1 ? "1x sparks drawn in bands differ from one pass"
+				                   : "supersampled sparks drawn in bands differ from one pass";
+		}
+		SDL_FreeSurface(a);
+		SDL_FreeSurface(b);
+	}
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }

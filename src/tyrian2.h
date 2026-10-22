@@ -29,6 +29,16 @@ void intro_logos(void);
 void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale);
 bool present_overlay_on_last_hi_frame(void);
 
+typedef struct
+{
+	float tick_ms;
+	float draw_ms;
+	float present_ms;
+	float worst_ms;
+} FrameTimes;
+
+void frame_times_get(FrameTimes *times);
+
 #define BOSS_BAR_FULL 254  // the fill value of a boss bar at full health
 
 typedef struct

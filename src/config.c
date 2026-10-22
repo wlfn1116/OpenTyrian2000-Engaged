@@ -744,6 +744,12 @@ bool load_opentyrian_config(void)
 		int smoothie_full = smoothie_full_res ? 1 : 0;
 		config_get_int_option(section, "smoothie_full_res", &smoothie_full);
 		smoothie_full_res = (smoothie_full != 0);
+
+		config_get_int_option(section, "render_threads", &render_threads);
+		if (render_threads < 0)
+			render_threads = 0;
+		else if (render_threads > video_rows_max_threads())
+			render_threads = video_rows_max_threads();
 	}
 
 	section = config_find_section(config, "keyboard", NULL);
@@ -1176,6 +1182,8 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "render_supersample", render_supersample);
 
 	config_set_int_option(section, "smoothie_full_res", smoothie_full_res ? 1 : 0);
+
+	config_set_int_option(section, "render_threads", render_threads);
 
 	section = config_find_or_add_section(config, "keyboard", NULL);
 	if (section == NULL)

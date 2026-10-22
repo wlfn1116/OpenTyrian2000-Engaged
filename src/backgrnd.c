@@ -387,19 +387,20 @@ static inline void blit_expanded_row(Uint8 *dst, const Uint8 *src, int n, bool b
 	}
 }
 
+#define BG_SCALED_ROW_BYTES \
+	((BG_TILE_COUNT + BG_EDGE_TILES) * BG_TILE_W * RENDER_SUPERSAMPLE_LIMIT + sizeof(Swar8))
+
 // Supersampled tile row (render-list replay only; see backgrnd.h). One loop serves
 // both the copy and blend ops; the pixel math matches the 1x blitters above.
-void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale, bool blend, int mirror_w, int col0)
+static void background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale,
+                                  bool blend, int mirror_w, int col0, Uint8 *expanded)
 {
-	static Uint8 expanded[(BG_TILE_COUNT + BG_EDGE_TILES) * BG_TILE_W * RENDER_SUPERSAMPLE_LIMIT
-	                      + sizeof(Swar8)];
-
 	assert(surface->format->BitsPerPixel == 8);
 
 	const int edge_px = bg_edge_px(mirror_w, x, surface->w, scale);
 	const int tile_count = BG_TILE_COUNT + (edge_px > 0 ? 1 : 0);
 	const int row_hi = (BG_TILE_COUNT * BG_TILE_W + edge_px) * scale;
-	if (scale < 1 || row_hi + SWAR8_BYTES > (int)sizeof(expanded))
+	if (scale < 1 || row_hi + SWAR8_BYTES > (int)BG_SCALED_ROW_BYTES)
 	{
 		blit_background_row_scaled_px(surface, x, y, map, scale, blend, mirror_w, col0);
 		return;
@@ -471,6 +472,22 @@ void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map,
 			}
 		}
 	}
+}
+
+void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale,
+                                bool blend, int mirror_w, int col0)
+{
+	static Uint8 expanded[BG_SCALED_ROW_BYTES];
+	background_row_scaled(surface, x, y, map, scale, blend, mirror_w, col0, expanded);
+}
+
+void blit_background_row_scaled_batch(SDL_Surface *surface, const BgRowDraw *rows, size_t count,
+                                      int y_offset, int scale)
+{
+	Uint8 expanded[BG_SCALED_ROW_BYTES];
+	for (size_t i = 0; i < count; ++i)
+		background_row_scaled(surface, rows[i].x, rows[i].y - y_offset, rows[i].map, scale,
+		                      rows[i].blend, rows[i].mirror_w, rows[i].col0, expanded);
 }
 
 static Uint8 **bg_margin_row(Uint8 **next, int m, int width, Uint8 **end)
@@ -784,16 +801,28 @@ void JE_filterScreenApply(SDL_Surface *surface, JE_shortint col, JE_shortint int
 
 // JE_filterScreenApply for an NxN supersampled surface: identical passes over the
 // scaled playfield region.
-void filter_screen_apply_scaled(SDL_Surface *surface, JE_shortint col, JE_shortint int_, int scale)
+void filter_screen_apply_scaled_band(SDL_Surface *band, JE_shortint col, JE_shortint int_,
+                                     int scale, int y_offset)
 {
-	Uint8 *const s = (Uint8 *)surface->pixels + PLAYFIELD_LEFT * scale;
+	const int first = MAX(y_offset, 0);
+	const int last = MIN(y_offset + band->h, 184 * scale);
+	if (last <= first)
+		return;
+
+	Uint8 *const s = (Uint8 *)band->pixels + (first - y_offset) * band->pitch
+	                 + PLAYFIELD_LEFT * scale;
 
 	if (col != -99 && filtrationAvail)
-		filter_hue_rows(s, surface->pitch, PLAYFIELD_WIDTH * scale, 184 * scale,
+		filter_hue_rows(s, band->pitch, PLAYFIELD_WIDTH * scale, last - first,
 		                (Uint8)((unsigned int)col << 4));
 
 	if (int_ != -99 && explosionTransparent)
-		filter_value_rows(s, surface->pitch, PLAYFIELD_WIDTH * scale, 184 * scale, int_);
+		filter_value_rows(s, band->pitch, PLAYFIELD_WIDTH * scale, last - first, int_);
+}
+
+void filter_screen_apply_scaled(SDL_Surface *surface, JE_shortint col, JE_shortint int_, int scale)
+{
+	filter_screen_apply_scaled_band(surface, col, int_, scale, 0);
 }
 
 // Advance fade simulation independently of presentation and rollback re-simulation.
@@ -1035,7 +1064,8 @@ void blur_filter(SDL_Surface *dst, SDL_Surface *src)
 	average_rows(dst->pixels, dst->pitch, src->pixels, src->pitch, vga_width, 184, -1);
 }
 
-static void lava_filter_scaled_px(SDL_Surface *dst, SDL_Surface *src, int scale)
+static void lava_filter_scaled_px(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                  int sub_last)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
@@ -1049,7 +1079,7 @@ static void lava_filter_scaled_px(SDL_Surface *dst, SDL_Surface *src, int scale)
 	for (int y1 = 184; y1 >= 0; --y1)
 	{
 		const int row1 = y1 * vga_width;
-		for (int sub_y = scale - 1; sub_y >= 0; --sub_y)
+		for (int sub_y = sub_last - 1; sub_y >= sub_first; --sub_y)
 		{
 			const int y = y1 * scale + sub_y;
 			Uint8 *const dp = dst_px + y * dst_pitch;
@@ -1123,11 +1153,17 @@ static inline void lava_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, bo
  * buffer. See backgrnd.h for spatial scaling. */
 void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
+	lava_filter_scaled_subrows(dst, src, scale, 0, scale);
+}
+
+void lava_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                int sub_last)
+{
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
 	if (dst->pixels == src->pixels)
 	{
-		lava_filter_scaled_px(dst, src, scale);
+		lava_filter_scaled_px(dst, src, scale, sub_first, sub_last);
 		return;
 	}
 
@@ -1141,7 +1177,7 @@ void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 	for (int y1 = 184; y1 >= 0; --y1)
 	{
 		const int row1 = y1 * vga_width;
-		for (int sub_y = scale - 1; sub_y >= 0; --sub_y)
+		for (int sub_y = sub_last - 1; sub_y >= sub_first; --sub_y)
 		{
 			const int y = y1 * scale + sub_y;
 			Uint8 *const dp = dst_px + y * dst_pitch;
@@ -1207,6 +1243,12 @@ static inline void water_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, U
 
 void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
+	water_filter_scaled_subrows(dst, src, scale, 0, scale);
+}
+
+void water_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                 int sub_last)
+{
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
 	const Uint8 hue = smoothie_data[1] << 4;
@@ -1221,7 +1263,7 @@ void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 	for (int y1 = 184; y1 >= 0; --y1)
 	{
 		const int row1 = y1 * vga_width;
-		for (int sub_y = scale - 1; sub_y >= 0; --sub_y)
+		for (int sub_y = sub_last - 1; sub_y >= sub_first; --sub_y)
 		{
 			const int y = y1 * scale + sub_y;
 			Uint8 *const dp = dst_px + y * dst_pitch;
@@ -1243,22 +1285,41 @@ void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 	}
 }
 
+static void average_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                            int sub_last, int hue)
+{
+	for (int sub = sub_first; sub < sub_last; ++sub)
+		average_rows((Uint8 *)dst->pixels + sub * dst->pitch, dst->pitch * scale,
+		             (const Uint8 *)src->pixels + sub * src->pitch, src->pitch * scale,
+		             vga_width * scale, 184, hue);
+}
+
 void iced_blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
+{
+	iced_blur_filter_scaled_subrows(dst, src, scale, 0, scale);
+}
+
+void iced_blur_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                     int sub_last)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
 	// Average of source and previous-frame destination; hue icy blue.
-	average_rows(dst->pixels, dst->pitch, src->pixels, src->pitch,
-	             vga_width * scale, 184 * scale, 0x80);
+	average_subrows(dst, src, scale, sub_first, sub_last, 0x80);
 }
 
 void blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
+	blur_filter_scaled_subrows(dst, src, scale, 0, scale);
+}
+
+void blur_filter_scaled_subrows(SDL_Surface *dst, SDL_Surface *src, int scale, int sub_first,
+                                int sub_last)
+{
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
 	// Average of source and previous-frame destination; source hue kept.
-	average_rows(dst->pixels, dst->pitch, src->pixels, src->pitch,
-	             vga_width * scale, 184 * scale, -1);
+	average_subrows(dst, src, scale, sub_first, sub_last, -1);
 }
 
 static void spotlight_dark(Uint8 *dst, const Uint8 *src, int n)
@@ -1416,23 +1477,29 @@ static void star_block(SDL_Surface *surface, int x, int y, Uint8 color, int scal
 	}
 }
 
-void draw_starfield_star_scaled(SDL_Surface* surface, int x, int y, Uint8 color, int scale)
+void draw_starfield_star_band(SDL_Surface *band, int x, int y, Uint8 color, int scale, int y_offset)
 {
 	// Same visibility rule as the 1x draw, in HI coordinates. The interpolated row lands on the
 	// 1/scale-pixel grid, so slow stars glide.
-	if (x < 0 || x >= surface->w || y < 0 || y >= STARFIELD_VISIBLE * scale)
+	if (x < 0 || x >= band->w || y < 0 || y >= STARFIELD_VISIBLE * scale)
 		return;
 
-	star_block(surface, x, y, color, scale);
+	y -= y_offset;
+	star_block(band, x, y, color, scale);
 
 	// If star is bright enough, draw the surrounding halo blocks
 	if (color - 4 >= STARFIELD_HUE)
 	{
-		star_block(surface, x + scale, y, color - 4, scale);
-		star_block(surface, x - scale, y, color - 4, scale);
-		star_block(surface, x, y + scale, color - 4, scale);
-		star_block(surface, x, y - scale, color - 4, scale);
+		star_block(band, x + scale, y, color - 4, scale);
+		star_block(band, x - scale, y, color - 4, scale);
+		star_block(band, x, y + scale, color - 4, scale);
+		star_block(band, x, y - scale, color - 4, scale);
 	}
+}
+
+void draw_starfield_star_scaled(SDL_Surface* surface, int x, int y, Uint8 color, int scale)
+{
+	draw_starfield_star_band(surface, x, y, color, scale, 0);
 }
 
 // Optional inclusive bounds for star centers, in surface pixels.

@@ -7774,7 +7774,7 @@ static void JE_drawDebugOverlays(void)
 	}
 }
 
-static Uint32 perfOverlayRowsCalls;
+static Uint32 perfOverlayRowsCalls[VIDEO_ROWS_SITES];
 
 /* Draw the performance overlay last, on the final composited frame. */
 void JE_drawPerfOverlay(SDL_Surface *dst, int scale)
@@ -7800,6 +7800,14 @@ void JE_drawPerfOverlay(SDL_Surface *dst, int scale)
 
 	snprintf(buf, sizeof(buf), "FPS %d (%dms)", current_fps, ms);
 	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+
+	FrameTimes times;
+	frame_times_get(&times);
+	snprintf(buf, sizeof(buf), "TICK %.2f DRAW %.2fms", times.tick_ms, times.draw_ms);
+	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+	snprintf(buf, sizeof(buf), "PRES %.2f MAX %.1fms", times.present_ms, times.worst_ms);
+	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+
 	snprintf(buf, sizeof(buf), "ENEMIES %d", activeEnemies);
 	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
 	snprintf(buf, sizeof(buf), "SHOTS P%d E%d", pShots, eShots);
@@ -7807,33 +7815,52 @@ void JE_drawPerfOverlay(SDL_Surface *dst, int scale)
 	snprintf(buf, sizeof(buf), "ALPHA %d%%", (int)(debug_interp_alpha * 100.0f + 0.5f));
 	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
 
-	VideoRowsStats rows;
-	video_rows_stats(&rows);
-	if (rows.calls == perfOverlayRowsCalls)
-		rows.mode = VIDEO_ROWS_UNUSED;
-	perfOverlayRowsCalls = rows.calls;
-	const char *const rowsPath = rows.site == VIDEO_ROWS_HI ? "HI" : "NATIVE";
-	switch (rows.mode)
+	static const char *const rowsPaths[VIDEO_ROWS_SITES] = {
+		[VIDEO_ROWS_HI] = "HI", [VIDEO_ROWS_FIT] = "NATIVE", [VIDEO_ROWS_REPLAY] = "REPLAY",
+		[VIDEO_ROWS_COMPOSE] = "COMPOSE", [VIDEO_ROWS_SMOOTHIE] = "SMOOTHIE",
+		[VIDEO_ROWS_TICK] = "TICK", [VIDEO_ROWS_FLAT] = "1X",
+	};
+	bool rowsShown = false;
+	for (int site = 0; site < VIDEO_ROWS_SITES; ++site)
 	{
-	case VIDEO_ROWS_UNUSED:
-		snprintf(buf, sizeof(buf), "ROWS UNUSED");
-		break;
-	case VIDEO_ROWS_SMALL:
-		snprintf(buf, sizeof(buf), "ROWS %s 1T SMALL", rowsPath);
-		break;
-	case VIDEO_ROWS_NO_POOL:
-		snprintf(buf, sizeof(buf), "ROWS OFF");
-		break;
-	case VIDEO_ROWS_TUNING:
-		snprintf(buf, sizeof(buf), "ROWS %s TUNING", rowsPath);
-		break;
-	case VIDEO_ROWS_ONE_THREAD:
-	case VIDEO_ROWS_THREADED:
-		snprintf(buf, sizeof(buf), "ROWS %s %dT %.2f/%.2fms", rowsPath,
-		         rows.mode == VIDEO_ROWS_THREADED ? rows.threads : 1, rows.one_ms, rows.many_ms);
-		break;
+		VideoRowsStats rows;
+		video_rows_stats(site, &rows);
+		const bool used = rows.calls != perfOverlayRowsCalls[site];
+		perfOverlayRowsCalls[site] = rows.calls;
+		if (!used)
+			continue;
+
+		switch (rows.mode)
+		{
+		case VIDEO_ROWS_UNUSED:
+			continue;
+		case VIDEO_ROWS_SMALL:
+			snprintf(buf, sizeof(buf), "ROWS %s 1T SMALL", rowsPaths[site]);
+			break;
+		case VIDEO_ROWS_NO_POOL:
+			snprintf(buf, sizeof(buf), "ROWS %s OFF", rowsPaths[site]);
+			break;
+		case VIDEO_ROWS_TUNING:
+			snprintf(buf, sizeof(buf), "ROWS %s TUNING", rowsPaths[site]);
+			break;
+		case VIDEO_ROWS_ONE_THREAD:
+		case VIDEO_ROWS_THREADED:
+			snprintf(buf, sizeof(buf), "ROWS %s %dT %.2f/%.2fms", rowsPaths[site],
+			         rows.mode == VIDEO_ROWS_THREADED ? rows.threads : 1,
+			         rows.one_ms, rows.many_ms);
+			break;
+		case VIDEO_ROWS_FIXED:
+			snprintf(buf, sizeof(buf), "ROWS %s %dT SET", rowsPaths[site], rows.threads);
+			break;
+		}
+		JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+		rowsShown = true;
 	}
-	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+	if (!rowsShown)
+	{
+		snprintf(buf, sizeof(buf), "ROWS UNUSED");
+		JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+	}
 
 	// PRED is prediction lead; RB is rollback rate/depth; DESYNC counts canary mismatches.
 	if (nrb_active())

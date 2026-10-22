@@ -29,6 +29,11 @@ Graphics settings are under **Setup > Graphics**.
 - **Native** follows the fitted output size and costs the most GPU time.
 - **Sub-pixel FX** applies the same treatment to ice, water, and lava. Console
   builds default it off.
+- **Render Threads** sets how many CPU threads draw each frame, including the
+  ice, water and lava effects, with or without Sub-pixel. **Auto** times each
+  choice and keeps the fastest, preferring fewer threads when the gain is small.
+  A number fixes the count, and 1 keeps drawing on one thread. The choices stop
+  at your CPU's thread count, 16 at most; consoles offer up to three.
 - **FPS Cap** accepts a preset or a typed number. Zero means Uncapped. Online
   play requires at least 35.
 

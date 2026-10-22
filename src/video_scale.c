@@ -175,8 +175,7 @@ void nn_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 
 	if (scale == 1)
 	{
-		video_palette_rows(src, src_pitch, dst, dst_pitch, width, height);
-		SDL_UnlockTexture(dst_texture);
+		video_palette_rows(src, src_pitch, dst, dst_pitch, width, height, dst_texture);
 		return;
 	}
 
@@ -435,8 +434,11 @@ bool video_scale_test_nn_rows(char *detail, size_t detailSize)
 	if (src == NULL)
 		fault = "could not wrap the source frame";
 
-	for (int scale = 1; scale <= 2 && fault == NULL; ++scale)
+	const int saved_threads = render_threads;
+	for (int run = 0; run < 3 && fault == NULL; ++run)
 	{
+		const int scale = run < 2 ? 1 : 2;
+		render_threads = run == 1 ? video_rows_max_threads() : 1;
 		const int w = vga_width * scale, h = vga_height * scale;
 		SDL_Surface *const target = SDL_CreateRGBSurface(0, w, h, 32, 0, 0, 0, 0);
 		SDL_Renderer *const renderer = target != NULL ? SDL_CreateSoftwareRenderer(target) : NULL;
@@ -467,8 +469,9 @@ bool video_scale_test_nn_rows(char *detail, size_t detailSize)
 					const Uint8 *const src_row = src_pixels + (size_t)(y / scale) * SRC_PITCH;
 					for (int x = 0; x < w && fault == NULL; ++x)
 						if (row[x] != rgb_palette[src_row[x / scale]])
-							fault = scale == 1 ? "1x scaler rows differ from a direct lookup"
-							                   : "2x scaler rows differ from a direct lookup";
+							fault = run == 0 ? "1x scaler rows differ from a direct lookup"
+							      : run == 1 ? "threaded 1x scaler rows differ from a direct lookup"
+							                 : "2x scaler rows differ from a direct lookup";
 				}
 				SDL_UnlockTexture(texture);
 			}
@@ -478,6 +481,7 @@ bool video_scale_test_nn_rows(char *detail, size_t detailSize)
 			SDL_DestroyRenderer(renderer);
 		SDL_FreeSurface(target);
 	}
+	render_threads = saved_threads;
 
 	SDL_FreeSurface(src);
 	if (fault != NULL && detail != NULL && detailSize != 0)

@@ -202,6 +202,7 @@ void rl_replay(SDL_Surface *dst);
 // Smoothie levels replay feedback backgrounds and foregrounds separately. scale=1 is the
 // classic path; larger values use the supersampled grid.
 void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split);
+void rl_replay_bg_tick(SDL_Surface *dst, int scale);
 void rl_replay_bg_tail(SDL_Surface *dst, float alpha, int scale);
 // bg_scale/bg_alpha are the filtered background's actual spatial and temporal phase. split tells
 // bound entities that layers from the high-resolution tail retain ordinary display phase.
@@ -243,6 +244,7 @@ void rl_set_ship_vel(int player, int vx, int vy);
 // Completeness gate: clear scratch, replay the captured list into it, and return the
 // number of bytes differing from reference (0 = the list fully reproduces the frame).
 size_t rl_replay_and_compare(SDL_Surface *scratch, SDL_Surface *reference);
+bool rl_test_superpixel_bands(char *detail, size_t detailSize);
 
 // Recorder helpers, called from the leaf blit functions when recording.
 void rl_rec_sprite2(int x, int y, Sprite2_array sheet, unsigned int index, RenderCmdKind kind);

@@ -156,6 +156,7 @@ static bool gradient_cache_valid = false;
 static void init_renderer(void);
 static void deinit_renderer(void);
 static void video_rows_shutdown(void);
+static void video_rows_end_frame(void);
 static void init_texture(void);
 static void deinit_texture(void);
 
@@ -869,6 +870,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 	SDL_RenderPresent(main_window_renderer);
 
 	sample_fps();
+	video_rows_end_frame();
 
 	// Save output rect to be used by mouse functions
 	last_output_rect = dst_rect;
@@ -921,8 +923,8 @@ typedef enum
 	VIDEO_ROWS_OFF,
 } VideoRowsState;
 
-#define VIDEO_ROWS_MAX_HELPERS 3
-#define VIDEO_ROWS_MIN_PIXELS  (128 * 1024)
+#define VIDEO_ROWS_MAX_HELPERS 15
+#define VIDEO_ROWS_MIN_PIXELS  (64 * 1024)
 #define VIDEO_ROWS_TUNE_FRAMES 8
 #define VIDEO_ROWS_PROBE_MS    2000
 
@@ -941,25 +943,36 @@ static struct
 	int end[VIDEO_ROWS_MAX_HELPERS];
 } video_rows_pool;
 
+int render_threads = 0;
+
+static const int video_rows_counts[] = { 1, 2, 4, 8, 16 };
+
 typedef struct
 {
 	int pixels;
-	int tune_left;
-	Uint64 best[2];
-	bool threaded;
+	int tune_frame;
+	int candidates;
+	int count[COUNTOF(video_rows_counts) + 1];
+	Uint64 best[COUNTOF(video_rows_counts) + 1];
+	int chosen;
+	Uint32 calls;
+	bool small;
+	bool rounds;
+	bool round_open;
+	int round_candidate;
+	int round_pixels;
+	Uint64 round_spent;
 } VideoRowsSite;
 
-static VideoRowsSite video_rows_sites[VIDEO_ROWS_SITES];
-static const char *const video_rows_site_names[VIDEO_ROWS_SITES] = {
-	"hi-res present", "Native scaler"
+static VideoRowsSite video_rows_sites[VIDEO_ROWS_SITES] = {
+	[VIDEO_ROWS_REPLAY] = { .rounds = true },
+	[VIDEO_ROWS_SMOOTHIE] = { .rounds = true },
+	[VIDEO_ROWS_TICK] = { .rounds = true },
 };
-
-static struct
-{
-	Uint32 calls;
-	int site;
-	bool small;
-} video_rows_last = { 0, -1, false };
+static const char *const video_rows_site_names[VIDEO_ROWS_SITES] = {
+	"hi-res present", "Native scaler", "playfield replay", "hi-res compose", "smoothie layers",
+	"tick replay", "1x present"
+};
 
 static int SDLCALL video_rows_worker(void *arg)
 {
@@ -974,12 +987,12 @@ static int SDLCALL video_rows_worker(void *arg)
 	}
 }
 
-static void video_rows_dispatch(VideoRowsFn fn, void *job, int rows)
+static void video_rows_dispatch(VideoRowsFn fn, void *job, int rows, int helpers)
 {
-	const int bands = video_rows_pool.helpers + 1;
+	const int bands = helpers + 1;
 	video_rows_pool.fn = fn;
 	video_rows_pool.job = job;
-	for (int i = 0; i < video_rows_pool.helpers; ++i)
+	for (int i = 0; i < helpers; ++i)
 	{
 		video_rows_pool.begin[i] = (int)((Sint64)rows * (i + 1) / bands);
 		video_rows_pool.end[i] = (int)((Sint64)rows * (i + 2) / bands);
@@ -988,10 +1001,10 @@ static void video_rows_dispatch(VideoRowsFn fn, void *job, int rows)
 	fn(job, 0, (int)((Sint64)rows / bands));
 }
 
-static void video_rows_run(VideoRowsFn fn, void *job, int rows)
+static void video_rows_run(VideoRowsFn fn, void *job, int rows, int helpers)
 {
-	video_rows_dispatch(fn, job, rows);
-	for (int i = 0; i < video_rows_pool.helpers; ++i)
+	video_rows_dispatch(fn, job, rows, helpers);
+	for (int i = 0; i < helpers; ++i)
 		SDL_SemWait(video_rows_pool.done);
 }
 
@@ -1023,7 +1036,7 @@ static bool video_rows_probe(void)
 	video_rows_probe_rows(&job, 0, PROBE_H);
 	job.dst = dst;
 
-	video_rows_dispatch(video_rows_probe_rows, &job, PROBE_H);
+	video_rows_dispatch(video_rows_probe_rows, &job, PROBE_H, video_rows_pool.helpers);
 	for (int i = 0; i < video_rows_pool.helpers; ++i)
 	{
 		if (SDL_SemWaitTimeout(video_rows_pool.done, VIDEO_ROWS_PROBE_MS) != 0)
@@ -1060,16 +1073,21 @@ static void video_rows_stop(void)
 	video_rows_pool.helpers = 0;
 }
 
-static bool video_rows_start(void)
+int video_rows_max_threads(void)
 {
 #if defined(__vita__) || defined(__SWITCH__)
 	const int cpus = 3;
 #else
 	const int cpus = SDL_GetCPUCount();
 #endif
-	int helpers = cpus - 1;
-	if (helpers > VIDEO_ROWS_MAX_HELPERS)
-		helpers = VIDEO_ROWS_MAX_HELPERS;
+	if (cpus < 1)
+		return 1;
+	return cpus > VIDEO_ROWS_MAX_HELPERS + 1 ? VIDEO_ROWS_MAX_HELPERS + 1 : cpus;
+}
+
+static bool video_rows_start(void)
+{
+	const int helpers = video_rows_max_threads() - 1;
 	if (helpers < 1)
 		return false;
 
@@ -1122,59 +1140,132 @@ static void video_rows_shutdown(void)
 	video_rows_pool.state = VIDEO_ROWS_UNTRIED;
 }
 
+static void video_rows_tune_begin(VideoRowsSite *s, int pixels, int pool_threads)
+{
+	s->pixels = pixels;
+	s->tune_frame = 0;
+	s->chosen = 0;
+	s->candidates = 0;
+	for (size_t i = 0; i < COUNTOF(video_rows_counts) && video_rows_counts[i] <= pool_threads; ++i)
+		s->count[s->candidates++] = video_rows_counts[i];
+	if (s->count[s->candidates - 1] != pool_threads)
+		s->count[s->candidates++] = pool_threads;
+	for (int i = 0; i < s->candidates; ++i)
+		s->best[i] = SDL_MAX_UINT64;
+}
+
+static void video_rows_tune_end(int site, VideoRowsSite *s)
+{
+	int pick = 0;
+	for (int i = 1; i < s->candidates; ++i)
+		if (s->best[i] * 10 < s->best[pick] * 9)
+			pick = i;
+	s->chosen = s->count[pick];
+
+	const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
+	char timings[192];
+	size_t used = 0;
+	for (int i = 0; i < s->candidates && used < sizeof(timings); ++i)
+		used += (size_t)snprintf(timings + used, sizeof(timings) - used, "%s%.3f ms on %d",
+		                         i != 0 ? ", " : "", (double)s->best[i] * ms, s->count[i]);
+	if (s->chosen == 1)
+		fprintf(stderr, "video: %s rows on one thread (%s)\n", video_rows_site_names[site],
+		        timings);
+	else
+		fprintf(stderr, "video: %s rows on %d threads (%s)\n", video_rows_site_names[site],
+		        s->chosen, timings);
+}
+
+static void video_rows_round_begin(VideoRowsSite *s, int pixels, int pool_threads)
+{
+	if (s->candidates == 0)
+		video_rows_tune_begin(s, pixels, pool_threads);
+	s->round_open = true;
+	s->round_pixels = 0;
+	s->round_spent = 0;
+	s->round_candidate = s->chosen != 0 ? -1 : s->tune_frame % s->candidates;
+}
+
+static void video_rows_end_frame(void)
+{
+	for (int site = 0; site < VIDEO_ROWS_SITES; ++site)
+	{
+		VideoRowsSite *const s = &video_rows_sites[site];
+		if (!s->round_open)
+			continue;
+		s->round_open = false;
+		if (s->round_pixels != s->pixels)
+		{
+			video_rows_tune_begin(s, s->round_pixels, video_rows_pool.helpers + 1);
+			continue;
+		}
+		if (s->round_candidate < 0)
+			continue;
+		if (s->round_spent < s->best[s->round_candidate])
+			s->best[s->round_candidate] = s->round_spent;
+		if (++s->tune_frame == s->candidates * VIDEO_ROWS_TUNE_FRAMES)
+			video_rows_tune_end(site, s);
+	}
+}
+
 void video_rows(int site, VideoRowsFn fn, void *job, int rows, int pixels, SDL_Texture *unlock)
 {
 	assert(site >= 0 && site < VIDEO_ROWS_SITES);
-	++video_rows_last.calls;
-	video_rows_last.site = site;
-	video_rows_last.small = pixels < VIDEO_ROWS_MIN_PIXELS || rows < 2;
-	if (video_rows_last.small || !video_rows_ready())
-	{
-		fn(job, 0, rows);
-		if (unlock != NULL)
-			SDL_UnlockTexture(unlock);
-		return;
-	}
-
 	VideoRowsSite *const s = &video_rows_sites[site];
-	if (s->pixels != pixels)
-	{
-		s->pixels = pixels;
-		s->tune_left = 2 * VIDEO_ROWS_TUNE_FRAMES;
-		s->best[0] = s->best[1] = SDL_MAX_UINT64;
-	}
+	++s->calls;
+	s->small = pixels < VIDEO_ROWS_MIN_PIXELS || rows < 2;
 
-	if (s->tune_left == 0)
+	int threads = 1;
+	int candidate = -1;
+	if (!s->small && render_threads != 1 && video_rows_ready())
 	{
-		if (s->threaded)
-			video_rows_run(fn, job, rows);
+		const int pool_threads = video_rows_pool.helpers + 1;
+		if (render_threads > 1)
+		{
+			threads = MIN(render_threads, pool_threads);
+		}
+		else if (s->rounds)
+		{
+			if (!s->round_open)
+				video_rows_round_begin(s, pixels, pool_threads);
+			if (pixels > s->round_pixels)
+				s->round_pixels = pixels;
+			candidate = s->round_candidate;
+			threads = candidate >= 0 ? s->count[candidate] : s->chosen;
+		}
 		else
-			fn(job, 0, rows);
-		if (unlock != NULL)
-			SDL_UnlockTexture(unlock);
-		return;
+		{
+			if (s->pixels != pixels)
+				video_rows_tune_begin(s, pixels, pool_threads);
+			if (s->chosen != 0)
+			{
+				threads = s->chosen;
+			}
+			else
+			{
+				candidate = s->tune_frame % s->candidates;
+				threads = s->count[candidate];
+			}
+		}
 	}
 
-	const int threaded = s->tune_left & 1;
-	const Uint64 start = SDL_GetPerformanceCounter();
-	if (threaded)
-		video_rows_run(fn, job, rows);
-	else
-		fn(job, 0, rows);
+	const Uint64 start = candidate >= 0 ? SDL_GetPerformanceCounter() : 0;
+	video_rows_run(fn, job, rows, MIN(threads, rows) - 1);
 	if (unlock != NULL)
 		SDL_UnlockTexture(unlock);
-	const Uint64 spent = SDL_GetPerformanceCounter() - start;
-	if (spent < s->best[threaded])
-		s->best[threaded] = spent;
+	if (candidate < 0)
+		return;
 
-	if (--s->tune_left == 0)
+	const Uint64 spent = SDL_GetPerformanceCounter() - start;
+	if (s->rounds)
 	{
-		s->threaded = s->best[1] * 10 < s->best[0] * 9;
-		const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
-		fprintf(stderr, "video: %s rows on %s (%.3f ms on one thread, %.3f ms on %d)\n",
-		        video_rows_site_names[site], s->threaded ? "threads" : "one thread",
-		        (double)s->best[0] * ms, (double)s->best[1] * ms, video_rows_pool.helpers + 1);
+		s->round_spent += spent;
+		return;
 	}
+	if (spent < s->best[candidate])
+		s->best[candidate] = spent;
+	if (++s->tune_frame == s->candidates * VIDEO_ROWS_TUNE_FRAMES)
+		video_rows_tune_end(site, s);
 }
 
 bool video_rows_threaded(VideoRowsFn fn, void *job, int rows)
@@ -1184,19 +1275,26 @@ bool video_rows_threaded(VideoRowsFn fn, void *job, int rows)
 		fn(job, 0, rows);
 		return false;
 	}
-	video_rows_run(fn, job, rows);
+	video_rows_run(fn, job, rows, video_rows_pool.helpers);
 	return true;
 }
 
-void video_rows_stats(VideoRowsStats *stats)
+void video_rows_stats(int site, VideoRowsStats *stats)
 {
-	*stats = (VideoRowsStats){ .calls = video_rows_last.calls, .site = video_rows_last.site,
-	                           .mode = VIDEO_ROWS_UNUSED };
-	if (video_rows_last.site < 0)
+	assert(site >= 0 && site < VIDEO_ROWS_SITES);
+	const VideoRowsSite *const s = &video_rows_sites[site];
+	*stats = (VideoRowsStats){ .calls = s->calls, .site = site, .mode = VIDEO_ROWS_UNUSED };
+	if (s->calls == 0)
 		return;
-	if (video_rows_last.small)
+	if (s->small)
 	{
 		stats->mode = VIDEO_ROWS_SMALL;
+		return;
+	}
+	if (render_threads == 1)
+	{
+		stats->mode = VIDEO_ROWS_FIXED;
+		stats->threads = 1;
 		return;
 	}
 	if (video_rows_pool.state != VIDEO_ROWS_READY)
@@ -1205,18 +1303,32 @@ void video_rows_stats(VideoRowsStats *stats)
 		return;
 	}
 
-	const VideoRowsSite *const s = &video_rows_sites[video_rows_last.site];
-	stats->threads = video_rows_pool.helpers + 1;
-	if (s->tune_left != 0)
+	const int pool_threads = video_rows_pool.helpers + 1;
+	if (render_threads > 1)
+	{
+		stats->mode = VIDEO_ROWS_FIXED;
+		stats->threads = MIN(render_threads, pool_threads);
+		return;
+	}
+	if (s->chosen == 0)
 	{
 		stats->mode = VIDEO_ROWS_TUNING;
+		stats->threads = pool_threads;
 		return;
 	}
 
+	int shown = 1;
+	for (int i = 1; i < s->candidates; ++i)
+	{
+		const bool better = s->chosen > 1 ? s->count[i] == s->chosen : s->best[i] < s->best[shown];
+		if (better)
+			shown = i;
+	}
 	const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
-	stats->mode = s->threaded ? VIDEO_ROWS_THREADED : VIDEO_ROWS_ONE_THREAD;
+	stats->mode = s->chosen > 1 ? VIDEO_ROWS_THREADED : VIDEO_ROWS_ONE_THREAD;
+	stats->threads = s->chosen;
 	stats->one_ms = (double)s->best[0] * ms;
-	stats->many_ms = (double)s->best[1] * ms;
+	stats->many_ms = (double)s->best[shown] * ms;
 }
 
 typedef struct
@@ -1262,10 +1374,10 @@ static void palette_rows(void *p, int row_begin, int row_end)
 }
 
 void video_palette_rows(const Uint8 *src, int src_pitch, Uint8 *dst, int dst_pitch, int width,
-                        int rows)
+                        int rows, SDL_Texture *unlock)
 {
-	PaletteRows job = { src, src_pitch, dst, dst_pitch, width };
-	palette_rows(&job, 0, rows);
+	const PaletteRows job = { src, src_pitch, dst, dst_pitch, width };
+	video_rows(VIDEO_ROWS_FLAT, palette_rows, (void *)&job, rows, width * rows, unlock);
 }
 
 void present_hi(SDL_Surface *hi)
@@ -1305,6 +1417,7 @@ void present_hi(SDL_Surface *hi)
 	SDL_RenderPresent(main_window_renderer);
 
 	sample_fps();
+	video_rows_end_frame();
 
 	// Keep the mouse mapping in sync with what is actually on screen.
 	last_output_rect = dst_rect;
@@ -1351,6 +1464,13 @@ bool video_test_parallel_rows(char *detail, size_t detailSize)
 			}
 			if (fault == NULL && memcmp(a, b, (size_t)dst_pitch * h) != 0)
 				fault = "threaded palette rows differ from one thread";
+			for (int t = 2; fault == NULL && threaded && t <= video_rows_pool.helpers + 1; ++t)
+			{
+				memset(b, 0xcd, (size_t)dst_pitch * h);
+				video_rows_run(palette_rows, &many, h, t - 1);
+				if (memcmp(a, b, (size_t)dst_pitch * h) != 0)
+					fault = "palette rows on part of the pool differ from one thread";
+			}
 		}
 		free(src);
 		free(a);
@@ -1380,42 +1500,166 @@ bool video_test_rows_stats(char *detail, size_t detailSize)
 	else
 	{
 		PaletteRows job = { src, W, dst, W * 4, W };
-		VideoRowsStats before, after;
+		VideoRowsStats before, hi_before, after;
 
-		video_rows_stats(&before);
+		video_rows_stats(VIDEO_ROWS_FIT, &before);
+		video_rows_stats(VIDEO_ROWS_HI, &hi_before);
 		video_rows(VIDEO_ROWS_FIT, palette_rows, &job, H - 1, W * (H - 1), NULL);
-		video_rows_stats(&after);
+		video_rows_stats(VIDEO_ROWS_FIT, &after);
 		if (after.calls != before.calls + 1 || after.site != VIDEO_ROWS_FIT
 		    || after.mode != VIDEO_ROWS_SMALL)
 			fault = "a job under the pixel threshold was not reported as small";
 
+		video_rows_stats(VIDEO_ROWS_HI, &after);
+		if (fault == NULL && after.calls != hi_before.calls)
+			fault = "a call to one site changed another site's count";
+
 		video_rows(VIDEO_ROWS_HI, palette_rows, &job, 1, W * H, NULL);
-		video_rows_stats(&after);
-		if (fault == NULL && (after.site != VIDEO_ROWS_HI || after.mode != VIDEO_ROWS_SMALL))
+		video_rows_stats(VIDEO_ROWS_HI, &after);
+		if (fault == NULL && (after.calls != hi_before.calls + 1 || after.mode != VIDEO_ROWS_SMALL))
 			fault = "a one-row job was not reported as small";
 
+		const int saved_threads = render_threads;
+		render_threads = 0;
 		const bool pool = video_rows_ready();
-		const int tune_frames = 2 * VIDEO_ROWS_TUNE_FRAMES;
 		VideoRowsSite *const s = &video_rows_sites[VIDEO_ROWS_HI];
 		s->pixels = 0;
-		for (int i = 1; i <= tune_frames && fault == NULL; ++i)
+		for (int i = 1; fault == NULL; ++i)
 		{
 			video_rows(VIDEO_ROWS_HI, palette_rows, &job, H, W * H, NULL);
-			video_rows_stats(&after);
-			VideoRowsMode want = VIDEO_ROWS_NO_POOL;
-			if (pool && i < tune_frames)
-				want = VIDEO_ROWS_TUNING;
-			else if (pool)
-				want = s->threaded ? VIDEO_ROWS_THREADED : VIDEO_ROWS_ONE_THREAD;
+			video_rows_stats(VIDEO_ROWS_HI, &after);
+			if (!pool)
+			{
+				if (after.mode != VIDEO_ROWS_NO_POOL)
+					fault = "the reported mode does not follow the tuning run";
+				break;
+			}
 
-			if (after.mode != want)
+			const bool last = i == s->candidates * VIDEO_ROWS_TUNE_FRAMES;
+			VideoRowsMode want = VIDEO_ROWS_TUNING;
+			int want_threads = video_rows_pool.helpers + 1;
+			if (last)
+			{
+				want = s->chosen > 1 ? VIDEO_ROWS_THREADED : VIDEO_ROWS_ONE_THREAD;
+				want_threads = s->chosen;
+			}
+			if (after.mode != want || (s->chosen != 0) != last)
 				fault = "the reported mode does not follow the tuning run";
-			else if (pool && after.threads != video_rows_pool.helpers + 1)
-				fault = "the reported thread count does not match the pool";
+			else if (after.threads != want_threads)
+				fault = "the reported thread count does not match the tuning run";
+			if (last)
+				break;
 		}
 		if (fault == NULL && pool && (after.one_ms <= 0.0 || after.many_ms <= 0.0))
 			fault = "a finished tuning run reported no timings";
+
+		render_threads = 2;
+		video_rows(VIDEO_ROWS_HI, palette_rows, &job, H, W * H, NULL);
+		video_rows_stats(VIDEO_ROWS_HI, &after);
+		if (fault == NULL && pool && (after.mode != VIDEO_ROWS_FIXED || after.threads != 2))
+			fault = "a fixed thread count was not reported";
+
+		render_threads = 1;
+		video_rows(VIDEO_ROWS_HI, palette_rows, &job, H, W * H, NULL);
+		video_rows_stats(VIDEO_ROWS_HI, &after);
+		if (fault == NULL && (after.mode != VIDEO_ROWS_FIXED || after.threads != 1))
+			fault = "a one-thread setting was not reported";
+		render_threads = saved_threads;
 	}
+
+	free(src);
+	free(dst);
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+typedef struct
+{
+	PaletteRows rows;
+	SDL_atomic_t bands;
+} CountedRows;
+
+static void counted_rows(void *p, int row_begin, int row_end)
+{
+	CountedRows *const job = p;
+	SDL_AtomicIncRef(&job->bands);
+	palette_rows(&job->rows, row_begin, row_end);
+}
+
+bool video_test_rows_rounds(char *detail, size_t detailSize)
+{
+	enum { W = 512, H = 2 * VIDEO_ROWS_MIN_PIXELS / W };
+	Uint8 *const src = calloc((size_t)W * H, 1);
+	Uint8 *const dst = malloc((size_t)W * H * 4);
+	const char *fault = NULL;
+
+	const int saved_threads = render_threads;
+	render_threads = 0;
+	if (src == NULL || dst == NULL)
+	{
+		fault = "allocation failed";
+	}
+	else if (video_rows_ready())
+	{
+		VideoRowsSite *const s = &video_rows_sites[VIDEO_ROWS_TICK];
+		const VideoRowsSite saved = *s;
+		s->pixels = 0;
+		s->candidates = 0;
+		s->chosen = 0;
+		s->round_open = false;
+
+		CountedRows job = { { src, W, dst, W * 4, W } };
+		VideoRowsStats stats;
+		int measured = 0;
+		for (int round = 0; fault == NULL; ++round)
+		{
+			SDL_AtomicSet(&job.bands, 0);
+			video_rows(VIDEO_ROWS_TICK, counted_rows, &job, H / 2, W * (H / 2), NULL);
+			const int first = SDL_AtomicGet(&job.bands);
+			SDL_AtomicSet(&job.bands, 0);
+			video_rows(VIDEO_ROWS_TICK, counted_rows, &job, H, W * H, NULL);
+			const int second = SDL_AtomicGet(&job.bands);
+			const int candidate = s->round_candidate;
+			video_rows_end_frame();
+			video_rows_stats(VIDEO_ROWS_TICK, &stats);
+
+			if (first != second)
+			{
+				fault = "the calls of one round ran on different thread counts";
+			}
+			else if (round == 0)
+			{
+				if (s->tune_frame != 0 || s->pixels != W * H)
+					fault = "a round with a larger job did not restart the tuning run";
+			}
+			else if (candidate < 0 || first != s->count[candidate])
+			{
+				fault = "a round did not run on its candidate thread count";
+			}
+			else if (++measured == s->candidates * VIDEO_ROWS_TUNE_FRAMES)
+			{
+				if (s->chosen == 0 || stats.mode == VIDEO_ROWS_TUNING)
+					fault = "the tuning run did not finish after its rounds";
+				break;
+			}
+			else if (stats.mode != VIDEO_ROWS_TUNING)
+			{
+				fault = "the tuning run finished before its last round";
+			}
+		}
+
+		if (fault == NULL)
+		{
+			video_rows(VIDEO_ROWS_TICK, counted_rows, &job, H / 2, W * (H / 2), NULL);
+			video_rows_end_frame();
+			video_rows_stats(VIDEO_ROWS_TICK, &stats);
+			if (stats.mode != VIDEO_ROWS_TUNING || s->pixels != W * (H / 2))
+				fault = "a round with a different job size did not restart the tuning run";
+		}
+		*s = saved;
+	}
+	render_threads = saved_threads;
 
 	free(src);
 	free(dst);

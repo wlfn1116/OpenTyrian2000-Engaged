@@ -127,6 +127,46 @@ static const char* getSupersamplePickerItem(size_t i, char* buffer, size_t buffe
 	return supersampleNames[i];
 }
 
+enum { RENDER_THREAD_CHOICES_MAX = 8 };
+
+static size_t renderThreadChoices(int choices[RENDER_THREAD_CHOICES_MAX])
+{
+	const int max = video_rows_max_threads();
+	size_t n = 0;
+	choices[n++] = 0;
+	for (int t = 1; t <= max; t *= 2)
+		choices[n++] = t;
+	if (choices[n - 1] != max)
+		choices[n++] = max;
+	return n;
+}
+
+static size_t renderThreadChoiceIndex(void)
+{
+	int choices[RENDER_THREAD_CHOICES_MAX];
+	const size_t n = renderThreadChoices(choices);
+	for (size_t i = 0; i < n; ++i)
+		if (choices[i] == render_threads)
+			return i;
+	return 0;
+}
+
+static size_t getRenderThreadsPickerItemsCount(void)
+{
+	int choices[RENDER_THREAD_CHOICES_MAX];
+	return renderThreadChoices(choices);
+}
+
+static const char* getRenderThreadsPickerItem(size_t i, char* buffer, size_t bufferSize)
+{
+	int choices[RENDER_THREAD_CHOICES_MAX];
+	renderThreadChoices(choices);
+	if (choices[i] == 0)
+		return "Auto";
+	snprintf(buffer, bufferSize, "%d", choices[i]);
+	return buffer;
+}
+
 /* Enhancement labels are indexed by their stored enum values. Keep each list in
  * enum order. */
 
@@ -266,6 +306,7 @@ typedef enum
 	MENU_ITEM_SMOOTH_MOTION,
 	MENU_ITEM_SUPERSAMPLE,
 	MENU_ITEM_SUBPIXEL_FX,
+	MENU_ITEM_RENDER_THREADS,
 	MENU_ITEM_VSYNC,
 	MENU_ITEM_FPS,
 	MENU_ITEM_SHOW_FPS,
@@ -601,6 +642,14 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 		}
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_RENDER_THREADS:
+	{
+		int choices[RENDER_THREAD_CHOICES_MAX];
+		const int count = (int)renderThreadChoices(choices);
+		render_threads = choices[((int)renderThreadChoiceIndex() + count + dir) % count];
+		JE_playSampleNum(S_CURSOR);
+		break;
+	}
 	case MENU_ITEM_VSYNC:
 		set_vsync(!output_vsync);
 		JE_playSampleNum(S_CURSOR);
@@ -720,6 +769,10 @@ static bool runOptionsMenu(MenuId startMenu)
 #else
 				{ MENU_ITEM_SUBPIXEL_FX, "Sub-pixel FX:", "Ice, water and lava effects at sub-pixel size." },
 #endif
+				{ MENU_ITEM_RENDER_THREADS, "Render Threads:",
+				  "CPU threads for drawing frames; Auto finds the fastest.",
+				  .getPickerItemsCount = getRenderThreadsPickerItemsCount,
+				  .getPickerItem = getRenderThreadsPickerItem },
 				{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
 				{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames; type a number, 0 = uncapped." },
 				{ MENU_ITEM_SHOW_FPS, "Show FPS:", "Show a frame-rate counter while playing." },
@@ -1236,6 +1289,18 @@ static bool runOptionsMenu(MenuId startMenu)
 				else
 					snprintf(buffer, sizeof(buffer), "%s", supersampleNames[render_supersample]);
 				value = buffer;
+				break;
+
+			case MENU_ITEM_RENDER_THREADS:
+				if (render_threads == 0)
+				{
+					value = "Auto";
+				}
+				else
+				{
+					snprintf(buffer, sizeof(buffer), "%d", render_threads);
+					value = buffer;
+				}
 				break;
 
 			case MENU_ITEM_SMOOTH_MOTION:
@@ -1913,6 +1978,14 @@ static bool runOptionsMenu(MenuId startMenu)
 					pickerSelectedIndex = (size_t)render_supersample;
 					break;
 				}
+				case MENU_ITEM_RENDER_THREADS:
+				{
+					JE_playSampleNum(S_CLICK);
+
+					currentPicker = selectedMenuItemId;
+					pickerSelectedIndex = renderThreadChoiceIndex();
+					break;
+				}
 				case MENU_ITEM_MUSIC_DEVICE:
 				{
 					JE_playSampleNum(S_CLICK);
@@ -2203,6 +2276,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					render_supersample = smoothMotion ? (int)pickerSelectedIndex : 1;
 					enforcePlainScalerForSupersample();
+					break;
+				}
+				case MENU_ITEM_RENDER_THREADS:
+				{
+					int choices[RENDER_THREAD_CHOICES_MAX];
+					renderThreadChoices(choices);
+					render_threads = choices[pickerSelectedIndex];
 					break;
 				}
 				case MENU_ITEM_MUSIC_DEVICE:
