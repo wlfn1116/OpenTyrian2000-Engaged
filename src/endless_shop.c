@@ -181,11 +181,6 @@ Sint64 endlessClearBonusForEx(Uint64 mods, int payoutMille)
 	return (total > floor) ? total : floor;  // always a minimum reward
 }
 
-Sint64 endlessClearBonusFor(Uint64 mods)
-{
-	return endlessClearBonusForEx(mods, 0);
-}
-
 // Pay the committed level and modifier set using the calculation shown on the course card.
 static Sint64 endlessClearBonus(void)
 {

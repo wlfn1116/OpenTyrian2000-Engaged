@@ -2871,8 +2871,6 @@ void JE_drawSP(void)
 
 /* Register this file's private simulation state. Public globals are registered
  * centrally in rollback_state.c. */
-#include "rollback.h"
-
 void varz_register_rollback(void)
 {
 	rollback_register("vz.flareFromTwiddle",    &flareFromTwiddle, sizeof(flareFromTwiddle));

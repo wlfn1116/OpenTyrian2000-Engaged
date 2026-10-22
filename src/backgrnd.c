@@ -22,6 +22,7 @@
 #include "opentyr.h"
 #include "render_list.h"
 #include "rollback.h"
+#include "swar.h"
 #include "varz.h"
 #include "video.h"
 
@@ -186,6 +187,87 @@ static int bg_edge_px(int mirror_w, int x, int surface_w, int scale)
 	return room < BG_EDGE_TILES * BG_TILE_W ? room : BG_EDGE_TILES * BG_TILE_W;
 }
 
+static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool blend)
+{
+	for (int i = 0; i < BG_TILE_W; i += SWAR8_BYTES)
+	{
+		const Swar8 s = flip ? swar8_reverse(swar8_read(data + BG_TILE_W - SWAR8_BYTES - i))
+		                     : swar8_read(data + i);
+		const Swar8 d = swar8_read(dst + i);
+		const Swar8 v = blend ? ((s & SWAR8(0xF0)) | swar8_avg_low(s, d)) : s;
+		swar8_write(dst + i, swar8_select(d, v, swar8_nonzero(s)));
+	}
+}
+
+static inline void blit_background_rows(SDL_Surface *surface, int x, int y, Uint8 **map,
+                                        int mirror_w, int col0, bool blend)
+{
+	Uint8 *pixels = (Uint8 *)surface->pixels + (y * surface->pitch) + x,
+	      *pixels_ll = (Uint8 *)surface->pixels,  // lower limit
+	      *pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
+
+	const int edge_px = bg_edge_px(mirror_w, x, surface->w, 1);
+	const int tile_count = BG_TILE_COUNT + (edge_px > 0 ? 1 : 0);
+	const int row_width = BG_TILE_COUNT * BG_TILE_W + edge_px;
+	for (int ty = 0; ty < 28; ty++)
+	{
+		// not drawing on screen yet; skip y
+		if ((pixels + row_width) < pixels_ll)
+		{
+			pixels += surface->pitch;
+			continue;
+		}
+
+		const bool inside = pixels >= pixels_ll && pixels + row_width <= pixels_ul;
+
+		for (int tile = 0; tile < tile_count; tile++)
+		{
+			// the appended edge tile (bg_edge_px) is clipped to the surface width
+			const int tile_w = (tile < BG_TILE_COUNT) ? BG_TILE_W : edge_px;
+
+			bool flip;
+			const Uint8 *data = bg_mirror_tile(map, tile, mirror_w, col0, &flip);
+
+			// no tile; skip tile
+			if (data == NULL)
+			{
+				pixels += tile_w;
+				continue;
+			}
+
+			data += ty * BG_TILE_W;
+
+			if (inside && tile_w == BG_TILE_W)
+			{
+				blit_tile_row(pixels, data, flip, blend);
+				pixels += BG_TILE_W;
+				continue;
+			}
+
+			data += flip ? BG_TILE_W - 1 : 0;
+			const int step = flip ? -1 : 1;
+
+			for (int px = tile_w; px; px--)
+			{
+				if (pixels >= pixels_ul)
+					return;
+				if (pixels >= pixels_ll && *data != 0)
+				{
+					if (blend)
+						*pixels = (*data & 0xf0) | (((*pixels & 0x0f) + (*data & 0x0f)) / 2);
+					else
+						*pixels = *data;
+				}
+
+				pixels++;
+				data += step;
+			}
+		}
+
+		pixels += surface->pitch - row_width;
+	}
+}
+
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0)
 {
 	assert(surface->format->BitsPerPixel == 8);
@@ -197,54 +279,7 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mi
 	if (render_list_recording)
 		rl_rec_bg_row(x, y, map, false, mirror_w, col0);
 
-	Uint8 *pixels = (Uint8 *)surface->pixels + (y * surface->pitch) + x,
-	      *pixels_ll = (Uint8 *)surface->pixels,  // lower limit
-	      *pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
-
-	const int edge_px = bg_edge_px(mirror_w, x, surface->w, 1);
-	const int tile_count = BG_TILE_COUNT + (edge_px > 0 ? 1 : 0);
-	const int row_width = BG_TILE_COUNT * BG_TILE_W + edge_px;
-	for (int y = 0; y < 28; y++)
-	{
-		// not drawing on screen yet; skip y
-		if ((pixels + row_width) < pixels_ll)
-		{
-			pixels += surface->pitch;
-			continue;
-		}
-
-		for (int tile = 0; tile < tile_count; tile++)
-		{
-			// the appended edge tile (bg_edge_px) is clipped to the surface width
-			const int tile_w = (tile < BG_TILE_COUNT) ? BG_TILE_W : edge_px;
-
-			bool flip;
-			Uint8* data = bg_mirror_tile(map, tile, mirror_w, col0, &flip);
-
-			// no tile; skip tile
-			if (data == NULL)
-			{
-				pixels += tile_w;
-				continue;
-			}
-
-			data += y * 24 + (flip ? 23 : 0);
-			const int step = flip ? -1 : 1;
-
-			for (int x = tile_w; x; x--)
-			{
-				if (pixels >= pixels_ul)
-					return;
-				if (pixels >= pixels_ll && *data != 0)
-					*pixels = *data;
-
-				pixels++;
-				data += step;
-			}
-		}
-
-		pixels += surface->pitch - row_width;
-	}
+	blit_background_rows(surface, x, y, map, mirror_w, col0, false);
 }
 
 void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0)
@@ -258,59 +293,11 @@ void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, 
 	if (render_list_recording)
 		rl_rec_bg_row(x, y, map, true, mirror_w, col0);
 
-	Uint8 *pixels = (Uint8 *)surface->pixels + (y * surface->pitch) + x,
-	      *pixels_ll = (Uint8 *)surface->pixels,  // lower limit
-	      *pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
-
-	const int edge_px = bg_edge_px(mirror_w, x, surface->w, 1);
-	const int tile_count = BG_TILE_COUNT + (edge_px > 0 ? 1 : 0);
-	const int row_width = BG_TILE_COUNT * BG_TILE_W + edge_px;
-	for (int y = 0; y < 28; y++)
-	{
-		// not drawing on screen yet; skip y
-		if ((pixels + row_width) < pixels_ll)
-		{
-			pixels += surface->pitch;
-			continue;
-		}
-
-		for (int tile = 0; tile < tile_count; tile++)
-		{
-			// the appended edge tile (bg_edge_px) is clipped to the surface width
-			const int tile_w = (tile < BG_TILE_COUNT) ? BG_TILE_W : edge_px;
-
-			bool flip;
-			Uint8* data = bg_mirror_tile(map, tile, mirror_w, col0, &flip);
-
-			// no tile; skip tile
-			if (data == NULL)
-			{
-				pixels += tile_w;
-				continue;
-			}
-
-			data += y * 24 + (flip ? 23 : 0);
-			const int step = flip ? -1 : 1;
-
-			for (int x = tile_w; x; x--)
-			{
-				if (pixels >= pixels_ul)
-					return;
-				if (pixels >= pixels_ll && *data != 0)
-					*pixels = (*data & 0xf0) | (((*pixels & 0x0f) + (*data & 0x0f)) / 2);
-
-				pixels++;
-				data += step;
-			}
-		}
-
-		pixels += surface->pitch - row_width;
-	}
+	blit_background_rows(surface, x, y, map, mirror_w, col0, true);
 }
 
-// Supersampled tile row (render-list replay only; see backgrnd.h). One loop serves
-// both the copy and blend ops; the pixel math matches the 1x blitters above.
-void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale, bool blend, int mirror_w, int col0)
+static void blit_background_row_scaled_px(SDL_Surface *surface, int x, int y, Uint8 **map,
+                                          int scale, bool blend, int mirror_w, int col0)
 {
 	assert(surface->format->BitsPerPixel == 8);
 
@@ -380,6 +367,112 @@ void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map,
 	}
 }
 
+static inline void blit_expanded_row(Uint8 *dst, const Uint8 *src, int n, bool blend)
+{
+	int i = 0;
+	for (; i + SWAR8_BYTES <= n; i += SWAR8_BYTES)
+	{
+		const Swar8 s = swar8_read(src + i);
+		if (s == 0)
+			continue;
+		const Swar8 d = swar8_read(dst + i);
+		const Swar8 v = blend ? ((s & SWAR8(0xF0)) | swar8_avg_low(s, d)) : s;
+		swar8_write(dst + i, swar8_select(d, v, swar8_nonzero(s)));
+	}
+	for (; i < n; ++i)
+	{
+		const Uint8 d = src[i];
+		if (d != 0)
+			dst[i] = blend ? (Uint8)((d & 0xf0) | (((dst[i] & 0x0f) + (d & 0x0f)) / 2)) : d;
+	}
+}
+
+// Supersampled tile row (render-list replay only; see backgrnd.h). One loop serves
+// both the copy and blend ops; the pixel math matches the 1x blitters above.
+void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale, bool blend, int mirror_w, int col0)
+{
+	static Uint8 expanded[(BG_TILE_COUNT + BG_EDGE_TILES) * BG_TILE_W * RENDER_SUPERSAMPLE_LIMIT
+	                      + sizeof(Swar8)];
+
+	assert(surface->format->BitsPerPixel == 8);
+
+	const int edge_px = bg_edge_px(mirror_w, x, surface->w, scale);
+	const int tile_count = BG_TILE_COUNT + (edge_px > 0 ? 1 : 0);
+	const int row_hi = (BG_TILE_COUNT * BG_TILE_W + edge_px) * scale;
+	if (scale < 1 || row_hi + SWAR8_BYTES > (int)sizeof(expanded))
+	{
+		blit_background_row_scaled_px(surface, x, y, map, scale, blend, mirror_w, col0);
+		return;
+	}
+
+	const int c0 = x < 0 ? -x : 0;
+	const int c1 = (x + row_hi > surface->w) ? surface->w - x : row_hi;
+	if (c1 <= c0)
+		return;
+
+	for (int ty = 0; ty < 28; ++ty)
+	{
+		const int hy = y + ty * scale;
+		if (hy >= surface->h)
+			return;
+
+		const int by0 = hy < 0 ? 0 : hy;
+		const int by1 = (hy + scale > surface->h) ? surface->h : hy + scale;
+		if (by1 <= by0)
+			continue;
+
+		int span_start[BG_TILE_COUNT + BG_EDGE_TILES], span_end[BG_TILE_COUNT + BG_EDGE_TILES];
+		int spans = 0;
+		int col = 0;
+		for (int tile = 0; tile < tile_count; ++tile)
+		{
+			const int tile_w = (tile < BG_TILE_COUNT) ? BG_TILE_W : edge_px;
+			const int span_w = tile_w * scale;
+
+			bool flip;
+			const Uint8 *data = bg_mirror_tile(map, tile, mirror_w, col0, &flip);
+
+			if (data != NULL)
+			{
+				data += ty * BG_TILE_W + (flip ? BG_TILE_W - 1 : 0);
+				const int dstep = flip ? -1 : 1;
+
+				Uint8 *e = expanded + col;
+				for (int sx = 0; sx < tile_w; ++sx, data += dstep, e += scale)
+					for (int k = 0; k < scale; k += SWAR8_BYTES)
+						swar8_write(e + k, SWAR8(*data));
+
+				if (spans > 0 && span_end[spans - 1] == col)
+				{
+					span_end[spans - 1] = col + span_w;
+				}
+				else
+				{
+					span_start[spans] = col;
+					span_end[spans] = col + span_w;
+					++spans;
+				}
+			}
+
+			col += span_w;
+		}
+
+		for (int i = 0; i < spans; ++i)
+		{
+			const int a = MAX(span_start[i], c0);
+			const int b = MIN(span_end[i], c1);
+			if (a >= b)
+				continue;
+
+			for (int yy = by0; yy < by1; ++yy)
+			{
+				Uint8 *const dst = (Uint8 *)surface->pixels + yy * surface->pitch + (x + a);
+				blit_expanded_row(dst, expanded + a, b - a, blend);
+			}
+		}
+	}
+}
+
 static Uint8 **bg_margin_row(Uint8 **next, int m, int width, Uint8 **end)
 {
 	Uint8 **row = next + width * m;
@@ -413,7 +506,7 @@ void bg_publish_layer_1_phase(void)
 
 void draw_background_1(SDL_Surface *surface)
 {
-	SDL_FillRect(surface, NULL, 0);
+	JE_clr256(surface);
 
 	const int tile_count = BG_TILE_COUNT;
 	Uint8** map = (Uint8**)mapYPos + mapXbpPos - tile_count;
@@ -607,92 +700,100 @@ void draw_background_3(SDL_Surface *surface)
 	rl_current_id = 0;
 }
 
+static void filter_hue_rows(Uint8 *s, int pitch, int width, int rows, Uint8 hue)
+{
+	const Swar8 hues = SWAR8(hue);
+
+	for (; rows > 0; --rows, s += pitch)
+	{
+		int x = 0;
+		for (; x + SWAR8_BYTES <= width; x += SWAR8_BYTES)
+			swar8_write(s + x, hues | (swar8_read(s + x) & SWAR8(0x0F)));
+		for (; x < width; ++x)
+			s[x] = (Uint8)(hue | (s[x] & 0x0f));
+	}
+}
+
+static void filter_value_rows(Uint8 *s, int pitch, int width, int rows, int brightness)
+{
+	if (brightness == 0)
+		return;
+
+	int mode;
+	Swar8 addend = 0;
+	if (brightness <= -0xF || brightness > 0x1E)
+	{
+		mode = 0;
+	}
+	else if (brightness < 0)
+	{
+		mode = 1;
+		addend = SWAR8(brightness + 0x10);
+	}
+	else if (brightness <= 0xF)
+	{
+		mode = 2;
+		addend = SWAR8(brightness);
+	}
+	else
+	{
+		mode = 3;
+		addend = SWAR8(brightness - 0xF);
+	}
+
+	for (; rows > 0; --rows, s += pitch)
+	{
+		int x = 0;
+		for (; x + SWAR8_BYTES <= width; x += SWAR8_BYTES)
+		{
+			const Swar8 px = swar8_read(s + x);
+			Swar8 values = 0;
+			if (mode != 0)
+			{
+				const Swar8 sum = (px & SWAR8(0x0F)) + addend;
+				const Swar8 bit = sum & SWAR8(0x10);
+				const Swar8 mask = bit - (bit >> 4);
+				if (mode == 1)
+					values = sum & mask;
+				else if (mode == 2)
+					values = (sum & SWAR8(0x0F)) | mask;
+				else
+					values = SWAR8(0x0F) & ~mask;
+			}
+			swar8_write(s + x, (px & SWAR8(0xF0)) | values);
+		}
+		for (; x < width; ++x)
+		{
+			const unsigned int temp = (s[x] & 0x0f) + brightness;
+			s[x] = (Uint8)((s[x] & 0xf0) | (temp >= 0x1f ? 0 : (temp >= 0x0f ? 0x0f : temp)));
+		}
+	}
+}
+
 // Apply palette bank and brightness directly, without JE_filterScreen's fade side effects.
 void JE_filterScreenApply(SDL_Surface *surface, JE_shortint col, JE_shortint int_)
 {
-	Uint8 *s = NULL; /* screen pointer, 8-bit specific */
-	int x, y;
-	unsigned int temp;
+	Uint8 *const s = (Uint8 *)surface->pixels + PLAYFIELD_LEFT;
 
 	if (col != -99 && filtrationAvail)
-	{
-		s = surface->pixels;
-		s += PLAYFIELD_LEFT;
-
-		col <<= 4;
-
-		for (y = 184; y; y--)
-		{
-			for (x = PLAYFIELD_WIDTH; x; x--)
-			{
-				*s = col | (*s & 0x0f);
-				s++;
-			}
-			s += surface->pitch - PLAYFIELD_WIDTH;
-		}
-	}
+		filter_hue_rows(s, surface->pitch, PLAYFIELD_WIDTH, 184, (Uint8)((unsigned int)col << 4));
 
 	if (int_ != -99 && explosionTransparent)
-	{
-		s = surface->pixels;
-		s += PLAYFIELD_LEFT;
-
-		for (y = 184; y; y--)
-		{
-			for (x = PLAYFIELD_WIDTH; x; x--)
-			{
-				temp = (*s & 0x0f) + int_;
-				*s = (*s & 0xf0) | (temp >= 0x1f ? 0 : (temp >= 0x0f ? 0x0f : temp));
-				s++;
-			}
-			s += surface->pitch - PLAYFIELD_WIDTH;
-		}
-	}
+		filter_value_rows(s, surface->pitch, PLAYFIELD_WIDTH, 184, int_);
 }
 
 // JE_filterScreenApply for an NxN supersampled surface: identical passes over the
 // scaled playfield region.
 void filter_screen_apply_scaled(SDL_Surface *surface, JE_shortint col, JE_shortint int_, int scale)
 {
-	const int left = PLAYFIELD_LEFT * scale;
-	const int width = PLAYFIELD_WIDTH * scale;
-	const int rows = 184 * scale;
-	Uint8 *s = NULL;
-	int x, y;
-	unsigned int temp;
+	Uint8 *const s = (Uint8 *)surface->pixels + PLAYFIELD_LEFT * scale;
 
 	if (col != -99 && filtrationAvail)
-	{
-		s = (Uint8 *)surface->pixels + left;
-
-		col <<= 4;
-
-		for (y = rows; y; y--)
-		{
-			for (x = width; x; x--)
-			{
-				*s = col | (*s & 0x0f);
-				s++;
-			}
-			s += surface->pitch - width;
-		}
-	}
+		filter_hue_rows(s, surface->pitch, PLAYFIELD_WIDTH * scale, 184 * scale,
+		                (Uint8)((unsigned int)col << 4));
 
 	if (int_ != -99 && explosionTransparent)
-	{
-		s = (Uint8 *)surface->pixels + left;
-
-		for (y = rows; y; y--)
-		{
-			for (x = width; x; x--)
-			{
-				temp = (*s & 0x0f) + int_;
-				*s = (*s & 0xf0) | (temp >= 0x1f ? 0 : (temp >= 0x0f ? 0x0f : temp));
-				s++;
-			}
-			s += surface->pitch - width;
-		}
-	}
+		filter_value_rows(s, surface->pitch, PLAYFIELD_WIDTH * scale, 184 * scale, int_);
 }
 
 // Advance fade simulation independently of presentation and rollback re-simulation.
@@ -720,7 +821,7 @@ void JE_checkSmoothies(void)
 	anySmoothies = (processorType > 2 && (smoothies[1-1] || smoothies[2-1])) || (processorType > 1 && (smoothies[3-1] || smoothies[4-1] || smoothies[5-1]));
 }
 
-void lava_filter(SDL_Surface *dst, SDL_Surface *src)
+static void lava_filter_px(SDL_Surface *dst, SDL_Surface *src)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 	
@@ -770,52 +871,148 @@ void lava_filter(SDL_Surface *dst, SDL_Surface *src)
 	}
 }
 
-void water_filter(SDL_Surface *dst, SDL_Surface *src)
+void lava_filter(SDL_Surface *dst, SDL_Surface *src)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
-	
-	Uint8 hue = smoothie_data[1] << 4;
-	
-	/* Reads stay within the top 186 scanlines and the playfield width. */
-	
+
+	if (dst->pixels == src->pixels)
+	{
+		lava_filter_px(dst, src);
+		return;
+	}
+
 	const int dst_pitch = dst->pitch;
-	Uint8 *dst_pixel = (Uint8 *)dst->pixels + (185 * dst_pitch);
-	
-	const Uint8 *src_pixel = (Uint8 *)src->pixels + (185 * src->pitch);
-	
+	const int src_pitch = src->pitch;
+	Uint8 *const dst_px = (Uint8 *)dst->pixels;
+	const Uint8 *const src_px = (const Uint8 *)src->pixels;
+
 	int w = vga_width * 185 - 1;
-	
+
 	for (int y = 185 - 1; y >= 0; --y)
 	{
-		dst_pixel -= (dst_pitch - vga_width);  // in case pitch differs
-		src_pixel -= (src->pitch - vga_width);  // in case pitch differs
+		Uint8 *const drow = dst_px + y * dst_pitch;
+		const Uint8 *const srow = src_px + y * src_pitch;
 
 		for (int x = vga_width; x > 0; )
 		{
-			int waver = abs(((w >> 10) & 0x07) - 4) - 1;
+			const int waver = abs(((w >> 9) & 0x0f) - 8) - 1;
 			w -= 8;
 
-			int count = MIN(8, x);
+			const int count = MIN(8, x);
 			x -= count;
 
-			for (int xi = 0; xi < count; ++xi)
+			if (count == 8 && y >= 2)
 			{
-				--dst_pixel;
-				--src_pixel;
-
-				// pixel is copied from source if not blue
-				// otherwise, value is average of value of source pixel and destination pixel below (with waver)
-				if ((*src_pixel & 0x30) == 0)
+				const Uint8 *const s = srow + x + waver;
+				const Uint8 *const below = drow + dst_pitch + x + waver;
+				const Uint8 *const above = drow - dst_pitch + x + waver;
+				for (int i = 0; i < 8; i += SWAR8_BYTES)
 				{
-					*dst_pixel = *src_pixel;
+					Swar8 v = (swar8_read(s + i) & SWAR8(0x0F)) << 1;
+					v += swar8_read(below + i) & SWAR8(0x0F);
+					v += swar8_read(above + i) & SWAR8(0x0F);
+					swar8_write(drow + x + i, ((v >> 2) & SWAR8(0x0F)) | SWAR8(0x70));
+				}
+				continue;
+			}
+
+			for (int xi = x + count - 1; xi >= x; --xi)
+			{
+				Uint8 *const dp = drow + xi;
+				const Uint8 *const sp = srow + xi;
+				Uint8 value = 0;
+
+				if (sp + waver >= src_px)
+					value += (*(sp + waver) & 0x0f) * 2;
+				value += *(dp + waver + dst_pitch) & 0x0f;
+				if (dp + waver - dst_pitch >= dst_px)
+					value += *(dp + waver - dst_pitch) & 0x0f;
+
+				*dp = (value / 4) | 0x70;
+			}
+		}
+	}
+}
+
+void water_filter(SDL_Surface *dst, SDL_Surface *src)
+{
+	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
+
+	Uint8 hue = smoothie_data[1] << 4;
+	const Swar8 hues = SWAR8(hue);
+
+	/* Reads stay within the top 186 scanlines and the playfield width. */
+
+	const int dst_pitch = dst->pitch;
+	Uint8 *const dst_px = (Uint8 *)dst->pixels;
+	const Uint8 *const src_px = (const Uint8 *)src->pixels;
+
+	int w = vga_width * 185 - 1;
+
+	for (int y = 185 - 1; y >= 0; --y)
+	{
+		Uint8 *const drow = dst_px + y * dst_pitch;
+		const Uint8 *const srow = src_px + y * src->pitch;
+
+		for (int x = vga_width; x > 0; )
+		{
+			const int waver = abs(((w >> 10) & 0x07) - 4) - 1;
+			w -= 8;
+
+			const int count = MIN(8, x);
+			x -= count;
+
+			// pixel is copied from source if not blue
+			// otherwise, value is average of value of source pixel and destination pixel below (with waver)
+			if (count == 8)
+			{
+				const Uint8 *const below = drow + dst_pitch + x + waver;
+				for (int i = 0; i < 8; i += SWAR8_BYTES)
+				{
+					const Swar8 s = swar8_read(srow + x + i);
+					const Swar8 water = hues | swar8_avg_low(s, swar8_read(below + i));
+					const Swar8 blue = swar8_nonzero(s & SWAR8(0x30));
+					swar8_write(drow + x + i, swar8_select(s, water, blue));
+				}
+				continue;
+			}
+
+			for (int xi = x + count - 1; xi >= x; --xi)
+			{
+				const Uint8 s = srow[xi];
+				if ((s & 0x30) == 0)
+				{
+					drow[xi] = s;
 				}
 				else
 				{
-					Uint8 value = *src_pixel & 0x0f;
-					value += *(dst_pixel + waver + dst_pitch) & 0x0f;
-					*dst_pixel = (value / 2) | hue;
+					Uint8 value = s & 0x0f;
+					value += drow[xi + waver + dst_pitch] & 0x0f;
+					drow[xi] = (value / 2) | hue;
 				}
 			}
+		}
+	}
+}
+
+static void average_rows(Uint8 *dst, int dst_pitch, const Uint8 *src, int src_pitch,
+                         int width, int rows, int hue)
+{
+	const Swar8 hues = SWAR8(hue < 0 ? 0 : hue);
+
+	for (; rows > 0; --rows, dst += dst_pitch, src += src_pitch)
+	{
+		int x = 0;
+		for (; x + SWAR8_BYTES <= width; x += SWAR8_BYTES)
+		{
+			const Swar8 s = swar8_read(src + x);
+			const Swar8 h = hue < 0 ? (s & SWAR8(0xF0)) : hues;
+			swar8_write(dst + x, h | swar8_avg_low(s, swar8_read(dst + x)));
+		}
+		for (; x < width; ++x)
+		{
+			const Uint8 value = (src[x] & 0x0f) + (dst[x] & 0x0f);
+			dst[x] = (Uint8)((value / 2) | (hue < 0 ? (src[x] & 0xf0) : hue));
 		}
 	}
 }
@@ -823,58 +1020,22 @@ void water_filter(SDL_Surface *dst, SDL_Surface *src)
 void iced_blur_filter(SDL_Surface *dst, SDL_Surface *src)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
-	
-	Uint8 *dst_pixel = dst->pixels;
-	const Uint8 *src_pixel = src->pixels;
-	
-	for (int y = 0; y < 184; ++y)
-	{
-		for (int x = 0; x < vga_width; ++x)
-		{
-			// value is average value of source pixel and destination pixel
-			// hue is icy blue
-			
-			const Uint8 value = (*src_pixel & 0x0f) + (*dst_pixel & 0x0f);
-			*dst_pixel = (value / 2) | 0x80;
-			
-			++dst_pixel;
-			++src_pixel;
-		}
-		
-		dst_pixel += (dst->pitch - vga_width);  // in case pitch differs
-		src_pixel += (src->pitch - vga_width);  // in case pitch differs
-	}
+
+	// value is average value of source pixel and destination pixel
+	// hue is icy blue
+	average_rows(dst->pixels, dst->pitch, src->pixels, src->pitch, vga_width, 184, 0x80);
 }
 
 void blur_filter(SDL_Surface *dst, SDL_Surface *src)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
-	
-	Uint8 *dst_pixel = dst->pixels;
-	const Uint8 *src_pixel = src->pixels;
-	
-	for (int y = 0; y < 184; ++y)
-	{
-		for (int x = 0; x < vga_width; ++x)
-		{
-			// value is average value of source pixel and destination pixel
-			// hue is source pixel hue
-			
-			const Uint8 value = (*src_pixel & 0x0f) + (*dst_pixel & 0x0f);
-			*dst_pixel = (value / 2) | (*src_pixel & 0xf0);
-			
-			++dst_pixel;
-			++src_pixel;
-		}
-		
-		dst_pixel += (dst->pitch - vga_width);  // in case pitch differs
-		src_pixel += (src->pitch - vga_width);  // in case pitch differs
-	}
+
+	// value is average value of source pixel and destination pixel
+	// hue is source pixel hue
+	average_rows(dst->pixels, dst->pitch, src->pixels, src->pitch, vga_width, 184, -1);
 }
 
-/* Supersampled smoothie filters preserve the 1x math and scan order on an NxN
- * buffer. See backgrnd.h for spatial scaling. */
-void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
+static void lava_filter_scaled_px(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
@@ -921,6 +1082,129 @@ void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 	}
 }
 
+static inline void lava_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, bool above, int W,
+                                    int waver, int x0, int x1)
+{
+	int ia = MAX(x0, -waver), ib = MIN(x1, W - waver);
+	if (ib < ia)
+		ia = ib = x1;
+
+	for (int x = x0; x < x1; )
+	{
+		if (x >= ia && x + SWAR8_BYTES <= ib)
+		{
+			const Uint8 *const s = sp + x + waver;
+			Swar8 v = (swar8_read(s) & SWAR8(0x0F)) << 1;
+			v += swar8_read(dp + x + waver + row_step) & SWAR8(0x0F);
+			if (above)
+				v += swar8_read(dp + x + waver - row_step) & SWAR8(0x0F);
+			swar8_write(dp + x, ((v >> 2) & SWAR8(0x0F)) | SWAR8(0x70));
+			x += SWAR8_BYTES;
+			continue;
+		}
+
+		int xs = x + waver;
+		if (xs < 0)
+			xs = 0;
+		else if (xs >= W)
+			xs = W - 1;
+
+		int value = (sp[xs] & 0x0f) * 2;
+		value += dp[xs + row_step] & 0x0f;
+		if (above)
+			value += dp[xs - row_step] & 0x0f;
+
+		dp[x] = (Uint8)((value / 4) | 0x70);
+		++x;
+	}
+}
+
+/* Supersampled smoothie filters preserve the 1x math and scan order on an NxN
+ * buffer. See backgrnd.h for spatial scaling. */
+void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
+{
+	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
+
+	if (dst->pixels == src->pixels)
+	{
+		lava_filter_scaled_px(dst, src, scale);
+		return;
+	}
+
+	const int W = vga_width * scale;
+	const int dst_pitch = dst->pitch;
+	const int src_pitch = src->pitch;
+	const int row_step = dst_pitch * scale;
+	Uint8 *const dst_px = (Uint8 *)dst->pixels;
+	const Uint8 *const src_px = (const Uint8 *)src->pixels;
+
+	for (int y1 = 184; y1 >= 0; --y1)
+	{
+		const int row1 = y1 * vga_width;
+		for (int sub_y = scale - 1; sub_y >= 0; --sub_y)
+		{
+			const int y = y1 * scale + sub_y;
+			Uint8 *const dp = dst_px + y * dst_pitch;
+			const Uint8 *const sp = src_px + y * src_pitch;
+
+			for (int x1_end = vga_width; x1_end > 0; )
+			{
+				const int w_last = row1 + x1_end - 1;
+				int x1_start = (w_last & ~511) - row1;
+				if (x1_start < 0)
+					x1_start = 0;
+
+				const int waver = (abs(((w_last >> 9) & 0x0f) - 8) - 1) * scale;
+				lava_span_scaled(dp, sp, row_step, y >= scale, W, waver,
+				                 x1_start * scale, x1_end * scale);
+				x1_end = x1_start;
+			}
+		}
+	}
+}
+
+static inline void water_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, Uint8 hue, int W,
+                                     int waver, int x0, int x1)
+{
+	const Swar8 hues = SWAR8(hue);
+
+	int ia = MAX(x0, -waver), ib = MIN(x1, W - waver);
+	if (ib < ia)
+		ia = ib = x1;
+
+	for (int x = x0; x < x1; )
+	{
+		if (x >= ia && x + SWAR8_BYTES <= ib)
+		{
+			const Swar8 s = swar8_read(sp + x);
+			const Swar8 water = hues | swar8_avg_low(s, swar8_read(dp + x + waver + row_step));
+			const Swar8 blue = swar8_nonzero(s & SWAR8(0x30));
+			swar8_write(dp + x, swar8_select(s, water, blue));
+			x += SWAR8_BYTES;
+			continue;
+		}
+
+		const Uint8 s = sp[x];
+		if ((s & 0x30) == 0)
+		{
+			dp[x] = s;
+		}
+		else
+		{
+			int xs = x + waver;
+			if (xs < 0)
+				xs = 0;
+			else if (xs >= W)
+				xs = W - 1;
+
+			Uint8 value = s & 0x0f;
+			value += dp[xs + row_step] & 0x0f;
+			dp[x] = (Uint8)((value / 2) | hue);
+		}
+		++x;
+	}
+}
+
 void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
@@ -943,30 +1227,17 @@ void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 			Uint8 *const dp = dst_px + y * dst_pitch;
 			const Uint8 *const sp = src_px + y * src_pitch;
 
-			for (int x1 = vga_width - 1; x1 >= 0; --x1)
+			for (int x1_end = vga_width; x1_end > 0; )
 			{
-				const int w1 = row1 + x1;
-				const int waver = (abs(((w1 >> 10) & 0x07) - 4) - 1) * scale;
+				const int w_last = row1 + x1_end - 1;
+				int x1_start = (w_last & ~1023) - row1;
+				if (x1_start < 0)
+					x1_start = 0;
 
-				for (int sub_x = scale - 1; sub_x >= 0; --sub_x)
-				{
-					const int x = x1 * scale + sub_x;
-					if ((sp[x] & 0x30) == 0)
-					{
-						dp[x] = sp[x];
-						continue;
-					}
-
-					int xs = x + waver;
-					if (xs < 0)
-						xs = 0;
-					else if (xs >= W)
-						xs = W - 1;
-
-					Uint8 value = sp[x] & 0x0f;
-					value += dp[xs + row_step] & 0x0f;
-					dp[x] = (Uint8)((value / 2) | hue);
-				}
+				const int waver = (abs(((w_last >> 10) & 0x07) - 4) - 1) * scale;
+				water_span_scaled(dp, sp, row_step, hue, W, waver,
+				                  x1_start * scale, x1_end * scale);
+				x1_end = x1_start;
 			}
 		}
 	}
@@ -976,54 +1247,83 @@ void iced_blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
-	const int W = vga_width * scale;
-	const int H = 184 * scale;
-
-	Uint8 *dst_pixel = dst->pixels;
-	const Uint8 *src_pixel = src->pixels;
-
-	for (int y = 0; y < H; ++y)
-	{
-		for (int x = 0; x < W; ++x)
-		{
-			// Average of source and previous-frame destination; hue icy blue.
-			const Uint8 value = (*src_pixel & 0x0f) + (*dst_pixel & 0x0f);
-			*dst_pixel = (value / 2) | 0x80;
-
-			++dst_pixel;
-			++src_pixel;
-		}
-
-		dst_pixel += (dst->pitch - W);
-		src_pixel += (src->pitch - W);
-	}
+	// Average of source and previous-frame destination; hue icy blue.
+	average_rows(dst->pixels, dst->pitch, src->pixels, src->pitch,
+	             vga_width * scale, 184 * scale, 0x80);
 }
 
 void blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
-	const int W = vga_width * scale;
-	const int H = 184 * scale;
+	// Average of source and previous-frame destination; source hue kept.
+	average_rows(dst->pixels, dst->pitch, src->pixels, src->pitch,
+	             vga_width * scale, 184 * scale, -1);
+}
 
-	Uint8 *dst_pixel = dst->pixels;
-	const Uint8 *src_pixel = src->pixels;
-
-	for (int y = 0; y < H; ++y)
+static void spotlight_dark(Uint8 *dst, const Uint8 *src, int n)
+{
+	int i = 0;
+	for (; i + SWAR8_BYTES <= n; i += SWAR8_BYTES)
 	{
-		for (int x = 0; x < W; ++x)
-		{
-			// Average of source and previous-frame destination; source hue kept.
-			const Uint8 value = (*src_pixel & 0x0f) + (*dst_pixel & 0x0f);
-			*dst_pixel = (value / 2) | (*src_pixel & 0xf0);
+		const Swar8 v = swar8_read(src + i);
+		swar8_write(dst + i, (v & SWAR8(0xF0)) | ((v >> 2) & SWAR8(0x03)));
+	}
+	for (; i < n; ++i)
+		dst[i] = (Uint8)((src[i] & 0xf0) | ((src[i] & 0x0f) >> 2));
+}
 
-			++dst_pixel;
-			++src_pixel;
+void spotlight_filter_row(Uint8 *dst, const Uint8 *src, int width, int y, int lightx, int lighty,
+                          int band, int scale)
+{
+	if (lighty > y)
+	{
+		spotlight_dark(dst, src, width);
+		return;
+	}
+
+	const int reach = y - lighty;
+	int xa = lightx + reach + band;
+	int xb = lightx - reach - band;
+	if (xa > width)
+		xa = width;
+	if (xb < 1)
+		xb = 1;
+	if (xa < xb)
+	{
+		spotlight_dark(dst, src, width);
+		return;
+	}
+
+	const int ca = width - xa;
+	const int cb = width - xb;
+	spotlight_dark(dst, src, ca);
+
+	for (int c = ca; c <= cb; )
+	{
+		const int x = width - c;
+		const int lightdist = abs(lightx - x) + lighty;
+		if (lightdist < y)
+		{
+			int lit_end = width - (lightx - reach + 1);
+			if (lit_end > cb)
+				lit_end = cb;
+			memcpy(dst + c, src + c, (size_t)(lit_end - c + 1));
+			c = lit_end + 1;
+			continue;
 		}
 
-		dst_pixel += (dst->pitch - W);
-		src_pixel += (src->pitch - W);
+		if (lightdist - y <= band)
+		{
+			const int light = (3 * (band - (lightdist - y))) / scale;
+			dst[c] = (Uint8)((src[c] & 0xf0) | (((src[c] & 0x0f) + light) / 4));
+		}
+		else
+			dst[c] = (Uint8)((src[c] & 0xf0) | ((src[c] & 0x0f) >> 2));
+		++c;
 	}
+
+	spotlight_dark(dst + cb + 1, src + cb + 1, width - cb - 1);
 }
 
 /* Background Starfield. Each star is an (x column, float y row) point; only y is

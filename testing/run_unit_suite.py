@@ -15,7 +15,7 @@ def main() -> int:
     parser.add_argument("--exe", type=Path, required=True)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument(
-        "--fixtures", type=Path, default=Path("testing/fixtures/endless")
+        "--fixtures", type=Path, default=Path("testing/fixtures")
     )
     args = parser.parse_args()
 

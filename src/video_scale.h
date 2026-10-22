@@ -48,5 +48,7 @@ bool scaler_is_native(uint index);
 void scaler_set_native_size(int w, int h);
 // Release cached Native-scaler mappings during final video teardown.
 void video_scale_deinit(void);
+bool video_scale_test_fit_rows(char *detail, size_t detailSize);
+bool video_scale_test_nn_rows(char *detail, size_t detailSize);
 
 #endif /* VIDEO_SCALE_H */

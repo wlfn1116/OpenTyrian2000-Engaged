@@ -129,6 +129,74 @@ Destruct leaves open sky between its HUD boxes. Terrain, wall generation,
 collision ceilings, and shot trails must respect that gap. Clamp wall writes to
 `baseMap`; the next struct field is a pointer.
 
+### Frame-row threads
+
+`video_rows` in `video.c` splits a frame's rows between the main thread and a
+pool of helper threads. It serves the `present_hi` palette conversion of
+supersampled frames (`VIDEO_ROWS_HI`) and the Native scaler `nn_fit_32/16`
+(`VIDEO_ROWS_FIT`). Output is the same on any number of threads.
+
+On the Switch, Smooth Motion with the default 4x scaler sends supersampled
+frames through `present_hi`. The Vita boots with the None scaler and never
+supersamples, so its frames reach the pool only when the player picks the
+Native scaler.
+
+- The pool starts with the first job of at least 128K pixels. It uses
+  `SDL_GetCPUCount() - 1` helpers, at most three. Switch and Vita give games
+  three cores, so they count exactly three CPUs and run two helpers.
+- A startup self-test runs a small job through the helpers, which must each
+  finish within two seconds and match a single-threaded result. If the test
+  fails, or not even one helper and its semaphores can be created, every job
+  stays on one thread for the rest of the run. A pool that created only some
+  helpers runs with those.
+- When a helper misses the deadline, all helpers are detached and the
+  semaphores and test buffers stay allocated, so a late helper never touches
+  freed memory.
+- Each path then alternates one and several threads for 16 frames, timing the
+  rows plus `SDL_UnlockTexture`, where OpenGL drivers copy the texture on the
+  CPU. Threads stay on only when their best time is under 90% of the
+  one-thread best. A new pixel count starts a new tuning run.
+- A job finishes before `video_rows` returns, and `deinit_video` joins the
+  helpers. A band function may write only its own rows and must treat
+  everything else as read-only.
+
+Each tuning run ends with one line on stderr:
+
+```text
+video: hi-res present rows on threads (0.197 ms on one thread, 0.062 ms on 4)
+```
+
+The same line with `rows on one thread` means the threads lost the timing.
+`video: frame rows stay on one thread` means the pool did not start.
+
+Linux and macOS show these lines in the terminal that started the game. The
+Windows build has no console; start it from Command Prompt with `2> video.log`
+to keep them. The Switch and Vita builds do not save stderr, so read the
+decision from the debug perf overlay there.
+
+To show the overlay, turn on Debug Mode in Setup > Diagnostics, then pick
+Debug Menu > Perf Overlay from the in-game menu during a level. Its `ROWS`
+line, under `ALPHA`, reads `video_rows_stats` and describes the frame presented
+before it. `HI` names the `present_hi` path and `NATIVE` the Native scaler.
+
+| Line | Meaning |
+| --- | --- |
+| `ROWS HI 4T 0.20/0.06ms` | 4 threads; best one-thread and threaded times |
+| `ROWS HI 1T 0.20/0.25ms` | One thread; the threads lost the timing |
+| `ROWS HI TUNING` | The 16-frame comparison is still running |
+| `ROWS NATIVE 1T SMALL` | One thread; under 128K pixels or one row |
+| `ROWS OFF` | The pool did not start |
+| `ROWS UNUSED` | The last frame skipped both paths, as on a default Vita |
+
+The overlay shows `ROWS UNUSED` when the call count from `video_rows_stats` has
+not moved since its previous draw. That relies on every overlay draw being
+followed by exactly one present.
+
+`qa_test_present_paths` checks both paths pixel by pixel against a direct
+lookup and against one thread, and fails if the pool does not start on a
+multi-core machine. `video_test_rows_stats` drives `video_rows` through a
+tuning run and checks what `video_rows_stats` reports.
+
 ## Endless
 
 ### Module ownership
@@ -350,8 +418,11 @@ Current saves use the named-key format in `opentyrian.sav`:
 Missing or invalid keys use defaults. Unknown keys are ignored. Add a new
 Endless field to both section codecs and the online run codec.
 
-Legacy import runs only when `opentyrian.sav` is absent. It reads `tyrian.sav`,
-binary `endless.sav` versions 3 through 27, and the 28-byte `tyrian.cfg`.
+Import runs only when `opentyrian.sav` is absent. It reads the 2398-byte slot
+block that OpenTyrian, OpenTyrian2000, and DOS Tyrian write, then the Tyrian
+2000 high-score boards when they follow. A `tyrian.sav` from a build of this
+port before `opentyrian.sav` fails the checksums and is skipped. Binary
+`endless.sav` and `tyrian.cfg` are never read.
 
 Persistent tables are append-only. This includes run mode, difficulty, crew
 size, Base Level rule, cash categories, and record marks.
@@ -535,9 +606,11 @@ new epoch each round.
 ### Online saves
 
 Online saves use slots 12 through 22. Slot 22 is the read-only `LAST LEVEL`
-backup. `save_record_pack` and `save_record_unpack` define the 161-byte wire
+backup. `save_record_pack` and `save_record_unpack` define the 162-byte wire
 record. It was 97 bytes through `NET_VERSION` 86; version 87 appended the
-64-byte custom-episode file name.
+64-byte custom-episode file name, and version 94 replaced the packed 32-bit
+dual-ship tag with five bytes: the session kind, two weapon powers, and two
+weapon modes.
 
 A save writes only to the local machine. The peer acknowledgement supplies the
 other outpost half. Preserve player numbers on resume and restore both co-op mode
@@ -577,10 +650,10 @@ time. Later episodes, repeats, and deaths do not replace it.
   container additions.
 - Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
 
-The single-save `OTSV` payload uses version 3. After its fixed header and
-161-byte save record come the Endless bytes, a 16-bit dependency length, and
-the colon-separated dependency string. Version 2 ended after the Endless
-bytes.
+The single-save `OTSV` payload uses version 4. After its fixed header and
+162-byte save record come the Endless bytes, a 16-bit dependency length, and
+the colon-separated dependency string. Version 3 carried a 161-byte record;
+version 2 ended after the Endless bytes.
 
 Custom-level transfer negotiates transfer-kind version 7 and uses `OTCL`
 version 2. Multi-byte envelope fields use network byte order:

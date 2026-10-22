@@ -1545,11 +1545,6 @@ const char *endlessDangerTierEx(Uint64 mods, int baseDanger)
 	return endlessDangerBands[endlessDangerBand(score)].tier;
 }
 
-const char *endlessDangerTier(Uint64 mods)
-{
-	return endlessDangerTierEx(mods, 0);
-}
-
 // Grade level 0 is F, 1..9 map through the ladder, and 10 is the finale.
 // game_menu.c uses the same value to select the rank tint.
 int endlessDangerRankLevelEx(Uint64 mods, int baseDanger)
@@ -1560,20 +1555,11 @@ int endlessDangerRankLevelEx(Uint64 mods, int baseDanger)
 	return 1 + (int)endlessDangerBand(score);   // E .. S+++
 }
 
-int endlessDangerRankLevel(Uint64 mods)
-{
-	return endlessDangerRankLevelEx(mods, 0);
-}
 // Grade 10 belongs only to the finale. Keep this array aligned with endlessRankHue[].
 static const char *const endlessRankName[11] = { "F", "E", "D", "C", "B", "A", "S", "S+", "S++", "S+++", "END" };
 const char *endlessDangerRankEx(Uint64 mods, int baseDanger)
 {
 	return endlessRankName[endlessDangerRankLevelEx(mods, baseDanger)];
-}
-
-const char *endlessDangerRank(Uint64 mods)
-{
-	return endlessDangerRankEx(mods, 0);
 }
 
 // Per-level intrinsic danger.
@@ -1601,12 +1587,4 @@ int endlessLevelPayoutMille(int ep, int file, int difficulty)
 		if (endlessLevelProfiles[i].ep == ep && endlessLevelProfiles[i].file == file)
 			return endlessLevelProfiles[i].payoutMille[difficulty];
 	return 0;
-}
-
-int endlessLevelLengthClass(int ep, int file)
-{
-	for (unsigned i = 0; i < COUNTOF(endlessLevelProfiles); ++i)
-		if (endlessLevelProfiles[i].ep == ep && endlessLevelProfiles[i].file == file)
-			return endlessLevelProfiles[i].lengthClass;
-	return 1;
 }

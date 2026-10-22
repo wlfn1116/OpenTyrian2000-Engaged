@@ -1016,7 +1016,7 @@ static void endlessEnsureLegibleChoice(void)
 // Milestones keep the selected base levels but redeal their modifiers at fixed grades.
 static void endlessDealMilestoneSlate(int milestone)
 {
-	const int lowRank = (milestone == 2) ? 8 : (milestone == 3) ? 6 : 7;  // S++ / S / S+  (see endlessDangerRankLevel)
+	const int lowRank = (milestone == 2) ? 8 : (milestone == 3) ? 6 : 7;  // S++ / S / S+ (endlessDangerRankLevelEx)
 	int lowN = 2 + (int)(endlessRand() % 2);       // minor/plain: 2 or 3 of the lower rung, the rest one higher
 	if (milestone == 2)
 		lowN = 2;                                  // grand: exactly 2 S++ (the roll above is still consumed,
@@ -1301,28 +1301,14 @@ void endlessChartSyncRerolls(uint p, JE_byte rerolls)
 	endlessChartRedeal();
 }
 
-// Older saves lack the file number, so fall back to the first safe section match.
-bool endlessResolveCourseFile(int ep, JE_byte sec, JE_byte requestedFile, JE_byte *resolvedFile)
+bool endlessCourseFileValid(int ep, JE_byte sec, JE_byte file)
 {
 	JE_byte secs[64], files[64];
 	const uint n = JE_getLevelSections(ep, secs, files, COUNTOF(secs));
-	JE_byte firstMatch = 0;
 	for (uint i = 0; i < n; ++i)
-	{
-		if (secs[i] != sec)
-			continue;
-		if (firstMatch == 0)
-			firstMatch = files[i];
-		if (requestedFile != 0 && files[i] == requestedFile)
-		{
-			*resolvedFile = files[i];
+		if (file != 0 && secs[i] == sec && files[i] == file)
 			return true;
-		}
-	}
-	if (firstMatch == 0)
-		return false;
-	*resolvedFile = firstMatch;
-	return true;
+	return false;
 }
 
 int endlessCourseCount(void)
@@ -1469,13 +1455,8 @@ JE_byte endlessSelectCourse(int i)
 	if (i < 0 || i >= endlessCourseCnt)
 		i = 0;
 
-	// Substitute a safe level if a legacy or hand-edited record names an invalid section.
-	JE_byte resolvedFile;
-	if (endlessResolveCourseFile(endlessCourseEp[i], endlessCourseSec[i], endlessCourseFile[i], &resolvedFile))
-	{
-		endlessCourseFile[i] = resolvedFile;
-	}
-	else
+	// Substitute a safe level if a hand-edited record names an invalid section.
+	if (!endlessCourseFileValid(endlessCourseEp[i], endlessCourseSec[i], endlessCourseFile[i]))
 	{
 		int fallbackEp;
 		JE_byte fallbackSec, fallbackFile;

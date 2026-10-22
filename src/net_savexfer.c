@@ -51,7 +51,7 @@
 #define SAVE_XFER_PORT   1332
 
 // Transfer kinds have independent protocol versions.
-#define SAVE_XFER_VERSION              3
+#define SAVE_XFER_VERSION              4
 #define CUSTOM_XFER_TRANSPORT_VERSION  2
 #define ALL_XFER_TRANSPORT_VERSION     3
 #define SHIPS_XFER_TRANSPORT_VERSION   4
@@ -352,8 +352,6 @@ save_xfer_pending;
 
 // Remember the last typed address for this process.
 static char save_xfer_address[64];
-
-bool saveXferAvailable(void) { return true; }
 
 static void saveXferLog(const char *what, const char *detail)
 {
@@ -777,7 +775,7 @@ static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 	// Container parts follow the envelope and are applied additively.
 	xfer_level_parts_pending = levelParts;
 
-	// Weapon adoption writes its library and the active design and toggle in opentyrian.cfg.
+	// Weapon adoption writes its library and the toggle in opentyrian.cfg.
 	return !(parts & CX_PART_WEAPONS) ||
 	       (customWeaponLibrarySave() && save_opentyrian_config());
 }
@@ -2022,7 +2020,7 @@ void qa_test_save_transfer(void)
 		         "...nor one that carries no broadcast");
 	}
 
-	qa_check(SX_ENDLESS == 173 && SXR_LEN == 45 && SXC_HDR == 12,
+	qa_check(SX_ENDLESS == 174 && SXR_LEN == 45 && SXC_HDR == 12,
 	         "save-transfer wire offsets retain their protocol widths");
 	qa_check(CX_DATA_V2 == 16 && CX_DATA_V3 == 20 &&
 	         xferPacketType(XFER_CUSTOM, PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK,
@@ -2417,7 +2415,6 @@ void qa_test_save_transfer(void)
 
 #else  /* !WITH_NETWORK */
 
-bool saveXferAvailable(void) { return false; }
 void saveXferUpload(JE_byte slot) { (void)slot; }
 bool saveXferDownload(void) { return false; }
 void savesXferUpload(void) { }

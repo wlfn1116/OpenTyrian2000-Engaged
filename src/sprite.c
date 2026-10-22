@@ -1954,6 +1954,15 @@ static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Ui
 		x1 = surface->w;
 	if (y1 > surface->h)
 		y1 = surface->h;
+	if (x1 <= x0)
+		return;
+
+	if (op == BLIT2_COPY)
+	{
+		for (int yy = y0; yy < y1; ++yy)
+			memset((Uint8 *)surface->pixels + yy * surface->pitch + x0, d, (size_t)(x1 - x0));
+		return;
+	}
 
 	for (int yy = y0; yy < y1; ++yy)
 	{

@@ -155,6 +155,7 @@ static bool gradient_cache_valid = false;
 
 static void init_renderer(void);
 static void deinit_renderer(void);
+static void video_rows_shutdown(void);
 static void init_texture(void);
 static void deinit_texture(void);
 
@@ -249,6 +250,7 @@ void init_video(void)
 
 void deinit_video(void)
 {
+	video_rows_shutdown();
 	deinit_texture();
 	deinit_renderer();
 	video_scale_deinit();
@@ -541,7 +543,26 @@ bool set_scaling_mode_by_name(const char *name)
 
 void JE_clr256(SDL_Surface *screen)
 {
-	SDL_FillRect(screen, NULL, 0);
+	if (screen == NULL || SDL_MUSTLOCK(screen) || screen->format->BitsPerPixel < 8)
+	{
+		SDL_FillRect(screen, NULL, 0);
+		return;
+	}
+
+	const SDL_Rect clip = screen->clip_rect;
+	if (clip.w <= 0 || clip.h <= 0)
+		return;
+
+	const size_t bpp = screen->format->BytesPerPixel;
+	const size_t row_bytes = (size_t)clip.w * bpp;
+	Uint8 *row = (Uint8 *)screen->pixels + (size_t)clip.y * screen->pitch + (size_t)clip.x * bpp;
+	if (row_bytes == (size_t)screen->pitch)
+	{
+		memset(row, 0, row_bytes * clip.h);
+		return;
+	}
+	for (int y = 0; y < clip.h; ++y, row += screen->pitch)
+		memset(row, 0, row_bytes);
 }
 
 SDL_Surface *video_compose_frame(void)
@@ -893,6 +914,360 @@ static bool ensure_hi_texture(int w, int h)
 	return true;
 }
 
+typedef enum
+{
+	VIDEO_ROWS_UNTRIED,
+	VIDEO_ROWS_READY,
+	VIDEO_ROWS_OFF,
+} VideoRowsState;
+
+#define VIDEO_ROWS_MAX_HELPERS 3
+#define VIDEO_ROWS_MIN_PIXELS  (128 * 1024)
+#define VIDEO_ROWS_TUNE_FRAMES 8
+#define VIDEO_ROWS_PROBE_MS    2000
+
+static struct
+{
+	VideoRowsState state;
+	int helpers;
+	bool stuck;
+	SDL_Thread *thread[VIDEO_ROWS_MAX_HELPERS];
+	SDL_sem *go[VIDEO_ROWS_MAX_HELPERS];
+	SDL_sem *done;
+	SDL_atomic_t quit;
+	VideoRowsFn fn;
+	void *job;
+	int begin[VIDEO_ROWS_MAX_HELPERS];
+	int end[VIDEO_ROWS_MAX_HELPERS];
+} video_rows_pool;
+
+typedef struct
+{
+	int pixels;
+	int tune_left;
+	Uint64 best[2];
+	bool threaded;
+} VideoRowsSite;
+
+static VideoRowsSite video_rows_sites[VIDEO_ROWS_SITES];
+static const char *const video_rows_site_names[VIDEO_ROWS_SITES] = {
+	"hi-res present", "Native scaler"
+};
+
+static struct
+{
+	Uint32 calls;
+	int site;
+	bool small;
+} video_rows_last = { 0, -1, false };
+
+static int SDLCALL video_rows_worker(void *arg)
+{
+	const int i = (int)(intptr_t)arg;
+	for (;;)
+	{
+		SDL_SemWait(video_rows_pool.go[i]);
+		if (SDL_AtomicGet(&video_rows_pool.quit))
+			return 0;
+		video_rows_pool.fn(video_rows_pool.job, video_rows_pool.begin[i], video_rows_pool.end[i]);
+		SDL_SemPost(video_rows_pool.done);
+	}
+}
+
+static void video_rows_dispatch(VideoRowsFn fn, void *job, int rows)
+{
+	const int bands = video_rows_pool.helpers + 1;
+	video_rows_pool.fn = fn;
+	video_rows_pool.job = job;
+	for (int i = 0; i < video_rows_pool.helpers; ++i)
+	{
+		video_rows_pool.begin[i] = (int)((Sint64)rows * (i + 1) / bands);
+		video_rows_pool.end[i] = (int)((Sint64)rows * (i + 2) / bands);
+		SDL_SemPost(video_rows_pool.go[i]);
+	}
+	fn(job, 0, (int)((Sint64)rows / bands));
+}
+
+static void video_rows_run(VideoRowsFn fn, void *job, int rows)
+{
+	video_rows_dispatch(fn, job, rows);
+	for (int i = 0; i < video_rows_pool.helpers; ++i)
+		SDL_SemWait(video_rows_pool.done);
+}
+
+typedef struct
+{
+	const Uint8 *src;
+	Uint32 *dst;
+	int width;
+} VideoRowsProbe;
+
+static void video_rows_probe_rows(void *p, int row_begin, int row_end)
+{
+	const VideoRowsProbe *const job = p;
+	for (int y = row_begin; y < row_end; ++y)
+		for (int x = 0; x < job->width; ++x)
+			job->dst[y * job->width + x] = (job->src[y * job->width + x] * 2654435761u) ^ (Uint32)y;
+}
+
+static bool video_rows_probe(void)
+{
+	enum { PROBE_W = 64, PROBE_H = 32 };
+	static Uint8 src[PROBE_W * PROBE_H];
+	static Uint32 dst[PROBE_W * PROBE_H], ref[PROBE_W * PROBE_H];
+	static VideoRowsProbe job;
+
+	for (int i = 0; i < PROBE_W * PROBE_H; ++i)
+		src[i] = (Uint8)(i * 37 + 11);
+	job = (VideoRowsProbe){ src, ref, PROBE_W };
+	video_rows_probe_rows(&job, 0, PROBE_H);
+	job.dst = dst;
+
+	video_rows_dispatch(video_rows_probe_rows, &job, PROBE_H);
+	for (int i = 0; i < video_rows_pool.helpers; ++i)
+	{
+		if (SDL_SemWaitTimeout(video_rows_pool.done, VIDEO_ROWS_PROBE_MS) != 0)
+		{
+			video_rows_pool.stuck = true;
+			return false;
+		}
+	}
+	return memcmp(dst, ref, sizeof(dst)) == 0;
+}
+
+static void video_rows_stop(void)
+{
+	SDL_AtomicSet(&video_rows_pool.quit, 1);
+	for (int i = 0; i < video_rows_pool.helpers; ++i)
+		SDL_SemPost(video_rows_pool.go[i]);
+
+	if (video_rows_pool.stuck)
+	{
+		for (int i = 0; i < video_rows_pool.helpers; ++i)
+			SDL_DetachThread(video_rows_pool.thread[i]);
+		return;
+	}
+
+	for (int i = 0; i < video_rows_pool.helpers; ++i)
+	{
+		SDL_WaitThread(video_rows_pool.thread[i], NULL);
+		SDL_DestroySemaphore(video_rows_pool.go[i]);
+		video_rows_pool.thread[i] = NULL;
+		video_rows_pool.go[i] = NULL;
+	}
+	SDL_DestroySemaphore(video_rows_pool.done);
+	video_rows_pool.done = NULL;
+	video_rows_pool.helpers = 0;
+}
+
+static bool video_rows_start(void)
+{
+#if defined(__vita__) || defined(__SWITCH__)
+	const int cpus = 3;
+#else
+	const int cpus = SDL_GetCPUCount();
+#endif
+	int helpers = cpus - 1;
+	if (helpers > VIDEO_ROWS_MAX_HELPERS)
+		helpers = VIDEO_ROWS_MAX_HELPERS;
+	if (helpers < 1)
+		return false;
+
+	SDL_AtomicSet(&video_rows_pool.quit, 0);
+	video_rows_pool.stuck = false;
+	video_rows_pool.helpers = 0;
+	video_rows_pool.done = SDL_CreateSemaphore(0);
+	if (video_rows_pool.done == NULL)
+		return false;
+
+	for (int i = 0; i < helpers; ++i)
+	{
+		video_rows_pool.go[i] = SDL_CreateSemaphore(0);
+		if (video_rows_pool.go[i] == NULL)
+			break;
+		video_rows_pool.thread[i] = SDL_CreateThread(video_rows_worker, "video_rows",
+		                                             (void *)(intptr_t)i);
+		if (video_rows_pool.thread[i] == NULL)
+		{
+			SDL_DestroySemaphore(video_rows_pool.go[i]);
+			video_rows_pool.go[i] = NULL;
+			break;
+		}
+		video_rows_pool.helpers = i + 1;
+	}
+
+	if (video_rows_pool.helpers > 0 && video_rows_probe())
+		return true;
+
+	video_rows_stop();
+	return false;
+}
+
+static bool video_rows_ready(void)
+{
+	if (video_rows_pool.state == VIDEO_ROWS_UNTRIED)
+	{
+		video_rows_pool.state = video_rows_start() ? VIDEO_ROWS_READY : VIDEO_ROWS_OFF;
+		if (video_rows_pool.state == VIDEO_ROWS_OFF)
+			fprintf(stderr, "video: frame rows stay on one thread\n");
+	}
+	return video_rows_pool.state == VIDEO_ROWS_READY;
+}
+
+static void video_rows_shutdown(void)
+{
+	if (video_rows_pool.state != VIDEO_ROWS_READY)
+		return;
+	video_rows_stop();
+	video_rows_pool.state = VIDEO_ROWS_UNTRIED;
+}
+
+void video_rows(int site, VideoRowsFn fn, void *job, int rows, int pixels, SDL_Texture *unlock)
+{
+	assert(site >= 0 && site < VIDEO_ROWS_SITES);
+	++video_rows_last.calls;
+	video_rows_last.site = site;
+	video_rows_last.small = pixels < VIDEO_ROWS_MIN_PIXELS || rows < 2;
+	if (video_rows_last.small || !video_rows_ready())
+	{
+		fn(job, 0, rows);
+		if (unlock != NULL)
+			SDL_UnlockTexture(unlock);
+		return;
+	}
+
+	VideoRowsSite *const s = &video_rows_sites[site];
+	if (s->pixels != pixels)
+	{
+		s->pixels = pixels;
+		s->tune_left = 2 * VIDEO_ROWS_TUNE_FRAMES;
+		s->best[0] = s->best[1] = SDL_MAX_UINT64;
+	}
+
+	if (s->tune_left == 0)
+	{
+		if (s->threaded)
+			video_rows_run(fn, job, rows);
+		else
+			fn(job, 0, rows);
+		if (unlock != NULL)
+			SDL_UnlockTexture(unlock);
+		return;
+	}
+
+	const int threaded = s->tune_left & 1;
+	const Uint64 start = SDL_GetPerformanceCounter();
+	if (threaded)
+		video_rows_run(fn, job, rows);
+	else
+		fn(job, 0, rows);
+	if (unlock != NULL)
+		SDL_UnlockTexture(unlock);
+	const Uint64 spent = SDL_GetPerformanceCounter() - start;
+	if (spent < s->best[threaded])
+		s->best[threaded] = spent;
+
+	if (--s->tune_left == 0)
+	{
+		s->threaded = s->best[1] * 10 < s->best[0] * 9;
+		const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
+		fprintf(stderr, "video: %s rows on %s (%.3f ms on one thread, %.3f ms on %d)\n",
+		        video_rows_site_names[site], s->threaded ? "threads" : "one thread",
+		        (double)s->best[0] * ms, (double)s->best[1] * ms, video_rows_pool.helpers + 1);
+	}
+}
+
+bool video_rows_threaded(VideoRowsFn fn, void *job, int rows)
+{
+	if (!video_rows_ready())
+	{
+		fn(job, 0, rows);
+		return false;
+	}
+	video_rows_run(fn, job, rows);
+	return true;
+}
+
+void video_rows_stats(VideoRowsStats *stats)
+{
+	*stats = (VideoRowsStats){ .calls = video_rows_last.calls, .site = video_rows_last.site,
+	                           .mode = VIDEO_ROWS_UNUSED };
+	if (video_rows_last.site < 0)
+		return;
+	if (video_rows_last.small)
+	{
+		stats->mode = VIDEO_ROWS_SMALL;
+		return;
+	}
+	if (video_rows_pool.state != VIDEO_ROWS_READY)
+	{
+		stats->mode = VIDEO_ROWS_NO_POOL;
+		return;
+	}
+
+	const VideoRowsSite *const s = &video_rows_sites[video_rows_last.site];
+	stats->threads = video_rows_pool.helpers + 1;
+	if (s->tune_left != 0)
+	{
+		stats->mode = VIDEO_ROWS_TUNING;
+		return;
+	}
+
+	const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
+	stats->mode = s->threaded ? VIDEO_ROWS_THREADED : VIDEO_ROWS_ONE_THREAD;
+	stats->one_ms = (double)s->best[0] * ms;
+	stats->many_ms = (double)s->best[1] * ms;
+}
+
+typedef struct
+{
+	const Uint8 *src;
+	int src_pitch;
+	Uint8 *dst;
+	int dst_pitch;
+	int width;
+} PaletteRows;
+
+static void palette_rows(void *p, int row_begin, int row_end)
+{
+	const PaletteRows *const job = p;
+
+	// Eight lookups per iteration. This pass converts vga_width*vga_height*N*N pixels every
+	// frame, and a one-pixel loop stalls on the dependent index load and palette gather.
+	const Uint8 *src_row = job->src + (size_t)row_begin * job->src_pitch;
+	Uint8 *dst_row = job->dst + (size_t)row_begin * job->dst_pitch;
+	for (int y = row_begin; y < row_end; ++y)
+	{
+		const Uint8 *src = src_row;
+		Uint32 *dst = (Uint32 *)dst_row;
+
+		int x = job->width;
+		for (; x >= 8; x -= 8, src += 8, dst += 8)
+		{
+			dst[0] = rgb_palette[src[0]];
+			dst[1] = rgb_palette[src[1]];
+			dst[2] = rgb_palette[src[2]];
+			dst[3] = rgb_palette[src[3]];
+			dst[4] = rgb_palette[src[4]];
+			dst[5] = rgb_palette[src[5]];
+			dst[6] = rgb_palette[src[6]];
+			dst[7] = rgb_palette[src[7]];
+		}
+		for (; x > 0; --x)
+			*dst++ = rgb_palette[*src++];
+
+		src_row += job->src_pitch;
+		dst_row += job->dst_pitch;
+	}
+}
+
+void video_palette_rows(const Uint8 *src, int src_pitch, Uint8 *dst, int dst_pitch, int width,
+                        int rows)
+{
+	PaletteRows job = { src, src_pitch, dst, dst_pitch, width };
+	palette_rows(&job, 0, rows);
+}
+
 void present_hi(SDL_Surface *hi)
 {
 	assert(hi->format->BitsPerPixel == 8);
@@ -912,35 +1287,8 @@ void present_hi(SDL_Surface *hi)
 		if (SDL_LockTexture(hi_texture, NULL, &tex_pixels, &tex_pitch) != 0)
 			return;
 
-		// Eight lookups per iteration. This pass converts vga_width*vga_height*N*N pixels every
-		// frame, and a one-pixel loop stalls on the dependent index load and palette gather.
-		const Uint8 *src_row = (const Uint8 *)hi->pixels;
-		Uint8 *dst_row = (Uint8 *)tex_pixels;
-		for (int y = 0; y < hi->h; ++y)
-		{
-			const Uint8 *src = src_row;
-			Uint32 *dst = (Uint32 *)dst_row;
-
-			int x = hi->w;
-			for (; x >= 8; x -= 8, src += 8, dst += 8)
-			{
-				dst[0] = rgb_palette[src[0]];
-				dst[1] = rgb_palette[src[1]];
-				dst[2] = rgb_palette[src[2]];
-				dst[3] = rgb_palette[src[3]];
-				dst[4] = rgb_palette[src[4]];
-				dst[5] = rgb_palette[src[5]];
-				dst[6] = rgb_palette[src[6]];
-				dst[7] = rgb_palette[src[7]];
-			}
-			for (; x > 0; --x)
-				*dst++ = rgb_palette[*src++];
-
-			src_row += hi->pitch;
-			dst_row += tex_pitch;
-		}
-
-		SDL_UnlockTexture(hi_texture);
+		const PaletteRows job = { hi->pixels, hi->pitch, tex_pixels, tex_pitch, hi->w };
+		video_rows(VIDEO_ROWS_HI, palette_rows, (void *)&job, hi->h, hi->w * hi->h, hi_texture);
 	}
 
 	// Supersampling uses the classic destination rectangle and never changes output size.
@@ -961,6 +1309,119 @@ void present_hi(SDL_Surface *hi)
 	// Keep the mouse mapping in sync with what is actually on screen.
 	last_output_rect = dst_rect;
 	last_present_texture = hi_texture;
+}
+
+bool video_test_parallel_rows(char *detail, size_t detailSize)
+{
+	static const int sizes[][2] = { { 1424, 800 }, { 997, 601 }, { 13, 3 }, { 5, 2 }, { 1, 1 } };
+	const char *fault = NULL;
+	bool threaded = false;
+	Uint32 seed = 0x5eed1234u;
+
+	for (size_t k = 0; k < COUNTOF(sizes) && fault == NULL; ++k)
+	{
+		const int w = sizes[k][0], h = sizes[k][1];
+		const int src_pitch = w + 3, dst_pitch = w * 4 + 12;
+		Uint8 *const src = malloc((size_t)src_pitch * h);
+		Uint8 *const a = malloc((size_t)dst_pitch * h);
+		Uint8 *const b = malloc((size_t)dst_pitch * h);
+		if (src == NULL || a == NULL || b == NULL)
+		{
+			fault = "allocation failed";
+		}
+		else
+		{
+			for (size_t i = 0; i < (size_t)src_pitch * h; ++i)
+			{
+				seed = seed * 1664525u + 1013904223u;
+				src[i] = (Uint8)(seed >> 24);
+			}
+			memset(a, 0xcd, (size_t)dst_pitch * h);
+			memset(b, 0xcd, (size_t)dst_pitch * h);
+			PaletteRows one = { src, src_pitch, a, dst_pitch, w };
+			PaletteRows many = { src, src_pitch, b, dst_pitch, w };
+			palette_rows(&one, 0, h);
+			threaded |= video_rows_threaded(palette_rows, &many, h);
+			for (int y = 0; y < h && fault == NULL; ++y)
+			{
+				const Uint32 *const row = (const Uint32 *)(a + (size_t)y * dst_pitch);
+				for (int x = 0; x < w && fault == NULL; ++x)
+					if (row[x] != rgb_palette[src[(size_t)y * src_pitch + x]])
+						fault = "palette rows differ from a direct lookup";
+			}
+			if (fault == NULL && memcmp(a, b, (size_t)dst_pitch * h) != 0)
+				fault = "threaded palette rows differ from one thread";
+		}
+		free(src);
+		free(a);
+		free(b);
+	}
+
+	printf("# frame rows: %d helper thread(s), threaded path %s\n", video_rows_pool.helpers,
+	       threaded ? "ran" : "unavailable");
+	if (fault == NULL && !threaded && SDL_GetCPUCount() > 1)
+		fault = "frame-row threads did not start on a multi-core machine";
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+bool video_test_rows_stats(char *detail, size_t detailSize)
+{
+	enum { W = 512, H = VIDEO_ROWS_MIN_PIXELS / W };
+	Uint8 *const src = calloc((size_t)W * H, 1);
+	Uint8 *const dst = malloc((size_t)W * H * 4);
+	const char *fault = NULL;
+
+	if (src == NULL || dst == NULL)
+	{
+		fault = "allocation failed";
+	}
+	else
+	{
+		PaletteRows job = { src, W, dst, W * 4, W };
+		VideoRowsStats before, after;
+
+		video_rows_stats(&before);
+		video_rows(VIDEO_ROWS_FIT, palette_rows, &job, H - 1, W * (H - 1), NULL);
+		video_rows_stats(&after);
+		if (after.calls != before.calls + 1 || after.site != VIDEO_ROWS_FIT
+		    || after.mode != VIDEO_ROWS_SMALL)
+			fault = "a job under the pixel threshold was not reported as small";
+
+		video_rows(VIDEO_ROWS_HI, palette_rows, &job, 1, W * H, NULL);
+		video_rows_stats(&after);
+		if (fault == NULL && (after.site != VIDEO_ROWS_HI || after.mode != VIDEO_ROWS_SMALL))
+			fault = "a one-row job was not reported as small";
+
+		const bool pool = video_rows_ready();
+		const int tune_frames = 2 * VIDEO_ROWS_TUNE_FRAMES;
+		VideoRowsSite *const s = &video_rows_sites[VIDEO_ROWS_HI];
+		s->pixels = 0;
+		for (int i = 1; i <= tune_frames && fault == NULL; ++i)
+		{
+			video_rows(VIDEO_ROWS_HI, palette_rows, &job, H, W * H, NULL);
+			video_rows_stats(&after);
+			VideoRowsMode want = VIDEO_ROWS_NO_POOL;
+			if (pool && i < tune_frames)
+				want = VIDEO_ROWS_TUNING;
+			else if (pool)
+				want = s->threaded ? VIDEO_ROWS_THREADED : VIDEO_ROWS_ONE_THREAD;
+
+			if (after.mode != want)
+				fault = "the reported mode does not follow the tuning run";
+			else if (pool && after.threads != video_rows_pool.helpers + 1)
+				fault = "the reported thread count does not match the pool";
+		}
+		if (fault == NULL && pool && (after.one_ms <= 0.0 || after.many_ms <= 0.0))
+			fault = "a finished tuning run reported no timings";
+	}
+
+	free(src);
+	free(dst);
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }
 
 // Restore an invalidated drawable from the current logical frame while input-wait loops are idle.

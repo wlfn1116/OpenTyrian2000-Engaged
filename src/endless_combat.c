@@ -80,9 +80,6 @@ int endlessDifficultyZone(void)
 #define ENDLESS_BOSS_MARKED        2    // gamble "Marked": the boss you paid to forget comes back bulked up
 #define ENDLESS_BOSS_MAX          32    // ceiling, at depth 247 (zone 199 on Normal)
 
-#define ENDLESS_ELITE_HP_BASE      2    // multiplier at depth 0
-#define ENDLESS_ELITE_HP_MAX       6    // ceiling, at depth 122 (zone 99 on Normal)
-
 // Repeat-pierce delay at the reference zone, in hundredths of a tick.
 #define ENDLESS_PIERCE_LOCK_REF_ZONE      50  // the zone the three figures below were tuned at
 #define ENDLESS_PIERCE_LOCK_BOSS          10  // boss:     0.10 tick at the reference zone

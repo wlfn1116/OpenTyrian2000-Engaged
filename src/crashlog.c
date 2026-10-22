@@ -39,18 +39,12 @@
 // Enough for "<stem>_YYYY-MM-DD_HHMMSS.log" with room to spare.
 #define LOG_NAME_MAX 64
 
-// Numbered net logs used by older builds. Their crash logs are retained.
-#define LEGACY_NETLOG_KEEP 3
-
 extern const char *opentyrian_str;      // opentyr.c
 extern const char *opentyrian_version;  // opentyr.c
 extern const char *opentyrian_commit;   // opentyr.c
 
 // Prevent recursive reporting on terminal fault paths. The watchdog remains re-armable.
 static volatile LONG s_reporting = 0;
-
-// Set once the net logs older builds left behind have been swept this run.
-static volatile LONG s_legacyNetLogsSwept = 0;
 
 // Net-log master switch (Setup -> Network Log); see crashlog.h.
 static volatile LONG s_netLogEnabled = 1;
@@ -205,29 +199,6 @@ static int delete_logs_in(const char *dir, const char *prefix)
 	return deleted;
 }
 
-// Remove legacy fixed-name and numbered net logs from each root once per run.
-static void sweep_legacy_net_logs(void)
-{
-	if (InterlockedExchange(&s_legacyNetLogsSwept, 1) != 0)
-		return;
-
-	char roots[3][MAX_PATH];
-	int count = log_roots(roots);
-	for (int i = 0; i < count; ++i)
-	{
-		char path[MAX_PATH + LOG_NAME_MAX];
-
-		snprintf(path, sizeof(path), "%s%s.log", roots[i], NETLOG_STEM);
-		DeleteFileA(path);  // absent / locked -> fails harmlessly
-
-		for (int n = 1; n <= LEGACY_NETLOG_KEEP; ++n)
-		{
-			snprintf(path, sizeof(path), "%s%s.%d.log", roots[i], NETLOG_STEM, n);
-			DeleteFileA(path);
-		}
-	}
-}
-
 void crashlog_set_netlog_enabled(bool enabled)
 {
 	InterlockedExchange(&s_netLogEnabled, enabled ? 1 : 0);
@@ -236,15 +207,6 @@ void crashlog_set_netlog_enabled(bool enabled)
 bool crashlog_get_netlog_enabled(void)
 {
 	return s_netLogEnabled != 0;
-}
-
-// Called after config load so disabling network logs also preserves legacy files.
-void crashlog_netlog_begin_session(void)
-{
-	if (!crashlog_get_netlog_enabled())
-		return;
-
-	sweep_legacy_net_logs();
 }
 
 // Delete current and legacy game logs from every root. A later report recreates its session file.
@@ -875,13 +837,9 @@ void watchdog_init(void)
 #define LOG_PREFIX         "opentyrian_"  // what every log this game writes starts with
 #define NETLOG_STEM        LOG_PREFIX "net"
 #define NETLOG_NAME_MAX    48    // "<stem>_YYYY-MM-DD_HHMMSS.log" and room to spare
-#define LEGACY_NETLOG_KEEP 3     // numbered generations older builds kept beside the live log
 
 // Net-log master switch (Setup -> Network Log); see crashlog.h.
 static bool s_netLogEnabled = true;
-
-// Set once the net logs older builds left behind have been swept this run.
-static bool s_legacyNetLogsSwept = false;
 
 // Fixed at startup so the filename records launch time.
 static char s_netLogName[NETLOG_NAME_MAX];
@@ -918,35 +876,6 @@ static const char *make_log_dir(void)
 	const int mkdir_result = mkdir(dir, 0700);  // already there -> EEXIST, harmless
 	(void)mkdir_result;
 	return dir;
-}
-
-// Remove legacy fixed-name and numbered net logs once per run.
-static void sweep_legacy_net_logs(void)
-{
-	if (s_legacyNetLogsSwept)
-		return;
-	s_legacyNetLogsSwept = true;
-
-	const char *dir = get_user_directory();
-	char path[600];
-
-	snprintf(path, sizeof(path), "%s/%s.log", dir, NETLOG_STEM);
-	remove(path);  // nothing there -> fails harmlessly
-
-	for (int n = 1; n <= LEGACY_NETLOG_KEEP; ++n)
-	{
-		snprintf(path, sizeof(path), "%s/%s.%d.log", dir, NETLOG_STEM, n);
-		remove(path);
-	}
-}
-
-// Disabled logging also preserves legacy files.
-void crashlog_netlog_begin_session(void)
-{
-	if (!s_netLogEnabled)
-		return;
-
-	sweep_legacy_net_logs();
 }
 
 static void netlog_write(const char *event, const char *detail)

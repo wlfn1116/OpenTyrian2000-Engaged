@@ -23,8 +23,6 @@
 /* Blocking LAN save-transfer screens. They own their sockets and must not run during a live
  * network session. */
 
-bool saveXferAvailable(void);
-
 void saveXferUpload(JE_byte slot);
 
 // A successful download remains pending until the caller opens the destination-slot picker.

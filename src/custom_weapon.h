@@ -190,7 +190,7 @@ int  customWeaponLibraryDuplicate(void);
 int  customWeaponLibraryDelete(void);
 
 // Load / save the whole library file. Load is called once from customWeaponInit (seeds a
-// single slot from the working copy when no file exists yet, migrating an old single weapon).
+// single slot from the working copy when no file exists yet).
 void customWeaponLibraryLoad(void);
 bool customWeaponLibrarySave(void);
 

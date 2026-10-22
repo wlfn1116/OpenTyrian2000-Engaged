@@ -497,5 +497,8 @@ files in private storage that is deleted on uninstall.
 `opentyrian.cfg` and `opentyrian.sav` are plain text. Edit them only while the
 game is closed.
 
-Older builds used `tyrian.sav`, `endless.sav`, and `tyrian.cfg`. The first launch
-without `opentyrian.sav` imports them and leaves the old files in place.
+The first launch without `opentyrian.sav` imports the save slots from a
+`tyrian.sav` written by OpenTyrian, OpenTyrian2000, or DOS Tyrian, along with its
+Tyrian 2000 high scores when it has them, and leaves that file in place. Earlier
+builds of this port wrote their own `tyrian.sav`, `endless.sav`, and
+`tyrian.cfg`; those are not imported.

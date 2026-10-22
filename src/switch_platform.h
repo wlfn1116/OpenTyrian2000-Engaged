@@ -8,7 +8,7 @@
 
 #ifdef __SWITCH__
 
-// Writable data directory on the SD card: holds tyrian.cfg, save files, and any
+// Writable data directory on the SD card: holds opentyrian.cfg, save files, and any
 // user-supplied data files. Kept in one place so file.c and config.c agree.
 #define SWITCH_USER_DIR   "sdmc:/switch/opentyrian2000"
 

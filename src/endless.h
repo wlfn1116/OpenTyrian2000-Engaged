@@ -226,7 +226,7 @@ extern int endlessRunDepth;
 extern int endlessRunKills;
 extern int endlessRunBossKills;
 
-// Run income sources. Append only; the save block reserves ENDLESS_SAVE_CASH_SOURCES slots.
+// Run income sources. Append only.
 typedef enum {
 	ENDLESS_CASH_KILL = 0,   // enemy value, paid the instant a ship is destroyed
 	ENDLESS_CASH_PICKUP,     // cash and gems collected off the playfield
@@ -241,7 +241,7 @@ typedef enum {
 	ENDLESS_CASH_SOURCES
 } EndlessCashSource;
 
-// Run spending sinks. Append only; the save block reserves ENDLESS_SAVE_CASH_SINKS slots.
+// Run spending sinks. Append only.
 typedef enum {
 	ENDLESS_SINK_GEAR = 0,   // upgrade-shop trades: guns, power steps, shields, generators, sidekicks
 	ENDLESS_SINK_SUPPLIES,   // E-Shop kit: specials, superbombs, sabotage charges
@@ -407,10 +407,6 @@ bool   endlessSlotAdopt(JE_byte slot, const Uint8 *bytes, size_t len);
 void   endlessSlotClear(JE_byte slot);
 void endlessSaveConfigRead(Config *config);
 void endlessSaveConfigWrite(Config *config);
-bool endlessSaveLegacyLoad(void);         // one-time import of the binary endless.sav an older build wrote
-bool endlessSaveRepairFromLegacy(void);   // ...and the halves an Endless-named slot lacks, if it still has them
-bool endlessSaveLegacyExists(void);       // is that file there at all?
-bool endlessSaveLegacyWasRead(void);      // ...and did this session read it through?
 
 /* Fixed-width personal state carried by every co-op outpost sync. */
 #define ENDLESS_PLAYER_BLOCK_PERKS 32
@@ -937,12 +933,6 @@ void        endlessPerkSetOwnedFor(uint p, int id, int n);
 Uint64 endlessPersonalBuffMods(uint p);
 void   endlessSetPersonalBuffMods(uint p, Uint64 bits);
 
-// Save-codec hooks used by the migration and fuzz tests.
-int  endlessSaveLegacyVersionMax(void);
-bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize);
 bool endlessSaveTestTextCodec(char *detail, size_t detailSize);
-bool endlessSaveLegacyTestImport(const char *path);
-bool endlessSaveLegacyTestRepair(const char *path);
-bool endlessSaveTestNewerLegacy(const char *v27Path, char *detail, size_t detailSize);
 
 #endif // ENDLESS_H

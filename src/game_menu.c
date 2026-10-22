@@ -9161,7 +9161,7 @@ static void cwPerformAction(int act, bool *done, bool *equipped)
 		break;
 	case CWACT_SAVE:
 		customWeaponLibrarySave();   // flush the weapon library to disk now, without leaving
-		save_opentyrian_config();    // ... and the active design in the main config
+		save_opentyrian_config();
 		JE_playSampleNum(S_SELECT);
 		cwSetNotice("Weapon saved");
 		break;
@@ -10205,7 +10205,7 @@ bool JE_customWeaponCreator(bool canEquip)
 	set_palette(colors, 0, 255);
 
 	customWeaponLibrarySave();  // persist the whole weapon library to its own file
-	save_opentyrian_config();  // persist the active design immediately
+	save_opentyrian_config();
 	return equipped;
 }
 

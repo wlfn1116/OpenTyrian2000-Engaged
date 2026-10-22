@@ -24,9 +24,6 @@ void crashlog_netlog_line(const char *event, const char *detail);
 void crashlog_set_netlog_enabled(bool enabled);
 bool crashlog_get_netlog_enabled(void);
 
-// Remove legacy fixed-name net logs. Call after config load and before netplay.
-void crashlog_netlog_begin_session(void);
-
 // Delete current and legacy opentyrian_*.log files. Not gated by the Network Log switch.
 bool crashlog_clear_logs(void);
 

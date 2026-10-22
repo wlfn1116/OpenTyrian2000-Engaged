@@ -2276,9 +2276,6 @@ int main(int argc, char *argv[])
 
 	JE_loadConfiguration();
 
-	// Prune old network logs only when saved logging is enabled.
-	crashlog_netlog_begin_session();
-
 	// Command-line Christmas mode beats the saved choice, which beats date detection.
 	if (!override_xmas && xmasMode >= 0)
 	{

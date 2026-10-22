@@ -234,7 +234,6 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_DECLINE_OWNED_PCT  6
 #define ENDLESS_PERK_DECLINE_OWNED_CAP 150
 
-// Save v14 removed Rapid Charger and migrates every persisted ID after it.
 enum {
 	PERK_DAMAGE, PERK_FIRERATE, PERK_ARMOR, PERK_CASH,
 	PERK_REGEN, PERK_SIPHON, PERK_BOUNTY,
@@ -325,7 +324,7 @@ extern bool endlessCreditsShown;           // the zone-100 credits roll already 
 extern int  endlessWarnedZone;             // zone whose milestone approach warning already played (not saved)
 
 Sint64 endlessClearBase(void);              // the depth-scaled unit every endless payout is built from
-Sint64 endlessClearBonusFor(Uint64 mods);   // clear payout for an ARBITRARY modifier set at the current depth
+// Clear payout for any modifier set at the current depth.
 Sint64 endlessClearBonusForEx(Uint64 mods, int payoutMille);
 int    endlessSortiePayoutMille(void);
 Uint64 endlessStripWorstMod(Uint64 mods);   // strip the single most-dangerous hostile bit (one per cleanse charge)
@@ -395,11 +394,9 @@ const char *endlessComboNameSalted(Uint64 mods, unsigned salt);  // salt steps a
 bool        endlessValidateModifierTables(char *detail, size_t detailSize);
 int         endlessSynergyBonus(Uint64 mods);
 int         endlessDangerScore(Uint64 mods);      // net danger: summed hostile reward, minus boon credits, plus synergy
-const char *endlessDangerTier(Uint64 mods);       // tier word shown before a course's description
-int         endlessDangerRankLevel(Uint64 mods);  // 0 (F) .. 10 (END)
-const char *endlessDangerRank(Uint64 mods);       // the letter grade for that level
-// ...the same four, but with a shipped-level baseDanger nudge folded in (endless_levelprofile.h).
-// The plain versions above are these with baseDanger 0.
+// The same score with a shipped-level baseDanger nudge folded in (endless_levelprofile.h), then
+// the grade read off it: the tier word shown before a course's description, the rank level
+// 0 (F) .. 10 (END), and that level's letter. endlessDangerScore is the score with baseDanger 0.
 int         endlessDangerScoreEx(Uint64 mods, int baseDanger);
 const char *endlessDangerTierEx(Uint64 mods, int baseDanger);
 int         endlessDangerRankLevelEx(Uint64 mods, int baseDanger);
@@ -416,7 +413,6 @@ typedef struct {
 
 int endlessLevelBaseDanger(int ep, int file, int difficulty);   // coarse grade nudge (-2..+5); 0 if level unknown
 int endlessLevelPayoutMille(int ep, int file, int difficulty);  // fine payout term (thousandths of base); 0 if unknown
-int endlessLevelLengthClass(int ep, int file);                  // 0/1/2; 1 (normal) if level unknown
 
 // Current course slate.
 #define ENDLESS_MAX_COURSES 5
@@ -443,7 +439,7 @@ void   endlessChartRedeal(void);            // chart again at the current reroll
 void   endlessChartSyncRerolls(uint p, JE_byte rerolls);  // adopt a peer's reroll (shop packet)
 
 // Resolve a saved/chosen (episode, section) back to a real endless-safe level file.
-bool endlessResolveCourseFile(int ep, JE_byte sec, JE_byte requestedFile, JE_byte *resolvedFile);
+bool endlessCourseFileValid(int ep, JE_byte sec, JE_byte file);
 
 // Cache authored names after generation or restore.
 void endlessNameCourseBaseLevels(void);

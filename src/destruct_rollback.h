@@ -44,9 +44,6 @@ void drb_session_end(void);
 /* Start a fresh timeline (frame 1, empty histories, next epoch).  Each round runs one. */
 void drb_round_reset(void);
 
-/* Frame being simulated; 1-based, 0 before the round's first tick. */
-Uint32 drb_frame(void);
-
 /* Re-simulation suppresses input, sound, and delay; silent passes also skip presentation. */
 bool drb_resim(void);
 bool drb_resim_silent(void);

@@ -51,7 +51,7 @@ SAN_DEPS := $(SRCS:src/%.c=obj/sanitize/%.d)
 
 PYTHON ?= python3
 TEST_DATA ?= data
-TEST_FIXTURES ?= testing/fixtures/endless
+TEST_FIXTURES ?= testing/fixtures
 SANITIZER_FLAGS := -O1 -g3 -fno-omit-frame-pointer -fno-sanitize-recover=all \
                    -fsanitize=address,undefined
 

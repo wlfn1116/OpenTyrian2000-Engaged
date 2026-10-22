@@ -1465,8 +1465,7 @@ void customWeaponLibraryLoad(void)
 	FILE *f = dir_fopen_warn(get_user_directory(), "custom_weapons.cfg", "r");
 	if (f == NULL)
 	{
-		// No library file yet: seed a single slot from the current working copy. This also
-		// migrates an old single custom weapon (loaded from opentyrian.cfg) into the library.
+		// No library file yet: seed a single slot from the current working copy.
 		customWeaponLibCount    = 1;
 		customWeaponCurrentSlot = 0;
 		storeToSlot(0);
@@ -1499,15 +1498,13 @@ void customWeaponLibraryLoad(void)
 		else if (cur >= 0 && strncmp(line, "props ", 6) == 0)
 		{
 			CustomWeaponSlot *s = &customWeaponLib[cur];
-			// Trailing fields are absent in older files; whatever doesn't parse keeps its
-			// slotSetDefault value, so a partial match is the expected case, not an error.
 			const int parsed = sscanf(line + 6, "%d %d %d %d %d %d",
 			       &s->cost, &s->powerUse, &s->equipSlot, &s->itemGraphic, &s->chargeStages, &s->modes);
 			(void)parsed;
 		}
 		else if (cur >= 0 && strncmp(line, "sidekick ", 9) == 0)
 		{
-			CustomWeaponSlot *s = &customWeaponLib[cur];  // absent in old files -> keeps slotSetDefault values
+			CustomWeaponSlot *s = &customWeaponLib[cur];
 			const int parsed = sscanf(line + 9, "%d %d %d %d %d",
 			       &s->sidekickMount, &s->sidekickSprite, &s->sidekickFrames, &s->sidekickFrameStep, &s->sidekickAnimate);
 			(void)parsed;

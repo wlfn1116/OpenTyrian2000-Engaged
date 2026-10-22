@@ -2010,7 +2010,7 @@ static void composite_playfield(SDL_Surface *playfield, bool interpolate)
 	JE_byte *src;
 	Uint8 *s = VGAScreenSeg->pixels;
 
-	int x, y, lightx, lighty, lightdist;
+	int y, lightx, lighty;
 
 	src = playfield->pixels;
 	src += PLAYFIELD_LEFT;  // crop off the off-screen entry margin; see video.h
@@ -2034,32 +2034,9 @@ static void composite_playfield(SDL_Surface *playfield, bool interpolate)
 
 		for (y = 184; y; y--)
 		{
-			if (lighty > y)
-			{
-				for (x = PLAYFIELD_WIDTH; x; x--)
-				{
-					*s = (*src & 0xf0) | ((*src >> 2) & 0x03);
-					s++;
-					src++;
-				}
-			}
-			else
-			{
-				for (x = PLAYFIELD_WIDTH; x; x--)
-				{
-					lightdist = abs(lightx - x) + lighty;
-					if (lightdist < y)
-						*s = *src;
-					else if (lightdist - y <= 5)
-						*s = (*src & 0xf0) | (((*src & 0x0f) + (3 * (5 - (lightdist - y)))) / 4);
-					else
-						*s = (*src & 0xf0) | ((*src & 0x0f) >> 2);
-					s++;
-					src++;
-				}
-			}
-			s += VGAScreenSeg->pitch - PLAYFIELD_WIDTH;
-			src += playfield->pitch - PLAYFIELD_WIDTH;
+			spotlight_filter_row(s, src, PLAYFIELD_WIDTH, y, lightx, lighty, 5, 1);
+			s += VGAScreenSeg->pitch;
+			src += playfield->pitch;
 		}
 	}
 	else
@@ -2106,32 +2083,9 @@ static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int
 
 		for (int y = rows; y; y--)
 		{
-			if (lighty > y)
-			{
-				for (int x = width; x; x--)
-				{
-					*s = (*src & 0xf0) | ((*src >> 2) & 0x03);
-					s++;
-					src++;
-				}
-			}
-			else
-			{
-				for (int x = width; x; x--)
-				{
-					const int lightdist = abs(lightx - x) + lighty;
-					if (lightdist < y)
-						*s = *src;
-					else if (lightdist - y <= band)
-						*s = (*src & 0xf0) | (((*src & 0x0f) + (3 * (band - (lightdist - y))) / scale) / 4);
-					else
-						*s = (*src & 0xf0) | ((*src & 0x0f) >> 2);
-					s++;
-					src++;
-				}
-			}
-			s += out->pitch - width;
-			src += playfield->pitch - width;
+			spotlight_filter_row(s, src, width, y, lightx, lighty, band, scale);
+			s += out->pitch;
+			src += playfield->pitch;
 		}
 	}
 	else

@@ -107,6 +107,39 @@ SDL_Surface *video_compose_frame(void);
 void video_repeat_last_present(void);
 // Present a supersampled 8-bit frame in the classic on-screen rectangle.
 void present_hi(SDL_Surface *hi);
+
+typedef void (*VideoRowsFn)(void *job, int row_begin, int row_end);
+enum
+{
+	VIDEO_ROWS_HI,
+	VIDEO_ROWS_FIT,
+	VIDEO_ROWS_SITES
+};
+typedef enum
+{
+	VIDEO_ROWS_UNUSED,
+	VIDEO_ROWS_SMALL,
+	VIDEO_ROWS_NO_POOL,
+	VIDEO_ROWS_TUNING,
+	VIDEO_ROWS_ONE_THREAD,
+	VIDEO_ROWS_THREADED,
+} VideoRowsMode;
+typedef struct
+{
+	Uint32 calls;
+	int site;
+	VideoRowsMode mode;
+	int threads;
+	double one_ms;
+	double many_ms;
+} VideoRowsStats;
+void video_rows(int site, VideoRowsFn fn, void *job, int rows, int pixels, SDL_Texture *unlock);
+bool video_rows_threaded(VideoRowsFn fn, void *job, int rows);
+void video_rows_stats(VideoRowsStats *stats);
+void video_palette_rows(const Uint8 *src, int src_pitch, Uint8 *dst, int dst_pitch, int width,
+                        int rows);
+bool video_test_parallel_rows(char *detail, size_t detailSize);
+bool video_test_rows_stats(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.

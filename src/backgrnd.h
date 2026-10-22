@@ -108,6 +108,9 @@ void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void iced_blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 
+void spotlight_filter_row(Uint8 *dst, const Uint8 *src, int width, int y, int lightx, int lighty,
+                          int band, int scale);
+
 void initialize_starfield(void);
 /* Limit star centers to inclusive surface bounds. Halos may extend one pixel past them. */
 void starfield_set_clip(int x1, int y1, int x2, int y2);

@@ -62,16 +62,21 @@ enum
 	KEY_SETTING_RIGHT_SIDEKICK,
 };
 
-typedef JE_byte DosKeySettings[8];  // fka KeySettingType
-
 typedef SDL_Scancode KeySettings[8];
 
 typedef JE_byte MouseSettings[3];
 
 typedef JE_byte JE_PItemsType[12]; /* [1..12] */
 
+enum
+{
+	SAVE_DUAL_NONE = 0,
+	SAVE_DUAL_COOP,
+	SAVE_DUAL_ARCADE,
+};
+
 /* One save slot. A slot with level 0 is empty. Slots 12-22 hold two full loadouts: lastItems is
- * then player two's, and dualShipTag says which two-ship session wrote it. */
+ * then player two's, and dualShips says which two-ship session wrote it. */
 typedef struct
 {
 	JE_word       level;
@@ -91,9 +96,12 @@ typedef struct
 	JE_boolean    gameHasRepeated; /*See if you went from one episode to another*/
 	JE_byte       initialDifficulty;
 
-	/* Zero for a one-ship record. A two-complete-ships record carries a co-op or dual-arcade tag in
-	 * the high half and the powers and modes the two loadout blocks cannot hold in the low half. */
-	Uint32        dualShipTag;
+	/* SAVE_DUAL_NONE for a one-ship record. A two-complete-ships record says which session wrote
+	 * it and carries the powers and modes the two loadout blocks cannot hold. */
+	JE_byte       dualShips;
+	JE_byte       dualPower[2];
+	JE_byte       dualMode[2];
+	JE_boolean    onlinePlayerTwo;
 	JE_boolean    autoFireSpecial;
 	JE_byte       chargeSidekickAutofire;
 	JE_boolean    difficultyAdjust;
@@ -154,7 +162,6 @@ const char *coopCampaignCreditName(Uint8 credit);
 // Record the finished run if it beats that episode's standing best.
 void coopCampaignScoreNote(void);
 
-extern const DosKeySettings defaultDosKeySettings;  // fka defaultKeySettings
 extern const KeySettings defaultKeySettings;
 extern const MouseSettings defaultMouseSettings;
 extern char defaultHighScoreNames[39][23];
@@ -188,7 +195,6 @@ extern JE_byte shotRepeat[11], shotMultiPos[11];
 extern JE_boolean portConfigChange, portConfigDone;
 extern char lastLevelName[11], levelName[11];
 extern JE_byte mainLevel, nextLevel, saveLevel;
-extern DosKeySettings dosKeySettings;  // fka keySettings
 extern KeySettings keySettings;
 extern MouseSettings mouseSettings;
 extern JE_shortint levelFilter, levelFilterNew, levelBrightness, levelBrightnessChg;
@@ -257,7 +263,6 @@ extern JE_byte background3over;
 extern JE_byte background2over;
 extern JE_byte gammaCorrection;
 extern JE_boolean superPause, explosionTransparent, youAreCheating, displayScore, background2, smoothScroll, wild, superWild, starActive, topEnemyOver, skyEnemyOverAll, background2notTransparent;
-extern JE_byte versionNum;
 extern JE_byte fastPlay;
 extern JE_boolean pentiumMode;
 extern JE_byte gameSpeed;
@@ -466,7 +471,7 @@ void JE_setNewGameSpeed(void);
 const char *get_user_directory(void);
 void JE_loadConfiguration(void);
 void JE_saveConfiguration(void);
-bool save_opentyrian_config(void);  // write opentyrian.cfg now (settings + custom weapon)
+bool save_opentyrian_config(void);  // write opentyrian.cfg now
 
 // Serialize or replace every save slot, high-score board, online seat, and Endless run.
 size_t save_file_serialize(Uint8 *buf, size_t cap);
@@ -483,7 +488,7 @@ void JE_loadGame(JE_byte slot);
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 
 // Fixed little-endian save record. NET_VERSION 87 added the 64-byte container name.
-#define SAVE_RECORD_PACKED_SIZE 161
+#define SAVE_RECORD_PACKED_SIZE 162
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
 bool save_record_is_coop(const JE_SaveFileType *rec);

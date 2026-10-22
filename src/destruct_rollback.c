@@ -175,11 +175,6 @@ bool drb_active(void)
 	return session_active;
 }
 
-Uint32 drb_frame(void)
-{
-	return drb_cur;
-}
-
 bool drb_resim(void)
 {
 	return resim_active;
@@ -1617,7 +1612,6 @@ void drb_write_diagnostics(FILE *f)
 #else  /* !WITH_NETWORK */
 
 bool drb_active(void) { return false; }
-Uint32 drb_frame(void) { return 0; }
 bool drb_resim(void) { return false; }
 bool drb_resim_silent(void) { return false; }
 

@@ -56,11 +56,6 @@
 
 /* Configuration Load/Save handler */
 
-const DosKeySettings defaultDosKeySettings =
-{
-	72, 80, 75, 77, 57, 28, 29, 56
-};
-
 const MouseSettings defaultMouseSettings =
 {
 	1, 4, 5
@@ -140,7 +135,6 @@ char    lastLevelName[11], levelName[11]; /* string [10] */
 JE_byte mainLevel, nextLevel, saveLevel;   /*Current Level #*/
 
 /* Keyboard Junk */
-DosKeySettings dosKeySettings;
 KeySettings keySettings;
 
 /* Mouse settings */
@@ -184,10 +178,6 @@ JE_boolean explosionTransparent,
            topEnemyOver,
            skyEnemyOverAll,
            background2notTransparent;
-
-JE_byte soundEffects; // dummy value for config
-JE_byte versionNum;   /* SW 1.0 and SW/Reg 1.1 = 0 or 1
-                       * EA 1.2 = 2        T2K = 3*/
 
 JE_byte    fastPlay;
 JE_boolean pentiumMode;
@@ -308,32 +298,21 @@ void coopCampaignScoreNote(void)
 	save_opentyrian_config();
 }
 
-/* One bit per two-player slot: set when this machine wrote that slot while flying player two.
- * See save_slot_online_player in config.h; each slot's `online_seat` key carries it. */
-static Uint16 saveSlotPlayerTwo;
-
 // Slots 1 through 11 are the one-player page, which no online session writes.
-static uint save_slot_online_bit(JE_byte slot)
+static bool save_slot_two_player(JE_byte slot)
 {
-	return (slot >= 12 && slot <= SAVE_FILES_NUM) ? 1u << (slot - 12) : 0u;
+	return slot >= 12 && slot <= SAVE_FILES_NUM;
 }
 
 uint save_slot_online_player(JE_byte slot)
 {
-	const uint bit = save_slot_online_bit(slot);
-	return (bit != 0 && (saveSlotPlayerTwo & bit) != 0) ? 2u : 1u;
+	return (save_slot_two_player(slot) && saveFiles[slot - 1].onlinePlayerTwo) ? 2u : 1u;
 }
 
 void save_slot_set_online_player(JE_byte slot, uint playerNum)
 {
-	const uint bit = save_slot_online_bit(slot);
-	if (bit == 0)
-		return;
-
-	if (playerNum == 2)
-		saveSlotPlayerTwo |= (Uint16)bit;
-	else
-		saveSlotPlayerTwo &= (Uint16)~bit;
+	if (save_slot_two_player(slot))
+		saveFiles[slot - 1].onlinePlayerTwo = playerNum == 2;
 }
 
 /* Enhancement settings (persisted in the [enhancements] config section). */
@@ -765,9 +744,6 @@ bool load_opentyrian_config(void)
 		int smoothie_full = smoothie_full_res ? 1 : 0;
 		config_get_int_option(section, "smoothie_full_res", &smoothie_full);
 		smoothie_full_res = (smoothie_full != 0);
-
-		/* Remove the retired filter setting when the configuration is next saved. */
-		config_remove_option(section, "render_supersample_filter");
 	}
 
 	section = config_find_section(config, "keyboard", NULL);
@@ -937,12 +913,6 @@ bool load_opentyrian_config(void)
 			if (net_host_player == 1 || net_host_player == 2)
 				network_host_player = net_host_player;
 
-			// Where builds before opentyrian.sav kept the seats; read only until that file exists.
-			int net_save_player_two = saveSlotPlayerTwo;
-			config_get_int_option(section, "net_save_player_two", &net_save_player_two);
-			if (net_save_player_two >= 0 && net_save_player_two <= 0xffff)
-				saveSlotPlayerTwo = (Uint16)net_save_player_two;
-
 			// Session game speed forced on both players when hosting (1..5, 4 = Normal).
 			int net_game_speed = network_host_game_speed;
 			config_get_int_option(section, "net_host_game_speed", &net_game_speed);
@@ -977,12 +947,6 @@ bool load_opentyrian_config(void)
 			config_get_bool_option(section, "net_coop_double_pickups", &coopDoubleEarnings);
 			config_get_bool_option(section, "net_endless_combo_shared", &network_host_endless_combo_shared);
 
-			// The chart rule was a Same/Varied flag before the Shuffle rules joined it. Read the
-			// old key first so a host that set it keeps their choice, then let the new one win.
-			bool net_endless_base_same = network_host_endless_base_rule == (int)ENDLESS_BASE_SAME;
-			if (config_get_bool_option(section, "net_endless_base_same", &net_endless_base_same))
-				network_host_endless_base_rule = net_endless_base_same ? (int)ENDLESS_BASE_SAME
-				                                                       : (int)ENDLESS_BASE_VARIED;
 			int net_endless_base_rule = network_host_endless_base_rule;
 			config_get_int_option(section, "net_endless_base_rule", &net_endless_base_rule);
 			if (net_endless_base_rule >= 0 && net_endless_base_rule < ENDLESS_BASE_RULE_COUNT)
@@ -1002,13 +966,6 @@ bool load_opentyrian_config(void)
 			// every tick (see rollback.h).  Costs a second sim pass per tick.
 			config_get_bool_option(section, "rollback_selftest", &rollback_selftest);
 		}
-
-		// Legacy keys from when only the Mega Pulse had these settings; the new per-weapon
-		// keys below override them when present.
-		config_get_int_option(section, "mega_pulse_sparks", &superSparkMode[SSW_MEGA_PULSE]);
-		int legacy_cap = superSparkClassicCap[SSW_MEGA_PULSE] ? 1 : 0;
-		config_get_int_option(section, "mega_pulse_classic_cap", &legacy_cap);
-		superSparkClassicCap[SSW_MEGA_PULSE] = (legacy_cap != 0);
 
 		for (int i = 0; i < SSW_COUNT; ++i)
 		{
@@ -1060,7 +1017,6 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "zica_l11_lock", &zica_l11_lock);
 		zicaLaserLock = (zica_l11_lock != 0);
 
-		// Back-compat: earlier builds saved this as 0/1 (bool) or 0-4 (mode); any non-zero = on.
 		int zica_laser_buff = zicaLaserBuff ? 1 : 0;
 		config_get_int_option(section, "zica_laser_buff", &zica_laser_buff);
 		zicaLaserBuff = (zica_laser_buff != 0);
@@ -1141,54 +1097,14 @@ bool load_opentyrian_config(void)
 			config_get_int_option(section, expertSettings[i].cfgKey, expertSettings[i].value);
 		clamp_expert_settings();  // guard against a hand-edited or stale config
 
-		// Custom weapon rows are clamped when the library initializes.
 		int custom_weapon_enabled = customWeaponEnabled ? 1 : 0;
 		config_get_int_option(section, "custom_weapon_enabled", &custom_weapon_enabled);
 		customWeaponEnabled = (custom_weapon_enabled != 0);
-
-		// Weapon-wide identity (maps to the single port; shared across all levels).
-		const char *custom_weapon_name;
-		if (config_get_string_option(section, "custom_weapon_name", &custom_weapon_name))
-		{
-			strncpy(customWeaponName, custom_weapon_name, sizeof(customWeaponName) - 1);
-			customWeaponName[sizeof(customWeaponName) - 1] = '\0';
-		}
-		config_get_int_option(section, "custom_weapon_cost",          &customWeaponCost);
-		config_get_int_option(section, "custom_weapon_power_use",     &customWeaponPowerUse);
-		config_get_int_option(section, "custom_weapon_equip_slot",    &customWeaponEquipSlot);
-		config_get_int_option(section, "custom_weapon_item_graphic",  &customWeaponItemGraphic);
-		config_get_int_option(section, "custom_weapon_charge_stages", &customWeaponChargeStages);
-		config_get_int_option(section, "custom_weapon_modes",         &customWeaponModes);
-		config_get_int_option(section, "custom_weapon_sk_mount",      &customSidekickMount);
-		config_get_int_option(section, "custom_weapon_sk_sprite",     &customSidekickSprite);
-		config_get_int_option(section, "custom_weapon_sk_frames",     &customSidekickFrames);
-		config_get_int_option(section, "custom_weapon_sk_frame_step", &customSidekickFrameStep);
-		config_get_int_option(section, "custom_weapon_sk_animate",    &customSidekickAnimate);
-
-		// Each (mode, power level)'s raw weapon: custom_weapon_m<M>_l<N>_raw. Mode 0 also
-		// accepts the pre-modes key custom_weapon_l<N>_raw so an older config migrates.
-		for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
-			for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
-			{
-				char key[64];
-				const char *blob;
-				if (m == 0)
-				{
-					snprintf(key, sizeof(key), "custom_weapon_l%d_raw", p + 1);
-					if (config_get_string_option(section, key, &blob))
-						customWeaponDeserializeLevel(0, p, blob);
-				}
-				snprintf(key, sizeof(key), "custom_weapon_m%d_l%d_raw", m + 1, p + 1);
-				if (config_get_string_option(section, key, &blob))
-					customWeaponDeserializeLevel(m, p, blob);
-			}
 
 		customWeaponEditLevel = 0;
 		customWeaponEditMode = 0;
 	}
 
-	/* The settings the DOS-era tyrian.cfg also carries. Read after that file, so these win once
-	 * they are here; a config written before they moved keeps what tyrian.cfg says. */
 	section = config_find_section(config, "game", NULL);
 	if (section != NULL)
 	{
@@ -1331,10 +1247,6 @@ bool save_opentyrian_config(void)
 	config_set_string_option(section, "net_last_host", net_last_host);
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
-	config_remove_option(section, "net_save_player_two");   // now each slot's own online_seat key
-	// Retired machine-wide keys; online styles now live with each save slot.
-	config_remove_option(section, "online_ship_color");
-	config_remove_option(section, "online_partner_dim");
 	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);
 	config_set_int_option(section, "net_host_destruct_mode", network_host_destruct_mode);
 	config_set_int_option(section, "net_delay", network_delay);
@@ -1381,36 +1293,10 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "xmas", xmasMode);
 
 	config_set_int_option(section, "custom_weapon_enabled", customWeaponEnabled ? 1 : 0);
-	// Weapon-wide identity (maps to the single port; shared across all levels).
-	config_set_string_option(section, "custom_weapon_name",    customWeaponName);
-	config_set_int_option(section, "custom_weapon_cost",          customWeaponCost);
-	config_set_int_option(section, "custom_weapon_power_use",     customWeaponPowerUse);
-	config_set_int_option(section, "custom_weapon_equip_slot",    customWeaponEquipSlot);
-	config_set_int_option(section, "custom_weapon_item_graphic",  customWeaponItemGraphic);
-	config_set_int_option(section, "custom_weapon_charge_stages", customWeaponChargeStages);
-	config_set_int_option(section, "custom_weapon_modes",         customWeaponModes);
-	config_set_int_option(section, "custom_weapon_sk_mount",      customSidekickMount);
-	config_set_int_option(section, "custom_weapon_sk_sprite",     customSidekickSprite);
-	config_set_int_option(section, "custom_weapon_sk_frames",     customSidekickFrames);
-	config_set_int_option(section, "custom_weapon_sk_frame_step", customSidekickFrameStep);
-	config_set_int_option(section, "custom_weapon_sk_animate",    customSidekickAnimate);
-	// Each (mode, power level)'s raw weapon, as a compact comma-separated integer blob.
-	for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
-		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
-		{
-			char key[64];
-			// Saving is single-threaded. Keep the widest raw-weapon blob off the
-			// comparatively small console stacks and reuse it for every level.
-			static char blob[16384];
-			snprintf(key, sizeof(key), "custom_weapon_m%d_l%d_raw", m + 1, p + 1);
-			customWeaponSerializeLevel(m, p, blob, sizeof(blob));
-			config_set_string_option(section, key, blob);
-		}
 
 	for (int i = 0; i < expertSettingsCount; ++i)
 		config_set_int_option(section, expertSettings[i].cfgKey, *expertSettings[i].value);
 
-	// The settings the DOS-era tyrian.cfg also carries (see the matching load above).
 	section = config_find_or_add_section(config, "game", NULL);
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
@@ -1497,8 +1383,6 @@ void JE_saveGame(JE_byte slot, const char *name)
 	if (endlessMode && endlessHardcore())
 		return;
 
-	const Uint32 coop_save_tag = 0xc74f0000u;
-	const Uint32 dual_arcade_save_tag = 0xc7a50000u;
 	saveFiles[slot-1].initialDifficulty = initialDifficulty;
 	saveFiles[slot-1].gameHasRepeated = gameHasRepeated;
 	saveFiles[slot-1].level = saveLevel;
@@ -1584,16 +1468,18 @@ void JE_saveGame(JE_byte slot, const char *name)
 		saveFiles[slot-1].power[port] = player[twoPlayerMode ? port : 0].items.weapon[port].power;
 	}
 
-	/* Dual-ship records pack the two missing weapon powers and both modes into the tag. Distinct
-	 * co-op and arcade tags keep the shared slot page type-safe. */
-	saveFiles[slot - 1].dualShipTag = 0;
+	/* Dual-ship records keep the two missing weapon powers and both modes. Distinct co-op and
+	 * arcade kinds keep the shared slot page type-safe. */
+	saveFiles[slot - 1].dualShips = SAVE_DUAL_NONE;
+	memset(saveFiles[slot - 1].dualPower, 0, sizeof(saveFiles[slot - 1].dualPower));
+	memset(saveFiles[slot - 1].dualMode, 0, sizeof(saveFiles[slot - 1].dualMode));
 	if (dual_ship_mode())
 	{
-		const Uint32 extra = (player[0].items.weapon[REAR_WEAPON].power & 0x0f)
-		                   | ((player[1].items.weapon[FRONT_WEAPON].power & 0x0f) << 4)
-		                   | ((player[0].weapon_mode & 0x0f) << 8)
-		                   | ((player[1].weapon_mode & 0x0f) << 12);
-		saveFiles[slot - 1].dualShipTag = (coop_mode_active() ? coop_save_tag : dual_arcade_save_tag) | extra;
+		saveFiles[slot - 1].dualShips = coop_mode_active() ? SAVE_DUAL_COOP : SAVE_DUAL_ARCADE;
+		saveFiles[slot - 1].dualPower[0] = player[0].items.weapon[REAR_WEAPON].power;
+		saveFiles[slot - 1].dualPower[1] = player[1].items.weapon[FRONT_WEAPON].power;
+		saveFiles[slot - 1].dualMode[0] = player[0].weapon_mode;
+		saveFiles[slot - 1].dualMode[1] = player[1].weapon_mode;
 	}
 
 	// The slot's Endless half rides the same write: captured from a run, cleared by any other game.
@@ -1705,11 +1591,10 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	/* Restore the second loadout according to the record's mode. */
 	if (save_record_is_coop(rec) || save_record_is_dual_arcade(rec))
 	{
-		const Uint32 extra = rec->dualShipTag;
-		player[0].items.weapon[REAR_WEAPON].power = extra & 0x0f;
-		player[1].items.weapon[FRONT_WEAPON].power = (extra >> 4) & 0x0f;
-		player[0].weapon_mode = (extra >> 8) & 0x0f;
-		player[1].weapon_mode = (extra >> 12) & 0x0f;
+		player[0].items.weapon[REAR_WEAPON].power = rec->dualPower[0];
+		player[1].items.weapon[FRONT_WEAPON].power = rec->dualPower[1];
+		player[0].weapon_mode = rec->dualMode[0];
+		player[1].weapon_mode = rec->dualMode[1];
 		if (player[0].weapon_mode == 0) player[0].weapon_mode = 1;
 		if (player[1].weapon_mode == 0) player[1].weapon_mode = 1;
 	}
@@ -1922,9 +1807,6 @@ const char *get_user_directory(void)
 	return user_dir;
 }
 
-// for compatibility
-Uint8 joyButtonAssign[4] = {1, 4, 5, 5};
-Uint8 inputDevice_ = 0, jConfigure = 0, midiPort = 1;
 bool configuration_loaded = false;
 
 /* The one-ship loadout block, and the second block a slot carries: player two's on the two-player
@@ -2023,21 +1905,21 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 		config_set_int64_option(section, "p2_cash", rec->score2);
 
 	// A one-ship record's rear power sits in power[1]; a two-ship record's rear power there is
-	// player two's, and player one's rear and player two's front live in the tag.
-	const JE_byte tagRear = (JE_byte)(rec->dualShipTag & 0x0f);
-	const JE_byte tagFront = (JE_byte)((rec->dualShipTag >> 4) & 0x0f);
+	// player two's, and player one's rear and player two's front live in dualPower.
 	const bool dual = save_record_is_coop(rec) || save_record_is_dual_arcade(rec);
 	if (twoP)
 	{
-		save_items_write(section, "p1", rec->items, &rec->power[0], dual ? &tagRear : NULL);
-		save_items_write(section, "p2", rec->lastItems, dual ? &tagFront : NULL, &rec->power[1]);
+		save_items_write(section, "p1", rec->items, &rec->power[0],
+		                 dual ? &rec->dualPower[0] : NULL);
+		save_items_write(section, "p2", rec->lastItems, dual ? &rec->dualPower[1] : NULL,
+		                 &rec->power[1]);
 		if (dual)
 		{
 			config_set_string_option(section, "dual_ships", save_record_is_coop(rec) ? "coop" : "arcade");
-			config_set_int_option(section, "p1_weapon_mode", (rec->dualShipTag >> 8) & 0x0f);
-			config_set_int_option(section, "p2_weapon_mode", (rec->dualShipTag >> 12) & 0x0f);
+			config_set_int_option(section, "p1_weapon_mode", rec->dualMode[0]);
+			config_set_int_option(section, "p2_weapon_mode", rec->dualMode[1]);
 		}
-		config_set_int_option(section, "online_seat", (int)save_slot_online_player(slot));
+		config_set_int_option(section, "online_seat", rec->onlinePlayerTwo ? 2 : 1);
 		for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
 		{
 			char key[32];
@@ -2105,24 +1987,25 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 	config_get_int64_option(section, "p2_cash", &cash);
 	rec->score2 = cash_clamp((Sint64)cash);
 
-	JE_byte p1Rear = 0, p2Front = 0;
 	if (twoP)
 	{
+		JE_byte p1Rear = 0, p2Front = 0;
 		save_items_read(section, "p1", rec->items, &rec->power[0], &p1Rear);
 		save_items_read(section, "p2", rec->lastItems, &p2Front, &rec->power[1]);
 		const char *dual = NULL;
 		if (config_get_string_option(section, "dual_ships", &dual) && dual != NULL)
 		{
-			const Uint32 tag = (strcmp(dual, "coop") == 0) ? 0xc74f0000u
-			                 : (strcmp(dual, "arcade") == 0) ? 0xc7a50000u : 0u;
-			if (tag != 0)
+			rec->dualShips = (strcmp(dual, "coop") == 0) ? SAVE_DUAL_COOP
+			               : (strcmp(dual, "arcade") == 0) ? SAVE_DUAL_ARCADE : SAVE_DUAL_NONE;
+			if (rec->dualShips != SAVE_DUAL_NONE)
 			{
-				rec->dualShipTag = tag | (p1Rear & 0x0f) | ((Uint32)(p2Front & 0x0f) << 4)
-				                 | ((Uint32)(save_get_int(section, "p1_weapon_mode", 1) & 0x0f) << 8)
-				                 | ((Uint32)(save_get_int(section, "p2_weapon_mode", 1) & 0x0f) << 12);
+				rec->dualPower[0] = p1Rear;
+				rec->dualPower[1] = p2Front;
+				rec->dualMode[0] = (JE_byte)save_get_int(section, "p1_weapon_mode", 1);
+				rec->dualMode[1] = (JE_byte)save_get_int(section, "p2_weapon_mode", 1);
 			}
 		}
-		save_slot_set_online_player(slot, (uint)save_get_int(section, "online_seat", 1));
+		rec->onlinePlayerTwo = save_get_int(section, "online_seat", 1) == 2;
 		for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
 		{
 			char key[32];
@@ -2264,9 +2147,6 @@ static void save_defaults(void)
 	}
 }
 
-/* Track whether the legacy Endless sidecar has been imported. */
-static bool save_legacy_endless_taken = false;
-
 /* Adopt parsed save data. Missing sections create empty slots; missing keys use defaults. */
 static bool save_config_adopt(Config *config)
 {
@@ -2277,10 +2157,8 @@ static bool save_config_adopt(Config *config)
 		fprintf(stderr, "warning: %s has no 'saves' section and was not read\n", SAVE_FILE_NAME);
 		return false;
 	}
-	save_legacy_endless_taken = save_get_int(header, "endless_sav_imported", 0) != 0;
 
 	save_reset();
-	saveSlotPlayerTwo = 0;   // the slots' own online_seat keys are the record from here on
 	for (int z = 0; z < SAVE_FILES_NUM; z++)
 	{
 		char name[8];
@@ -2316,7 +2194,7 @@ static bool save_file_load(void)
 
 /* The DOS-era tyrian.sav: XOR-chained, checksummed, fixed offsets. Read once when there is no
  * opentyrian.sav yet, so an existing installation keeps its slots and boards. */
-#define LEGACY_SAVE_FILES_SIZE 2552
+#define LEGACY_SAVE_FILES_SIZE 2398
 #define LEGACY_SAVE_TEMP_SIZE  (LEGACY_SAVE_FILES_SIZE + 4 + 100)
 #define LEGACY_SAVE_FILE_SIZE  (LEGACY_SAVE_TEMP_SIZE - 4)
 
@@ -2399,19 +2277,9 @@ static bool legacy_save_parse(FILE *fi)
 		rec->gameHasRepeated = *p++ != 0;
 		rec->initialDifficulty = *p++;
 
-		p += 4;   // highScore1: the DOS per-slot table, never shown
-		memcpy(&u32, p, 4); p += 4;
-		rec->dualShipTag = SDL_SwapLE32(u32);
+		p += 8;   // highScore1 and highScore2: the DOS per-slot table, never shown
 		p += 30;  // highScoreName
 		p += 1;   // highScoreDiff
-
-		rec->autoFireSpecial = *p++ != 0;
-		rec->chargeSidekickAutofire = *p++;
-		rec->difficultyAdjust = *p++ != 0;
-		rec->cheatInfiniteSidekickAmmo = *p++ != 0;
-		rec->cheatInfiniteShields = *p++ != 0;
-		rec->cheatInfiniteArmor = *p++ != 0;
-		rec->expertMode = *p++ != 0;
 	}
 	assert(p - saveTemp == LEGACY_SAVE_FILES_SIZE);   // the DOS ship editor's unlocks follow, unread
 
@@ -2504,7 +2372,12 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 
 	two = one;
 	two.score2 = 123456789012LL;
-	two.dualShipTag = 0xc74f0000u | 0x0a | (0x0b << 4) | (2 << 8) | (3 << 12);   // co-op, both extras
+	two.dualShips = SAVE_DUAL_COOP;
+	two.dualPower[0] = 0x0a;
+	two.dualPower[1] = 0x0b;
+	two.dualMode[0] = 2;
+	two.dualMode[1] = 3;
+	two.onlinePlayerTwo = true;
 	// Use distinct per-seat values to expose missing two-player keys.
 	for (uint p = 0; p < COUNTOF(two.viewOpacity); ++p)
 	{
@@ -2512,9 +2385,6 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 		two.viewShipOpacity[p] = (JE_byte)(p == 0);
 		two.viewHpBars[p] = (JE_byte)(p == 0 ? NET_HP_BARS_ON_HIT : NET_HP_BARS_ALWAYS);
 	}
-
-	const uint savedSeat = save_slot_online_player(15);
-	save_slot_set_online_player(15, 2);
 
 	const char *fault = NULL;
 	Config config;
@@ -2535,16 +2405,14 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 		fault = "section allocation failed";
 	else
 	{
-		save_slot_set_online_player(15, 1);
-
 		save_slot_read(&back, sOne, 3);
 		if (memcmp(&one, &back, sizeof(one)) != 0)
 			fault = "a one-ship slot did not survive the round trip";
 		save_slot_read(&back, sTwo, 15);
+		if (fault == NULL && !back.onlinePlayerTwo)
+			fault = "the online seat did not survive the round trip";
 		if (fault == NULL && memcmp(&two, &back, sizeof(two)) != 0)
 			fault = "a two-ship slot did not survive the round trip";
-		if (fault == NULL && save_slot_online_player(15) != 2)
-			fault = "the online seat did not survive the round trip";
 
 		// Report missing view keys separately from the full-record comparison.
 		if (fault == NULL)
@@ -2564,61 +2432,21 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 			fault = "a missing or malformed key did not read as its default";
 	}
 	config_deinit(&config);
-	save_slot_set_online_player(15, savedSeat);
 
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);
 	return fault == NULL;
 }
 
-// The DOS-era tyrian.cfg: 28 bytes of settings, read for its values until opentyrian.cfg has them.
-static void legacy_config_load(void)
-{
-	FILE *fi = dir_fopen(get_user_directory(), "tyrian.cfg", "rb");
-	if (fi == NULL)
-		return;
-	if (ftell_eof(fi) == 28)
-	{
-		background2 = 0;
-		fread_bool_die(&background2, fi);
-		fread_u8_die(&gameSpeed, 1, fi);
-
-		fread_u8_die(&inputDevice_, 1, fi);
-		fread_u8_die(&jConfigure, 1, fi);
-
-		fread_u8_die(&versionNum, 1, fi);
-
-		fread_u8_die(&processorType, 1, fi);
-		fread_u8_die(&midiPort, 1, fi);
-		fread_u8_die(&soundEffects, 1, fi);
-		fread_u8_die(&gammaCorrection, 1, fi);
-		fread_s8_die(&difficultyLevel, 1, fi);
-
-		fread_u8_die(joyButtonAssign, 4, fi);
-
-		fread_u16_die(&tyrMusicVolume, 1, fi);
-		fread_u16_die(&fxVolume, 1, fi);
-
-		fread_u8_die(inputDevice, 2, fi);
-
-		fread_u8_die(dosKeySettings, 8, fi);
-	}
-	fclose(fi);
-}
-
 void JE_loadConfiguration(void)
 {
-	// The DOS defaults, then the DOS-era tyrian.cfg over them, then opentyrian.cfg over both.
-	soundEffects = 1;
-	memcpy(&dosKeySettings, &defaultDosKeySettings, sizeof(dosKeySettings));
+	// The DOS defaults, then opentyrian.cfg over them.
 	background2 = true;
 	tyrMusicVolume = 191;
 	fxVolume = 191;
 	gammaCorrection = 0;
 	processorType = 4;  // detail level "Pentium"
 	gameSpeed = 4;
-	versionNum = 3;
-	legacy_config_load();
 
 	load_opentyrian_config();
 
@@ -2629,33 +2457,19 @@ void JE_loadConfiguration(void)
 
 	set_volume(tyrMusicVolume, fxVolume);
 
-	// The save file, or the pair of DOS-era files an older build left, or nothing at all.
 	bool imported = false;
-	if (save_file_load())
+	if (!save_file_load())
 	{
-		if (!save_legacy_endless_taken)
-			imported = endlessSaveRepairFromLegacy();
-	}
-	else
-	{
-		if (!legacy_save_load())
+		imported = legacy_save_load();
+		if (!imported)
 			save_defaults();
-		else
-			imported = true;
-		if (endlessSaveLegacyLoad())
-			imported = true;
 	}
-
-	/* Mark a missing or fully read sidecar complete; failed reads retry next launch. */
-	const bool noteTaken = !save_legacy_endless_taken
-	                    && (!endlessSaveLegacyExists() || endlessSaveLegacyWasRead());
-	save_legacy_endless_taken |= noteTaken;
 
 	JE_initProcessorType();
 	configuration_loaded = true;
 
 	// Write the imported state in the new form at once, so the migration does not wait on a save.
-	if (imported || noteTaken)
+	if (imported)
 		JE_saveConfiguration();
 }
 
@@ -2669,7 +2483,6 @@ static void save_config_build(Config *config, bool includeHighScores)
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
 	config_set_int_option(section, "format", SAVE_FILE_FORMAT);
-	config_set_int_option(section, "endless_sav_imported", save_legacy_endless_taken ? 1 : 0);
 
 	for (int z = 0; z < SAVE_FILES_NUM; z++)
 	{
@@ -2794,13 +2607,13 @@ bool save_slots_adopt(const Uint8 *buf, size_t len)
 
 bool save_record_is_coop(const JE_SaveFileType *rec)
 {
-	return (rec->dualShipTag & 0xffff0000u) == 0xc74f0000u;
+	return rec->dualShips == SAVE_DUAL_COOP;
 }
 
 // Dual arcade records contain two ships and scores, but no shared campaign purse.
 bool save_record_is_dual_arcade(const JE_SaveFileType *rec)
 {
-	return (rec->dualShipTag & 0xffff0000u) == 0xc7a50000u;
+	return rec->dualShips == SAVE_DUAL_ARCADE;
 }
 
 // Ruleset stored in each ship's loadout. Ship two is valid only for two-ship records.
@@ -2823,8 +2636,11 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	memcpy(p, &u64, 8); p += 8;
 	u64 = SDL_SwapLE64((Uint64)rec->score2);
 	memcpy(p, &u64, 8); p += 8;
-	Uint32 u32 = SDL_SwapLE32(rec->dualShipTag);
-	memcpy(p, &u32, 4); p += 4;
+	*p++ = rec->dualShips;
+	*p++ = rec->dualPower[0];
+	*p++ = rec->dualPower[1];
+	*p++ = rec->dualMode[0];
+	*p++ = rec->dualMode[1];
 
 	memcpy(p, rec->levelName, sizeof(rec->levelName)); p += sizeof(rec->levelName);
 	memcpy(p, rec->name, sizeof(rec->name)); p += sizeof(rec->name);
@@ -2879,9 +2695,11 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 	rec->score = cash_clamp((Sint64)SDL_SwapLE64(u64));
 	memcpy(&u64, p, 8); p += 8;
 	rec->score2 = cash_clamp((Sint64)SDL_SwapLE64(u64));
-	Uint32 u32;
-	memcpy(&u32, p, 4); p += 4;
-	rec->dualShipTag = SDL_SwapLE32(u32);
+	rec->dualShips = *p++;
+	rec->dualPower[0] = *p++;
+	rec->dualPower[1] = *p++;
+	rec->dualMode[0] = *p++;
+	rec->dualMode[1] = *p++;
 
 	memcpy(rec->levelName, p, sizeof(rec->levelName)); p += sizeof(rec->levelName);
 	rec->levelName[sizeof(rec->levelName) - 1] = '\0';

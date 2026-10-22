@@ -15,9 +15,20 @@
 #include <psp2/sysmodule.h>    // sceSysmoduleLoadModule, SCE_SYSMODULE_IME
 #include <psp2/common_dialog.h>// SceCommonDialogStatus
 #include <psp2/ime_dialog.h>   // sceImeDialog*
+#include <psp2/power.h>
+
+#define VITA_ARM_MHZ  444
+#define VITA_BUS_MHZ  222
+#define VITA_GPU_MHZ  222
+#define VITA_XBAR_MHZ 166
 
 void vita_platform_init(void)
 {
+	scePowerSetArmClockFrequency(VITA_ARM_MHZ);
+	scePowerSetBusClockFrequency(VITA_BUS_MHZ);
+	scePowerSetGpuClockFrequency(VITA_GPU_MHZ);
+	scePowerSetGpuXbarClockFrequency(VITA_XBAR_MHZ);
+
 	// The loader mounts app0:data and provides ux0:data; create only our writable subfolder.
 	sceIoMkdir(VITA_USER_DIR, 0777);
 
