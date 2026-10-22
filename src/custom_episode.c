@@ -849,36 +849,33 @@ bool customEpisodeIdentity(int index, Uint32 *sizeOut, Uint32 *hashOut)
 	return true;
 }
 
-void qa_test_custom_episode(void)
+static void qa_custom_episode_empty(void)
 {
-	customEpisodeScan();
+	qa_check(!customEpisodeActive() && customEpisodeActiveTitle()[0] == '\0' &&
+	         customEpisodeCurrent() == -1,
+	         "no custom episodes installed means no custom state anywhere");
 
-	if (entryCount == 0)
-	{
-		qa_check(!customEpisodeActive() && customEpisodeActiveTitle()[0] == '\0' &&
-		         customEpisodeCurrent() == -1,
-		         "no custom episodes installed means no custom state anywhere");
+	qa_check(customEpisodeCount() == 0 && !customEpisodeAnyPresent(),
+	         "with no container present nothing offers a custom-level row");
 
-		qa_check(customEpisodeCount() == 0 && !customEpisodeAnyPresent(),
-		         "with no container present nothing offers a custom-level row");
+	const int savedMode = customEndlessMode;
+	customEndlessMode = CUSTOM_ENDLESS_ONLY;
+	const bool modeStaysOff = customEndlessEffectiveMode() == CUSTOM_ENDLESS_OFF &&
+	                          customEpisodeIdCount() == 0;
+	customEndlessMode = savedMode;
+	qa_check(modeStaysOff,
+	         "with no container present Endless cannot be switched onto custom levels");
 
-		const int savedMode = customEndlessMode;
-		customEndlessMode = CUSTOM_ENDLESS_ONLY;
-		const bool modeStaysOff = customEndlessEffectiveMode() == CUSTOM_ENDLESS_OFF &&
-		                          customEpisodeIdCount() == 0;
-		customEndlessMode = savedMode;
-		qa_check(modeStaysOff,
-		         "with no container present Endless cannot be switched onto custom levels");
+	struct stat st;
+	qa_check(stat(custom_episode_dir(), &st) != 0,
+	         "scanning for containers leaves no custom_levels folder behind");
 
-		struct stat st;
-		qa_check(stat(custom_episode_dir(), &st) != 0,
-		         "scanning for containers leaves no custom_levels folder behind");
+	qa_check(SDL_strcasecmp(JE_episodeDir(), custom_episode_dir()) != 0,
+	         "with no container present the engine reads its ordinary episode files");
+}
 
-		qa_check(SDL_strcasecmp(JE_episodeDir(), custom_episode_dir()) != 0,
-		         "with no container present the engine reads its ordinary episode files");
-		return;
-	}
-
+static void qa_custom_episode_installed(void)
+{
 	qa_check(JE_initEpisodeCustom(0),
 	         "a custom episode container extracts and loads");
 	qa_check(customEpisodeActive() && episodeNum == customEpisodeBase(0),
@@ -935,6 +932,54 @@ void qa_test_custom_episode(void)
 	qa_check(!customEpisodeActive() && episodeNum == 1 &&
 	         JE_levelFileCount(1) > 0,
 	         "an ordinary episode init drops custom mode and reloads stock data");
+}
+
+void qa_test_custom_episode(void)
+{
+	customEpisodeScan();
+
+	char keepDir[600];
+	snprintf(keepDir, sizeof(keepDir), "%s.qa_keep", custom_episode_dir());
+	struct stat st;
+	const bool kept = stat(custom_episode_dir(), &st) == 0;
+	if (stat(keepDir, &st) == 0 || (kept && rename(custom_episode_dir(), keepDir) != 0))
+	{
+		qa_check(false, "the installed custom levels move aside for the custom-episode test");
+		return;
+	}
+
+	const int savedEndlessMode = customEndlessMode;
+	customEpisodeScan();
+	qa_custom_episode_empty();
+
+	Uint32 len = 0;
+	Uint8 *data = NULL;
+	FILE *f = dir_fopen_warn(qa_fixture_dir, "clv_ep1.clv", "rb");
+	if (f != NULL)
+	{
+		const long size = ftell_eof(f);
+		if (size > 0)
+		{
+			data = malloc_die((size_t)size);
+			len = fread(data, 1, (size_t)size, f) == (size_t)size ? (Uint32)size : 0;
+		}
+		fclose(f);
+	}
+	const bool installed = len > 0 && customEpisodeSaveDownloaded("clv_ep1.clv", data, len) >= 0 &&
+	                       customEpisodeCount() == 1;
+	free(data);
+	qa_check(installed, "the fixture container installs through the download path");
+	if (installed)
+		qa_custom_episode_installed();
+
+	customEpisodeClearAll();
+	customEndlessMode = savedEndlessMode;
+	if (kept)
+		qa_check(rename(keepDir, custom_episode_dir()) == 0,
+		         "the installed custom levels return after the custom-episode test");
+	customEpisodeScan();
+	qa_check(kept || stat(custom_episode_dir(), &st) != 0,
+	         "the custom-episode test leaves no custom_levels folder it did not find");
 }
 
 bool customEpisodeContentMatches(const char *fileName, const Uint8 *data, Uint32 len)

@@ -873,6 +873,7 @@ static const char *log_dir(void)
 static const char *make_log_dir(void)
 {
 	const char *dir = log_dir();
+	make_user_directory();
 	const int mkdir_result = mkdir(dir, 0700);  // already there -> EEXIST, harmless
 	(void)mkdir_result;
 	return dir;

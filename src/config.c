@@ -1811,6 +1811,18 @@ const char *get_user_directory(void)
 	return user_dir;
 }
 
+const char *make_user_directory(void)
+{
+#ifndef TARGET_WIN32
+	const int mkdir_result = mkdir(get_user_directory(), 0700);
+#else
+	const int mkdir_result = mkdir(get_user_directory());
+#endif
+	(void)mkdir_result;
+
+	return get_user_directory();
+}
+
 bool configuration_loaded = false;
 
 /* The one-ship loadout block, and the second block a slot carries: player two's on the two-player

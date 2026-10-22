@@ -1427,7 +1427,7 @@ bool customWeaponLibrarySave(void)
 	customWeaponCurrentSlot = clampi(customWeaponCurrentSlot, 0, customWeaponLibCount - 1);
 	storeToSlot(customWeaponCurrentSlot);   // capture the working copy first
 
-	FILE *f = dir_fopen(get_user_directory(), "custom_weapons.cfg", "w");
+	FILE *f = dir_fopen(make_user_directory(), "custom_weapons.cfg", "w");
 	if (f == NULL)
 		return false;
 

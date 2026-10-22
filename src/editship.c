@@ -503,7 +503,7 @@ static bool JE_saveExtraShapes(void)
 	JE_ShipsType enc;
 	JE_encryptShips(enc);
 
-	FILE *f = dir_fopen(get_user_directory(), EXTRA_SHIPS_USER_FILE, "wb");
+	FILE *f = dir_fopen(make_user_directory(), EXTRA_SHIPS_USER_FILE, "wb");
 	if (f == NULL)
 		return false;
 
