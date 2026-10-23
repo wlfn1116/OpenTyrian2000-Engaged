@@ -199,9 +199,6 @@ size_t rl_count(void);
 // command's per-tick motion (dx,dy). Call once after rl_end_record.
 void rl_finalize(void);
 
-// Re-draw every captured command into dst at its recorded position (alpha=1).
-void rl_replay(SDL_Surface *dst);
-
 // Smoothie levels replay feedback backgrounds and foregrounds separately. scale=1 is the
 // classic path; larger values use the supersampled grid.
 void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split);

@@ -698,7 +698,7 @@ static void customSidekickMaterialize(int owner, const CustomWeaponSlot *design)
 	o->icongr      = 6;
 }
 
-void customWeaponMaterializeOwner(int owner)
+static void customWeaponMaterializeOwner(int owner)
 {
 	if (owner < 0 || owner >= CUSTOM_WEAPON_OWNERS)
 		return;

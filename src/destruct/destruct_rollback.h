@@ -70,7 +70,6 @@ DrbStep drb_driver(bool roundOver);
  * second pass, and compare the complete resulting state. */
 void drb_selftest_arm(size_t stateBytes, void (*save)(void *dst), void (*restore)(const void *src),
                       unsigned long ticks);
-void drb_selftest_disarm(void);
 bool drb_selftest_active(void);
 
 /* Record the frame's scripted input for both sides.  Called where a live pass would sample keys. */

@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "custom_episode.h"
+#include "draw.h"
 #include "endless.h"
 #include "console_platform.h"
 #include "episodes.h"
@@ -31,15 +32,13 @@
 #include "menus.h"
 #include "net_rollback.h"
 #include "network.h"
-#include "nortsong.h"
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
 #include "player.h"
 #include "qa.h"
-#include "sprite.h"
-#include "touch_ui.h"
-#include "vga256d.h"
+#include "sfx.h"
+#include "timing.h"
 #include "video.h"
 
 #include <ctype.h>

@@ -19,36 +19,36 @@
 
 #include "config.h"
 #include "debug_menu.h"
+#include "draw.h"
 #include "editship.h"
 #include "endless.h"
 #include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
 #include "game_menu.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "hud.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "musmast.h"
 #include "net_rollback.h"
+#include "net_start.h"
 #include "net_style.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "palette.h"
 #include "params.h"
 #include "player.h"
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
-#include "varz.h"
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
 
 #include <stdio.h>
@@ -65,6 +65,8 @@ ExtraShipReturn;
 
 // Each seat keeps its standard loadout for restoration.
 static ExtraShipReturn extraShipReturn[2];
+
+static JE_boolean JE_inGameSetup(void);
 
 static bool extraShipsAllowedForMode(bool network, bool twoPlayer, bool coop, bool separate,
 	                                 bool timedBattle, bool superTyrianActive, int superArcade)
@@ -473,7 +475,7 @@ void qa_test_extra_ship_return(void)
 	memcpy(extraShipReturn, savedReturn, sizeof(extraShipReturn));
 }
 
-bool JE_extraMenu(void)
+static bool JE_extraMenu(void)
 {
 	enum { PAGE_ROOT, PAGE_CHEATS, PAGE_DEBUG };
 
@@ -934,7 +936,7 @@ bool JE_extraMenu(void)
 	return returnToGame;
 }
 
-JE_boolean JE_inGameSetup(void)
+static JE_boolean JE_inGameSetup(void)
 {
 	bool result = false;
 

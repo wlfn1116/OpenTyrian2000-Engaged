@@ -63,9 +63,9 @@
    "bytes": 2745,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/game/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_1.json"
@@ -77,9 +77,9 @@
    "bytes": 2193,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/game/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_2.json"
@@ -91,9 +91,9 @@
    "bytes": 1974,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/game/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_3.json"
@@ -105,9 +105,9 @@
    "bytes": 699,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/game/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_4.json"
@@ -119,9 +119,9 @@
    "bytes": 1122,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/game/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_5.json"
@@ -240,7 +240,7 @@
    "sourceReferences": [
     "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -256,7 +256,7 @@
    "sourceReferences": [
     "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -272,7 +272,7 @@
    "sourceReferences": [
     "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -288,7 +288,7 @@
    "sourceReferences": [
     "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -1340,9 +1340,9 @@
    "bytes": 264512,
    "category": "audio",
    "contents": "Sound effects, signed 8-bit mono at 11025 Hz",
-   "readBy": "src/audio/nortsong.c loadSndFile",
+   "readBy": "src/audio/sfx.c loadSndFile",
    "sourceReferences": [
-    "nortsong.c"
+    "sfx.c"
    ],
    "dumpedTo": [
     "audio/sfx"
@@ -1473,9 +1473,9 @@
    "bytes": 132767,
    "category": "audio",
    "contents": "Voice samples in the same format",
-   "readBy": "src/audio/nortsong.c loadSndFile",
+   "readBy": "src/audio/sfx.c loadSndFile",
    "sourceReferences": [
-    "nortsong.c"
+    "sfx.c"
    ],
    "dumpedTo": [
     "audio/voices"
@@ -1487,11 +1487,11 @@
    "bytes": 188275,
    "category": "audio",
    "contents": "Christmas variant of voices.snd",
-   "readBy": "src/audio/nortsong.c loadSndFile, when the Christmas theme is on",
+   "readBy": "src/audio/sfx.c loadSndFile, when the Christmas theme is on",
    "sourceReferences": [
-    "nortsong.c",
     "opentyr.c",
-    "setup_menu.c"
+    "setup_menu.c",
+    "sfx.c"
    ],
    "dumpedTo": [
     "audio/voices_christmas"

@@ -51,6 +51,14 @@ void debug_panel_frame(int px0, int py0, int px1, int py1, int title_h, int mid_
  * if the point isn't over a row. */
 int debug_panel_row_at(int mx, int my, int px0, int px1, int items_top,
                        int row_h, int visibleRows, int scrollTop, int count);
+/* scrollbar track + thumb (only when the list overflows the window) */
+void debug_panel_scrollbar(int px1, int items_top, int row_h, int visibleRows, int scrollTop,
+                           int count);
+#if defined(__SWITCH__) || defined(__vita__)
+// Map shoulder-button edges to Page Up and Page Down. A real key wins
+// if both inputs arrive together.
+void debug_panel_shoulder_paging(bool was[2]);
+#endif
 
 void JE_debugMenu(bool center);
 // Rebuild loadout-derived state while preserving live armour and shield.

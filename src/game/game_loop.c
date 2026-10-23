@@ -15,24 +15,21 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include "tyrian2.h"
+#include "game_loop.h"
 
-#include "animlib.h"
 #include "backgrnd.h"
 #include "config.h"
 #include "crashlog.h"
-#include "custom_episode.h"
-#include "custom_weapon.h"
 #include "debug_levels.h"
 #include "debug_menu.h"
-#include "editship.h"
+#include "demo.h"
+#include "draw.h"
 #include "endless.h"
 #include "enemy_death.h"
 #include "episodes.h"
+#include "explosions.h"
 #include "file.h"
-#include "font.h"
 #include "fonthand.h"
-#include "game_menu.h"
 #include "health_bars.h"
 #include "high_scores.h"
 #include "hud.h"
@@ -40,44 +37,40 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "lds_play.h"
+#include "level_end.h"
 #include "level_events.h"
 #include "level_load.h"
 #include "loudness.h"
-#include "lvllib.h"
-#include "menus.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
+#include "musmast.h"
+#include "net_start.h"
 #include "network.h"
 #include "net_style.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "opentyr.h"
+#include "palette.h"
 #include "params.h"
-#include "pcxload.h"
-#include "pcxmast.h"
 #include "picload.h"
+#include "player.h"
 #include "player_ship.h"
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "net_rollback.h"
+#include "savegame.h"
+#include "sfx.h"
 #include "shots.h"
 #include "sim_math.h"
 #include "sparks.h"
 #include "specials.h"
 #include "sprite.h"
-#include "touch_ui.h"
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
 
 #include <assert.h>
-#include <ctype.h>
-#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 // Render-list verification harness: replay the captured list each clean frame
 // and report any pixels that differ from the real frame. Gated off; kept for debugging.
@@ -86,6 +79,8 @@
 // `outline` draws the frame as a flat silhouette in a dark shade of the colour the art would have
 // used, for the "?" pickup's outline pass. Only that pickup passes it, and it always has a bank.
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool outline);
+
+static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueShapeTableI);
 
 /* Derive flip, spotlight, and inverted controls from level state and synchronized Endless
  * modifiers. The result affects simulation and must also run online. */
@@ -203,7 +198,7 @@ static SDL_Surface *vga_hi = NULL;  // NxN final frame (playfield composite + HU
 static SDL_Surface *vga_hi_ref = NULL;
 static int vga_hi_ref_scale = 0;
 
-void tyrian2_deinit(void)
+void game_loop_deinit(void)
 {
 	SDL_FreeSurface(render_gs);
 	render_gs = NULL;
@@ -383,7 +378,7 @@ bool vt_ship = true;
 #define VT_FRICTION_X 1.0f  // velocity bled per tick with no x input (orig ~1/tick)
 #define VT_FRICTION_Y 0.5f  // orig y friction fires every 2nd tick => half rate
 #define VT_VMAX       4.0f  // velocity clamp/axis (orig: vel clamp 4); +VT_DIRECT gives ~5 total like the original
-// VT_MOUSE_SENS lives in tyrian2.h: the classic per-tick mouse path shares it
+// VT_MOUSE_SENS lives in game_loop.h: the classic per-tick mouse path shares it
 
 static float vt_x[2], vt_y[2], vt_vx[2], vt_vy[2];
 static int vt_wrote_vx[2], vt_wrote_vy[2];  // last velocity VT wrote to player[]
@@ -1268,7 +1263,7 @@ void frame_times_get(FrameTimes *times)
 	*times = frame_times.shown;
 }
 
-void JE_starShowVGA(void)
+static void JE_starShowVGA(void)
 {
 	if (qa_fast_forward)
 	{
@@ -1663,7 +1658,7 @@ static Uint32 rl_enemy_gen;   // bumped once per sim pass at the loop top
 // passes against one presented frame, so a cadence keyed to rl_enemy_gen stutters.
 static Uint32 rl_present_gen;
 
-// Contract in tyrian2.h.
+// Contract in game_loop.h.
 Uint32 rl_presented_frames(void) { return rl_present_gen; }
 
 /* Boss vulnerability cue. See doc/notes.md#health-and-tiers. */
@@ -2381,7 +2376,7 @@ static bool enemy_rides_layer2(const struct JE_SingleEnemyType *e)
 	       (int)e->fixedmovey + (e->eycc != 0 ? 0 : (int)e->eyc) == (int)backMove2;
 }
 
-void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
+static void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
 {
 	// Batch 25 is the sky bank and takes layer-2 movement from eyc.
 	const bool skyBank = (enemyOffset == 25);
@@ -3092,11 +3087,7 @@ start_level:
 
 	if (play_demo || record_demo)
 	{
-		if (demo_file)
-		{
-			fclose(demo_file);
-			demo_file = NULL;
-		}
+		close_demo_file();
 
 		if (play_demo)
 		{
@@ -3610,55 +3601,7 @@ start_level_first:
 	}
 
 	if (!play_demo && record_demo)
-	{
-		Uint8 new_demo_num = 0;
-
-		do
-		{
-			sprintf(tempStr, "demorec.%d", new_demo_num++);
-		} while (dir_file_exists(get_user_directory(), tempStr)); // until file doesn't exist
-
-		demo_file = dir_fopen_warn(get_user_directory(), tempStr, "wb");
-		if (!demo_file)
-			exit(1);
-
-		fwrite_u8_die(&episodeNum, 1, demo_file);
-
-		// Pad string buffer with NULs.
-		for (size_t i = 1; i < 10; ++i)
-			if (levelName[i - 1] == '\0')
-				levelName[i] = '\0';
-		fwrite_u8_die((Uint8 *)levelName, 10, demo_file);
-
-		fwrite_u8_die(&lvlFileNum, 1, demo_file);
-
-		fwrite_u8_die(&player[0].items.weapon[FRONT_WEAPON].id,  1, demo_file);
-		fwrite_u8_die(&player[0].items.weapon[REAR_WEAPON].id,   1, demo_file);
-		fwrite_u8_die(&player[0].items.super_arcade_mode,        1, demo_file);
-		fwrite_u8_die(&player[0].items.sidekick[LEFT_SIDEKICK],  1, demo_file);
-		fwrite_u8_die(&player[0].items.sidekick[RIGHT_SIDEKICK], 1, demo_file);
-		fwrite_u8_die(&player[0].items.generator,                1, demo_file);
-
-		fwrite_u8_die(&player[0].items.sidekick_level,           1, demo_file);
-		fwrite_u8_die(&player[0].items.sidekick_series,          1, demo_file);
-
-		fwrite_u8_die(&initial_episode_num,                      1, demo_file);
-
-		fwrite_u8_die(&player[0].items.shield,                   1, demo_file);
-		fwrite_u8_die(&player[0].items.special,                  1, demo_file);
-		fwrite_u8_die(&player[0].items.ship,                     1, demo_file);
-
-		for (uint i = 0; i < 2; ++i)
-			fwrite_u8_die(&player[0].items.weapon[i].power,      1, demo_file);
-
-		Uint8 unused[3] = { 0, 0, 0 };
-		fwrite_u8_die(unused, 3, demo_file);
-
-		fwrite_u8_die(&levelSong, 1, demo_file);
-
-		demo_keys = 0;
-		demo_keys_wait = 0;
-	}
+		begin_demo_recording();
 
 	twoPlayerLinked = false;
 	link_cue_state = false;
@@ -5981,7 +5924,7 @@ static Uint16 arcadeRandomizeBall(Uint16 eDatI)
 	return ballPool[cls][mt_rand() % ballPoolLen[cls]];
 }
 
-uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueShapeTableI)
+static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueShapeTableI)
 {
 	uint avail;
 
@@ -6479,9 +6422,8 @@ void JE_createNewEventEnemy(JE_byte enemyTypeOfs, JE_word enemyOffset, Sint16 un
 }
 
 /* Register file-local simulation state only. */
-#include "rollback.h"
 
-void tyrian2_register_rollback(void)
+void game_loop_register_rollback(void)
 {
 	rollback_register("t2.eventRec",         eventRec, sizeof(eventRec));
 	enemy_death_register_rollback();

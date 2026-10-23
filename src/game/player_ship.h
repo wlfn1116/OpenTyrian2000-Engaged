@@ -37,7 +37,6 @@ void rb_move_dir(Uint16 bits, int *out_dx, int *out_dy);
 void JE_mainKeyboardInput(void);
 void JE_pauseGame(void);
 
-void JE_playerMovement(Player *this_player, JE_byte inputDevice, JE_byte playerNum, JE_word shipGr, Sprite2_array *shipGrPtr_, JE_word *mouseX, JE_word *mouseY);
 void JE_mainGamePlayerFunctions(void);
 
 // Pool slots of this tick's linked-Dragonwing aim markers (-1 = none); the
@@ -45,5 +44,9 @@ void JE_mainGamePlayerFunctions(void);
 extern int link_marker_slot[3];
 
 void JE_playerCollide(Player *this_player, JE_byte playerNum);
+
+extern bool button[4]; // fire, left fire, right fire, mode swap
+extern bool pause_pressed, ingamemenu_pressed, changefire_pressed;
+extern JE_shortint constantLastX;
 
 #endif /* PLAYER_SHIP_H */

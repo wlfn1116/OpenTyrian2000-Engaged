@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef TYRIAN2_H
-#define TYRIAN2_H
+#ifndef GAME_LOOP_H
+#define GAME_LOOP_H
 
 #include "opentyr.h"
 
-#include "varz.h"
+#include "game_state.h"
 #include "helptext.h"
 
 // Block-expand an 8-bit frame onto a supersampled one, every pixel a scale x scale block.
@@ -69,15 +69,11 @@ void JE_createNewEventEnemy(JE_byte enemytypeofs, JE_word enemyoffset, Sint16 un
 int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_SingleEnemyType *e);
 void enemy_approach_debt_settle(unsigned int i);
 
-uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueShapeTableI);
-
 Sint16 JE_newEnemy(int enemyOffset, Uint16 eDatI, Sint16 uniqueShapeTableI);
-void JE_drawEnemy(int enemyOffset);
-void JE_starShowVGA(void);
 
 void JE_main(void);
 JE_byte backup_save_slot(void);
-void tyrian2_deinit(void);
+void game_loop_deinit(void);
 // The flip/spotlight special code and inverted-control flag, from level and Endless state.
 void JE_deriveStarShowSpecial(void);
 
@@ -98,4 +94,4 @@ void vt_ship_commit_net(int player_index);
 void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy);  // inter-tick ship move for tracking shots
 void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy);  // mouse steering dir for twiddle codes
 
-#endif /* TYRIAN2_H */
+#endif /* GAME_LOOP_H */

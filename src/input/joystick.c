@@ -20,25 +20,25 @@
 #include "config.h"
 #include "config_file.h"
 #include "file.h"
+#include "game_state.h"
 #include "keyboard.h"
 #include "network.h"
-#include "nortsong.h"
 #include "opentyr.h"
-#include "params.h"
+#include "player_ship.h"
 #include "rollback.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "varz.h"
 #include "video.h"
 
 #include <assert.h>
 #include <ctype.h>
 #include <string.h>
 
-int joystick_axis_threshold(int j, int value);
-int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignment assignment[2]);
+static int joystick_axis_threshold(int j, int value);
+static int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignment assignment[2]);
 
-const char *assignment_to_code(const Joystick_assignment *assignment);
-void code_to_assignment(Joystick_assignment *assignment, const char *buffer);
+static const char *assignment_to_code(const Joystick_assignment *assignment);
+static void code_to_assignment(Joystick_assignment *assignment, const char *buffer);
 
 int joystick_repeat_delay = 300; // milliseconds, repeat delay for buttons
 bool joydown = false;            // any joystick buttons down, updated by poll_joysticks()
@@ -49,8 +49,10 @@ Joystick *joystick = NULL;
 
 static const int joystick_analog_max = 32767;
 
+static bool load_joystick_assignments(Config *config, int j);
+
 // eliminates axis movement below the threshold
-int joystick_axis_threshold(int j, int value)
+static int joystick_axis_threshold(int j, int value)
 {
 	assert(j < joysticks);
 	
@@ -106,7 +108,7 @@ bool joystick_analog_angle(int j, float *angle)
  * buttons has been pressed or that one of the assigned axes/hats has been moved
  * in the assigned direction
  */
-int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignment assignment[2])
+static int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignment assignment[2])
 {
 	int result = 0;
 	
@@ -467,7 +469,7 @@ static const char* const assignment_names[] =
 	"pause",
 };
 
-bool load_joystick_assignments(Config *config, int j)
+static bool load_joystick_assignments(Config *config, int j)
 {
 	ConfigSection *section = config_find_section(config, "joystick", SDL_JoystickName(joystick[j].handle));
 	if (section == NULL)
@@ -600,7 +602,7 @@ void joystick_assignments_to_string(char *buffer, size_t buffer_len, const Joyst
 }
 
 // reverse of assignment_to_code()
-void code_to_assignment(Joystick_assignment *assignment, const char *buffer)
+static void code_to_assignment(Joystick_assignment *assignment, const char *buffer)
 {
 	memset(assignment, 0, sizeof(*assignment));
 	
@@ -623,7 +625,7 @@ void code_to_assignment(Joystick_assignment *assignment, const char *buffer)
 }
 
 /* Returns a six-character code so two bindings fit beside one action. */
-const char *assignment_to_code(const Joystick_assignment *assignment)
+static const char *assignment_to_code(const Joystick_assignment *assignment)
 {
 	static char name[7];
 	

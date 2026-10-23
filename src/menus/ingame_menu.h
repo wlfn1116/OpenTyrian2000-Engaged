@@ -21,7 +21,6 @@
 #include "opentyr.h"
 
 void JE_doInGameSetup(void);
-JE_boolean JE_inGameSetup(void);
 
 // Endless death prompt (Hardcore off only), shown over the frozen death frame before the run
 // summary. Values double as the row order.
@@ -34,7 +33,6 @@ typedef enum
 EndlessDeathChoice;
 
 EndlessDeathChoice JE_endlessDeathMenu(void);
-bool JE_extraMenu(void);
 bool extraShipsAllowedInGame(void);
 void extraShipReturnReset(void);
 void extraShipRememberStandard(uint pnum);

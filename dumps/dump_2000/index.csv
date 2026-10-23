@@ -4,11 +4,11 @@ cubetxt2.dat,8109,text,Datacube text for one episode,src/menus/game_menu.c load_
 cubetxt3.dat,12277,text,Datacube text for one episode,src/menus/game_menu.c load_cube,episodes.c,text/datacubes,1
 cubetxt4.dat,61763,text,Datacube text for one episode,src/menus/game_menu.c load_cube,episodes.c,text/datacubes,1
 cubetxt5.dat,7024,text,Datacube text for one episode,src/menus/game_menu.c load_cube,episodes.c,text/datacubes,1
-demo.1,2745,demos,Recorded attract-mode input for one level,src/game/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_1.json,1
-demo.2,2193,demos,Recorded attract-mode input for one level,src/game/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_2.json,1
-demo.3,1974,demos,Recorded attract-mode input for one level,src/game/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_3.json,1
-demo.4,699,demos,Recorded attract-mode input for one level,src/game/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_4.json,1
-demo.5,1122,demos,Recorded attract-mode input for one level,src/game/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_5.json,1
+demo.1,2745,demos,Recorded attract-mode input for one level,src/game/demo.c load_next_demo and replay_demo_keys,demo.c,demos/demo_1.json,1
+demo.2,2193,demos,Recorded attract-mode input for one level,src/game/demo.c load_next_demo and replay_demo_keys,demo.c,demos/demo_2.json,1
+demo.3,1974,demos,Recorded attract-mode input for one level,src/game/demo.c load_next_demo and replay_demo_keys,demo.c,demos/demo_3.json,1
+demo.4,699,demos,Recorded attract-mode input for one level,src/game/demo.c load_next_demo and replay_demo_keys,demo.c,demos/demo_4.json,1
+demo.5,1122,demos,Recorded attract-mode input for one level,src/game/demo.c load_next_demo and replay_demo_keys,demo.c,demos/demo_5.json,1
 dpmi16bi.ovl,50544,executable,DOS extender overlay,not read at runtime,,raw/executable/dpmi16bi.ovl|raw/executable/dpmi16bi.ovl.strings.txt,1
 estpa.shp,119552,sprites,"Ending sprites in the same format, unused by the game",not read at runtime; browsable in the debug sprite viewer,sprite_viewer.c,sprites/standalone/estpa_shp,1
 estsc.shp,115338,sprites,Ending and credits sprites,src/menus/credits.c JE_playCredits,credits.c|sprite_viewer.c,sprites/standalone/estsc_shp,1
@@ -16,17 +16,17 @@ exitmsg.bin,4000,text,80x25 DOS text screen shown on exit,not read at runtime,,t
 file0001.exe,386313,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/file0001.exe|raw/executable/file0001.exe.strings.txt,1
 gm.sf2,3208108,audio,General MIDI SoundFont for the FluidSynth music device,"src/audio/fluid_music.c, through the soundfont path in opentyrian.cfg",,raw/audio/gm.sf2,1
 gme.dll,368640,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/gme.dll,1
-levels1.dat,9600,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|game_menu.c,text/episode_scripts,1
-levels2.dat,5534,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|game_menu.c,text/episode_scripts,1
-levels3.dat,6052,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|game_menu.c,text/episode_scripts,1
-levels4.dat,11116,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|game_menu.c,text/episode_scripts,1
-levels5.dat,4257,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|game_menu.c,text/episode_scripts,1
+levels1.dat,9600,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|lvllib.c,text/episode_scripts,1
+levels2.dat,5534,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|lvllib.c,text/episode_scripts,1
+levels3.dat,6052,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|lvllib.c,text/episode_scripts,1
+levels4.dat,11116,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|lvllib.c,text/episode_scripts,1
+levels5.dat,4257,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/level/level_load.c JE_loadMap,debug_levels.c|episodes.c|lvllib.c,text/episode_scripts,1
 libxmp.dll,550912,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/libxmp.dll,1
 loudness.awe,34382,audio,AWE32 instrument bank from the DOS build,not read at runtime,,raw/audio/loudness.awe,1
 midiproc_shared.dll,508928,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/midiproc_shared.dll,1
 music.mus,153482,audio,LOUDNESS (LDS) AdLib songs,src/audio/loudness.c load_music; src/audio/lds_play.c lds_load,loudness.c,audio/music,1
 newsh#.shp,17750,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",sprite.c|sprite_viewer.c,sprites/newsh/newsh#,1
-newsh$.shp,18016,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",editship.c|qa.c|sprite.c|sprite_viewer.c,sprites/newsh/newsh$,1
+newsh$.shp,18016,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",editship.c|qa_ships.c|sprite.c|sprite_viewer.c,sprites/newsh/newsh$,1
 newsh%.shp,40244,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",sprite.c|sprite_viewer.c,sprites/newsh/newsh%,1
 newsh'.shp,35108,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",sprite.c|sprite_viewer.c,sprites/newsh/newsh',1
 newsh(.shp,32060,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",sprite.c|sprite_viewer.c,sprites/newsh/newsh(,1
@@ -65,7 +65,7 @@ newshu.shp,35657,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosio
 newshv.shp,24103,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",sprite.c|sprite_viewer.c,sprites/newsh/newshv,1
 newsh~.shp,14929,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",sprite.c|sprite_viewer.c,sprites/newsh/newsh~,1
 ogg-0.dll,60928,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/ogg-0.dll,1
-opentyrian.cfg,540,config,OpenTyrian settings written by this port,"src/core/config.c; player state, not shipped data",config.c|config.h|endless.c|endless.h|endless_save.c|game_menu.c|net_savexfer.c|switch_platform.h|varz.h,raw/config/opentyrian.cfg,1
+opentyrian.cfg,540,config,OpenTyrian settings written by this port,"src/core/config.c; player state, not shipped data",config.c|config.h|endless.c|endless.h|endless_save.c|game_menu.c|game_state.h|net_savexfer.c|savegame.c|savegame.h|switch_platform.h,raw/config/opentyrian.cfg,1
 opentyrian2000.exe,571904,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/opentyrian2000.exe|raw/executable/opentyrian2000.exe.strings.txt,1
 opus-0.dll,553472,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/opus-0.dll,1
 opusfile-0.dll,82944,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/opusfile-0.dll,1
@@ -89,12 +89,12 @@ shipedit.pif,967,misc,Windows program information file for a DOS tool,not read a
 tshp2.pcx,62168,graphics,PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen,src/video/pcxload.c JE_loadPCX; src/level/level_load.c; src/endless/endless.c ENDLESS_RUNEND_PIC,endless.c|level_load.c|pcxload.c,images/pcx/tshp2.png,1
 tyrend.anm,3315848,animation,"Episode 3 ending animation, DeluxePaint LPF","src/video/animlib.c JE_playAnim, from the ']A' episode script command",level_load.c,anim/tyrend,1
 tyrian.cdt,1078,text,"Credits roll, one colour-tagged line per record",src/menus/credits.c JE_playCredits,credits.c,text/credits.txt,1
-tyrian.cfg,28,config,Original Tyrian settings block,src/core/config.c,config.c|config.h|endless.c|endless.h|endless_save.c|game_menu.c|net_savexfer.c|switch_platform.h|varz.h,raw/config/tyrian.cfg,1
+tyrian.cfg,28,config,Original Tyrian settings block,src/core/config.c,config.c|config.h|endless.c|endless.h|endless_save.c|game_menu.c|game_state.h|net_savexfer.c|savegame.c|savegame.h|switch_platform.h,raw/config/tyrian.cfg,1
 tyrian.hdt,295069,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/game/helptext.c JE_loadHelpText; src/level/episodes.c JE_loadItemDat,episodes.c|game_menu.c|helptext.c,gamedata/episodes_1-3|text/hdt_text.json,1
 tyrian.pic,367161,graphics,Run-length 320x200 interface backdrops,src/video/picload.c JE_loadPic,picload.c,images/pic,1
-tyrian.sav,4722,save,"Save slots, high scores and unlock flags","src/core/config.c JE_loadConfiguration; player state, not shipped data",config.c|config.h|endless_save.c|qa.c,raw/save/tyrian.sav,1
+tyrian.sav,4722,save,"Save slots, high scores and unlock flags","src/core/savegame.c legacy_save_load, from JE_loadConfiguration; player state, not shipped data",endless_save.c|qa_saves.c|savegame.c|savegame.h,raw/save/tyrian.sav,1
 tyrian.shp,505983,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/video/sprite.c JE_loadMainShapeTables,opentyr.c|setup_menu.c|sprite.c|sprite_viewer.c,sprites/tyrian_shp,1
-tyrian.snd,271689,audio,"Sound effects, signed 8-bit mono at 11025 Hz",src/audio/nortsong.c loadSndFile,nortsong.c,audio/sfx,1
+tyrian.snd,271689,audio,"Sound effects, signed 8-bit mono at 11025 Hz",src/audio/sfx.c loadSndFile,sfx.c,audio/sfx,1
 tyrian1.lvl,538856,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat,episodes.c|file.c|lvllib.c,levels/episode_1,1
 tyrian2.exe,84810,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/tyrian2.exe|raw/executable/tyrian2.exe.strings.txt,1
 tyrian2.lvl,381187,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat,episodes.c|lvllib.c,levels/episode_2,1
@@ -110,6 +110,6 @@ tyricn4.ico,2238,graphics,Windows icon for one of the DOS-era launchers,not read
 tyricon.ico,2238,graphics,Windows icon for one of the DOS-era launchers,not read at runtime,,images/icons/tyricon.ico|images/icons/tyricon.png,1
 user1.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,editship.c|sprite_viewer.c,sprites/standalone/user1_shp,1
 user2.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,sprite_viewer.c,sprites/standalone/user2_shp,1
-voices.snd,132767,audio,Voice samples in the same format,src/audio/nortsong.c loadSndFile,nortsong.c,audio/voices,1
-voicesc.snd,188275,audio,Christmas variant of voices.snd,"src/audio/nortsong.c loadSndFile, when the Christmas theme is on",nortsong.c|opentyr.c|setup_menu.c,audio/voices_christmas,1
+voices.snd,132767,audio,Voice samples in the same format,src/audio/sfx.c loadSndFile,sfx.c,audio/voices,1
+voicesc.snd,188275,audio,Christmas variant of voices.snd,"src/audio/sfx.c loadSndFile, when the Christmas theme is on",opentyr.c|setup_menu.c|sfx.c,audio/voices_christmas,1
 wavpackdll.dll,232448,library,Runtime library for the shipped Tyrian 2000 build,not read at runtime by this port,,raw/library/wavpackdll.dll,1

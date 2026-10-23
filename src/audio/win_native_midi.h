@@ -13,11 +13,9 @@ void wnm_quit(void);   // stop playback and close the device
 // runs on the player thread after a non-looping song ends.
 bool wnm_play(const uint8_t *smf, size_t size, bool loop, void (*on_finish)(void));
 
-void wnm_stop(void);           // stop and silence (safe; never blocks on winmm)
 void wnm_pause(void);          // silence and freeze the playback clock
 void wnm_resume(void);         // continue from where pause froze it
 void wnm_fade_out(uint32_t ms);// ramp music down over ms, then finish like a one-shot
-bool wnm_playing(void);        // true while a song is actively playing
 void wnm_set_volume(uint8_t vol255);  // master music volume, 0..255
 
 #endif /* WIN_NATIVE_MIDI_H */

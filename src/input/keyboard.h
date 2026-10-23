@@ -79,4 +79,6 @@ void JE_clearKeyboard(void);
 
 int scancode_digit(int sc);  // typed digit (0-9) from a scancode, or -1
 
+JE_boolean JE_anyButton(void);
+
 #endif /* KEYBOARD_H */

@@ -17,8 +17,6 @@
 #endif
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 // Master volume ceiling: 0..255 music volume maps to fluid_synth gain 0..FM_MAX_GAIN.
 // Kept below 1.0 for headroom so busy SoundFonts don't clip. (Tunable.)
@@ -288,7 +286,8 @@ bool fm_init(const char *soundfont, int sample_rate)
 	return true;
 }
 
-void fm_stop(void)
+// stop and silence
+static void fm_stop(void)
 {
 	if (g_thread != NULL)
 	{
@@ -347,7 +346,8 @@ void fm_quit(void)
 
 void fm_pause(void)  { SDL_AtomicSet(&g_paused, 1); }
 void fm_resume(void) { SDL_AtomicSet(&g_paused, 0); }
-bool fm_playing(void){ return SDL_AtomicGet(&g_active) != 0; }
+// true while a song is actively playing
+static bool fm_playing(void){ return SDL_AtomicGet(&g_active) != 0; }
 
 void fm_fade_out(uint32_t ms)
 {

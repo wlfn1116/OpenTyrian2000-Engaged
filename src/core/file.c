@@ -17,10 +17,10 @@
  */
 #include "file.h"
 
-#include "console_platform.h"  // SWITCH_/VITA_ data-directory names
+#include "console_platform.h"  // SWITCH_/VITA_ data- and user-directory names
 #include "crashlog.h"
+#include "game_state.h"
 #include "opentyr.h"
-#include "varz.h"
 
 #include "SDL.h"
 
@@ -28,6 +28,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+#ifdef _MSC_VER
+#include <direct.h>
+#define mkdir _mkdir
+#endif
 
 const char *custom_data_dir = NULL;
 
@@ -228,4 +234,68 @@ void fwrite_die(const void *buffer, size_t size, size_t count, FILE *stream)
 		SDL_Quit();
 		exit(EXIT_FAILURE);
 	}
+}
+
+const char *get_user_directory(void)
+{
+	static char user_dir[500] = "";
+
+	if (strlen(user_dir) == 0)
+	{
+#if defined(__SWITCH__)
+		// Fixed writable location on the SD card; switch_platform_init() creates it.
+		strcpy(user_dir, SWITCH_USER_DIR);
+#elif defined(__vita__)
+		// Fixed writable location on the memory card; vita_platform_init() creates it.
+		strcpy(user_dir, VITA_USER_DIR);
+#elif defined(__ANDROID__) || defined(TARGET_IOS)
+		// App-private storage, resolved by mobile_platform_init(). Nothing here survives
+		// an uninstall on either system.
+		snprintf(user_dir, sizeof(user_dir), "%s", mobile_user_dir());
+#elif defined(TARGET_MACOS)
+		// Bundled macOS apps keep writable state under ~/Library/Application Support.
+		// SDL includes a trailing separator, which dir_fopen() adds itself.
+		char *pref = SDL_GetPrefPath("OpenTyrian", "OpenTyrian2000");
+		snprintf(user_dir, sizeof(user_dir), "%s", pref != NULL ? pref : ".");
+		SDL_free(pref);
+
+		const size_t pref_len = strlen(user_dir);
+		if (pref_len > 1 && user_dir[pref_len - 1] == '/')
+			user_dir[pref_len - 1] = '\0';
+#elif !defined(TARGET_WIN32)
+		char *xdg_config_home = getenv("XDG_CONFIG_HOME");
+		if (xdg_config_home != NULL)
+		{
+			snprintf(user_dir, sizeof(user_dir), "%s/opentyrian2000", xdg_config_home);
+		}
+		else
+		{
+			char *home = getenv("HOME");
+			if (home != NULL)
+			{
+				snprintf(user_dir, sizeof(user_dir), "%s/.config/opentyrian2000", home);
+			}
+			else
+			{
+				strcpy(user_dir, ".");
+			}
+		}
+#else
+		strcpy(user_dir, ".");
+#endif
+	}
+
+	return user_dir;
+}
+
+const char *make_user_directory(void)
+{
+#ifndef TARGET_WIN32
+	const int mkdir_result = mkdir(get_user_directory(), 0700);
+#else
+	const int mkdir_result = mkdir(get_user_directory());
+#endif
+	(void)mkdir_result;
+
+	return get_user_directory();
 }

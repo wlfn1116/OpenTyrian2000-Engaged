@@ -18,7 +18,7 @@ TILE_W, TILE_H = 24, 28
 TILES_PER_SET = 600
 
 VOICE_COUNT = 9
-SAMPLE_RATE = 11025  # signed 8-bit mono (src/audio/nortsong.c builds the converter from this)
+SAMPLE_RATE = 11025  # signed 8-bit mono (src/audio/sfx.c builds the converter from this)
 
 # Layout of the map layers inside a level record (src/level/level_load.c, JE_loadMap).
 MAP_LAYERS = ((14, 300), (14, 600), (15, 600))
@@ -426,7 +426,7 @@ def load_pcx(path):
     return decode_pcx_rle(body), palette
 
 
-# tyrian.snd / voices.snd / voicesc.snd (src/audio/nortsong.c, loadSndFile)
+# tyrian.snd / voices.snd / voicesc.snd (src/audio/sfx.c, loadSndFile)
 #
 # u16 sample count, u32 offsets, then signed 8-bit mono at 11025 Hz. Voice
 # banks carry 100 bytes of junk at the end of each sample.
@@ -1018,7 +1018,7 @@ def load_level(data, offset):
     return level
 
 
-# demo.1 .. demo.5 (src/game/mainint.c, load_next_demo / replay_demo_keys)
+# demo.1 .. demo.5 (src/game/demo.c, load_next_demo / replay_demo_keys)
 
 DEMO_KEY_BITS = ("up", "down", "left", "right", "fire", "changeFire",
                  "leftSidekick", "rightSidekick")

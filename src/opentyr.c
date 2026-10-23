@@ -20,32 +20,37 @@
 #include "config.h"
 #include "crashlog.h"
 #include "custom_episode.h"
+#include "demo.h"
 #include "destruct.h"
 #include "editship.h"
 #include "endless.h"
 #include "episodes.h"
 #include "file.h"
+#include "game_loop.h"
+#include "game_menu.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "high_scores.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "level_load.h"
 #include "loudness.h"
-#include "mainint.h"
 #include "mtrand.h"
 #include "net_start.h"
 #include "network.h"
 #include "net_rollback.h"
-#include "nortsong.h"
 #include "opentyrian_version.h"
 #include "palette.h"
 #include "params.h"
+#include "player.h"
 #include "qa.h"
+#include "render_list.h"
 #include "rollback.h"
+#include "sfx.h"
+#include "sndmast.h"
 #include "sprite.h"
 #include "console_platform.h"
 #include "title.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 #include "xmas.h"
 
@@ -62,6 +67,87 @@ typedef char assert_char_is_signed[(char)-1 < 0 ? 1 : -1];
 const char *opentyrian_str = "OpenTyrian 2000 Engaged";
 const char *opentyrian_version = OPENTYRIAN_VERSION;
 const char *opentyrian_commit = OPENTYRIAN_COMMIT;
+
+void JE_tyrianShutdown(bool saveConfiguration)
+{
+	network_shutdown();
+	deinit_audio();
+	destruct_deinit();
+	game_loop_deinit();
+	game_menu_deinit();
+	rl_deinit();
+	deinit_video();
+	deinit_joysticks();
+
+	free_main_shape_tables();
+	free_sprite2s(&shopSpriteSheet);
+	free_sprite2s(&explosionSpriteSheet);
+
+	for (int i = 0; i < SOUND_COUNT; ++i)
+	{
+		free(soundSamples[i]);
+		soundSamples[i] = NULL;
+	}
+
+	close_demo_file();
+
+	if (saveConfiguration)
+		JE_saveConfiguration();
+
+	music_deinit();
+	JE_freeExtraShapes();
+	rollback_deinit();
+	config_deinit(&opentyrian_config);
+	network_deinit();
+}
+
+void JE_tyrianHalt(JE_byte code)
+{
+	// Code 1 is an unrecoverable data error. Write its report before exit()
+	// bypasses the crash handlers; duplicate reports are ignored.
+	if (code == 1)
+		crashlog_report_fatal("FATAL (JE_tyrianHalt error exit)",
+		                      "JE_tyrianHalt(1) -- unrecoverable data/level error; see phase + stack");
+
+	JE_tyrianShutdown(code != 9);
+
+	/* endkeyboard; */
+
+	if (code == 9)
+	{
+	}
+
+	if (code == 5)
+	{
+		code = 0;
+	}
+
+	if (trentWin)
+	{
+		printf("\n"
+		       "\n"
+		       "\n"
+		       "\n"
+		       "Sleep well, Trent, you deserve the rest.\n"
+		       "You now have permission to borrow my ship on your next mission.\n"
+		       "\n"
+		       "Also, you might want to try out the YESXMAS parameter in Dos.\n"
+		       "  Type: File0001 YESXMAS\n"
+		       "\n"
+		       " Press a Key to Quit\n"
+		       "\n");
+	}
+
+	SDL_Quit();
+
+#ifdef __SWITCH__
+	// Switch: libc exit()'s atexit/stdio teardown NULL-derefs in newlib once romfs is
+	// gone; everything is already flushed, so _Exit and skip it.
+	_Exit(code);
+#else
+	exit(code);
+#endif
+}
 
 #ifdef _MSC_VER
 // Some compilers do not infer that JE_tyrianHalt exits; suppress C4702 around main's end.

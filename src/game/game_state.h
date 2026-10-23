@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef VARZ_H
-#define VARZ_H
+#ifndef GAME_STATE_H
+#define GAME_STATE_H
 
 #include "episodes.h"
 #include "opentyr.h"
@@ -48,9 +48,6 @@ enum
 #define ENEMY_SHOT_MAX     500  // array size + endless cap
 
 #define CURRENT_KEY_SPEED 1  /*Keyboard/Joystick movement rate*/
-
-#define MAX_EXPLOSIONS           200
-#define MAX_REPEATING_EXPLOSIONS 20
 
 /* Hundredths: the unit JE_SingleEnemyType.damageAccum and enemy_hp_divisor100 are counted in, so a
  * fractional HP multiplier can be spent exactly. */
@@ -207,26 +204,6 @@ typedef struct {
 	JE_byte fill[9];
 } EnemyShotType;
 
-typedef struct {
-	JE_byte ttl;
-	JE_integer x, y;
-	JE_word sprite;
-	bool followPlayer;
-	bool fixedPosition;
-	JE_integer deltaY;
-	Uint8 id_gen;  // bumped each time this slot is reused, to disambiguate the render-
-	               // list interpolation id so a recycled slot isn't mis-paired
-	Uint8 filter;  // palette bank to recolour into, 0 for the sprite's own colours
-} Explosion;
-
-typedef struct {
-	unsigned int delay;
-	unsigned int ttl;
-	unsigned int x, y;
-	bool big;
-	Uint8 filter;  // passed on to each explosion this sequence spawns
-} rep_explosion_type;
-
 extern JE_integer tempDat, tempDat2, tempDat3;
 extern const JE_byte SANextShip[SA + 2];
 extern const JE_word SASpecialWeapon[SA];
@@ -277,13 +254,6 @@ extern JE_byte flash;
 extern JE_shortint flashChange;
 extern JE_byte displayTime;
 
-extern bool play_demo, record_demo, stopped_demo;
-extern Uint8 demo_num;
-extern FILE *demo_file;
-
-extern Uint8 demo_keys;
-extern Uint16 demo_keys_wait;
-
 extern JE_byte soundQueue[8];
 extern JE_boolean enemyContinualDamage;
 extern JE_boolean enemiesActive;
@@ -312,15 +282,6 @@ extern JE_word enemyOnScreen;
 extern JE_word enemyParkedAbove;
 extern JE_word mapStopStallTicks;
 extern JE_word superEnemy254Jump;
-extern Explosion explosions[MAX_EXPLOSIONS];
-extern JE_integer explosionFollowAmountX, explosionFollowAmountY;
-// Presentation tint for the next explosion call; clear it before the tick ends.
-extern Uint8 explosionFilter;
-
-/* Opacity for the next explosion, in sixteenths. JE_setupExplosion() stamps it into a local side
- * table; reset it after spawning. */
-extern Uint8 explosionOpacity;
-Uint8 explosion_opacity(uint slot);
 extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
 extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
@@ -333,7 +294,7 @@ extern JE_byte astralDuration;
 extern JE_word flareDuration;
 extern JE_boolean flareStart;
 extern JE_shortint flareColChg;
-extern bool flareOwnsFilter;  // the live screen grade is a flare's, not the level's (see varz.c)
+extern bool flareOwnsFilter;  // the live screen grade is a flare's, not the level's (see game_state.c)
 extern JE_byte specialWait;
 extern JE_byte nextSpecialWait;
 extern JE_boolean spraySpecial;
@@ -423,7 +384,6 @@ extern JE_integer optionAttachmentMove[2];                               // per 
 extern JE_boolean optionAttachmentLinked[2], optionAttachmentReturn[2];  // so both front options can launch
 extern JE_byte chargeWait, chargeLevel, chargeMax, chargeGr, chargeGrWait;
 extern JE_word neat;
-extern rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS];
 extern JE_byte temp, temp2, temp3;
 extern JE_word tempW;
 extern JE_boolean doNotSaveBackup;
@@ -436,27 +396,16 @@ extern JE_boolean linkToPlayer;
 extern JE_word shipGr, shipGr2;
 extern Sprite2_array *shipGrPtr, *shipGr2ptr;
 
-void JE_getShipInfo(void);
-JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr);
-bool extraShipGraphicIsCustom(int graphic);
-bool extraShipGraphicIsNort(int graphic);
-int extraShipGraphicMax(void);
-const char *extraShipEditorGraphicName(int graphic);
-
 void JE_drawOptions(void);
 void JE_resetPlayerOptions(Player *this_player);
 
-void JE_tyrianShutdown(bool saveConfiguration);
-void JE_tyrianHalt(JE_byte code); /* This ends the game */
 
 JE_byte JE_playerDamage(JE_byte temp, Player *);
 // Clear enemy shots within a ship's Countermeasures reach; return the number cleared.
 int endlessCountermeasureBurst(Player *);
 
-void JE_setupExplosion(JE_integer x, JE_integer y, JE_integer deltaY, JE_integer type, bool fixedPosition, bool followPlayer);
-void JE_setupExplosionLarge(JE_boolean enemyground, JE_byte explonum, JE_integer x, JE_integer y);
 
 // Firing patterns this ship's rear bay offers; clamp its weapon_mode against its own, not another's.
 JE_word JE_portConfigs(const Player *this_player);
 
-#endif /* VARZ_H */
+#endif /* GAME_STATE_H */

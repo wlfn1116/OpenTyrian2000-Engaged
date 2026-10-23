@@ -19,11 +19,11 @@
 
 #include "config.h"
 #include "endless.h"
+#include "game_state.h"
 #include "mtrand.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "sprite.h"
-#include "varz.h"
 #include "video.h"
 
 #include <math.h>
@@ -377,7 +377,7 @@ void enemy_shot_vaporise_sparks(unsigned int slot)
 
 	const EnemyShotType *const es = &enemyShot[slot];
 
-	// Sheet split and frame arithmetic as the in-game bullet draw does them (tyrian2.c).
+	// Sheet split and frame arithmetic as the in-game bullet draw does them (game_loop.c).
 	const bool highSheet = (es->sgr >= 500);
 	const unsigned int frame = es->sgr + es->animate - (highSheet ? 500 : 0);
 	const Uint8 color = (es->filter != 0)

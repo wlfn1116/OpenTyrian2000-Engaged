@@ -17,14 +17,16 @@
  */
 #include "fonthand.h"
 
+#include "draw.h"
+#include "keyboard.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "opentyr.h"
-#include "params.h"
+#include "sfx.h"
 #include "sprite.h"
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
+
+#include <string.h>
 
 const int font_ascii[256] =
 {
@@ -60,6 +62,10 @@ JE_byte warningSoundDelay;
 JE_word armorShipDelay;
 JE_byte warningCol;
 JE_shortint warningColChange;
+JE_boolean useLastBank; /* Use the last 16 colors for DisplayText. */
+
+static void JE_outTextModify(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter,
+                             unsigned int brightness, unsigned int font);
 
 void JE_dString(SDL_Surface * screen, int x, int y, const char *s, unsigned int font)
 {
@@ -305,7 +311,8 @@ void JE_outTextOutlined(SDL_Surface * screen, int x, int y, const char *s, unsig
 	JE_outText(screen, x, y, s, colorbank, brightness);
 }
 
-void JE_outTextModify(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, unsigned int brightness, unsigned int font)
+static void JE_outTextModify(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter,
+                             unsigned int brightness, unsigned int font)
 {
 	for (int i = 0; s[i] != '\0'; ++i)
 	{
@@ -473,4 +480,92 @@ void JE_outTextGlowMulti(SDL_Surface * screen, const int *x, int y, const char *
 void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s)
 {
 	JE_outTextGlowMulti(screen, &x, y, &s, 1);
+}
+
+void JE_outCharGlow(JE_word x, JE_word y, const char *s)
+{
+	JE_integer maxloc, loc, z;
+	JE_shortint glowcol[60]; /* [1..60] */
+	JE_shortint glowcolc[60]; /* [1..60] */
+	JE_word textloc[60]; /* [1..60] */
+	JE_byte bank;
+
+	setDelay2(1);
+
+	bank = (warningRed) ? 7 : ((useLastBank) ? 15 : 14);
+
+	if (s[0] == '\0')
+		return;
+
+	if (frameCountMax == 0)
+	{
+		JE_textShade(VGAScreen, x, y, s, bank, 0, PART_SHADE);
+		JE_showVGA();
+	}
+	else
+	{
+		maxloc = strlen(s);
+		for (z = 0; z < 60; z++)
+		{
+			glowcol[z] = -8;
+			glowcolc[z] = 1;
+		}
+
+		loc = x;
+		for (z = 0; z < maxloc; z++)
+		{
+			textloc[z] = loc;
+
+			int sprite_id = font_ascii[(unsigned char)s[z]];
+
+			if (s[z] == ' ')
+				loc += 6;
+			else if (sprite_id != -1)
+				loc += sprite(TINY_FONT, sprite_id)->width + 1;
+		}
+
+		for (loc = 0; (unsigned)loc < strlen(s) + 28; loc++)
+		{
+			if (!ESCPressed)
+			{
+				setDelay(frameCountMax);
+
+				NETWORK_KEEP_ALIVE();
+
+				int sprite_id = -1;
+
+				for (z = loc - 28; z <= loc; z++)
+				{
+					if (z >= 0 && z < maxloc)
+					{
+						sprite_id = font_ascii[(unsigned char)s[z]];
+
+						if (sprite_id != -1)
+						{
+							blit_sprite_hv(VGAScreen, textloc[z], y, TINY_FONT, sprite_id, bank, glowcol[z]);
+
+							glowcol[z] += glowcolc[z];
+							if (glowcol[z] > 9)
+								glowcolc[z] = -1;
+						}
+					}
+				}
+				if (sprite_id != -1 && --z < maxloc)
+					blit_sprite_dark(VGAScreen, textloc[z] + 1, y + 1, TINY_FONT, sprite_id, true);
+
+				if (JE_anyButton())
+					frameCountMax = 0;
+
+				do
+				{
+					if (levelWarningDisplay)
+						JE_updateWarning(VGAScreen);
+
+					SDL_Delay(1);
+				} while (!(getDelayTicks() == 0 || ESCPressed));
+
+				JE_showVGA();
+			}
+		}
+	}
 }

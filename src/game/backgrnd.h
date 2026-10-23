@@ -30,7 +30,7 @@ extern JE_word backMove, backMove2, backMove3;
 extern int endlessScrollExtraPx1, endlessScrollExtraPx2, endlessScrollExtraPx3;
 
 // TRUE per-tick vertical scroll (px) of each background layer [1..3], computed at draw time in
-// backgrnd.c/tyrian2.c.
+// backgrnd.c/game_loop.c.
 extern int bgScrollDeltaY[4];
 
 // Offscreen rows retained below each background layer. Scroll modifiers widen the

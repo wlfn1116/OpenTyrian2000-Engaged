@@ -18,18 +18,18 @@
 #include "params.h"
 
 #include "arg_parse.h"
+#include "demo.h"
 #include "file.h"
+#include "game_state.h"
 #include "joystick.h"
 #include "loudness.h"
 #include "network.h"
 #include "opentyr.h"
 #include "qa.h"
-#include "varz.h"
 #include "xmas.h"
 
 #include <assert.h>
 #include <ctype.h>
-#include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

@@ -21,12 +21,17 @@
 #include "config.h"
 #include "console_platform.h"
 #include "debug_menu.h"
+#include "demo.h"
+#include "draw.h"
 #include "editship.h"
 #include "endless.h"
 #include "enemy_death.h"
 #include "episodes.h"
+#include "explosions.h"
 #include "file.h"
 #include "fonthand.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "health_bars.h"
 #include "help.h"
 #include "helptext.h"
@@ -36,33 +41,35 @@
 #include "keyboard.h"
 #include "loudness.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "musmast.h"
 #include "net_rollback.h"
 #include "net_style.h"
 #include "network.h"
-#include "nortsong.h"
+#include "palette.h"
 #include "params.h"
 #include "player.h"
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
+#include "sfx.h"
 #include "shots.h"
 #include "sim_math.h"
 #include "sndmast.h"
 #include "specials.h"
 #include "sprite.h"
-#include "tyrian2.h"
-#include "varz.h"
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+bool button[4];
+bool pause_pressed = false, ingamemenu_pressed = false, changefire_pressed = false;
+JE_shortint constantLastX;
 
 /*Street Fighter codes*/
 void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer mouseX_, JE_integer mouseY_)
@@ -778,7 +785,7 @@ bool endlessArmOpeningSalvoForTick(Player *this_player, JE_byte playerNum_)
 	return endlessOpeningSalvoConsume();
 }
 
-void JE_playerMovement(Player *this_player,
+static void JE_playerMovement(Player *this_player,
                        JE_byte inputDevice,
                        JE_byte playerNum_,
                        JE_word shipGr_,
@@ -1154,32 +1161,7 @@ redo:
 
 					// Record input transitions in the legacy demo stream.
 					if (record_demo)
-					{
-						bool new_input = false;
-
-						for (unsigned int i = 0; i < 8; i++)
-						{
-							bool temp = demo_keys & (1 << i);
-							if (temp != keysactive[keySettings[i]])
-								new_input = true;
-						}
-
-						demo_keys_wait++;
-
-						if (new_input)
-						{
-							Uint8 temp2[2] = { demo_keys_wait >> 8, demo_keys_wait };
-							fwrite_u8(temp2, 2, demo_file);
-
-							demo_keys = 0;
-							for (unsigned int i = 0; i < 8; i++)
-								demo_keys |= keysactive[keySettings[i]] ? (1 << i) : 0;
-
-							fwrite_u8(&demo_keys, 1, demo_file);
-
-							demo_keys_wait = 0;
-						}
-					}
+						record_demo_keys();
 				}
 
 				/* Debug Toggle Fire changes state only on a press edge. Console touch
@@ -1550,7 +1532,7 @@ redo:
 				twoPlayerLinked = true;
 			}
 
-			// Fuse/unfuse cues are played presentation-side in tyrian2.c (link_cue_state):
+			// Fuse/unfuse cues are played presentation-side in game_loop.c (link_cue_state):
 			// queueing them here loses them to the sidekick-fire slot and to rollback.
 
 			if (playerNum_ == 1 && (button[3-1] || button[2-1]) && !galagaMode)

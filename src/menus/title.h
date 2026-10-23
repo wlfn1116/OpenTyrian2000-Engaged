@@ -22,9 +22,7 @@
 
 void intro_logos(void);
 bool titleScreen(void);
-bool newGame(void);
 bool newSuperArcadeGame(unsigned int i);
 bool newSuperTyrianGame(void);
-bool newEndlessGame(void);
 
 #endif /* TITLE_H */

@@ -21,22 +21,24 @@
 #include "backgrnd.h"
 #include "config.h"
 #include "crashlog.h"
+#include "demo.h"
 #include "episodes.h"
 #include "file.h"
 #include "fonthand.h"
+#include "game_loop.h"
 #include "game_menu.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "high_scores.h"
+#include "item_prices.h"
 #include "keyboard.h"
+#include "level_end.h"
 #include "loudness.h"
 #include "lvllib.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "mtrand.h"
 #include "musmast.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "palette.h"
 #include "params.h"
 #include "pcxload.h"
@@ -44,10 +46,11 @@
 #include "picload.h"
 #include "player.h"
 #include "qa.h"
+#include "savegame.h"
 #include "sprite.h"
+#include "str_util.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 
 #include <ctype.h>
@@ -57,6 +60,7 @@
 
 /* Level Event Data */
 static JE_boolean loadLevelOk;
+JE_boolean jumpSection;
 
 struct JE_EventRecType eventRec[EVENT_MAXIMUM]; /* [1..eventMaximum] */
 JE_word levelEnemyMax;
@@ -66,6 +70,8 @@ JE_word levelEnemy[40]; /* [1..40] */
 /* Data used for ItemScreen procedure to indicate items available */
 JE_byte itemAvail[9][10]; /* [1..9, 1..10] */
 JE_byte itemAvailMax[9]; /* [1..9] */
+
+static void JE_displayText(void);
 
 static void copy_screen_to_buffer(Uint8* buffer)
 {
@@ -700,7 +706,6 @@ new_game:
 						} while (s[0] != '#');
 						levelWarningLines--;
 
-						JE_wipeKey();
 						frameCountMax = 4;
 						if (!constantPlay)
 							JE_displayText();
@@ -879,7 +884,6 @@ new_game:
 						{
 							if (!ESCPressed)
 							{
-								JE_wipeKey();
 								warningCol = 14 * 16 + 5;
 								warningColChange = 1;
 								warningSoundDelay = 0;
@@ -1172,7 +1176,7 @@ new_game:
 	/* End of find loop for LEVEL??.DAT */
 }
 
-void JE_displayText(void)
+static void JE_displayText(void)
 {
 	/* Display Warning Text */
 	JE_word tempY = 55;

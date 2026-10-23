@@ -58,4 +58,8 @@ int networkGuestWaitRows(const char **label, const char **value);
 static inline int sa_pick_name_x(int i) { return SA_PICK_COL_X + (i / SA_PICK_ROWS) * SA_PICK_COL_DX; }
 static inline int sa_pick_name_y(int i) { return SA_PICK_TOP_Y + (i % SA_PICK_ROWS) * SA_PICK_ROW_H; }
 
+// One-line "the other machine is not with us yet" panel over a frozen gameplay frame. Draws into
+// whatever VGAScreen points at, so callers must have pointed it at VGAScreenSeg first.
+void JE_drawNetworkNotice(const char *text);
+
 #endif /* NET_START_H */

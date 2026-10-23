@@ -17,8 +17,8 @@
 #ifndef NET_SAVEXFER_H
 #define NET_SAVEXFER_H
 
-#include "config.h"
 #include "opentyr.h"
+#include "savegame.h"
 
 /* Blocking LAN save-transfer screens. They own their sockets and must not run during a live
  * network session. */

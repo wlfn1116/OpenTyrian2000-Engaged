@@ -9,10 +9,10 @@
 #include "endless_internal.h"
 #include "episodes.h"
 #include "game_menu.h"
-#include "mainint.h"
+#include "game_state.h"
+#include "level_load.h"
 #include "network.h"
 #include "player.h"
-#include "varz.h"
 
 #include <stdio.h>
 #include <string.h>

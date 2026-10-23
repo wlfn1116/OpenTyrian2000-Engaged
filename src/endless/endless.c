@@ -4,25 +4,20 @@
 #include "endless_internal.h"
 
 #include "config.h"
-#include "custom_weapon.h"
-#include "episodes.h"
 #include "fonthand.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "keyboard.h"
 #include "loudness.h"
-#include "mainint.h"
 #include "mtrand.h"
 #include "rollback.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "palette.h"
 #include "pcxload.h"
 #include "network.h"
 #include "player.h"
 #include "sprite.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 
 #include <stdio.h>
@@ -449,7 +444,8 @@ const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
 int  endlessBestZoneDiff[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { { 0 } } } };
 bool endlessBestZoneDiffCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { { false } } } };
 
-int endlessRecordTable(void) { return coopEndlessMode ? 1 : 0; }
+// which table the run in progress writes
+static int endlessRecordTable(void) { return coopEndlessMode ? 1 : 0; }
 
 const char *endlessRecordTableName(int players)
 {
@@ -737,7 +733,7 @@ void endlessRecordRunStart(void)
 	endlessRunRecord(&best, &mark);
 	endlessBestZoneAtRunStart = *best;
 }
-int  endlessBestZoneAtStart(void) { return endlessBestZoneAtRunStart; }
+static int  endlessBestZoneAtStart(void) { return endlessBestZoneAtRunStart; }
 
 void endlessResetRun(void)
 {
@@ -1175,7 +1171,6 @@ void endlessOnRunEnd(void)
 	JE_showVGA();
 	fade_palette(colors, 15, 0, 255);
 
-	JE_wipeKey();
 	frameCountMax = 4;
 	SDL_Color white = { 255, 255, 255 };
 	set_colors(white, 254, 254);

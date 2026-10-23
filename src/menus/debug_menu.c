@@ -21,12 +21,14 @@
 #include "console_platform.h"
 #include "crashlog.h"
 #include "debug_levels.h"
+#include "draw.h"
 #include "editship.h"
 #include "endless.h"
 #include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
-#include "game_menu.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "hud.h"
 #include "ingame_menu.h"
@@ -34,22 +36,18 @@
 #include "keyboard.h"
 #include "loudness.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "musmast.h"
 #include "net_rollback.h"
 #include "network.h"
-#include "nortsong.h"
 #include "player.h"
 #include "rollback.h"
+#include "sfx.h"
 #include "shots.h"
 #include "sndmast.h"
 #include "sprite.h"
 #include "sprite_viewer.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
-#include "vga256d.h"
 #include "video.h"
 
 #include <ctype.h>
@@ -80,6 +78,47 @@ void debug_panel_frame(int px0, int py0, int px1, int py1, int title_h, int mid_
 	fill_rectangle_xy(VGAScreen, px0 + 1, py0 + title_h, px1 - 1, py0 + title_h, PANEL_DIVIDER);
 	draw_font_hv_shadow(VGAScreen, mid_x, py0 + 3, title, normal_font, centered, 15, 4, true, 1);
 }
+
+void debug_panel_scrollbar(int px1, int items_top, int row_h, int visibleRows, int scrollTop,
+                           int count)
+{
+	if (count <= visibleRows)
+		return;
+
+	const int track_top = items_top - 1;
+	const int track_bot = items_top + visibleRows * row_h - 2;
+	const int track_h = track_bot - track_top;
+	fill_rectangle_xy(VGAScreen, px1 - 4, track_top, px1 - 3, track_bot, PANEL_EDGE_LO);
+
+	int thumb_h = track_h * visibleRows / count;
+	if (thumb_h < 4)
+		thumb_h = 4;
+	const int denom = count - visibleRows;
+	const int thumb_y = track_top + (denom > 0 ? (track_h - thumb_h) * scrollTop / denom : 0);
+	fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h, PANEL_EDGE_HI);
+}
+
+#if defined(__SWITCH__) || defined(__vita__)
+void debug_panel_shoulder_paging(bool was[2])
+{
+#if defined(__SWITCH__)
+	static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
+#else
+	static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
+#endif
+	for (int b = 0; b < 2; ++b)
+	{
+		const bool down = joysticks > 0 && joystick[0].handle != NULL &&
+		                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
+		if (down && !was[b] && !newkey)
+		{
+			newkey = true;
+			lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
+		}
+		was[b] = down;
+	}
+}
+#endif
 
 /* Expert-mode tuning submenu of the debug menu; rows come from the shared
  * expertSettings table plus a synthetic final "Reset Defaults" row. */
@@ -597,8 +636,8 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged, bool carryGau
 		if (player[i].armor > player[i].initial_armor)
 			player[i].armor = player[i].initial_armor;
 
-		// The shield ceiling is set only at level start (tyrian2.c), so without this a shield swap
-		// keeps the old one's maximum and the gauge scale goes with it.
+		// The shield ceiling is set only at level start (game_loop.c), so without this a shield
+		// swap keeps the old one's maximum and the gauge scale goes with it.
 		player[i].shield_max = arcade_shield_max(&player[i]);
 		if ((int)i == pnum && carryGauges)
 			player[i].shield = player_carry_gauge(keptShield[i], keptShieldMax[i],
@@ -1006,22 +1045,7 @@ void JE_debugMenu(bool center)
 				draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 		}
 
-		/* scrollbar track + thumb (only when the list overflows the window) */
-		if (menuCount > visibleRows)
-		{
-			const int track_top = items_top - 1;
-			const int track_bot = items_top + visibleRows * row_h - 2;
-			const int track_h = track_bot - track_top;
-			fill_rectangle_xy(VGAScreen, px1 - 4, track_top, px1 - 3, track_bot, PANEL_EDGE_LO);
-
-			int thumb_h = track_h * visibleRows / menuCount;
-			if (thumb_h < 4)
-				thumb_h = 4;
-			const int denom = menuCount - visibleRows;
-			const int thumb_y = track_top + (denom > 0 ? (track_h - thumb_h) * scrollTop / denom : 0);
-			fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h,
-			                  PANEL_EDGE_HI);
-		}
+		debug_panel_scrollbar(px1, items_top, row_h, visibleRows, scrollTop, menuCount);
 
 		/* Footer line 1: what the selected row DOES; 34 cheats and diagnostics is far too many
 		 * to carry their meaning in the label alone. Line 2: the keys, named for the platform. */
@@ -1057,26 +1081,9 @@ void JE_debugMenu(bool center)
 		NETWORK_KEEP_ALIVE();
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown; same
-		// pattern as the endless debug jump screen (debug_levels.c); see the note there.
 		{
-#if defined(__SWITCH__)
-			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
-#else
-			static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
-#endif
 			static bool shoulder_was[2];
-			for (int b = 0; b < 2; ++b)
-			{
-				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-				                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
-				if (down && !shoulder_was[b] && !newkey)
-				{
-					newkey = true;
-					lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
-				}
-				shoulder_was[b] = down;
-			}
+			debug_panel_shoulder_paging(shoulder_was);
 		}
 #endif
 

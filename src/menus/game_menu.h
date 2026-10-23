@@ -33,13 +33,6 @@ bool game_menu_test_outpost_rows(char *detail, size_t detailSize);
 // Release the shop preview's supersampled frames. Called from JE_tyrianShutdown.
 void game_menu_deinit(void);
 
-// Fill `out` with up to `maxOut` combat-level section numbers for `episode` (the same level
-// scan the debug level picker uses); returns how many were written.
-uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut);
-
-// Read an authored level name without loading it; fileNum 0 selects the section's first cut.
-void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char *out, size_t outSize);
-
 void load_cubes(void);
 bool load_cube(int cube_slot, int cube_index);
 

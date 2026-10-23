@@ -15,28 +15,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef VGA256D_H
-#define VGA256D_H
+#ifndef LEVEL_END_H
+#define LEVEL_END_H
 
 #include "opentyr.h"
 
 #include "SDL.h"
 
-void JE_pix(SDL_Surface *surface, int x, int y, JE_byte c);
-void JE_pix3(SDL_Surface *surface, int x, int y, JE_byte c);
-void JE_rectangle(SDL_Surface *surface, int a, int b, int c, int d, int e);
+void JE_nextEpisode(void);
 
-void fill_rectangle_xy(SDL_Surface *, int x, int y, int x2, int y2, Uint8 color);
+// Whether the score-based difficulty drift between levels runs; false for the whole of an Endless
+// run, which stays on the rung it launched with. Public so the unit suite can pin that.
+bool difficulty_adjust_active(void);
 
-void JE_barShade(SDL_Surface *surface, int a, int b, int c, int d);
-void JE_barBright(SDL_Surface *surface, int a, int b, int c, int d);
+void JE_endLevelAni(void);
+void JE_drawCube(SDL_Surface * screen, JE_word x, JE_word y, JE_byte filter, JE_byte brightness);
 
-static inline void fill_rectangle_wh(SDL_Surface *surface, int x, int y, uint w, uint h, Uint8 color)
-{
-	SDL_Rect rect = { x, y, w, h };
-	SDL_FillRect(surface, &rect, color);
-}
-
-void draw_segmented_gauge(SDL_Surface *surface, int x, int y, Uint8 color, uint segment_width, uint segment_height, uint segment_value, uint value);
-
-#endif /* VGA256D_H */
+#endif /* LEVEL_END_H */

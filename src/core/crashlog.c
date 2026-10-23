@@ -7,6 +7,8 @@
 
 #ifdef _WIN32
 
+#include "opentyr.h"
+
 #include <windows.h>
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -38,10 +40,6 @@
 
 // Enough for "<stem>_YYYY-MM-DD_HHMMSS.log" with room to spare.
 #define LOG_NAME_MAX 64
-
-extern const char *opentyrian_str;      // opentyr.c
-extern const char *opentyrian_version;  // opentyr.c
-extern const char *opentyrian_commit;   // opentyr.c
 
 // Prevent recursive reporting on terminal fault paths. The watchdog remains re-armable.
 static volatile LONG s_reporting = 0;

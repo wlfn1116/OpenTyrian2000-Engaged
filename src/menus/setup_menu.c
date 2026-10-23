@@ -23,32 +23,31 @@
 #include "custom_episode.h"
 #include "custom_weapon.h"
 #include "destruct.h"
+#include "draw.h"
 #include "editship.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_state.h"
 #include "help.h"
 #include "helptext.h"
 #include "joystick.h"
 #include "jukebox.h"
 #include "keyboard.h"
 #include "loudness.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "net_savexfer.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "palette.h"
 #include "params.h"
 #include "picload.h"
 #include "save_menu.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "timing.h"
 #include "title.h"
 #include "touch_ui.h"
-#include "varz.h"
-#include "vga256d.h"
 #include "video.h"
 #include "video_scale.h"
 #include "weapon_creator.h"
@@ -345,7 +344,7 @@ typedef enum
 	MENU_ITEM_ZICA_BUFF,
 
 	/* Enhancements -> Gameplay. */
-	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (tyrian2.c)
+	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (game_loop.c)
 	MENU_ITEM_GUIDED_AIM,           // weapon-table homing steers toward the enemy's screen x (shots.c)
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
 	MENU_ITEM_CUSTOM_ENDLESS,       // custom episodes in the Endless pool; hidden unless some exist

@@ -21,11 +21,10 @@
 
 #include "crashlog.h"
 #include "fnv1a.h"
-#include "joystick.h"
 #include "keyboard.h"
-#include "mainint.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "net_start.h"
 #include "network.h"
 #include "rollback.h"
 #include "video.h"
@@ -138,6 +137,7 @@ static bool   resync_notice;
 static Uint16 resync_notice_epoch;
 
 static bool drb_resync_dispatch(void);
+static void drb_selftest_disarm(void);
 
 /* Both roles arm this, at the mismatch and at the transfer, so neither machine calls the recovery
  * something the other does not. */
@@ -1435,7 +1435,7 @@ void drb_selftest_arm(size_t stateBytes, void (*save)(void *dst), void (*restore
 	drb_round_reset();
 }
 
-void drb_selftest_disarm(void)
+static void drb_selftest_disarm(void)
 {
 	free(selftest_ref);
 	selftest_ref = NULL;

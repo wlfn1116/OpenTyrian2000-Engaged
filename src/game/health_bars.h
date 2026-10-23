@@ -20,7 +20,7 @@
 
 #include "opentyr.h"
 
-#include "varz.h"
+#include "game_state.h"
 
 #include "SDL.h"
 
@@ -56,7 +56,6 @@ void draw_boss_bar(void);
 
 // Offsets used to keep the Endless kill-fire HUD clear of a boss bar.
 int  boss_bar_hud_left_shift(int hudRightX);  // px to shift LEFT for a right-side vertical bar
-bool boss_bar_hud_needs_up_shift(void);       // true while a BOTTOM horizontal bar is shown
 int  boss_bar_bottom_band_top(void);          // topmost row that bar covers, or INT_MAX if none
 
 // Inclusive vertical boss-bar bounds after HUD and warning-strip clearance.

@@ -18,6 +18,7 @@
 #include "sprite_viewer.h"
 
 #include "debug_menu.h"
+#include "draw.h"
 #include "file.h"
 #include "font.h"
 #include "joystick.h"
@@ -26,7 +27,6 @@
 #include "network.h"
 #include "palette.h"
 #include "sprite.h"
-#include "vga256d.h"
 #include "video.h"
 
 #include <stdio.h>

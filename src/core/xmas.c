@@ -17,16 +17,15 @@
  */
 #include "xmas.h"
 
+#include "draw.h"
 #include "font.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "palette.h"
 #include "sprite.h"
-#include "vga256d.h"
 #include "video.h"
 
-#include <stdio.h>
 #include <time.h>
 
 bool xmas = false;

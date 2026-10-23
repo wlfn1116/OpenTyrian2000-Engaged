@@ -20,32 +20,32 @@
 #include "config.h"
 #include "custom_weapon.h"
 #include "debug_menu.h"
+#include "draw.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_loop.h"
 #include "game_menu.h"
+#include "game_state.h"
 #include "hud.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "lds_play.h"
 #include "loudness.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "musmast.h"
 #include "network.h"
-#include "nortsong.h"
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
-#include "vga256d.h"
 #include "video.h"
 
 #include "SDL.h"
@@ -364,6 +364,114 @@ Sprite2_array *extraShapesFor(uint playerIdx)
 bool extraAvailFor(uint playerIdx)
 {
 	return (isNetworkGame && playerIdx < COUNTOF(extraNetAvail)) ? extraNetAvail[playerIdx] : extraAvail;
+}
+
+// Preserve ShipEdit graphic IDs 1 through 15. See doc/notes.md#extra-ships.
+static const JE_word extraLegacyGraphics[7] = { 233, 157, 195, 271, 81, 0, 119 };
+static const JE_word extraCustomGraphics[8] = { 5, 43, 81, 119, 157, 195, 233, 271 };
+
+bool extraShipGraphicIsCustom(int graphic)
+{
+	return graphic >= 8 && graphic <= 15;
+}
+
+static bool extraShipLegacyGraphic(JE_word raw)
+{
+	for (uint i = 0; i < COUNTOF(extraLegacyGraphics); ++i)
+		if (extraLegacyGraphics[i] == raw)
+			return true;
+	return false;
+}
+
+// Sort raw graphics so extended IDs stay stable and shared artwork appears once.
+static int extraShipExtendedGraphics(JE_word *graphics, size_t capacity)
+{
+	int count = 0;
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+	{
+		const JE_word raw = ships[ship].shipgraphic;
+		if (ships[ship].name[0] == '\0' || extraShipLegacyGraphic(raw))
+			continue;
+
+		int at = 0;
+		while (at < count && graphics[at] < raw)
+			++at;
+		if (at < count && graphics[at] == raw)
+			continue;
+		if ((size_t)count >= capacity)
+			continue;
+
+		memmove(&graphics[at + 1], &graphics[at], (size_t)(count - at) * sizeof(*graphics));
+		graphics[at] = raw;
+		++count;
+	}
+	return count;
+}
+
+static bool extraShipGraphicRaw(int graphic, JE_word *raw)
+{
+	if (graphic >= 1 && graphic <= 7)
+	{
+		*raw = extraLegacyGraphics[graphic - 1];
+		return true;
+	}
+	if (graphic < 16)
+		return false;
+
+	JE_word extended[SHIP_DRAGONWING];
+	const int count = extraShipExtendedGraphics(extended, COUNTOF(extended));
+	const int index = graphic - 16;
+	if (index < 0 || index >= count)
+		return false;
+	*raw = extended[index];
+	return true;
+}
+
+bool extraShipGraphicIsNort(int graphic)
+{
+	JE_word raw;
+	return extraShipGraphicRaw(graphic, &raw) && raw == 1;
+}
+
+int extraShipGraphicMax(void)
+{
+	JE_word extended[SHIP_DRAGONWING];
+	return 15 + extraShipExtendedGraphics(extended, COUNTOF(extended));
+}
+
+const char *extraShipEditorGraphicName(int graphic)
+{
+	JE_word raw;
+	if (!extraShipGraphicRaw(graphic, &raw))
+		return NULL;
+
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+		if (ships[ship].name[0] != '\0' && ships[ship].shipgraphic == raw)
+			return ship == 1 ? "USP Talon" : ships[ship].name;
+	return NULL;
+}
+
+// Route online extra-ship graphics through the owning seat's file.
+JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr)
+{
+	const int graphic = extraShipsFor(seat)[(ship - 1) * 15];
+	if (extraShipGraphicIsCustom(graphic))
+	{
+		*ptr = extraShapesFor(seat);
+		return extraCustomGraphics[graphic - 8];
+	}
+
+	JE_word raw;
+	if (!extraShipGraphicRaw(graphic, &raw))
+		raw = extraLegacyGraphics[0]; // invalid graphics fall back to the first built-in hull
+
+	if (raw > 500)
+	{
+		*ptr = &spriteSheetT2000;
+		return raw - 500;
+	}
+	*ptr = &spriteSheet9;
+	return raw;
 }
 
 enum { EXTRA_SHIPS_WIRE_VERSION = 1 };

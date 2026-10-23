@@ -19,12 +19,12 @@
 
 #include "backgrnd.h"
 #include "config.h"
-#include "console_platform.h"
 #include "crashlog.h"
 #include "custom_episode.h"
 #include "custom_weapon.h"
 #include "debug_levels.h"
 #include "debug_menu.h"
+#include "draw.h"
 #include "editship.h"
 #include "endless.h"
 #include "endless_internal.h"  // the QA auto-visit reaches the perk and course internals
@@ -32,20 +32,21 @@
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "help.h"
 #include "hud.h"
+#include "item_prices.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "level_end.h"
 #include "level_load.h"
 #include "loudness.h"
-#include "lvllib.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "musmast.h"
 #include "net_style.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
+#include "palette.h"
 #include "params.h"
 #include "pcxmast.h"
 #include "picload.h"
@@ -53,18 +54,18 @@
 #include "qa.h"
 #include "render_list.h"
 #include "save_menu.h"
+#include "savegame.h"
+#include "sfx.h"
 #include "shots.h"
 #include "sparks.h"
 #include "sprite.h"
+#include "str_util.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
-#include "vga256d.h"
 #include "video.h"
 #include "weapon_creator.h"
 
 #include <assert.h>
-#include <limits.h>
 #include <math.h>
 
 enum
@@ -171,6 +172,7 @@ static JE_MenuChoiceType menuChoices;
 static JE_integer col, colC;
 static JE_byte lastCurSel;
 static JE_integer curMenu;
+static JE_boolean inputDetected;
 static JE_byte curSel[MENU_MAX]; /* [1..maxmenu] */
 
 // Load/save cursor row from the last slot picked, restored on each outpost visit so a
@@ -417,170 +419,6 @@ static void ensure_equipped_items_visible(void)
 static void shop_stock_owned_items(void)
 {
 	stock_owned_items(endlessMode ? &shopPlayer()->items : &shopPlayer()->last_items);
-}
-
-uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut)
-{
-	static bool missingLevelWarned[EPISODE_MAX][256];
-	const unsigned int levelFileCount = JE_levelFileCount(episode);
-	if (levelFileCount == 0)
-		return 0;
-
-	FILE *f;
-	long end = 0;
-	if (episode >= CUSTOM_EPISODE_ID_BASE)
-	{
-		// Extended IDs can read an inactive container's script.
-		f = customEpisodeOpenScript(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE), &end);
-	}
-	else if (customEpisodeActive() && episode == episodeNum)
-	{
-		// The active container owns this base episode's script.
-		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_SCRIPT_NAME, "rb");
-	}
-	else
-	{
-		char fname[16];
-		snprintf(fname, sizeof(fname), "levels%d.dat", episode);
-		f = dir_fopen_warn(data_dir(), fname, "rb");
-	}
-	if (f == NULL)
-		return 0;
-	if (end == 0)
-		end = ftell_eof(f);
-
-	JE_word section = 0;
-	bool sectionUnsafe = false;  // a mode-switch command seen since the last '*'
-	char s[256];
-	uint n = 0;
-
-	while (ftell(f) < end && n < maxOut)
-	{
-		read_encrypted_pascal_string(s, sizeof(s), f);
-
-		if (s[0] == '*')
-		{
-			section++;
-			sectionUnsafe = false;
-		}
-		else if (s[0] == ']')
-		{
-			// Exclude levels that enter ENGAGE or other special multiplayer modes.
-			if (s[1] == 'e' || s[1] == 'g' || s[1] == '2')
-				sectionUnsafe = true;
-			else if (s[1] == 'L')
-			{
-				const int fileNum = atoi(s + 25);
-				if (fileNum < 1 || (unsigned int)fileNum > levelFileCount)
-				{
-					const bool inWarnTable = episode >= 1 && episode <= EPISODE_MAX
-					                      && fileNum >= 0 && fileNum < 256;
-					if (!inWarnTable || !missingLevelWarned[episode - 1][fileNum])
-					{
-						fprintf(stderr, "warning: episode %d section %u references missing level file %d\n",
-						        episode, (unsigned int)section, fileNum);
-						if (inWarnTable)
-							missingLevelWarned[episode - 1][fileNum] = true;
-					}
-					continue;
-				}
-
-				// Strip the level name (padded with spaces) for a name blocklist too.
-				char name[10];
-				SDL_strlcpy(name, s + 13, sizeof(name));
-				size_t len = strlen(name);
-				while (len > 0 && name[len - 1] == ' ')
-					name[--len] = '\0';
-
-				const bool special = sectionUnsafe
-					|| SDL_strcasecmp(name, "ALE") == 0
-					|| SDL_strcasecmp(name, "TIME WAR") == 0
-					|| SDL_strcasecmp(name, "SQUADRON") == 0
-					// Episode 5 levels 5-7 are an unfinished copy of a SAVARA level with no
-					// proper ending, so they can never be cleared; keep them out too.
-					|| (episode == 5 && section >= 5 && section <= 7);
-
-				if (!special)
-				{
-					// Each ']L' is a distinct pool entry (section, lvlFileNum); a section can
-					// carry two level files; see JE_getLevelSections's doc in game_menu.h.
-					if (fileOut != NULL)
-						fileOut[n] = (JE_byte)fileNum;
-					out[n++] = (JE_byte)section;
-				}
-			}
-		}
-	}
-
-	fclose(f);
-	return n;
-}
-
-// Read a section's nine-character authored level name without loading it. fileNum 0 selects the
-// first ]L entry; no match returns an empty string.
-void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char *out, size_t outSize)
-{
-	if (out == NULL || outSize == 0)
-		return;
-	out[0] = '\0';
-
-	const unsigned int levelFileCount = JE_levelFileCount(episode);
-	if (levelFileCount == 0)
-		return;
-
-	FILE *f;
-	long end = 0;
-	if (episode >= CUSTOM_EPISODE_ID_BASE)
-	{
-		f = customEpisodeOpenScript(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE), &end);
-	}
-	else if (customEpisodeActive() && episode == episodeNum)
-	{
-		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_SCRIPT_NAME, "rb");
-	}
-	else
-	{
-		char fname[16];
-		snprintf(fname, sizeof(fname), "levels%d.dat", episode);
-		f = dir_fopen_warn(data_dir(), fname, "rb");
-	}
-	if (f == NULL)
-		return;
-	if (end == 0)
-		end = ftell_eof(f);
-
-	JE_word sec = 0;
-	char s[256];
-
-	while (ftell(f) < end)
-	{
-		read_encrypted_pascal_string(s, sizeof(s), f);
-
-		if (s[0] == '*')
-		{
-			sec++;
-		}
-		else if (s[0] == ']' && s[1] == 'L')
-		{
-			const int fn = atoi(s + 25);
-			if (fn < 1 || (unsigned int)fn > levelFileCount)
-				continue;
-			if (sec != section || (fileNum != 0 && fn != (int)fileNum))
-				continue;
-
-			// The name is a fixed 9-char field (offset 13), space-padded, with the file number
-			// following at offset 25. Copy exactly nine characters, not the full tail.
-			char name[10];
-			SDL_strlcpy(name, s + 13, sizeof(name));
-			size_t len = strlen(name);
-			while (len > 0 && name[len - 1] == ' ')
-				name[--len] = '\0';
-			SDL_strlcpy(out, name, outSize);
-			break;
-		}
-	}
-
-	fclose(f);
 }
 
 /* Preview the post-purchase wallet; unaffordable rows may make it temporarily negative. */
@@ -3689,7 +3527,6 @@ void JE_itemScreen(void)
 				curMenu = MENU_FULL_GAME;
 				JE_playSampleNum(S_SPRING);
 				newPal = 1;
-				JE_wipeKey();
 			}
 
 			if (curMenu == MENU_DATA_CUBE_SUB)
@@ -5899,122 +5736,37 @@ void JE_drawMainMenuHelpText(void)
 	}
 }
 
-JE_boolean JE_saveRequest(JE_byte slot, const char *savename)
+typedef struct
 {
-	bool save_selected = true, done = false;
+	JE_byte slot;
+	const char *savename;
+}
+SaveRequestText;
 
-	JE_clearKeyboard();
-	JE_wipeKey();
-	wait_noinput(true, true, true);
+static void save_request_message(const void *ctx)
+{
+	const SaveRequestText *text = ctx;
 
-	JE_barShade(VGAScreen, 65, 55, 255, 155);
-
-	while (!done)
-	{
-		Uint8 col = 8;
-		int colC = 1;
-
-		do
-		{
-			service_SDL_events(true);
-			setDelay(4);
-
-			NETWORK_KEEP_ALIVE();  // online saves confirm from inside the shop; don't drop the peer
-
-			blit_sprite(VGAScreen, 50, 50, OPTION_SHAPES, 35);  // message box
-			// Use the body-text bank so the question remains bright on saved-game palettes.
-			JE_textShade(VGAScreen, 70, 66, miscText[68], 12, 5, FULL_SHADE); // Are you sure you want to save?
-			JE_textShade(VGAScreen, 74, 90, miscText[1], 12, 1, FULL_SHADE); // Save name:
-			JE_textShade(VGAScreen, 135, 90, savename, 12, 1, FULL_SHADE);
-			JE_textShade(VGAScreen, 74, 100, miscText[69], 12, 1, FULL_SHADE); // Original save:
-			JE_textShade(VGAScreen, 140, 100, saveFiles[slot-1].name, 12, 1, FULL_SHADE);
-
-			col += colC;
-			if (col > 8 || col < 2)
-				colC = -colC;
-
-			int temp_x, temp_c;
-
-			temp_x = 54 + 45 - (JE_textWidth(miscText[9], FONT_SHAPES) / 2);
-			temp_c = save_selected ? col - 12 : -5;
-
-			JE_outTextAdjust(VGAScreen, temp_x, 128, miscText[9], 15, temp_c, FONT_SHAPES, true);
-
-			temp_x = 149 + 45 - (JE_textWidth(miscText[10], FONT_SHAPES) / 2);
-			temp_c = !save_selected ? col - 12 : -5;
-
-			JE_outTextAdjust(VGAScreen, temp_x, 128, miscText[10], 15, temp_c, FONT_SHAPES, true);
-
-			if (has_mouse)
-			{
-				JE_mouseStart();
-				JE_showVGA();
-				JE_mouseReplace();
-			}
-			else
-			{
-				JE_showVGA();
-			}
-
-			// not wait_delay(): keep the cursor at display rate for the rest of the tick
-			menuWaitWithSmoothCursor();
-
-			push_joysticks_as_keyboard();
-			service_SDL_events(false);
-
-		} while (!newkey && !mousedown);
-
-		if (mousedown)
-		{
-			if (lastmouse_y > 123 && lastmouse_y < 149)
-			{
-				if (lastmouse_x > 56 && lastmouse_x < 142)
-				{
-					save_selected = true;
-					done = true;
-				}
-				else if (lastmouse_x > 151 && lastmouse_x < 237)
-				{
-					save_selected = false;
-					done = true;
-				}
-			}
-			mousedown = false;
-		}
-		else if (newkey)
-		{
-			switch (lastkey_scan)
-			{
-				case SDL_SCANCODE_LEFT:
-				case SDL_SCANCODE_RIGHT:
-				case SDL_SCANCODE_TAB:
-					save_selected = !save_selected;
-					JE_playSampleNum(S_CURSOR);
-					break;
-				case SDL_SCANCODE_RETURN:
-				case SDL_SCANCODE_SPACE:
-					done = true;
-					break;
-				case SDL_SCANCODE_ESCAPE:
-					save_selected = false;
-					done = true;
-					break;
-				default:
-					break;
-			}
-		}
-	}
-
-	JE_playSampleNum(save_selected ? S_SELECT : S_CLICK);
-	return save_selected;
+	// Use the body-text bank so the question remains bright on saved-game palettes.
+	JE_textShade(VGAScreen, 70, 66, miscText[68], 12, 5, FULL_SHADE); // Are you sure you want to save?
+	JE_textShade(VGAScreen, 74, 90, miscText[1], 12, 1, FULL_SHADE); // Save name:
+	JE_textShade(VGAScreen, 135, 90, text->savename, 12, 1, FULL_SHADE);
+	JE_textShade(VGAScreen, 74, 100, miscText[69], 12, 1, FULL_SHADE); // Original save:
+	JE_textShade(VGAScreen, 140, 100, saveFiles[text->slot-1].name, 12, 1, FULL_SHADE);
 }
 
-JE_boolean JE_quitRequest(void)
+static void quit_request_message(const void *ctx)
 {
-	bool quit_selected = true, done = false;
+	(void)ctx;
+	JE_textShade(VGAScreen, 70, 60, miscText[28], 0, 5, FULL_SHADE);
+	JE_helpBox(VGAScreen, 70, 90, miscText[30], 30);
+}
+
+static bool shop_yes_no(void (*draw_message)(const void *ctx), const void *ctx, bool pump_shop)
+{
+	bool yes_selected = true, done = false;
 
 	JE_clearKeyboard();
-	JE_wipeKey();
 	wait_noinput(true, true, true);
 
 	JE_barShade(VGAScreen, 65, 55, 255, 155);
@@ -6031,12 +5783,14 @@ JE_boolean JE_quitRequest(void)
 
 			// A player thinking on this prompt must not read as a dead connection.
 			NETWORK_KEEP_ALIVE();
-			while (network_shop_pump())
-				;
+			if (pump_shop)
+			{
+				while (network_shop_pump())
+					;
+			}
 
 			blit_sprite(VGAScreen, 50, 50, OPTION_SHAPES, 35);  // message box
-			JE_textShade(VGAScreen, 70, 60, miscText[28], 0, 5, FULL_SHADE);
-			JE_helpBox(VGAScreen, 70, 90, miscText[30], 30);
+			draw_message(ctx);
 
 			col += colC;
 			if (col > 8 || col < 2)
@@ -6045,12 +5799,12 @@ JE_boolean JE_quitRequest(void)
 			int temp_x, temp_c;
 
 			temp_x = 54 + 45 - (JE_textWidth(miscText[9], FONT_SHAPES) / 2);
-			temp_c = quit_selected ? col - 12 : -5;
+			temp_c = yes_selected ? col - 12 : -5;
 
 			JE_outTextAdjust(VGAScreen, temp_x, 128, miscText[9], 15, temp_c, FONT_SHAPES, true);
 
 			temp_x = 149 + 45 - (JE_textWidth(miscText[10], FONT_SHAPES) / 2);
-			temp_c = !quit_selected ? col - 12 : -5;
+			temp_c = !yes_selected ? col - 12 : -5;
 
 			JE_outTextAdjust(VGAScreen, temp_x, 128, miscText[10], 15, temp_c, FONT_SHAPES, true);
 
@@ -6079,12 +5833,12 @@ JE_boolean JE_quitRequest(void)
 			{
 				if (lastmouse_x > 56 && lastmouse_x < 142)
 				{
-					quit_selected = true;
+					yes_selected = true;
 					done = true;
 				}
 				else if (lastmouse_x > 151 && lastmouse_x < 237)
 				{
-					quit_selected = false;
+					yes_selected = false;
 					done = true;
 				}
 			}
@@ -6097,7 +5851,7 @@ JE_boolean JE_quitRequest(void)
 				case SDL_SCANCODE_LEFT:
 				case SDL_SCANCODE_RIGHT:
 				case SDL_SCANCODE_TAB:
-					quit_selected = !quit_selected;
+					yes_selected = !yes_selected;
 					JE_playSampleNum(S_CURSOR);
 					break;
 				case SDL_SCANCODE_RETURN:
@@ -6105,7 +5859,7 @@ JE_boolean JE_quitRequest(void)
 					done = true;
 					break;
 				case SDL_SCANCODE_ESCAPE:
-					quit_selected = false;
+					yes_selected = false;
 					done = true;
 					break;
 				default:
@@ -6113,6 +5867,22 @@ JE_boolean JE_quitRequest(void)
 			}
 		}
 	}
+
+	return yes_selected;
+}
+
+JE_boolean JE_saveRequest(JE_byte slot, const char *savename)
+{
+	const SaveRequestText text = { slot, savename };
+	const bool save_selected = shop_yes_no(save_request_message, &text, false);
+
+	JE_playSampleNum(save_selected ? S_SELECT : S_CLICK);
+	return save_selected;
+}
+
+JE_boolean JE_quitRequest(void)
+{
+	const bool quit_selected = shop_yes_no(quit_request_message, NULL, true);
 
 	JE_playSampleNum(quit_selected ? S_SPRING : S_CLICK);
 
@@ -6718,8 +6488,6 @@ void JE_menuFunction(JE_byte select)
 					keySettings[curSelect-2] = lastkey_scan;
 					++curSelect;
 				}
-				
-				JE_wipeKey();
 			}
 		}
 		break;

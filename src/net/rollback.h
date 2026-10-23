@@ -49,10 +49,6 @@ void rollback_register_all(void);
 void rollback_deinit(void);
 size_t rollback_state_size(void);
 
-/* Registers without allocating the snapshot ring.  For callers that need the
- * registry described (the layout fingerprint) but are not about to roll back. */
-void rollback_ensure_registered(void);
-
 /* Hash of registry names, sizes, and offsets. Peers require this and state size to match before
  * exchanging snapshots. */
 Uint32 rollback_layout_fingerprint(void);
@@ -63,7 +59,6 @@ Uint32 rollback_state_hash(void);
 
 void rollback_ring_reset(void);
 void rollback_snapshot(Uint32 frame);
-bool rollback_have_frame(Uint32 frame);
 bool rollback_restore(Uint32 frame);
 
 /* Wire-safe snapshots encode registered pointers as tags or global-array offsets. Export verifies

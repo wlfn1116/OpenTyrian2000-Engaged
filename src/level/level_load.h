@@ -24,6 +24,7 @@ extern JE_byte itemAvail[9][10], itemAvailMax[9];
 extern JE_word levelEnemyFrequency;
 
 void JE_loadMap(void);
-void JE_displayText(void);
+
+extern JE_boolean jumpSection;
 
 #endif /* LEVEL_LOAD_H */

@@ -20,33 +20,36 @@
 #include "config.h"
 #include "console_platform.h"
 #include "custom_episode.h"
+#include "draw.h"
 #include "endless.h"
 #include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_loop.h"
 #include "game_menu.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "net_savexfer.h"
 #include "network.h"
-#include "nortsong.h"
 #include "palette.h"
 #include "picload.h"
 #include "qa.h"
+#include "savegame.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
-#include "tyrian2.h"
-#include "varz.h"
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+JE_boolean performSave;
 
 // The episode a save will really initialize: a "Completed" save rolls over to the next one.
 static int save_effective_episode(const JE_SaveFileType *rec)

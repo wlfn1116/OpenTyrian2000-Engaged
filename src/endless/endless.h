@@ -288,7 +288,6 @@ void endlessResetRun(void);
 // All-time records live in opentyrian.cfg, including Hardcore runs.
 void endlessNoteZoneReached(int zone);
 void endlessRecordRunStart(void);
-int  endlessBestZoneAtStart(void);
 
 // The six difficulties an Endless run can start on, in difficulty-select order. That order is the
 // on-disk order of the per-difficulty records too, so append to it rather than reordering it.
@@ -298,7 +297,6 @@ extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
 /* Records are kept apart by crew size: two ships clear zones a solo run cannot, so the two are
  * never compared. Index 0 is a one-player run, 1 an online co-op one. */
 #define ENDLESS_PLAYER_TABLES 2
-int endlessRecordTable(void);   // which table the run in progress writes
 const char *endlessRecordTableName(int players);
 
 /* Persistent chart-rule values. Append new rules; do not reorder them. */
@@ -397,7 +395,7 @@ const char *endlessSeedString(void);
 // Re-fork both players' outpost draw streams from the run seed.
 void endlessReseedPlayers(Uint64 salt);
 
-/* In-memory Endless halves of the save slots owned by config.c. */
+/* In-memory Endless halves of the save slots owned by savegame.c. */
 bool endlessSlotHasRun(JE_byte slot);
 void endlessSaveCaptureSlot(JE_byte slot);
 /* Access a slot's cached Endless record without touching the live run. Serialize returns 0 when
@@ -613,7 +611,7 @@ void endlessApplyLevelPayout(Sint64 *interestOut, Sint64 *bonusOut);
 // Replace Endless data cubes and secret orbs with a safe special for player p.
 void endlessGrantSpecial(uint p);
 
-// Pickups that hand out a random special. Drives the "?" art (tyrian2.c) and the pickup box
+// Pickups that hand out a random special. Drives the "?" art (game_loop.c) and the pickup box
 // (player_ship.c). Reads enemy state, writes none.
 bool endlessSpecialPickup(int slot);
 
@@ -714,7 +712,6 @@ void        endlessScalingOverridesClear(void);
 int         endlessScalingOverrideCount(void);
 
 // Rising tide adds projectile count after the ordinary intensity ramps flatten.
-int endlessTideLevel(void);
 int endlessExtraEnemyShots(void);
 int endlessFanPhaseNow(void);
 
@@ -799,7 +796,6 @@ void endlessOnSectorCleared(void);
 // Hostile kill-fire effects share the normal combo machinery.
 bool endlessKillFireIsEvil(void);
 int  endlessKillFireJamTicks(void);
-int  endlessKillBuffEvilDamagePenalty(void);
 const char *endlessKillFireEvilName(void);
 
 // Tier rolls are cached by link group.

@@ -22,22 +22,20 @@
 #include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
-#include "joystick.h"
+#include "game_state.h"  // SA_NONE, for clearing the one-player rulesets before an online session
 #include "keyboard.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "net_lobby.h"
 #include "network.h"
-#include "nortsong.h"
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
 #include "qa.h"
 #include "save_menu.h"
+#include "savegame.h"
+#include "sfx.h"
 #include "sprite.h"
-#include "touch_ui.h"
-#include "varz.h"  // SA_NONE, for clearing the one-player rulesets before an online session
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
 
 #include <stdio.h>
@@ -68,6 +66,13 @@ static bool menuPresentAndWait(bool *restart)
 		limit_render_fps();  // pace the cursor redraw to the render-fps cap
 
 	return wait_menu_input();
+}
+
+static void menuDrawItem(const char *text, int xCenter, int y, Sint8 brightness, int *width)
+{
+	*width = JE_textWidth(text, normal_font);
+	draw_font_hv_shadow(VGAScreen, xCenter - *width / 2, y, text, normal_font, left_aligned, 15,
+	                    brightness, false, 2);
 }
 
 // Find menu item that was hovered or clicked.
@@ -202,14 +207,10 @@ bool gameplaySelect(void)
 			                       : (i == MENU_ITEM_1_PLAYER_FULL_GAME)  ? gameplay_name[1]
 			                       :                                        gameplay_name[i];
 
-			wMenuItem[i] = JE_textWidth(text, normal_font);
-			const int x = xCenter - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * i;
-
 			const bool selected = i == selectedIndex;
 
-			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15,
-			                    -4 + (selected ? 2 : 0), false, 2);
+			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
+			             &wMenuItem[i]);
 		}
 
 		const bool mouseMoved = menuPresentAndWait(&restart);
@@ -334,11 +335,8 @@ static bool customEpisodeSelect(void)
 			const int idx = scrollTop + row;
 			const char *const text = customEpisodeTitle(idx);
 
-			wMenuItem[row] = JE_textWidth(text, normal_font);
-			const int x = xCenter - wMenuItem[row] / 2;
-			const int y = yMenuItems + dyMenuItems * row;
-
-			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (idx == selectedIndex ? 2 : 0), false, 2);
+			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * row,
+			             -4 + (idx == selectedIndex ? 2 : 0), &wMenuItem[row]);
 		}
 
 		// Mark rows above or below the window.
@@ -434,14 +432,11 @@ bool episodeSelect(void)
 		{
 			const char* const text = (i < stockCount) ? episode_name[i + 1] : "Custom";
 
-			wMenuItem[i] = JE_textWidth(text, normal_font);
-			const int x = xCenter - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * i;
-
 			const bool selected = i == selectedIndex;
 			const bool disabled = (i < stockCount) && !episodeAvail[i];
 
-			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i,
+			             -4 + (selected ? 2 : 0) + (disabled ? -4 : 0), &wMenuItem[i]);
 		}
 
 		const bool mouseMoved = menuPresentAndWait(&restart);
@@ -533,13 +528,10 @@ bool difficultySelect(void)
 		{
 			const char *const text = difficulty_name[i + 1];
 
-			wMenuItem[i] = JE_textWidth(text, normal_font);
-			const int x = xCenter - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * i;
-
 			const bool selected = i == selectedIndex;
 
-			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (selected ? 2 : 0), false, 2);
+			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
+			             &wMenuItem[i]);
 		}
 
 		const bool mouseMoved = menuPresentAndWait(&restart);
@@ -650,13 +642,10 @@ int networkHostStartSelect(void)
 		{
 			const char *const text = menu_item[i];
 
-			wMenuItem[i] = JE_textWidth(text, normal_font);
-			const int x = xCenter - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * (int)i;
-
 			const bool selected = i == selectedIndex;
 
-			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (selected ? 2 : 0), false, 2);
+			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
+			             &wMenuItem[i]);
 		}
 
 		const bool mouseMoved = menuPresentAndWait(&restart);
@@ -748,13 +737,10 @@ bool networkDisconnectSavePrompt(const char *message)
 		{
 			const char *const text = menu_item[i];
 
-			wMenuItem[i] = JE_textWidth(text, normal_font);
-			const int x = xCenter - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * (int)i;
-
 			const bool selected = i == selectedIndex;
 
-			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (selected ? 2 : 0), false, 2);
+			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
+			             &wMenuItem[i]);
 		}
 
 		const bool mouseMoved = menuPresentAndWait(&restart);
@@ -824,13 +810,10 @@ bool timedBattleSelect(void)
 		{
 			const char *const text = timed_battle_name[i + 1];
 
-			wMenuItem[i] = JE_textWidth(text, normal_font);
-			const int x = xCenter - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * i;
-
 			const bool selected = i == selectedIndex;
 
-			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (selected ? 2 : 0), false, 2);
+			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
+			             &wMenuItem[i]);
 		}
 
 		const bool mouseMoved = menuPresentAndWait(&restart);

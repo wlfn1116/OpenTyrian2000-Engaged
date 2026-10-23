@@ -20,7 +20,8 @@
 #include "config.h"
 #include "custom_weapon.h"
 #include "endless.h"
-#include "mainint.h"
+#include "explosions.h"
+#include "game_state.h"
 #include "net_style.h"
 #include "player.h"
 #include "player_ship.h"
@@ -29,7 +30,6 @@
 #include "sparks.h"
 #include "sprite.h"
 #include "video.h"
-#include "varz.h"
 
 // The extra entry preserves the original allocation size.
 PlayerShotDataType playerShotData[MAX_PWEAPON + 1]; /* [1..MaxPWeapon+1] */
@@ -378,7 +378,7 @@ void enemy_shot_hit_offset(JE_word sgr, JE_word animate, int *out_dx, int *out_d
 	if (!centeredShotHitboxes)
 		return;
 
-	// The sheet is chosen by the base graphic, not by the animated frame; the draw in tyrian2.c
+	// The sheet is chosen by the base graphic, not by the animated frame; the draw in game_loop.c
 	// splits it the same way, and a shot whose animation crosses 500 must not change sheets.
 	if (sgr >= 500)
 		sprite2_center_offset(spriteSheet12, sgr + animate - 500, out_dx, out_dy);

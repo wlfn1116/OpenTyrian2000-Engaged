@@ -21,9 +21,9 @@
 #include "file.h"
 #include "keyboard.h"
 #include "network.h"
-#include "nortsong.h"
 #include "palette.h"
 #include "sizebuf.h"
+#include "timing.h"
 #include "video.h"
 
 #include <assert.h>
@@ -62,15 +62,15 @@ FILE * InFile;
 
 static Uint8 AnimScreen[320 * 200];
 
-int JE_playRunSkipDump(Uint8 *, unsigned int);
-void JE_closeAnim(void);
-int JE_loadAnim(const char *);
-int JE_renderFrame(unsigned int);
-int JE_findPage (unsigned int);
-int JE_loadPage(unsigned int);
+static int JE_playRunSkipDump(Uint8 *, unsigned int);
+static void JE_closeAnim(void);
+static int JE_loadAnim(const char *);
+static int JE_renderFrame(unsigned int);
+static int JE_findPage (unsigned int);
+static int JE_loadPage(unsigned int);
 
 /* Returns zero on success and a nonzero value for invalid page data. */
-int JE_loadPage(unsigned int pagenumber)
+static int JE_loadPage(unsigned int pagenumber)
 {
 	unsigned int i, pageSize;
 
@@ -101,7 +101,7 @@ int JE_loadPage(unsigned int pagenumber)
 	return 0;
 }
 
-int JE_findPage(unsigned int framenumber)
+static int JE_findPage(unsigned int framenumber)
 {
 	unsigned int i;
 
@@ -117,7 +117,7 @@ int JE_findPage(unsigned int framenumber)
 	return -1;
 }
 
-int JE_renderFrame(unsigned int framenumber)
+static int JE_renderFrame(unsigned int framenumber)
 {
 	unsigned int i, offset, destframe;
 
@@ -174,7 +174,7 @@ void JE_playAnim(const char *animfile, JE_byte startingframe, JE_byte speed)
 }
 
 /* Closes the input file before returning from any validation failure. */
-int JE_loadAnim(const char *filename)
+static int JE_loadAnim(const char *filename)
 {
 	unsigned int i;
 	long fileSize;
@@ -245,7 +245,7 @@ int JE_loadAnim(const char *filename)
 	return 0;
 }
 
-void JE_closeAnim(void)
+static void JE_closeAnim(void)
 {
 	fclose(InFile);
 }
@@ -253,7 +253,7 @@ void JE_closeAnim(void)
 /* RunSkipDump supports byte and word forms of run, skip, and copy, plus the
  * 0x80 0x00 0x00 stop marker. Skip preserves destination bytes. A nonzero
  * result marks invalid input and terminates playback. */
-int JE_playRunSkipDump(Uint8 *incomingBuffer, unsigned int IncomingBufferLength)
+static int JE_playRunSkipDump(Uint8 *incomingBuffer, unsigned int IncomingBufferLength)
 {
 	sizebuf_t Buffer_IN, Buffer_OUT;
 	sizebuf_t * pBuffer_IN = &Buffer_IN, * pBuffer_OUT = &Buffer_OUT;

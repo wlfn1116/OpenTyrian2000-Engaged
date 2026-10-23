@@ -19,16 +19,18 @@
 #include "rollback.h"
 
 #include "crashlog.h"
+#include "demo.h"
 #include "endless.h"
 #include "episodes.h"
+#include "explosions.h"
 #include "fnv1a.h"
+#include "game_state.h"
 #include "hud.h"
 #include "net_rollback.h"
 #include "network.h"
 #include "opentyr.h"
 #include "shots.h"
 #include "sprite.h"
-#include "varz.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -251,7 +253,7 @@ void rollback_snapshot(Uint32 frame)
 	rb_ring_valid[slot] = true;
 }
 
-bool rollback_have_frame(Uint32 frame)
+static bool rollback_have_frame(Uint32 frame)
 {
 	const int slot = (int)(frame % ROLLBACK_RING);
 	return rb_ring_valid[slot] && rb_ring_frame[slot] == frame;
@@ -284,12 +286,14 @@ static bool rb_trace_snapshot(void)
 	return rb_reloc_walk(rb_trace_buf, true);
 }
 
+#if RB_TRACE_ITEMS_TO > 0
 /* FNV-1a over one entry's relocated bytes.  Raw entries only; the single
  * callback entry is the RNG, whose draw count the trace carries verbatim. */
 static Uint32 rb_item_hash(const RbItem *it)
 {
 	return fnv1a32(rb_trace_buf + it->offset, it->size);
 }
+#endif
 
 Uint32 rollback_state_hash(void)
 {
@@ -893,16 +897,18 @@ void rollback_level_end(void)
 /* Registration root. Public globals live in rollback_state.c; modules register
  * their own private simulation state here. */
 void rollback_state_register_globals(void);   /* rollback_state.c  */
-void tyrian2_register_rollback(void);         /* tyrian2.c statics */
+void game_loop_register_rollback(void);       /* game_loop.c statics */
 
-void rollback_ensure_registered(void)
+/* Registers without allocating the snapshot ring.  For callers that need the
+ * registry described (the layout fingerprint) but are not about to roll back. */
+static void rollback_ensure_registered(void)
 {
 	if (rb_registered)
 		return;
 	rb_registered = true;
 
 	rollback_state_register_globals();
-	tyrian2_register_rollback();
+	game_loop_register_rollback();
 }
 
 void rollback_register_all(void)

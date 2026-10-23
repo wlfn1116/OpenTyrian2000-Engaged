@@ -10,7 +10,6 @@
 #include <windows.h>
 #include <mmsystem.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #pragma comment(lib, "winmm.lib")
@@ -245,7 +244,8 @@ bool wnm_init(void)
 	return true;
 }
 
-void wnm_stop(void)
+// stop and silence (safe; never blocks on winmm)
+static void wnm_stop(void)
 {
 	if (g_thread != NULL)
 	{
@@ -306,7 +306,8 @@ void wnm_quit(void)
 
 void wnm_pause(void)  { SDL_AtomicSet(&g_paused, 1); }
 void wnm_resume(void) { SDL_AtomicSet(&g_paused, 0); }
-bool wnm_playing(void){ return SDL_AtomicGet(&g_active) != 0; }
+// true while a song is actively playing
+static bool wnm_playing(void){ return SDL_AtomicGet(&g_active) != 0; }
 
 void wnm_fade_out(uint32_t ms)
 {

@@ -26,7 +26,6 @@
 #include <assert.h>
 #include <limits.h>
 #include <stdbool.h>
-#include <stddef.h>
 #include <string.h>
 
 /* potential size of decimal representation of type */

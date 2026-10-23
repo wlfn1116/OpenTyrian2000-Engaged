@@ -7,12 +7,13 @@
 #include "config.h"
 #include "endless.h"
 #include "endless_internal.h"
-#include "mainint.h"
+#include "game_loop.h"
+#include "game_state.h"
+#include "level_end.h"
 #include "network.h"
 #include "player.h"
 #include "save_menu.h"
-#include "tyrian2.h"
-#include "varz.h"
+#include "savegame.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1869,8 +1870,8 @@ static void qa_hp_scaling_matrix(void)
 	         && endlessEnemyHpMult100(true, boss100, 1) == boss100,
 	         "the combined divisor carries each hull's fraction rather than its floor");
 
-	/* Endless names the multiplier's unit and tyrian2 names the accumulator's. They sit either side
-	 * of a module boundary and nothing in the build stops them drifting, so pin them here. */
+	/* Endless names the multiplier's unit and game_state names the accumulator's. They sit either
+	 * side of a module boundary and nothing in the build stops them drifting, so pin them here. */
 	qa_check(ENDLESS_HP_MULT_SCALE == ENEMY_DAMAGE_ACCUM_SCALE,
 	         "the HP multiplier and the damage accumulator are counted in the same unit");
 

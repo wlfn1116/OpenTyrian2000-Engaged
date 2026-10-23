@@ -4,23 +4,19 @@
 #include "endless_internal.h"
 
 #include "config.h"
-#include "custom_weapon.h"
 #include "enemy_death.h"
 #include "episodes.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "hud.h"
-#include "joystick.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "mtrand.h"
 #include "network.h"
 #include "player.h"
 #include "sprite.h"
-#include "tyrian2.h"
-#include "varz.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 // Combo count remains uncapped; only derived bonuses cap.
@@ -33,6 +29,9 @@ int endlessComboKills[2] = { 0, 0 };
 #define ENDLESS_EVIL_JAM_STACK_MAX   10
 #define ENDLESS_EVIL_DMG_MAX         75
 #define ENDLESS_EVIL_DMG_FLOOR       25
+
+static bool endlessStaticLockoutActive(void);
+static int endlessTideLevel(void);
 
 // Difficulty multiplier for effective depth.
 static int endlessDifficultyRampPercent(void)
@@ -283,7 +282,7 @@ int endlessShotDamagePercent(void)
 #define ENDLESS_TIDE_SHOT_STEP       25
 #define ENDLESS_TIDE_SHOT_MAX        50
 
-int endlessTideLevel(void)
+static int endlessTideLevel(void)
 {
 	ENDLESS_OVERRIDE(ESO_TIDE);
 	if (!endlessFxActive())
@@ -1030,7 +1029,7 @@ int endlessKillFireJamTicks(void)
 }
 
 // Damage penalty from Burnout or Misfire.
-int endlessKillBuffEvilDamagePenalty(void)
+static int endlessKillBuffEvilDamagePenalty(void)
 {
 	if (!endlessKillFireIsEvil() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGDOWN))
 		return 0;
@@ -1371,7 +1370,7 @@ void endlessSeekerTurn(float *turnCos, float *turnSin)
 // One lockout per ship: the hit ship's generator stalls, the partner's keeps charging.
 static int endlessStaticLockout[2] = { 0, 0 };
 
-bool endlessStaticLockoutActive(void)
+static bool endlessStaticLockoutActive(void)
 {
 	return endlessFxActive() && endlessStaticLockout[endlessFxPlayer()] > 0;
 }

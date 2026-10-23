@@ -6,7 +6,6 @@
 #include "backgrnd.h"
 #include "rollback.h"
 #include "sprite.h"
-#include "vga256d.h"
 #include "video.h"
 
 #include <assert.h>
@@ -1496,7 +1495,8 @@ static void rl_replay_common(SDL_Surface *dst, const RlTickView *v, float inv, f
 	}
 }
 
-void rl_replay(SDL_Surface *dst)
+// Re-draw every captured command into dst at its recorded position (alpha=1).
+static void rl_replay(SDL_Surface *dst)
 {
 	RlTickView v;
 	rl_current_view(&v);

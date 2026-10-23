@@ -25,14 +25,6 @@
 
 #include <stdio.h>
 
-#define SAVE_FILES_NUM (11 * 2)
-
-/* The plain-text save file beside opentyrian.cfg. The DOS-era tyrian.sav is imported once; see
- * doc/notes.md#saves-and-retries. */
-#define SAVE_FILE_NAME        "opentyrian.sav"
-#define SAVE_FILE_LEGACY_NAME "tyrian.sav"
-#define SAVE_FILE_FORMAT      1   // bumped when a key changes meaning; a missing key is a default
-
 enum
 {
 	DIFFICULTY_WIMP = 0,
@@ -68,71 +60,6 @@ typedef JE_byte MouseSettings[3];
 
 typedef JE_byte JE_PItemsType[12]; /* [1..12] */
 
-enum
-{
-	SAVE_DUAL_NONE = 0,
-	SAVE_DUAL_COOP,
-	SAVE_DUAL_ARCADE,
-};
-
-/* One save slot. A slot with level 0 is empty. Slots 12-22 hold two full loadouts: lastItems is
- * then player two's, and dualShips says which two-ship session wrote it. */
-typedef struct
-{
-	JE_word       level;
-	JE_PItemsType items;
-	Sint64        score;   // player 1 cash
-	Sint64        score2;  // player 2 cash
-	char          levelName[11]; /* string [9]; */ /* SYN: Added one more byte to match lastLevelName below */
-	JE_char       name[15]; /* [1..14] */ /* SYN: Added extra byte for null */
-	JE_byte       cubes;
-	JE_byte       power[2]; /* [1..2] */
-	JE_byte       episode;
-	JE_PItemsType lastItems;
-	JE_byte       difficulty;
-	JE_byte       secretHint;
-	JE_byte       input1;
-	JE_byte       input2;
-	JE_boolean    gameHasRepeated; /*See if you went from one episode to another*/
-	JE_byte       initialDifficulty;
-
-	/* SAVE_DUAL_NONE for a one-ship record. A two-complete-ships record says which session wrote
-	 * it and carries the powers and modes the two loadout blocks cannot hold. */
-	JE_byte       dualShips;
-	JE_byte       dualPower[2];
-	JE_byte       dualMode[2];
-	JE_boolean    onlinePlayerTwo;
-	JE_boolean    autoFireSpecial;
-	JE_byte       chargeSidekickAutofire;
-	JE_boolean    difficultyAdjust;
-	JE_boolean    cheatInfiniteSidekickAmmo;
-	JE_boolean    cheatInfiniteShields;
-	JE_boolean    cheatInfiniteArmor;
-	JE_boolean    expertMode;
-	// Per-seat dyes included in the online resume record.
-	JE_byte       shipColor[2];
-	// Per-seat partner views included in two-player online resume records.
-	JE_byte       viewOpacity[2];
-	JE_byte       viewShipOpacity[2];
-	JE_byte       viewHpBars[2];
-	/* Custom-episode file name; empty for stock games. */
-	char          customEpFile[64];  /* CUSTOM_EPISODE_FILE_LEN */
-	/* Colon-separated Custom Endless dependencies; empty for other saves. */
-	char          customCollection[4096];  /* CUSTOM_EPISODE_COLLECTION_LEN */
-} JE_SaveFileType;
-
-typedef JE_SaveFileType JE_SaveFilesType[SAVE_FILES_NUM]; /* [1..savefilesnum] */
-
-typedef struct
-{
-	Sint64        score;
-	char          playerName[30];
-	JE_byte       difficulty;
-} T2KHighScoreType;
-
-// First 10 are timed battle, next 10 are episodes
-extern T2KHighScoreType t2kHighScores[20][3];
-
 /* Credit rule attached to a recorded co-op Campaign run. */
 enum
 {
@@ -155,8 +82,6 @@ CoopCampaignScore;
 
 #define COOP_CAMPAIGN_SCORE_EPISODES 5   // asserted against EPISODE_MAX in config.c
 extern CoopCampaignScore coopCampaignScores[COOP_CAMPAIGN_SCORE_EPISODES];
-void coopCampaignScoreConfigSave(ConfigSection *section);
-void coopCampaignScoreConfigLoad(const ConfigSection *section);
 // The lobby's own word for a record's credit rule, or NULL for COOP_CREDIT_UNKNOWN.
 const char *coopCampaignCreditName(Uint8 credit);
 // Record the finished run if it beats that episode's standing best.
@@ -250,7 +175,7 @@ extern JE_byte superArcadeMode;
 // Per-seat custom ships are exchanged only in these modes. Fixed-hull modes are excluded.
 static inline bool custom_ships_multiplayer_mode(void)
 {
-	// SA_NONE is zero; its enum is declared later in varz.h.
+	// SA_NONE is zero; its enum is declared later in game_state.h.
 	return !timedBattleMode && !superTyrian && superArcadeMode == 0 &&
 	       (coop_mode_active() || arcade_separate_mode());
 }
@@ -267,7 +192,6 @@ extern JE_byte fastPlay;
 extern JE_boolean pentiumMode;
 extern JE_byte gameSpeed;
 extern JE_byte processorType;
-extern JE_SaveFilesType saveFiles;
 extern int fps_cap;
 
 /* Enhancement settings. */
@@ -435,10 +359,10 @@ extern bool chargeLaserCannon;  // re-add the cut DOS "Charge-Laser Cannon" side
 // Wakes dormant dispenser bases 80-83. Endless rolls this per zone instead.
 extern bool restoreBaseDispensers;
 extern bool arcadeLifeBoost;    // arcade modes: lives scale the shield and armour ceilings (player.c)
-extern bool arcadeRandomBalls;  // arcade modes: re-roll each weapon ball within its class (JE_makeEnemy, tyrian2.c)
+extern bool arcadeRandomBalls;  // arcade modes: re-roll each weapon ball within its class (JE_makeEnemy, game_loop.c)
 extern bool arcadeRearGunScale; // 1P arcade: lives raise the rear gun on top of its own pickups (player.c)
 extern bool unusedShopSprites;  // give the shop sheet's unreferenced icons to items that share one (episodes.c)
-extern bool centeredShotHitboxes;  // collide a projectile from the middle of its sprite, not its corner (tyrian2.c)
+extern bool centeredShotHitboxes;  // collide a projectile from the middle of its sprite, not its corner (game_loop.c)
 extern bool guidedShotScreenAim;   // weapon-table homing steers toward an enemy's screen x, ex + mapoffset (shots.c)
 extern bool shipEditorStars;
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
@@ -468,43 +392,9 @@ extern Config opentyrian_config;
 
 void JE_initProcessorType(void);
 void JE_setNewGameSpeed(void);
-const char *get_user_directory(void);
-const char *make_user_directory(void);
+extern bool configuration_loaded;
 void JE_loadConfiguration(void);
 void JE_saveConfiguration(void);
 bool save_opentyrian_config(void);  // write opentyrian.cfg now
-
-// Serialize or replace every save slot, high-score board, online seat, and Endless run.
-size_t save_file_serialize(Uint8 *buf, size_t cap);
-bool save_file_adopt(const Uint8 *buf, size_t len);
-// Serialize or replace slots, online seats, and Endless runs without high scores.
-size_t save_slots_serialize(Uint8 *buf, size_t cap);
-bool save_slots_adopt(const Uint8 *buf, size_t len);
-
-void JE_saveGame(JE_byte slot, const char *name);
-void JE_loadGame(JE_byte slot);
-
-// Apply a save record without going through a slot; the network resume path feeds the joiner a
-// record received from the host.  twoP tells it which loadout layout the record uses.
-void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
-
-// Fixed little-endian save record. NET_VERSION 87 added the 64-byte container name.
-#define SAVE_RECORD_PACKED_SIZE 162
-void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
-void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
-bool save_record_is_coop(const JE_SaveFileType *rec);
-// ...and the arcade shapes that also fly two complete ships (Separate, Super Arcade, SuperTyrian).
-bool save_record_is_dual_arcade(const JE_SaveFileType *rec);
-// The Super Arcade ship (1..SA), SA_SUPERTYRIAN, or SA_NONE each of the record's two ships flies.
-uint save_record_sa_ship(const JE_SaveFileType *rec, uint p);
-
-/* Saved two-player seat; unset and invalid values read as player one. */
-uint save_slot_online_player(JE_byte slot);
-void save_slot_set_online_player(JE_byte slot, uint playerNum);
-
-/* Save-codec regression hooks (qa.c): the slot codec's round trip and defaults, and a legacy
- * tyrian.sav imported from an explicit path over the live tables. */
-bool save_file_test_codec(char *detail, size_t detailSize);
-bool save_legacy_test_import(const char *path);
 
 #endif /* CONFIG_H */

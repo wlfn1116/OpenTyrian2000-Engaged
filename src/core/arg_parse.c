@@ -18,7 +18,6 @@
 #include "arg_parse.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static void permute(const char *argv[], int *first_nonopt, int *first_opt, int after_opt);

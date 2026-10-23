@@ -49,6 +49,11 @@ int extraShipPreviewBank(Uint32 elapsed);
 JE_byte *extraShipsFor(uint playerIdx);
 Sprite2_array *extraShapesFor(uint playerIdx);
 bool extraAvailFor(uint playerIdx);
+JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr);
+bool extraShipGraphicIsCustom(int graphic);
+bool extraShipGraphicIsNort(int graphic);
+int extraShipGraphicMax(void);
+const char *extraShipEditorGraphicName(int graphic);
 
 // Byte 255 names the custom weapon owned by the ship's seat. Resolution returns 0 without a port.
 #define EXTRA_SHIP_CUSTOM_PORT 255

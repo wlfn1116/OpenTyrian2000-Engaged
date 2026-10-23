@@ -113,7 +113,6 @@ extern bool endlessBestZoneUntaggedCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TA
 extern int  endlessComboKills[2];       // +1 per kill while a kill-fire window is up, reset when it lapses
 extern char endlessLastSpecialName[2][31]; // name of the last special weapon each player was handed
 
-bool endlessStaticLockoutActive(void);
 void endlessStaticLockoutTick(void);
 void endlessStaticLockoutReset(void);
 

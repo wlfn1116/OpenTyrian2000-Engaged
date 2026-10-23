@@ -189,7 +189,6 @@ extern Uint32 network_host_custom_hash;
 extern int network_host_custom_endless;
 
 /* Session-start custom-container transfer and activation. */
-void network_custom_level_session_reset(void);
 bool network_custom_level_serve(void);
 bool network_custom_level_fetch(void);
 /* Synchronizes the host's Custom Endless collection and order. */
@@ -362,8 +361,6 @@ void network_arm_local_session(void);
 // local. The return value is the encoded byte count.
 int  network_settings_pack(Uint8 *buf);
 int  network_settings_adopt(const Uint8 *buf);
-void network_settings_check_layout(const Uint8 *buf);
-void network_settings_apply_session_speed(void);
 void network_settings_restore(void);
 /* Bytes 0..15 are the original settings; 16..23 identify the rollback layout and snapshot size;
  * 24 onward is the extensible tail (see network.c for field offsets). */
@@ -470,11 +467,9 @@ void network_custom_weapon_publish(void);
 /* A Campaign resume can enter gameplay without an outpost. Publish even when the editor feature is
  * locally disabled, because the loaded record may already have either custom slot equipped. */
 void network_custom_weapon_publish_resume(void);
-void network_custom_weapon_reset(void);
 
 // Publish this machine's extra-ship file through the reliable session channel.
 void network_extra_ships_publish(void);
-void network_extra_ships_reset(void);
 // Settle custom-content exchange before a mode without an outpost starts gameplay.
 void network_custom_content_rendezvous(void);
 // Take the level the host left the outpost for. Call once both players are done, never before:
@@ -491,7 +486,6 @@ void network_shop_sync_for_save(void);
 // Synchronize debug-menu simulation state. mark snapshots the baseline, changed compares it,
 // send publishes updates, and pump adopts queued updates. in_level enables HUD repainting.
 void network_debug_sync_mark(void);
-bool network_debug_sync_changed(void);
 void network_debug_sync_send(void);
 /* pump only inspects the head, because the reliable queue is ordered and nothing can be lifted
  * out of the middle of it. */
@@ -502,7 +496,7 @@ void network_debug_state_pack(Uint8 *buf);
 void network_debug_state_adopt(const Uint8 *buf, bool in_level);
 
 /* Expert-tunable capacity, shared by the two blocks that carry them: this one and the settings
- * block. varz.c asserts that its table fits, so a seventh tunable needs no wire change. */
+ * block. game_state.c asserts that its table fits, so a seventh tunable needs no wire change. */
 #define NETWORK_EXPERT_SLOTS 8
 
 // Independent simulation hashes used to identify the first divergent subsystem.

@@ -19,7 +19,7 @@
 #define SAVE_MENU_H
 
 #include "opentyr.h"
-#include "config.h"
+#include "savegame.h"
 
 // net2p pins it to the 2-player page for the online host and returns the loaded slot;
 // saving turns it into a save menu (returns 0; the saving happens inside).
@@ -31,5 +31,7 @@ void JE_saveTransferDownload(void);
 bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p);
 bool save_custom_locked(const JE_SaveFileType *rec);
 void JE_operation(JE_byte slot);
+
+extern JE_boolean performSave;
 
 #endif /* SAVE_MENU_H */

@@ -64,7 +64,6 @@ const char *customEpisodeTitle(int index);
 const char *customEpisodeAuthor(int index);
 const char *customEpisodeFile(int index);      /* file name only */
 JE_byte customEpisodeBase(int index);
-Uint32 customEpisodeSize(int index);
 int customEpisodeFindByFile(const char *fileName);
 
 /* Returns -1, false, or "" while a stock episode is active. */

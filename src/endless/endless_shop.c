@@ -10,29 +10,26 @@
 #include "episodes.h"
 #include "fonthand.h"
 #include "game_menu.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "keyboard.h"
 #include "level_load.h"
 #include "loudness.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "musmast.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "params.h"
 #include "picload.h"
 #include "qa.h"
 #include "palette.h"
 #include "player.h"
+#include "savegame.h"
 #include "sprite.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 // Escalating outpost prices, reset each visit.
@@ -726,7 +723,7 @@ static void endlessApplyGambleOutcome(int id, Sint64 cost)
 		snprintf(msg, GAMBLE_MSG_LEN, "Loan shark: +$%lld, +25%% tax", (long long)win);
 		break;
 	}
-	case EGO_NITRO:  // +damage next sector, but any hit is fatal (see varz.c damage path)
+	case EGO_NITRO:  // +damage next sector, but any hit is fatal (see game_state.c damage path)
 		endlessPurchasedMods[me()] |= (ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_NITRO);
 		SDL_strlcpy(msg, "Nitro: +power, one hit kills!", GAMBLE_MSG_LEN);
 		break;

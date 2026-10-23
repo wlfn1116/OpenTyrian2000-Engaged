@@ -18,14 +18,13 @@
 #include "health_bars.h"
 
 #include "config.h"
+#include "draw.h"
 #include "endless.h"
 #include "enemy_death.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "hud.h"
-#include "mainint.h"
 #include "render_list.h"
-#include "tyrian2.h"
-#include "varz.h"
-#include "vga256d.h"
 #include "video.h"
 
 #include <limits.h>
@@ -678,7 +677,7 @@ int boss_bar_hud_left_shift(int hudRightX)
 
 // True while an Enhanced BOTTOM horizontal boss bar is shown; it can span near the full
 // playfield width and sits close to the bottom edge, unlike TOP which never reaches there.
-bool boss_bar_hud_needs_up_shift(void)
+static bool boss_bar_hud_needs_up_shift(void)
 {
 	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
 	                        + (boss_bar[1].link_num != 0 ? 1 : 0);

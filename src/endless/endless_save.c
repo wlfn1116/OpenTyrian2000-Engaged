@@ -5,13 +5,10 @@
 
 #include "config.h"
 #include "episodes.h"
-#include "file.h"
+#include "game_state.h"
 #include "level_load.h"
-#include "mainint.h"
 #include "player.h"
-#include "sprite.h"
-#include "tyrian2.h"
-#include "varz.h"
+#include "savegame.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -141,7 +138,7 @@ typedef struct {
 	Uint64 partnerRng;
 } EndlessSlotRec;
 
-// One record per save slot, read with and written beside saveFiles[] (config.c owns the file).
+// One record per save slot, read with and written beside saveFiles[] (savegame.c owns the file).
 static EndlessSlotRec endlessSlotCache[SAVE_FILES_NUM];
 
 // Restore a chart. Drop invalid entries; regenerate deterministically if none remain.
@@ -665,8 +662,9 @@ bool endlessSaveTestTextCodec(char *detail, size_t detailSize)
 	return fault == NULL;
 }
 
-/* opentyrian.sav carries one 'endless' section per slot with a run; config.c parses and writes the
- * file and hands the Config here for the Endless half. A slot without a section holds no run. */
+/* opentyrian.sav carries one 'endless' section per slot with a run; savegame.c parses and writes
+ * the file and hands the Config here for the Endless half. A slot without a section holds no
+ * run. */
 void endlessSaveConfigRead(Config *config)
 {
 	memset(endlessSlotCache, 0, sizeof(endlessSlotCache));

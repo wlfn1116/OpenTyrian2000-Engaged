@@ -239,7 +239,7 @@ bool power_up_weapon(Player *, uint port);
 void handle_got_purple_ball(Player *);
 
 // Arcade lives scale armour and shields from the hull values to a full bar.
-#define ARCADE_LIVES_MAX 11  // the cap JE_eventSystem/mainint enforce on *player[].lives
+#define ARCADE_LIVES_MAX 11  // the cap JE_eventSystem/player_ship enforce on *player[].lives
 #define ARCADE_FULL_BAR  28  // both HUD gauges top out here (strongest shield is mpwr 14 -> 28)
 
 bool arcade_life_scaling_active(void);
@@ -251,5 +251,11 @@ uint player_carry_gauge(uint current, uint old_max, uint new_max);  // preserve 
 void arcade_rescale_to_lives(Player *);  // re-derive both ceilings after a life is gained or lost
 
 void coop_ship_runtime_reset(void);
+
+void JE_getShipInfo(void);
+
+void JE_initPlayerData(void);
+const char *JE_getName(JE_byte pnum);
+void JE_playerScoreLabel(JE_byte pnum, char *out, size_t outSize);
 
 #endif // PLAYER_H

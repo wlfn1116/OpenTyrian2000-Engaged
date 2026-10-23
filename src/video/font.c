@@ -25,6 +25,9 @@
  * \brief Text drawing routines.
  */
 
+static void draw_font_dark(SDL_Surface *surface, int x, int y, const char *text, Font font,
+                           FontAlignment alignment, bool black);
+
 /**
  * \brief Draws text in a color specified by hue and value and with a drop
  *        shadow.
@@ -178,7 +181,8 @@ void draw_font_hv(SDL_Surface *surface, int x, int y, const char *text, Font fon
  * @param black if true text is drawn as solid black, if false text is drawn by
  *        darkening the pixels of the destination surface
  */
-void draw_font_dark(SDL_Surface *surface, int x, int y, const char *text, Font font, FontAlignment alignment, bool black)
+static void draw_font_dark(SDL_Surface *surface, int x, int y, const char *text, Font font,
+                           FontAlignment alignment, bool black)
 {
 	switch (alignment)
 	{

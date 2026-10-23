@@ -23,9 +23,7 @@
 #include "fonthand.h"
 #include "menus.h"
 #include "opentyr.h"
-#include "video.h"
 
-#include <assert.h>
 #include <string.h>
 
 const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
@@ -131,7 +129,7 @@ static void rtrim_string(char *s)
 		s[--len] = '\0';
 }
 
-void skip_pascal_string(FILE *f)
+static void skip_pascal_string(FILE *f)
 {
 	Uint8 len;
 	char buffer[255];
@@ -139,6 +137,16 @@ void skip_pascal_string(FILE *f)
 	fread_u8_die(&len, 1, f);
 	fread_die(buffer, 1, len, f);
 }
+
+static void read_section(FILE *f, void *strings, size_t count, size_t size)
+{
+	skip_pascal_string(f);
+	for (size_t i = 0; i < count; ++i)
+		read_encrypted_pascal_string((char *)strings + i * size, size, f);
+	skip_pascal_string(f);
+}
+
+#define READ_SECTION(f, strings) read_section(f, strings, COUNTOF(strings), sizeof((strings)[0]))
 
 void JE_helpBox(SDL_Surface *screen,  int x, int y, const char *message, unsigned int boxwidth)
 {
@@ -210,40 +218,22 @@ void JE_loadHelpText(void)
 	fread_s32_die(&episode1DataLoc, 1, f);
 
 	/*Online Help*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(helpTxt); ++i)
-		read_encrypted_pascal_string(helpTxt[i], sizeof(helpTxt[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, helpTxt);
 
 	/*Planet names*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(pName); ++i)
-		read_encrypted_pascal_string(pName[i], sizeof(pName[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, pName);
 
 	/*Miscellaneous text*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(miscText); ++i)
-		read_encrypted_pascal_string(miscText[i], sizeof(miscText[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, miscText);
 
 	/*Little Miscellaneous text*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(miscTextB); ++i)
-		read_encrypted_pascal_string(miscTextB[i], sizeof(miscTextB[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, miscTextB);
 
 	/*Key names*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[6]; ++i)
-		read_encrypted_pascal_string(menuInt[6][i], sizeof(menuInt[6][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[6], menuInt_entries[6], sizeof(menuInt[6][0]));
 
 	/*Main Menu*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(menuText); ++i)
-		read_encrypted_pascal_string(menuText[i], sizeof(menuText[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, menuText);
 
 	// OpenTyrian 2000 Engaged Override
 	strcpy(menuText[6], menuText[5]);
@@ -252,110 +242,58 @@ void JE_loadHelpText(void)
 	strcpy(menuText[0], "Start Game");
 
 	/*Event text*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(outputs); ++i)
-		read_encrypted_pascal_string(outputs[i], sizeof(outputs[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, outputs);
 
 	/*Help topics*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(topicName); ++i)
-		read_encrypted_pascal_string(topicName[i], sizeof(topicName[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, topicName);
 
 	/*Main Menu Help*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(mainMenuHelp); ++i)
-		read_encrypted_pascal_string(mainMenuHelp[i], sizeof(mainMenuHelp[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, mainMenuHelp);
 
 	/*Menu 1 - Main*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[1]; ++i)
-		read_encrypted_pascal_string(menuInt[1][i], sizeof(menuInt[1][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[1], menuInt_entries[1], sizeof(menuInt[1][0]));
 
 	/*Menu 2 - Items*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[2]; ++i)
-		read_encrypted_pascal_string(menuInt[2][i], sizeof(menuInt[2][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[2], menuInt_entries[2], sizeof(menuInt[2][0]));
 
 	/*Menu 3 - Options*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[3]; ++i)
-		read_encrypted_pascal_string(menuInt[3][i], sizeof(menuInt[3][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[3], menuInt_entries[3], sizeof(menuInt[3][0]));
 
 	/*InGame Menu*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(inGameText); ++i)
-		read_encrypted_pascal_string(inGameText[i], sizeof(inGameText[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, inGameText);
 
 	/*Detail Level*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(detailLevel); ++i)
-		read_encrypted_pascal_string(detailLevel[i], sizeof(detailLevel[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, detailLevel);
 
 	/*Game speed text*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(gameSpeedText); ++i)
-		read_encrypted_pascal_string(gameSpeedText[i], sizeof(gameSpeedText[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, gameSpeedText);
 
 	// episode names.  The data file pads some of them out to a fixed width (episode 2 most
 	// visibly), which shifts every centred or right-aligned draw of the name by the padding.
-	skip_pascal_string(f);
+	READ_SECTION(f, episode_name);
 	for (unsigned int i = 0; i < COUNTOF(episode_name); ++i)
-	{
-		read_encrypted_pascal_string(episode_name[i], sizeof(episode_name[i]), f);
 		rtrim_string(episode_name[i]);
-	}
-	skip_pascal_string(f);
 
 	// difficulty names
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(difficulty_name); ++i)
-		read_encrypted_pascal_string(difficulty_name[i], sizeof(difficulty_name[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, difficulty_name);
 
 	// gameplay mode names
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(gameplay_name); ++i)
-		read_encrypted_pascal_string(gameplay_name[i], sizeof(gameplay_name[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, gameplay_name);
 
 	/*Menu 10 - 2Player Main*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[10]; ++i)
-		read_encrypted_pascal_string(menuInt[10][i], sizeof(menuInt[10][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[10], menuInt_entries[10], sizeof(menuInt[10][0]));
 
 	/*Input Devices*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(inputDevices); ++i)
-		read_encrypted_pascal_string(inputDevices[i], sizeof(inputDevices[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, inputDevices);
 
 	/*Network text*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(networkText); ++i)
-		read_encrypted_pascal_string(networkText[i], sizeof(networkText[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, networkText);
 
 	/*Menu 11 - 2Player Network*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[11]; ++i)
-		read_encrypted_pascal_string(menuInt[11][i], sizeof(menuInt[11][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[11], menuInt_entries[11], sizeof(menuInt[11][0]));
 
 	/*HighScore Difficulty Names*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(difficultyNameB); ++i)
-		read_encrypted_pascal_string(difficultyNameB[i], sizeof(difficultyNameB[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, difficultyNameB);
 
 	// Use the difficulty-select names in score and debug screens.
 	// Hidden ranks retain their separate names.
@@ -367,52 +305,28 @@ void JE_loadHelpText(void)
 	SDL_strlcpy(difficultyNameB[DIFFICULTY_LORD_OF_GAME], difficulty_name[6], sizeof(difficultyNameB[0]));
 
 	/*Menu 12 - Network Options*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[12]; ++i)
-		read_encrypted_pascal_string(menuInt[12][i], sizeof(menuInt[12][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[12], menuInt_entries[12], sizeof(menuInt[12][0]));
 
 	/*Menu 13 - Joystick*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[13]; ++i)
-		read_encrypted_pascal_string(menuInt[13][i], sizeof(menuInt[13][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[13], menuInt_entries[13], sizeof(menuInt[13][0]));
 
 	/*Joystick Button Assignments*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(joyButtonNames); ++i)
-		read_encrypted_pascal_string(joyButtonNames[i], sizeof(joyButtonNames[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, joyButtonNames);
 
 	/*SuperShips - For Super Arcade Mode*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(superShips); ++i)
-		read_encrypted_pascal_string(superShips[i], sizeof(superShips[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, superShips);
 
 	/*SuperShips - For Super Arcade Mode*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(specialName); ++i)
-		read_encrypted_pascal_string(specialName[i], sizeof(specialName[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, specialName);
 
 	/*Secret DESTRUCT game*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(destructHelp); ++i)
-		read_encrypted_pascal_string(destructHelp[i], sizeof(destructHelp[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, destructHelp);
 
 	/*Secret DESTRUCT weapons*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(weaponNames); ++i)
-		read_encrypted_pascal_string(weaponNames[i], sizeof(weaponNames[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, weaponNames);
 
 	/*Secret DESTRUCT modes*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(destructModeName); ++i)
-		read_encrypted_pascal_string(destructModeName[i], sizeof(destructModeName[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, destructModeName);
 
 	/*NEW: Ship Info*/
 	skip_pascal_string(f);
@@ -424,16 +338,10 @@ void JE_loadHelpText(void)
 	skip_pascal_string(f);
 
 	/*Menu 14 - Super Tyrian*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[14]; ++i)
-		read_encrypted_pascal_string(menuInt[14][i], sizeof(menuInt[14][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[14], menuInt_entries[14], sizeof(menuInt[14][0]));
 
 	/*Timed Battle Planets*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(timed_battle_name); ++i)
-		read_encrypted_pascal_string(timed_battle_name[i], sizeof(timed_battle_name[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, timed_battle_name);
 
 	/*Setup entries, skipped since we don't use them*/
 	for (unsigned int entry = 0; entry < COUNTOF(setup_entries); ++entry)
@@ -445,34 +353,19 @@ void JE_loadHelpText(void)
 	}
 
 	/*Menu 15 - Mouse Settings*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < menuInt_entries[15]; ++i)
-		read_encrypted_pascal_string(menuInt[15][i], sizeof(menuInt[15][i]), f);
-	skip_pascal_string(f);
+	read_section(f, menuInt[15], menuInt_entries[15], sizeof(menuInt[15][0]));
 
 	/*Tyrian Licensing Info*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(licensingInfo); ++i)
-		read_encrypted_pascal_string(licensingInfo[i], sizeof(licensingInfo[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, licensingInfo);
 
 	/*Default High Score Names*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(defaultHighScoreNames); ++i)
-		read_encrypted_pascal_string(defaultHighScoreNames[i], sizeof(defaultHighScoreNames[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, defaultHighScoreNames);
 
 	/*Default Team Names*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(defaultTeamNames); ++i)
-		read_encrypted_pascal_string(defaultTeamNames[i], sizeof(defaultTeamNames[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, defaultTeamNames);
 
 	/*Ordering Info?*/
-	skip_pascal_string(f);
-	for (unsigned int i = 0; i < COUNTOF(orderingInfo); ++i)
-		read_encrypted_pascal_string(orderingInfo[i], sizeof(orderingInfo[i]), f);
-	skip_pascal_string(f);
+	READ_SECTION(f, orderingInfo);
 
 	/*Super Tyrian text*/
 	skip_pascal_string(f);

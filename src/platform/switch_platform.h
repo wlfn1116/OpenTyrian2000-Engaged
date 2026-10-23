@@ -9,7 +9,7 @@
 #ifdef __SWITCH__
 
 // Writable data directory on the SD card: holds opentyrian.cfg, save files, and any
-// user-supplied data files. Kept in one place so file.c and config.c agree.
+// user-supplied data files. Kept in one place so file.c and switch_platform.c agree.
 #define SWITCH_USER_DIR   "sdmc:/switch/opentyrian2000"
 
 // Read-only data bundled inside the .nro, mounted by romfsInit().

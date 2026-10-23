@@ -18,7 +18,6 @@
 #include "pcxload.h"
 
 #include "file.h"
-#include "opentyr.h"
 #include "palette.h"
 #include "video.h"
 

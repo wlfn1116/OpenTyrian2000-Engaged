@@ -9,14 +9,15 @@
 
 #include "SDL.h"
 
+#include "draw.h"
 #include "font.h"
 #include "fonthand.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
-#include "nortsong.h"
+#include "sfx.h"
 #include "sndmast.h"
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
 
 #ifdef __ANDROID__

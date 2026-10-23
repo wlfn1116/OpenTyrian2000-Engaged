@@ -25,10 +25,6 @@
 // Render the starfield at 1x or into a cleared supersampled target. The high-res
 // path uses sub-pixel positions for smooth downscaling.
 void JE_starlib_main(float step, SDL_Surface *target, int scale);
-void JE_wackyCol(void);
 void JE_starlib_init(void);
-void JE_resetValues(void);
-void JE_changeSetup(JE_byte setupType);
-void JE_newStar(void);
 
 #endif /* STARLIB_H */

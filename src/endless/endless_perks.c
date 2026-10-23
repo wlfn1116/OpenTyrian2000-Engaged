@@ -4,20 +4,16 @@
 #include "endless_internal.h"
 
 #include "config.h"
-#include "custom_weapon.h"
-#include "episodes.h"
-#include "mainint.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "palette.h"
 #include "player.h"
 #include "rollback.h"
 #include "sparks.h"
-#include "tyrian2.h"
-#include "varz.h"
 
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 // PERK_* order is serialized. Append entries here and in endless_internal.h; never renumber them.
 const EndlessPerk endlessPerkTable[PERK_COUNT] = {
@@ -152,13 +148,13 @@ int endlessPerkShopCostBp(void)
 	return 10000 - perkMine(PERK_FINANCIER) * ENDLESS_PERK_DISCOUNT_BP;
 }
 
-// +max armor from the Ablative Plating perk; added to the ship's armor each level start (varz.c),
-// alongside the outpost hull upgrade (endlessArmorBonus).
+// +max armor from the Ablative Plating perk; added to the ship's armor each level start
+// (game_state.c), alongside the outpost hull upgrade (endlessArmorBonus).
 int endlessPerkArmorBonus(void)
 {
 	int bonus = perkFx(PERK_ARMOR) * ENDLESS_PERK_ARMOR_STEP;
 	if (perkFx(PERK_GLASSCANNON))
-		bonus -= ENDLESS_PERK_GLASS_ARMOR;  // Glass Cannon relic drawback (varz.c clamps armor >= 1)
+		bonus -= ENDLESS_PERK_GLASS_ARMOR;  // Glass Cannon relic drawback (game_state.c clamps armor >= 1)
 	return bonus;
 }
 
@@ -260,7 +256,7 @@ static int endlessPerkShorten(int base, int perk, int step, int minimum)
 	return v < minimum ? minimum : v;
 }
 
-// Shield Matrix perk: shortens the shield-regen interval from `base` (tyrian2.c), floored; a
+// Shield Matrix perk: shortens the shield-regen interval from `base` (game_loop.c), floored; a
 // no-op outside endless / with no stacks. A quicker shield still drains the generator quicker.
 int endlessPerkShieldWait(int base)
 {
@@ -680,7 +676,7 @@ void endlessRegenHitTaken(void)
 		endlessRegenCalm[p] = 0;
 }
 
-// Pulse application lives at the player-shot kill sites in tyrian2.c.
+// Pulse application lives at the player-shot kill sites in game_loop.c.
 bool endlessPerkChainReactionActive(void) { return endlessFxActive() && perkFx(PERK_CHAINRXN) > 0; }
 
 // Unclaimed kills use the ship with more Chain Reaction stacks.
@@ -714,7 +710,7 @@ int endlessPerkChainDamage(bool salvoBoosted)
 // Ordnance Reserves expands sidekick magazines and timed special effects.
 
 // The magazine bonus as a percentage, 0 when it isn't applying. The shop name label (episodes.c)
-// and the in-flight magazine (varz.c) both come off this, so the number you buy is the number you fly.
+// and the in-flight magazine (game_state.c) both come off this, so the number you buy is the number you fly.
 int endlessPerkAmmoPercent(void)
 {
 	if (!endlessFxActive())

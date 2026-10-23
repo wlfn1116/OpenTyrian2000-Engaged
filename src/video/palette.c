@@ -20,11 +20,14 @@
 #include "config.h"
 #include "file.h"
 #include "keyboard.h"
-#include "nortsong.h"
 #include "opentyr.h"
+#include "pcxmast.h"
+#include "timing.h"
 #include "video.h"
 
 #include <assert.h>
+#include <math.h>
+#include <string.h>
 
 static Uint32 rgb_to_yuv(int r, int g, int b);
 
@@ -229,7 +232,8 @@ void fade_palette(Palette colors, int steps, unsigned int first_color, unsigned 
 	}
 }
 
-void fade_solid(SDL_Color color, int steps, unsigned int first_color, unsigned int last_color)
+static void fade_solid(SDL_Color color, int steps, unsigned int first_color,
+                       unsigned int last_color)
 {
 	assert(steps > 0);
 
@@ -275,4 +279,42 @@ static Uint32 rgb_to_yuv(int r, int g, int b)
 	    u = 128 + ((r - b) >> 2),
 	    v = 128 + ((-r + 2 * g - b) >> 3);
 	return (y << 16) + (u << 8) + v;
+}
+
+static void JE_gammaCorrect_func(JE_byte *col, JE_real r)
+{
+	int temp = roundf(*col * r);
+	if (temp > 255)
+	{
+		temp = 255;
+	}
+	*col = temp;
+}
+
+void JE_gammaCorrect(Palette *colorBuffer, JE_byte gamma)
+{
+	int x;
+	JE_real r = 1 + (JE_real)gamma / 10;
+
+	for (x = 0; x < 256; x++)
+	{
+		JE_gammaCorrect_func(&(*colorBuffer)[x].r, r);
+		JE_gammaCorrect_func(&(*colorBuffer)[x].g, r);
+		JE_gammaCorrect_func(&(*colorBuffer)[x].b, r);
+	}
+}
+
+JE_boolean JE_gammaCheck(void)
+{
+	bool temp = keysactive[SDL_SCANCODE_F11] != 0;
+	if (temp)
+	{
+		keysactive[SDL_SCANCODE_F11] = false;
+		newkey = false;
+		gammaCorrection = (gammaCorrection + 1) % 4;
+		memcpy(colors, palettes[pcxpal[3-1]], sizeof(colors));
+		JE_gammaCorrect(&colors, gammaCorrection);
+		set_palette(colors, 0, 255);
+	}
+	return temp;
 }

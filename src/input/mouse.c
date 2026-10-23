@@ -19,10 +19,8 @@
 
 #include "console_platform.h"  // PLATFORM_HANDHELD
 #include "keyboard.h"
-#include "nortvars.h"
 #include "sprite.h"
 #include "video.h"
-#include "vga256d.h"
 
 #include <math.h>
 

@@ -1,4 +1,4 @@
-/*
+/* 
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2007-2009  The OpenTyrian Development Team
  *
@@ -15,21 +15,29 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef NORTVARS_H
-#define NORTVARS_H
+#ifndef TIMING_H
+#define TIMING_H
 
 #include "opentyr.h"
 
 #include "SDL.h"
 
-extern JE_boolean inputDetected;
+extern JE_word frameCountMax;
 
-JE_boolean JE_anyButton(void);
+extern int fps_cap;
+void set_fps(int fps);
 
-void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash,  JE_integer topPad);
-void JE_dBar3_scaled(SDL_Surface *surface, JE_integer x, JE_integer y, float num, JE_integer col, JE_integer dir, JE_integer flash, JE_integer topPad, int scale);
-void JE_barDrawShadow(SDL_Surface *surface, JE_word x, JE_word y, JE_word res, JE_word col, JE_word amt, JE_word xsize, JE_word ysize);
-void JE_barDrawMark(SDL_Surface *surface, JE_word x, JE_word y, JE_word col, JE_word mark, JE_word xsize, JE_word ysize);
-void JE_wipeKey(void);
+void setDelay(int delay);
+void setDelay2(int delay);
+float get_delay_period(void);
+Uint32 getDelayTicks(void);
+Uint32 getDelayTicks2(void);
 
-#endif /* NORTVARS_H */
+void wait_delay(void);
+void limit_render_fps(void);
+void service_wait_delay(void);
+void wait_delayorinput(void);
+
+void setDelaySpeed(Uint16 speed);
+
+#endif /* TIMING_H */

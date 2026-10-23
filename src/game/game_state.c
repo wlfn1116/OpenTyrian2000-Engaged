@@ -15,38 +15,22 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include "varz.h"
+#include "game_state.h"
 
-#include <stdlib.h>  // _Exit (Switch clean-exit path in JE_tyrianHalt)
-#include <string.h>  // memset (JE_resetSP)
+#include <stdlib.h>
 
 #include "config.h"
-#include "crashlog.h"
-#include "destruct.h"
-#include "editship.h"
 #include "endless.h"
 #include "episodes.h"
-#include "fonthand.h"
-#include "game_menu.h"
+#include "explosions.h"
 #include "hud.h"
-#include "joystick.h"
-#include "lds_play.h"
-#include "loudness.h"
-#include "mainint.h"
-#include "mouse.h"
-#include "mtrand.h"
 #include "net_style.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "opentyr.h"
-#include "render_list.h"
 #include "rollback.h"
-#include "shots.h"
+#include "sfx.h"
 #include "sparks.h"
 #include "sprite.h"
-#include "tyrian2.h"
-#include "vga256d.h"
 #include "video.h"
 
 JE_integer tempDat, tempDat2, tempDat3;
@@ -233,14 +217,6 @@ JE_byte flash;
 JE_shortint flashChange;
 JE_byte displayTime;
 
-/* Demo Stuff */
-bool play_demo = false, record_demo = false, stopped_demo = false;
-Uint8 demo_num = 0;
-FILE *demo_file = NULL;
-
-Uint8 demo_keys;
-Uint16 demo_keys_wait;
-
 /* Sound Effects Queue */
 JE_byte soundQueue[8]; /* [0..7] */
 
@@ -317,7 +293,7 @@ JE_boolean  cheatInfiniteArmor = false;
 JE_boolean  cheatInfiniteGenerator = false;  /* debug: weapons don't drain generator power */
 JE_boolean  cheatNoEnemyFire = false;
 JE_boolean  cheatInstantCharge = false;  /* debug: charge sidekicks reach full charge instantly */
-JE_byte     noclipMode = NOCLIP_OFF;     /* debug: pass through enemies (see enum in varz.h) */
+JE_byte     noclipMode = NOCLIP_OFF;     /* debug: pass through enemies (see enum in game_state.h) */
 JE_boolean  debugHitboxOverlay = false;
 JE_boolean  debugPerfOverlay = false;
 JE_boolean  autoFireSpecial = false;
@@ -377,23 +353,6 @@ JE_byte chargeWait, chargeLevel, chargeMax, chargeGr, chargeGrWait;
 
 JE_word neat;
 
-/*ExplosionData*/
-Explosion explosions[MAX_EXPLOSIONS]; /* [1..ExplosionMax] */
-JE_integer explosionFollowAmountX, explosionFollowAmountY;
-Uint8 explosionFilter;  /* see varz.h */
-Uint8 explosionOpacity = NET_STYLE_SOLID;  /* see varz.h */
-
-static Uint8 explosionOpacityBySlot[MAX_EXPLOSIONS];
-
-Uint8 explosion_opacity(uint slot)
-{
-	return (slot < COUNTOF(explosionOpacityBySlot) && explosionOpacityBySlot[slot] != 0)
-	       ? explosionOpacityBySlot[slot] : NET_STYLE_SOLID;
-}
-
-/*Repeating Explosions*/
-rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
-
 /*Temporary Numbers*/
 JE_byte temp, temp2, temp3;
 JE_word tempW;
@@ -412,215 +371,6 @@ JE_boolean  linkToPlayer;
 
 JE_word shipGr, shipGr2;
 Sprite2_array *shipGrPtr, *shipGr2ptr;
-
-/* Endless run-persistent hull: the outpost Reinforce tier plus the Ablative Plating perk. */
-static void endlessApplyHullBonus(uint p)
-{
-	if (!endlessFxActive())
-		return;
-
-	// Personal perks: the plating (or Glass Cannon drawback) on this hull is this ship's own.
-	const uint fxSaved = endlessFxPlayer();
-	endlessSetFxPlayer(p);
-	int a = (int)player[p].armor + endlessPerkArmorBonus();
-	endlessSetFxPlayer(fxSaved);
-	if (endlessMode)
-		a += endlessArmorBonus[p];
-	player[p].armor = (a < 1) ? 1 : (a > 250 ? 250 : a);  // byte-safe, so no JE_byte armor path wraps
-}
-
-void JE_getShipInfo(void)
-{
-	JE_boolean extraShip, extraShip2;
-
-	// Extra ship ids are not valid ships[] indices; JE_SGr selects their real sheet below.
-	shipGrPtr = (player[0].items.ship <= SHIP_DRAGONWING && ships[player[0].items.ship].shipgraphic > 500)
-	          ? &spriteSheetT2000 : &spriteSheet9;
-	shipGr2ptr = &spriteSheet9;
-
-	powerAdd  = powerSys[player[0].items.generator].power;
-	for (uint i = 0; i < COUNTOF(player); ++i)
-		player[i].generator_power_add = powerSys[player[i].items.generator].power;
-
-	// Extra ships require a file known to both peers.
-	for (uint i = 0; i < COUNTOF(player); ++i)
-		if (player[i].items.ship > 90 && !extraAvailFor(i))
-			player[i].items.ship = 1;
-
-	extraShip = player[0].items.ship > 90;
-	if (extraShip)
-	{
-		JE_byte base = (player[0].items.ship - 91) * 15;
-		shipGr = JE_SGr(0, player[0].items.ship - 90, &shipGrPtr);
-		player[0].armor = extraShipsFor(0)[base + 7];
-	}
-	else
-	{
-		// Only ids above 90 are extra ships. IDs 20 through 90 fall beyond ships[], so use
-		// entry 0 if an edited ship or older save carries a stray id.
-		const uint shipIdx = (player[0].items.ship <= SHIP_DRAGONWING) ? player[0].items.ship : 0;
-		shipGr = ships[shipIdx].shipgraphic - (shipGrPtr == &spriteSheetT2000 ? 500 : 0);
-		player[0].armor = ships[shipIdx].dmg;
-	}
-
-	endlessApplyHullBonus(0);
-
-	extraShip2 = player[1].items.ship > 90;
-	if (extraShip2)
-	{
-		JE_byte base2 = (player[1].items.ship - 91) * 15;
-		shipGr2 = JE_SGr(1, player[1].items.ship - 90, &shipGr2ptr);
-		player[1].armor = extraShipsFor(1)[base2 + 7];
-	}
-	else if (dual_ship_mode())
-	{
-		const uint shipIdx = (player[1].items.ship <= SHIP_DRAGONWING) ? player[1].items.ship : 0;
-		shipGr2ptr = (ships[shipIdx].shipgraphic > 500) ? &spriteSheetT2000 : &spriteSheet9;
-		shipGr2 = ships[shipIdx].shipgraphic - (shipGr2ptr == &spriteSheetT2000 ? 500 : 0);
-		player[1].armor = ships[shipIdx].dmg;
-	}
-	else
-	{
-		shipGr2 = 0;
-		player[1].armor = 10;
-	}
-
-	if (coopEndlessMode)
-		endlessApplyHullBonus(1);
-
-	for (uint i = 0; i < COUNTOF(player); ++i)
-	{
-		// Arcade lives raise the full-restoration ceiling above the one-life hull value.
-		player[i].hull_armor = player[i].armor;
-		player[i].initial_armor = arcade_armor_max(&player[i]);
-		player[i].armor = player[i].initial_armor;
-
-		// ships[] stops at SHIP_DRAGONWING while an "extra" ship is only id > 90, so an id in
-		// between would read past the end here too (see the shipGr fallback above).
-		const uint shipIdx = (player[i].items.ship <= SHIP_DRAGONWING) ? player[i].items.ship : 0;
-		uint temp = ((i == 0 && extraShip) ||
-		             (i == 1 && extraShip2)) ? 2 : ships[shipIdx].ani;
-
-		if (temp == 0)
-		{
-			player[i].shot_hit_area_x = 12;
-			player[i].shot_hit_area_y = 10;
-		}
-		else
-		{
-			player[i].shot_hit_area_x = 11;
-			player[i].shot_hit_area_y = 14;
-		}
-	}
-}
-
-// Preserve ShipEdit graphic IDs 1 through 15. See doc/notes.md#extra-ships.
-static const JE_word extraLegacyGraphics[7] = { 233, 157, 195, 271, 81, 0, 119 };
-static const JE_word extraCustomGraphics[8] = { 5, 43, 81, 119, 157, 195, 233, 271 };
-
-bool extraShipGraphicIsCustom(int graphic)
-{
-	return graphic >= 8 && graphic <= 15;
-}
-
-static bool extraShipLegacyGraphic(JE_word raw)
-{
-	for (uint i = 0; i < COUNTOF(extraLegacyGraphics); ++i)
-		if (extraLegacyGraphics[i] == raw)
-			return true;
-	return false;
-}
-
-// Sort raw graphics so extended IDs stay stable and shared artwork appears once.
-static int extraShipExtendedGraphics(JE_word *graphics, size_t capacity)
-{
-	int count = 0;
-	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
-	{
-		const JE_word raw = ships[ship].shipgraphic;
-		if (ships[ship].name[0] == '\0' || extraShipLegacyGraphic(raw))
-			continue;
-
-		int at = 0;
-		while (at < count && graphics[at] < raw)
-			++at;
-		if (at < count && graphics[at] == raw)
-			continue;
-		if ((size_t)count >= capacity)
-			continue;
-
-		memmove(&graphics[at + 1], &graphics[at], (size_t)(count - at) * sizeof(*graphics));
-		graphics[at] = raw;
-		++count;
-	}
-	return count;
-}
-
-static bool extraShipGraphicRaw(int graphic, JE_word *raw)
-{
-	if (graphic >= 1 && graphic <= 7)
-	{
-		*raw = extraLegacyGraphics[graphic - 1];
-		return true;
-	}
-	if (graphic < 16)
-		return false;
-
-	JE_word extended[SHIP_DRAGONWING];
-	const int count = extraShipExtendedGraphics(extended, COUNTOF(extended));
-	const int index = graphic - 16;
-	if (index < 0 || index >= count)
-		return false;
-	*raw = extended[index];
-	return true;
-}
-
-bool extraShipGraphicIsNort(int graphic)
-{
-	JE_word raw;
-	return extraShipGraphicRaw(graphic, &raw) && raw == 1;
-}
-
-int extraShipGraphicMax(void)
-{
-	JE_word extended[SHIP_DRAGONWING];
-	return 15 + extraShipExtendedGraphics(extended, COUNTOF(extended));
-}
-
-const char *extraShipEditorGraphicName(int graphic)
-{
-	JE_word raw;
-	if (!extraShipGraphicRaw(graphic, &raw))
-		return NULL;
-
-	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
-		if (ships[ship].name[0] != '\0' && ships[ship].shipgraphic == raw)
-			return ship == 1 ? "USP Talon" : ships[ship].name;
-	return NULL;
-}
-
-// Route online extra-ship graphics through the owning seat's file.
-JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr)
-{
-	const int graphic = extraShipsFor(seat)[(ship - 1) * 15];
-	if (extraShipGraphicIsCustom(graphic))
-	{
-		*ptr = extraShapesFor(seat);
-		return extraCustomGraphics[graphic - 8];
-	}
-
-	JE_word raw;
-	if (!extraShipGraphicRaw(graphic, &raw))
-		raw = extraLegacyGraphics[0]; // invalid graphics fall back to the first built-in hull
-
-	if (raw > 500)
-	{
-		*ptr = &spriteSheetT2000;
-		return raw - 500;
-	}
-	*ptr = &spriteSheet9;
-	return raw;
-}
 
 void JE_resetPlayerOptions(Player *this_player)
 {
@@ -669,240 +419,6 @@ void JE_drawOptions(void)
 	VGAScreen = temp_surface;
 
 	JE_drawOptionLevel();
-}
-
-void JE_tyrianShutdown(bool saveConfiguration)
-{
-	network_shutdown();
-	deinit_audio();
-	destruct_deinit();
-	tyrian2_deinit();
-	game_menu_deinit();
-	rl_deinit();
-	deinit_video();
-	deinit_joysticks();
-
-	free_main_shape_tables();
-	free_sprite2s(&shopSpriteSheet);
-	free_sprite2s(&explosionSpriteSheet);
-
-	for (int i = 0; i < SOUND_COUNT; ++i)
-	{
-		free(soundSamples[i]);
-		soundSamples[i] = NULL;
-	}
-
-	if (demo_file != NULL)
-	{
-		fclose(demo_file);
-		demo_file = NULL;
-	}
-
-	if (saveConfiguration)
-		JE_saveConfiguration();
-
-	music_deinit();
-	JE_freeExtraShapes();
-	rollback_deinit();
-	config_deinit(&opentyrian_config);
-	network_deinit();
-}
-
-void JE_tyrianHalt(JE_byte code)
-{
-	// Code 1 is an unrecoverable data error. Write its report before exit()
-	// bypasses the crash handlers; duplicate reports are ignored.
-	if (code == 1)
-		crashlog_report_fatal("FATAL (JE_tyrianHalt error exit)",
-		                      "JE_tyrianHalt(1) -- unrecoverable data/level error; see phase + stack");
-
-	JE_tyrianShutdown(code != 9);
-
-	/* endkeyboard; */
-
-	if (code == 9)
-	{
-	}
-
-	if (code == 5)
-	{
-		code = 0;
-	}
-
-	if (trentWin)
-	{
-		printf("\n"
-		       "\n"
-		       "\n"
-		       "\n"
-		       "Sleep well, Trent, you deserve the rest.\n"
-		       "You now have permission to borrow my ship on your next mission.\n"
-		       "\n"
-		       "Also, you might want to try out the YESXMAS parameter in Dos.\n"
-		       "  Type: File0001 YESXMAS\n"
-		       "\n"
-		       " Press a Key to Quit\n"
-		       "\n");
-	}
-
-	SDL_Quit();
-
-#ifdef __SWITCH__
-	// Switch: libc exit()'s atexit/stdio teardown NULL-derefs in newlib once romfs is
-	// gone; everything is already flushed, so _Exit and skip it.
-	_Exit(code);
-#else
-	exit(code);
-#endif
-}
-
-void JE_setupExplosion(
-	JE_integer x,
-	JE_integer y,
-	JE_integer deltaY,
-	JE_integer type,
-	bool fixedPosition,  // true when coin/gem value
-	bool followPlayer)   // true when player shield (1P only)
-{
-	const struct {
-		JE_word sprite;
-		JE_byte ttl;
-	} explosion_data[54] /* [1..54] */ = {
-		{ 144,  7 },
-		{ 120, 12 },
-		{ 190, 12 },
-		{ 209, 12 },
-		{ 152, 12 },
-		{ 171, 12 },
-		{ 133,  7 },   /*White Smoke*/
-		{   1, 12 },
-		{  20, 12 },
-		{  39, 12 },
-		{  58, 12 },
-		{ 110,  3 },
-		{  76,  7 },
-		{  91,  3 },
-/*15*/	{ 227,  3 },
-		{ 230,  3 },
-		{ 233,  3 },
-		{ 252,  3 },
-		{ 246,  3 },
-/*20*/	{ 249,  3 },
-		{ 265,  3 },
-		{ 268,  3 },
-		{ 271,  3 },
-		{ 236,  3 },
-/*25*/	{ 239,  3 },
-		{ 242,  3 },
-		{ 261,  3 },
-		{ 274,  3 },
-		{ 277,  3 },
-/*30*/	{ 280,  3 },
-		{ 299,  3 },
-		{ 284,  3 },
-		{ 287,  3 },
-		{ 290,  3 },
-/*35*/	{ 293,  3 },
-		{ 165,  8 },   /*Coin Values*/
-		{ 184,  8 },
-		{ 203,  8 },
-		{ 222,  8 },
-		{ 168,  8 },
-		{ 187,  8 },
-		{ 206,  8 },
-		{ 225, 10 },
-		{ 169, 10 },
-		{ 188, 10 },
-		{ 207, 20 },
-		{ 226, 14 },
-		{ 170, 14 },
-		{ 189, 14 },
-		{ 208, 14 },
-		{ 246, 14 },
-		{ 227, 14 },
-		{ 265, 14 },
-		{  96,  3 }
-	};
-
-	if (y > -16 && y < 190)
-	{
-		for (int i = 0; i < MAX_EXPLOSIONS; i++)
-		{
-			if (explosions[i].ttl == 0)
-			{
-				explosions[i].x = x;
-				explosions[i].y = y;
-				if (type == 6)
-				{
-					explosions[i].y += 12;
-					explosions[i].x += 2;
-				}
-				else if (type == 98 || type == 198)
-				{
-					type = 6;
-				}
-				explosions[i].sprite = explosion_data[type].sprite;
-				explosions[i].ttl = explosion_data[type].ttl;
-				explosions[i].followPlayer = followPlayer;
-				explosions[i].fixedPosition = fixedPosition;
-				explosions[i].deltaY = deltaY;
-				explosions[i].filter = explosionFilter;
-				explosionOpacityBySlot[i] = explosionOpacity;
-				explosions[i].id_gen++;  // distinct interpolation id for this reuse of the slot
-				break;
-			}
-		}
-	}
-}
-
-void JE_setupExplosionLarge(JE_boolean enemyGround, JE_byte exploNum, JE_integer x, JE_integer y)
-{
-	if (y >= 0)
-	{
-		if (enemyGround)
-		{
-			JE_setupExplosion(x - 6, y - 14, 0,  2, false, false);
-			JE_setupExplosion(x + 6, y - 14, 0,  4, false, false);
-			JE_setupExplosion(x - 6, y,      0,  3, false, false);
-			JE_setupExplosion(x + 6, y,      0,  5, false, false);
-		}
-		else
-		{
-			JE_setupExplosion(x - 6, y - 14, 0,  7, false, false);
-			JE_setupExplosion(x + 6, y - 14, 0,  9, false, false);
-			JE_setupExplosion(x - 6, y,      0,  8, false, false);
-			JE_setupExplosion(x + 6, y,      0, 10, false, false);
-		}
-
-		bool big;
-
-		if (exploNum > 10)
-		{
-			exploNum -= 10;
-			big = true;
-		}
-		else
-		{
-			big = false;
-		}
-
-		if (exploNum)
-		{
-			for (int i = 0; i < MAX_REPEATING_EXPLOSIONS; i++)
-			{
-				if (rep_explosions[i].ttl == 0)
-				{
-					rep_explosions[i].ttl = exploNum;
-					rep_explosions[i].delay = 2;
-					rep_explosions[i].x = x;
-					rep_explosions[i].y = y;
-					rep_explosions[i].big = big;
-					rep_explosions[i].filter = explosionFilter;
-					break;
-				}
-			}
-		}
-	}
 }
 
 /* Which ships carry the Endless effect layer: both of them in an online co-op run, player 1

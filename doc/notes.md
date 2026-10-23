@@ -240,7 +240,7 @@ are independent. `rl_replay_common` dispatches `rl_filter_rows` with one row
 per set, so a 4x filter uses at most four threads. 1x filters stay on one
 thread; lava and water chain every row there.
 
-`compose_hi_frame` (`tyrian2.c`) runs the playfield composite and the HUD
+`compose_hi_frame` (`game_loop.c`) runs the playfield composite and the HUD
 expansion as one job over the 200 1x rows; the two write separate parts of
 `vga_hi`. The spotlight anchor is computed once before the dispatch. The
 smoothie expand into the hi-res buffer runs through
@@ -277,7 +277,7 @@ Debug Menu > Perf Overlay from the in-game menu during a level. Two lines under
 
 `TICK` is per simulation tick; the others are per presented frame. Gaps of a
 second or more, such as menus and pauses, are left out. `frame_times` in
-`tyrian2.c` collects the values, and `frame_times_get` returns the last window.
+`game_loop.c` collects the values, and `frame_times_get` returns the last window.
 
 Under `ALPHA`, one `ROWS` line appears for each site used since the previous
 overlay draw, read from `video_rows_stats`. The labels follow the site table

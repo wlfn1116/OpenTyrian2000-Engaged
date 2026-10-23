@@ -36,7 +36,6 @@ void draw_special_icon(SDL_Surface *surface, int x, int y, JE_byte id);
 void JE_inGameDisplays(void);
 
 /* Bottom-band HUD precedence: scores, FPS, boss bars, then the Endless readout. */
-int hud_fps_row(void);            // text row the FPS counter occupies
 int hud_bottom_band_top(void);    // topmost row the scores/FPS claim anywhere across the width
 
 // Horizontal extent of the top corner clusters (name label, lives row, special-weapon block),
@@ -134,7 +133,6 @@ void hud_draw_ship_hp_bars_preview(int x, int y, int along,
 #define HUD_HP_BAR_SAMPLE_SHIELD_MAX 2
 #define HUD_HP_BAR_SAMPLE_ARMOR      (ARMOR_GAUGE_LAYER_UNITS / 2)
 #define HUD_HP_BAR_SAMPLE_ARMOR_MAX  ARMOR_GAUGE_LAYER_UNITS
-void hud_ship_hp_bar_reset(void);   // clear On Hit timers
 
 extern int shieldGaugeFlash[2];
 extern int armorGaugeFlash[2];
@@ -145,5 +143,7 @@ void JE_resetGaugeRender(void);
 void gauge_bars_present(SDL_Surface *dst, int scale, float alpha);
 extern bool hud_bars_dirty;
 void JE_repaintShieldArmorBars(void);
+
+extern JE_word textErase;
 
 #endif /* HUD_H */

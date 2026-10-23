@@ -59,6 +59,11 @@ static JE_shortint speedChange;
 
 static JE_byte pColor;
 
+static void JE_changeSetup(JE_byte setupType);
+static void JE_newStar(void);
+static void JE_resetValues(void);
+static void JE_wackyCol(void);
+
 // Draw one clipped supersampled star cell as a scale-by-scale block.
 static void star_fill_block(Uint8 *pixels, int pitch, int w, int h, int hx, int hy, int n, Uint8 col)
 {
@@ -372,7 +377,7 @@ void JE_starlib_main(float step, SDL_Surface *target, int scale)  // step = frac
 	}
 }
 
-void JE_wackyCol(void)
+static void JE_wackyCol(void)
 {
 	/* YKS: Does nothing */
 }
@@ -399,7 +404,7 @@ void JE_starlib_init(void)
 	}
 }
 
-void JE_resetValues(void)
+static void JE_resetValues(void)
 {
 	nsp2 = 1;
 	nspVar2Inc = 1;
@@ -411,7 +416,7 @@ void JE_resetValues(void)
 	speedChange = 0;
 }
 
-void JE_changeSetup(JE_byte setupType)
+static void JE_changeSetup(JE_byte setupType)
 {
 	stepCounter = 0;
 	changeTime = (mt_rand() % 1000);
@@ -427,7 +432,7 @@ void JE_changeSetup(JE_byte setupType)
 		nspVarInc = 0.1f;
 }
 
-void JE_newStar(void)
+static void JE_newStar(void)
 {
 	if (setup == 0)
 	{

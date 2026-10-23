@@ -19,9 +19,8 @@
 
 #include "file.h"
 #include "lds_play.h"
-#include "nortsong.h"
 #include "opentyr.h"
-#include "params.h"
+#include "sfx.h"
 
 // Optional MIDI music backends; FluidSynth or the OS synth (see loudness.h and
 // OPL stays the default.

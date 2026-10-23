@@ -18,12 +18,11 @@
 #include "video.h"
 
 #include "config.h"
-#include "keyboard.h"
+#include "game_loop.h"  // expand_frame_to_hi()
 #include "mouse.h"
 #include "opentyr.h"
 #include "palette.h"
 #include "touch_ui.h"
-#include "tyrian2.h"  // expand_frame_to_hi()
 #include "video_scale.h"
 
 #include "console_platform.h"  // console_get_output_size()
@@ -1664,7 +1663,7 @@ bool video_test_rows_rounds(char *detail, size_t detailSize)
 }
 
 // Restore an invalidated drawable from the current logical frame while input-wait loops are idle.
-void video_repaint(void)
+static void video_repaint(void)
 {
 	if (main_window_renderer == NULL)
 		return;

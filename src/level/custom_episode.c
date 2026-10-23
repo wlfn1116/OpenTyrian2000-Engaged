@@ -438,7 +438,7 @@ JE_byte customEpisodeBase(int index)
 	return (index >= 0 && index < entryCount) ? entries[index].base : 1;
 }
 
-Uint32 customEpisodeSize(int index)
+static Uint32 customEpisodeSize(int index)
 {
 	return (index >= 0 && index < entryCount) ? entries[index].size : 0;
 }

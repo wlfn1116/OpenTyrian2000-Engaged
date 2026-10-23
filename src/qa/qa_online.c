@@ -14,18 +14,18 @@
 #include "episodes.h"
 #include "font.h"      // small_font, for measuring the picker's names against its columns
 #include "fonthand.h"
+#include "game_loop.h"  // difficulty bump, Super Arcade equip, picker and boss-bar layout
 #include "game_menu.h"  // the Endless zone jump's staging, carried by the departure handshake
+#include "game_state.h"
 #include "helptext.h"  // superShips[]
 #include "lvlmast.h"
-#include "mainint.h"
 #include "net_rollback.h"  // session netcode/recovery flags
 #include "network.h"
 #include "params.h"   // constantPlay, one of the co-op campaign board's conditions
 #include "player.h"
 #include "rollback.h"
 #include "save_menu.h"
-#include "tyrian2.h"  // difficulty bump, Super Arcade equip, picker and boss-bar layout
-#include "varz.h"
+#include "savegame.h"
 #include "video.h"  // PLAYFIELD_LEFT / PLAYFIELD_RIGHT, for the HUD block geometry check
 
 #include <ctype.h>

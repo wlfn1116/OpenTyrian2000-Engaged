@@ -75,7 +75,6 @@ static inline Uint16 get_sprite_height(unsigned int table, unsigned int index)
 }
 
 void load_sprites_file(unsigned int table, const char *filename);
-void load_sprites(unsigned int table, FILE *f);
 void free_sprites(unsigned int table);
 
 // Palette bank in which most of the sprite is drawn.

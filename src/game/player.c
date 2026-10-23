@@ -17,11 +17,20 @@
  */
 #include "player.h"
 
+#include "editship.h"
 #include "endless.h"
 #include "episodes.h"
+#include "game_state.h"  // hud_bars_dirty
+#include "helptext.h"
 #include "hud.h"
+#include "ingame_menu.h"
+#include "lvlmast.h"
+#include "mtrand.h"
 #include "network.h"
-#include "varz.h"  // hud_bars_dirty
+#include "sprite.h"
+
+#include <stdio.h>
+#include <string.h>
 
 Player player[2];
 
@@ -157,7 +166,7 @@ void arcade_rescale_to_lives(Player *this_player)
 		changed = true;
 	}
 
-	// Defer repainting to the rollback-safe tick poll in tyrian2.c.
+	// Defer repainting to the rollback-safe tick poll in game_loop.c.
 	if (changed)
 		hud_bars_dirty = true;
 }
@@ -280,4 +289,193 @@ void handle_got_purple_ball(Player *this_player)
 		--this_player->purple_balls_needed;
 	else
 		power_up_weapon(this_player, this_player->is_dragonwing ? REAR_WEAPON : FRONT_WEAPON);
+}
+
+/* Endless run-persistent hull: the outpost Reinforce tier plus the Ablative Plating perk. */
+static void endlessApplyHullBonus(uint p)
+{
+	if (!endlessFxActive())
+		return;
+
+	// Personal perks: the plating (or Glass Cannon drawback) on this hull is this ship's own.
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer(p);
+	int a = (int)player[p].armor + endlessPerkArmorBonus();
+	endlessSetFxPlayer(fxSaved);
+	if (endlessMode)
+		a += endlessArmorBonus[p];
+	player[p].armor = (a < 1) ? 1 : (a > 250 ? 250 : a);  // byte-safe, so no JE_byte armor path wraps
+}
+
+void JE_getShipInfo(void)
+{
+	JE_boolean extraShip, extraShip2;
+
+	// Extra ship ids are not valid ships[] indices; JE_SGr selects their real sheet below.
+	shipGrPtr = (player[0].items.ship <= SHIP_DRAGONWING && ships[player[0].items.ship].shipgraphic > 500)
+	          ? &spriteSheetT2000 : &spriteSheet9;
+	shipGr2ptr = &spriteSheet9;
+
+	powerAdd  = powerSys[player[0].items.generator].power;
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		player[i].generator_power_add = powerSys[player[i].items.generator].power;
+
+	// Extra ships require a file known to both peers.
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		if (player[i].items.ship > 90 && !extraAvailFor(i))
+			player[i].items.ship = 1;
+
+	extraShip = player[0].items.ship > 90;
+	if (extraShip)
+	{
+		JE_byte base = (player[0].items.ship - 91) * 15;
+		shipGr = JE_SGr(0, player[0].items.ship - 90, &shipGrPtr);
+		player[0].armor = extraShipsFor(0)[base + 7];
+	}
+	else
+	{
+		// Only ids above 90 are extra ships. IDs 20 through 90 fall beyond ships[], so use
+		// entry 0 if an edited ship or older save carries a stray id.
+		const uint shipIdx = (player[0].items.ship <= SHIP_DRAGONWING) ? player[0].items.ship : 0;
+		shipGr = ships[shipIdx].shipgraphic - (shipGrPtr == &spriteSheetT2000 ? 500 : 0);
+		player[0].armor = ships[shipIdx].dmg;
+	}
+
+	endlessApplyHullBonus(0);
+
+	extraShip2 = player[1].items.ship > 90;
+	if (extraShip2)
+	{
+		JE_byte base2 = (player[1].items.ship - 91) * 15;
+		shipGr2 = JE_SGr(1, player[1].items.ship - 90, &shipGr2ptr);
+		player[1].armor = extraShipsFor(1)[base2 + 7];
+	}
+	else if (dual_ship_mode())
+	{
+		const uint shipIdx = (player[1].items.ship <= SHIP_DRAGONWING) ? player[1].items.ship : 0;
+		shipGr2ptr = (ships[shipIdx].shipgraphic > 500) ? &spriteSheetT2000 : &spriteSheet9;
+		shipGr2 = ships[shipIdx].shipgraphic - (shipGr2ptr == &spriteSheetT2000 ? 500 : 0);
+		player[1].armor = ships[shipIdx].dmg;
+	}
+	else
+	{
+		shipGr2 = 0;
+		player[1].armor = 10;
+	}
+
+	if (coopEndlessMode)
+		endlessApplyHullBonus(1);
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		// Arcade lives raise the full-restoration ceiling above the one-life hull value.
+		player[i].hull_armor = player[i].armor;
+		player[i].initial_armor = arcade_armor_max(&player[i]);
+		player[i].armor = player[i].initial_armor;
+
+		// ships[] stops at SHIP_DRAGONWING while an "extra" ship is only id > 90, so an id in
+		// between would read past the end here too (see the shipGr fallback above).
+		const uint shipIdx = (player[i].items.ship <= SHIP_DRAGONWING) ? player[i].items.ship : 0;
+		uint temp = ((i == 0 && extraShip) ||
+		             (i == 1 && extraShip2)) ? 2 : ships[shipIdx].ani;
+
+		if (temp == 0)
+		{
+			player[i].shot_hit_area_x = 12;
+			player[i].shot_hit_area_y = 10;
+		}
+		else
+		{
+			player[i].shot_hit_area_x = 11;
+			player[i].shot_hit_area_y = 14;
+		}
+	}
+}
+
+void JE_initPlayerData(void)
+{
+	/* JE: New Game Items/Data */
+	extraShipReturnReset();
+
+	player[0].items.ship = 1;                     // USP Talon
+	player[0].items.weapon[FRONT_WEAPON].id = 1;  // Pulse Cannon
+	player[0].items.weapon[REAR_WEAPON].id = 0;   // None
+	player[0].items.shield = 4;                   // Gencore High Energy Shield
+	player[0].items.generator = 2;                // Advanced MR-12
+	for (uint i = 0; i < COUNTOF(player[0].items.sidekick); ++i)
+		player[0].items.sidekick[i] = 0;          // None
+	player[0].items.special = 0;                  // None
+	// Which Super Arcade ruleset a ship flies now lives on the ship (player_sa_ship), because
+	// online Super Arcade gives the two players different ones.
+	player[0].items.super_arcade_mode = SA_NONE;
+
+	player[0].last_items = player[0].items;
+
+	player[1].items = player[0].items;
+	player[1].items.weapon[REAR_WEAPON].id = 15;  // Vulcan Cannon
+	player[1].items.sidekick_level = 101;         // 101, 102, 103
+	player[1].items.sidekick_series = 0;          // None
+
+	gameHasRepeated = false;
+	onePlayerAction = false;
+	superArcadeMode = SA_NONE;
+	superTyrian = false;
+	twoPlayerMode = false;
+	coopCampaignMode = false;
+	coopEndlessMode = false;
+	arcadeSeparateMode = false;
+	timedBattleMode = false;
+	endlessMode = false;
+
+	secretHint = (mt_rand() % 3) + 1;
+
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		for (uint i = 0; i < COUNTOF(player->items.weapon); ++i)
+		{
+			player[p].items.weapon[i].power = 1;
+		}
+
+		player[p].weapon_mode = 1;
+		player[p].armor = player[p].hull_armor = ships[player[p].items.ship].dmg;
+
+		player[p].is_dragonwing = (p == 1);
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+
+	}
+
+	mainLevel = FIRST_LEVEL;
+	saveLevel = FIRST_LEVEL;
+
+	strcpy(lastLevelName, miscText[19]);
+}
+
+// Per-slot lookup: an unset nickname must fall back to "Player N" for that slot, never to the
+// other side's nickname, or the named player's nick shows on both slots for the unnamed player.
+const char *JE_getName(JE_byte pnum)
+{
+	if (pnum == thisPlayerNum)
+	{
+		if (network_player_name[0] != '\0')
+			return network_player_name;
+	}
+	else if (network_opponent_name[0] != '\0')
+	{
+		return network_opponent_name;
+	}
+
+	return miscText[47 + pnum];
+}
+
+// Replace a leading "Player N" score label with that player's nickname.
+void JE_playerScoreLabel(JE_byte pnum, char *out, size_t outSize)
+{
+	const char *const label = miscText[39 + pnum];   // "Player N Score:"
+	const char *const who   = miscText[47 + pnum];   // "Player N"
+	const size_t who_len = strlen(who);
+
+	if (isNetworkGame && strncmp(label, who, who_len) == 0)
+		snprintf(out, outSize, "%s%s", JE_getName(pnum), label + who_len);
+	else
+		snprintf(out, outSize, "%s", label);
 }

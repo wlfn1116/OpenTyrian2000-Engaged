@@ -20,6 +20,7 @@
 #include "config.h"
 #include "console_platform.h"
 #include "debug_menu.h"
+#include "draw.h"
 #include "endless.h"
 #include "endless_internal.h"
 #include "episodes.h"
@@ -27,6 +28,7 @@
 #include "font.h"
 #include "fonthand.h"
 #include "game_menu.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
@@ -35,8 +37,6 @@
 #include "network.h"
 #include "player.h"
 #include "touch_ui.h"
-#include "varz.h"
-#include "vga256d.h"
 #include "video.h"
 
 #include <stdio.h>
@@ -861,20 +861,7 @@ static bool endlessDebugScreen(bool jumpMode)
 				draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 		}
 
-		if (rowCount > visibleRows)
-		{
-			const int track_top = items_top - 1;
-			const int track_bot = items_top + visibleRows * row_h - 2;
-			const int track_h = track_bot - track_top;
-			fill_rectangle_xy(VGAScreen, px1 - 4, track_top, px1 - 3, track_bot, PANEL_EDGE_LO);
-			int thumb_h = track_h * visibleRows / rowCount;
-			if (thumb_h < 4)
-				thumb_h = 4;
-			const int denom = rowCount - visibleRows;
-			const int thumb_y = track_top + (denom > 0 ? (track_h - thumb_h) * scrollTop / denom : 0);
-			fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h,
-			                  PANEL_EDGE_HI);
-		}
+		debug_panel_scrollbar(px1, items_top, row_h, visibleRows, scrollTop, rowCount);
 
 		// Footer line 1: what the selected row IS. Every list row can explain itself, so none of
 		// the 48 modifier names has to carry its meaning in the name alone.
@@ -988,26 +975,9 @@ static bool endlessDebugScreen(bool jumpMode)
 		NETWORK_KEEP_ALIVE();  // browsing every level in the game can take a while; hold the link
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// Map shoulder-button edges to Page Up and Page Down. A real key wins
-		// if both inputs arrive together.
 		{
-#if defined(__SWITCH__)
-			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
-#else
-			static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
-#endif
 			static bool shoulder_was[2];
-			for (int b = 0; b < 2; ++b)
-			{
-				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-				                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
-				if (down && !shoulder_was[b] && !newkey)
-				{
-					newkey = true;
-					lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
-				}
-				shoulder_was[b] = down;
-			}
+			debug_panel_shoulder_paging(shoulder_was);
 		}
 #endif
 
@@ -1580,22 +1550,7 @@ bool JE_debugLevelSelect(void)
 					draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 			}
 
-			/* scrollbar (only when the list overflows the window) */
-			if (rowCount > visibleRows)
-			{
-				const int track_top = items_top - 1;
-				const int track_bot = items_top + visibleRows * row_h - 2;
-				const int track_h = track_bot - track_top;
-				fill_rectangle_xy(VGAScreen, px1 - 4, track_top, px1 - 3, track_bot, PANEL_EDGE_LO);
-
-				int thumb_h = track_h * visibleRows / rowCount;
-				if (thumb_h < 4)
-					thumb_h = 4;
-				const int denom = rowCount - visibleRows;
-				const int thumb_y = track_top + (denom > 0 ? (track_h - thumb_h) * scrollTop / denom : 0);
-				fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h,
-				                  PANEL_EDGE_HI);
-			}
+			debug_panel_scrollbar(px1, items_top, row_h, visibleRows, scrollTop, rowCount);
 		}
 
 		// Footer line 1: where the selected level actually lives, which is what you need when a
@@ -1630,26 +1585,9 @@ bool JE_debugLevelSelect(void)
 		NETWORK_KEEP_ALIVE();  // browsing every level in the game can take a while; hold the link
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown; same
-		// pattern as endlessDebugScreen; see the note there.
 		{
-#if defined(__SWITCH__)
-			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
-#else
-			static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
-#endif
 			static bool shoulder_was[2];
-			for (int b = 0; b < 2; ++b)
-			{
-				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-				                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
-				if (down && !shoulder_was[b] && !newkey)
-				{
-					newkey = true;
-					lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
-				}
-				shoulder_was[b] = down;
-			}
+			debug_panel_shoulder_paging(shoulder_was);
 		}
 #endif
 

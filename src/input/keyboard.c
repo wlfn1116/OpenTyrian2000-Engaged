@@ -27,11 +27,8 @@
 #include "touch_ui.h"
 #include "console_platform.h"
 #include "video.h"
-#include "video_scale.h"
 
 #include "SDL.h"
-
-#include <stdio.h>
 
 #ifdef PLATFORM_HANDHELD
 // The base multiplier cancels VT_MOUSE_SENS so the middle setting tracks touch 1:1.
@@ -552,4 +549,17 @@ int scancode_digit(int sc)
 	if (sc >= SDL_SCANCODE_KP_1 && sc <= SDL_SCANCODE_KP_9) return sc - SDL_SCANCODE_KP_1 + 1;
 	if (sc == SDL_SCANCODE_KP_0)                            return 0;
 	return -1;
+}
+
+JE_boolean JE_anyButton(void)
+{
+	// Preserve input edges seen by an event pump between calls.
+	const bool pressed_before_poll = newkey || newmouse;
+
+	// Touch buttons queue keys before the SDL event pump.
+	touch_ui_flush_keys();
+
+	poll_joysticks();
+	service_SDL_events(true);
+	return pressed_before_poll || newkey || newmouse || mousedown || joydown;
 }

@@ -154,7 +154,6 @@ bool video_test_rows_rounds(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.
-void video_repaint(void);
 void video_repaint_if_stale(bool force);
 
 void set_menu_centered(bool centered);

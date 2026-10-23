@@ -18,19 +18,20 @@
 #include "specials.h"
 
 #include "config.h"
+#include "demo.h"
 #include "endless.h"
 #include "episodes.h"
+#include "game_state.h"
 #include "hud.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "player.h"
+#include "player_ship.h"
 #include "rollback.h"
 #include "shots.h"
 #include "sndmast.h"
 #include "sparks.h"
-#include "varz.h"
 #include "video.h"
 
 #include <stdlib.h>

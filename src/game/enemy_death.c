@@ -20,6 +20,9 @@
 #include "config.h"
 #include "endless.h"
 #include "episodes.h"
+#include "explosions.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "health_bars.h"
 #include "level_events.h"
 #include "mtrand.h"
@@ -29,8 +32,6 @@
 #include "sim_math.h"
 #include "sndmast.h"
 #include "sparks.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 
 #include <assert.h>

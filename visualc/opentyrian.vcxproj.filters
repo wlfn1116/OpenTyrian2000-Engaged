@@ -58,10 +58,10 @@
     <ClCompile Include="..\src\audio\musmast.c">
       <Filter>audio</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\audio\nortsong.c">
+    <ClCompile Include="..\src\audio\opl.c">
       <Filter>audio</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\audio\opl.c">
+    <ClCompile Include="..\src\audio\sfx.c">
       <Filter>audio</Filter>
     </ClCompile>
     <ClCompile Include="..\src\audio\sndmast.c">
@@ -94,10 +94,19 @@
     <ClCompile Include="..\src\core\params.c">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\core\savegame.c">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\core\sim_math.c">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="..\src\core\sizebuf.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\str_util.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\timing.c">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="..\src\core\xmas.c">
@@ -142,10 +151,22 @@
     <ClCompile Include="..\src\game\custom_weapon.c">
       <Filter>game</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\game\demo.c">
+      <Filter>game</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\game\editship.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\enemy_death.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\explosions.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\game_loop.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\game_state.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\health_bars.c">
@@ -157,7 +178,10 @@
     <ClCompile Include="..\src\game\hud.c">
       <Filter>game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\mainint.c">
+    <ClCompile Include="..\src\game\item_prices.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\level_end.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\player.c">
@@ -173,12 +197,6 @@
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\specials.c">
-      <Filter>game</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\game\tyrian2.c">
-      <Filter>game</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\game\varz.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\input\joystick.c">
@@ -280,25 +298,55 @@
     <ClCompile Include="..\src\qa\qa.c">
       <Filter>qa</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\qa\qa_combat.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_course.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_economy.c">
+      <Filter>qa</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\qa\qa_endless.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_items.c">
       <Filter>qa</Filter>
     </ClCompile>
     <ClCompile Include="..\src\qa\qa_net.c">
       <Filter>qa</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\qa\qa_netplay.c">
+      <Filter>qa</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\qa\qa_online.c">
       <Filter>qa</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\qa\qa_render.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_saves.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_ships.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_sparks.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_specials.c">
+      <Filter>qa</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\video\animlib.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\draw.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\font.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\fonthand.c">
-      <Filter>video</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\video\nortvars.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\palette.c">
@@ -320,9 +368,6 @@
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\starlib.c">
-      <Filter>video</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\video\vga256d.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\vga_palette.c">
@@ -395,10 +440,10 @@
     <ClInclude Include="..\src\audio\musmast.h">
       <Filter>audio</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\audio\nortsong.h">
+    <ClInclude Include="..\src\audio\opl.h">
       <Filter>audio</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\audio\opl.h">
+    <ClInclude Include="..\src\audio\sfx.h">
       <Filter>audio</Filter>
     </ClInclude>
     <ClInclude Include="..\src\audio\sndmast.h">
@@ -431,10 +476,19 @@
     <ClInclude Include="..\src\core\params.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\core\savegame.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\core\sim_math.h">
       <Filter>core</Filter>
     </ClInclude>
     <ClInclude Include="..\src\core\sizebuf.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\str_util.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\timing.h">
       <Filter>core</Filter>
     </ClInclude>
     <ClInclude Include="..\src\core\xmas.h">
@@ -461,10 +515,22 @@
     <ClInclude Include="..\src\game\custom_weapon.h">
       <Filter>game</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\game\demo.h">
+      <Filter>game</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\game\editship.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\enemy_death.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\explosions.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\game_loop.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\game_state.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\health_bars.h">
@@ -476,7 +542,10 @@
     <ClInclude Include="..\src\game\hud.h">
       <Filter>game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\mainint.h">
+    <ClInclude Include="..\src\game\item_prices.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\level_end.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\player.h">
@@ -492,12 +561,6 @@
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\specials.h">
-      <Filter>game</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\game\tyrian2.h">
-      <Filter>game</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\game\varz.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\input\joystick.h">
@@ -599,16 +662,19 @@
     <ClInclude Include="..\src\qa\qa.h">
       <Filter>qa</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\qa\qa_internal.h">
+      <Filter>qa</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\video\animlib.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\draw.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\font.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\fonthand.h">
-      <Filter>video</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\video\nortvars.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\palette.h">
@@ -633,9 +699,6 @@
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\swar.h">
-      <Filter>video</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\video\vga256d.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\vga_palette.h">

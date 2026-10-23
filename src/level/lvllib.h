@@ -30,4 +30,11 @@ void JE_analyzeLevel(void);
 unsigned int JE_levelFileCount(int episode);
 bool JE_levelFileNumValid(JE_word fileNum);
 
+// Fill `out` with up to `maxOut` combat-level section numbers for `episode` (the same level
+// scan the debug level picker uses); returns how many were written.
+uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut);
+
+// Read an authored level name without loading it; fileNum 0 selects the section's first cut.
+void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char *out, size_t outSize);
+
 #endif /* LVLLIB_H */

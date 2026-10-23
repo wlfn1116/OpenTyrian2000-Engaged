@@ -1,4 +1,4 @@
-﻿/*
+/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
  * On-screen touch controls; see touch_ui.h.
@@ -10,8 +10,8 @@
 #include "config.h"
 #include "joystick.h"
 #include "keyboard.h"
-#include "mainint.h"
 #include "palette.h"
+#include "player_ship.h"
 #include "video.h"
 
 #include <math.h>

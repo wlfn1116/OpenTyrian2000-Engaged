@@ -42,37 +42,41 @@
 #include "editship.h"
 #include "destruct_rollback.h"
 #include "endless.h"
+#include "explosions.h"
 #include "fnv1a.h"
+#include "game_loop.h"
 #include "game_menu.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "ingame_menu.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "level_load.h"
 #include "loudness.h"
-#include "mainint.h"
 #include "menus.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "net_start.h"
 #include "net_style.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "opentyr.h"
+#include "palette.h"
 #include "params.h"
 #include "picload.h"
 #include "player.h"
 #include "qa.h"
 #include "rollback.h"
 #include "save_menu.h"
+#include "savegame.h"
+#include "sfx.h"
 #include "shots.h"
 #include "sprite.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 
 #include <assert.h>
@@ -102,6 +106,10 @@ SDL_COMPILE_TIME_ASSERT(net_iff_loopback, NET_IFF_LOOPBACK == IFF_LOOPBACK);
 SDL_COMPILE_TIME_ASSERT(net_iff_pointopoint, NET_IFF_POINTOPOINT == IFF_POINTOPOINT);
 SDL_COMPILE_TIME_ASSERT(net_iff_running, NET_IFF_RUNNING == IFF_RUNNING);
 #endif
+
+static void network_custom_level_session_reset(void);
+static void network_settings_apply_session_speed(void);
+static void network_settings_check_layout(const Uint8 *buf);
 
 bool network_interface_carries_lan(unsigned int flags)
 {
@@ -1929,7 +1937,7 @@ int network_settings_pack(Uint8 *buf)
 
 /* Both peers compare layouts because the host streams state and the joiner adopts it. A mismatch
  * disables recovery but retains desync detection. */
-void network_settings_check_layout(const Uint8 *buf)
+static void network_settings_check_layout(const Uint8 *buf)
 {
 	const Uint32 their_fp   = SDLNet_Read32(&buf[16]);
 	const Uint32 their_size = SDLNet_Read32(&buf[20]);
@@ -2023,7 +2031,7 @@ void network_arm_local_session(void)
 
 // Apply the host's lobby speed for ordinary sessions and restore the local preference afterward.
 // Command-line and Destruct sessions use Normal so both peers advance at the same rate.
-void network_settings_apply_session_speed(void)
+static void network_settings_apply_session_speed(void)
 {
 	const bool host_picks_speed = network_from_lobby && network_is_host
 	                           && network_game_type != NETWORK_GAME_DESTRUCT;
@@ -2416,7 +2424,7 @@ static void network_custom_in_reset(void)
 	network_custom_in_seen = NULL;
 }
 
-void network_custom_weapon_reset(void)
+static void network_custom_weapon_reset(void)
 {
 	network_custom_in_reset();
 	network_custom_out_hash = 0;
@@ -2651,7 +2659,7 @@ static void network_ships_in_reset(void)
 	network_ships_in_seen = NULL;
 }
 
-void network_extra_ships_reset(void)
+static void network_extra_ships_reset(void)
 {
 	network_ships_in_reset();
 	network_ships_out_hash = 0;
@@ -2898,7 +2906,7 @@ static void network_clv_in_reset(void)
 	network_clv_in_seen = NULL;
 }
 
-void network_custom_level_session_reset(void)
+static void network_custom_level_session_reset(void)
 {
 	network_clv_request_seen = false;
 	network_clv_manifest_requested = false;
@@ -4773,7 +4781,7 @@ void network_debug_sync_mark(void)
 	network_debug_state_pack(debug_sync_last);
 }
 
-bool network_debug_sync_changed(void)
+static bool network_debug_sync_changed(void)
 {
 	Uint8 now[NDS_SIZE];
 	network_debug_state_pack(now);

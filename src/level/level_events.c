@@ -21,21 +21,21 @@
 #include "config.h"
 #include "endless.h"
 #include "episodes.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "health_bars.h"
 #include "helptext.h"
 #include "hud.h"
+#include "level_end.h"
 #include "level_load.h"
 #include "loudness.h"
 #include "lvlmast.h"
-#include "mainint.h"
 #include "mtrand.h"
 #include "musmast.h"
-#include "nortsong.h"
 #include "player.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 
 #include <assert.h>
@@ -77,7 +77,7 @@ void JE_eventJump(JE_word jump)
 	eventLoc = tempW - 1;
 }
 
-bool JE_searchFor/*enemy*/(JE_byte PLType, JE_byte* out_index)
+static bool JE_searchFor/*enemy*/(JE_byte PLType, JE_byte* out_index)
 {
 	int found_id = -1;
 

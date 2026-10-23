@@ -17,11 +17,11 @@
  */
 #include "sprite.h"
 
+#include "draw.h"
 #include "file.h"
 #include "opentyr.h"
 #include "render_list.h"
 #include "rollback.h"
-#include "vga256d.h"
 #include "video.h"
 
 // Silent rollback passes advance simulation without drawing.
@@ -50,6 +50,8 @@ Sprite2_array spriteSheet11;
 Sprite2_array spriteSheet12;
 Sprite2_array spriteSheetT2000;
 
+static void load_sprites(unsigned int table, FILE *f);
+
 // Mix brightness only, optionally replacing the source palette bank.
 static inline Uint8 alpha_pixel(Uint8 dst, Uint8 src, Uint8 filter, bool dye)
 {
@@ -77,7 +79,7 @@ void load_sprites_file(unsigned int table, const char *filename)
 	fclose(f);
 }
 
-void load_sprites(unsigned int table, FILE *f)
+static void load_sprites(unsigned int table, FILE *f)
 {
 	free_sprites(table);
 	

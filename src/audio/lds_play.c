@@ -19,9 +19,8 @@
 
 #include "file.h"
 #include "loudness.h"
-#include "opentyr.h"
+#include "opl.h"
 
-#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -83,6 +82,8 @@ static Uint16 *patterns = NULL;
 static Uint16 numpatch, numposi, mainvolume;
 
 bool playing, songlooped;
+
+static void lds_playsound(int inst_number, int channel_number, int tunehigh);
 
 bool lds_load(FILE *f, unsigned int music_offset, unsigned int music_size)
 {
@@ -234,7 +235,7 @@ void lds_fade(Uint8 speed)
 	fadeonoff = speed;
 }
 
-void lds_setregs(Uint8 reg, Uint8 val)
+static void lds_setregs(Uint8 reg, Uint8 val)
 {
 	if(fmchip[reg] == val) return;
 
@@ -242,7 +243,7 @@ void lds_setregs(Uint8 reg, Uint8 val)
 	opl_write(reg, val);
 }
 
-void lds_setregs_adv(Uint8 reg, Uint8 mask, Uint8 val)
+static void lds_setregs_adv(Uint8 reg, Uint8 mask, Uint8 val)
 {
 	lds_setregs(reg, (fmchip[reg] & mask) | val);
 }
@@ -638,7 +639,7 @@ int lds_update(void)
 	return (!playing || songlooped) ? false : true;
 }
 
-void lds_playsound(int inst_number, int channel_number, int tunehigh)
+static void lds_playsound(int inst_number, int channel_number, int tunehigh)
 {
 	Channel		*c = &channel[channel_number];		/* current channel */
 	SoundBank		*i = &soundbank[inst_number];		/* current instrument */

@@ -15,17 +15,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef NORTSONG_H
-#define NORTSONG_H
+#ifndef SFX_H
+#define SFX_H
 
 #include "opentyr.h"
 
-#include "musmast.h"
 #include "sndmast.h"
 
 #include "SDL.h"
-
-extern JE_word frameCountMax;
 
 extern Sint16 *soundSamples[SOUND_COUNT];
 extern size_t soundSampleCount[SOUND_COUNT];
@@ -34,25 +31,9 @@ extern JE_word tyrMusicVolume, fxVolume;
 extern const JE_word fxPlayVol;
 extern JE_word tempVolume;
 
-extern int fps_cap;
-void set_fps(int fps);
-
-void setDelay(int delay);
-void setDelay2(int delay);
-float get_delay_period(void);
-Uint32 getDelayTicks(void);
-Uint32 getDelayTicks2(void);
-
-void wait_delay(void);
-void limit_render_fps(void);
-void service_wait_delay(void);
-void wait_delayorinput(void);
-
-void setDelaySpeed(Uint16 speed);
-
 void JE_changeVolume(JE_word *music, int music_delta, JE_word *sample, int sample_delta);
 
 void loadSndFile(bool xmas);
 void JE_playSampleNum(JE_byte samplenum);
 
-#endif /* NORTSONG_H */
+#endif /* SFX_H */

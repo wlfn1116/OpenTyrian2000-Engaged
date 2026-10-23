@@ -4,17 +4,11 @@
 #include "endless_internal.h"
 
 #include "config.h"
-#include "custom_weapon.h"
 #include "episodes.h"
-#include "game_menu.h"
-#include "joystick.h"
-#include "player.h"
-#include "sprite.h"
-#include "tyrian2.h"
-#include "varz.h"
+#include "game_state.h"
+#include "lvllib.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 // The shop's Start Level menu displays these generated courses.

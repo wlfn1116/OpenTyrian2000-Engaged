@@ -54,12 +54,14 @@ void JE_textShadeScaled(SDL_Surface *screen, int x, int y, const char *s, unsign
 void JE_outText(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness);
 // JE_outText plus a black cardinal-direction outline, for small text drawn over artwork.
 void JE_outTextOutlined(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness);
-void JE_outTextModify(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, unsigned int brightness, unsigned int font);
 void JE_outTextAdjust(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, int brightness, unsigned int font, bool shadow);
 void JE_outTextAndDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int font);
 
 void JE_updateWarning(SDL_Surface * screen);
 void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s);
 void JE_outTextGlowMulti(SDL_Surface * screen, const int *x, int y, const char *const *s, int count);
+
+extern JE_boolean useLastBank;
+void JE_outCharGlow(JE_word x, JE_word y, const char *s);
 
 #endif /* FONTHAND_H */

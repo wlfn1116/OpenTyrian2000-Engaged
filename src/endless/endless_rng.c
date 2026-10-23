@@ -3,20 +3,18 @@
 #include "endless.h"
 #include "endless_internal.h"
 
-#include "config.h"
 #include "font.h"
 #include "fonthand.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "mtrand.h"
-#include "nortsong.h"
 #include "palette.h"
 #include "picload.h"
-#include "player.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
-#include "varz.h"
+#include "timing.h"
 #include "video.h"
 
 #include <stdio.h>

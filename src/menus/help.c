@@ -18,26 +18,26 @@
 #include "help.h"
 
 #include "config.h"
+#include "draw.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_state.h"
 #include "helptext.h"
+#include "hud.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
-#include "mainint.h"
 #include "menus.h"
 #include "mouse.h"
 #include "musmast.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "palette.h"
 #include "picload.h"
 #include "render_list.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
-#include "varz.h"
-#include "vga256d.h"
+#include "timing.h"
 #include "video.h"
 
 #include <stdio.h>
@@ -381,7 +381,6 @@ void JE_inGameHelp(void)
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
 
 	JE_clearKeyboard();
-	JE_wipeKey();
 
 	JE_barShade(VGAScreen, 1, 1, 262, vga_height - 18); /*Main Box*/
 	JE_barShade(VGAScreen, 3, 3, 260, vga_height - 20);

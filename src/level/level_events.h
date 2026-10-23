@@ -21,7 +21,6 @@
 #include "opentyr.h"
 
 void JE_eventJump(JE_word jump);
-bool JE_searchFor(JE_byte PLType, JE_byte* out_index);
 void JE_eventSystem(void);
 
 #endif /* LEVEL_EVENTS_H */

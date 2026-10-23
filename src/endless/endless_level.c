@@ -5,20 +5,14 @@
 
 #include "config.h"
 #include "custom_episode.h"
-#include "custom_weapon.h"
 #include "episodes.h"
-#include "game_menu.h"
-#include "joystick.h"
-#include "loudness.h"
+#include "game_state.h"
+#include "lvllib.h"
 #include "lvlmast.h"
 #include "mtrand.h"
-#include "player.h"
 #include "sprite.h"
-#include "tyrian2.h"
-#include "varz.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 // Saved for exact music anti-repeat behavior after a resume.

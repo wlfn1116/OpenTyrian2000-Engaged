@@ -58,8 +58,4 @@ typedef struct {
 	unsigned char transpose;
 } Position;
 
-void lds_playsound(int inst_number, int channel_number, int tunehigh);
-void lds_setregs(unsigned char reg, unsigned char val);
-void lds_setregs_adv(unsigned char reg, unsigned char mask, unsigned char val);
-
 #endif /* LDS_PLAY_H */

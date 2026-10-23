@@ -71,7 +71,6 @@ extern char superTyrianText[6][64];
 extern char menuInt[MENU_MAX+1][14][24];
 
 void read_encrypted_pascal_string(char *s, size_t size, FILE *f);
-void skip_pascal_string(FILE *f);
 
 void JE_helpBox(SDL_Surface *screen, int x, int y, const char *message, unsigned int boxwidth);
 void JE_HBox(SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsigned int boxwidth);

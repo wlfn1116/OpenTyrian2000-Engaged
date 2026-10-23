@@ -17,8 +17,8 @@
  */
 #ifndef SHOTS_H
 #define SHOTS_H
+#include "game_state.h"
 #include "opentyr.h"
-#include "varz.h"
 
 typedef struct {
 	JE_integer shotX, shotY, shotXM, shotYM, shotXC, shotYC;

@@ -18,12 +18,12 @@
 #include "backgrnd.h"
 
 #include "config.h"
+#include "game_state.h"
 #include "mtrand.h"
 #include "opentyr.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "swar.h"
-#include "varz.h"
 #include "video.h"
 
 #include <assert.h>
@@ -1678,7 +1678,6 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 
 /* Register private starfield simulation state. Public scroll state is registered
  * centrally in rollback_state.c. */
-#include "rollback.h"
 
 void backgrnd_register_rollback(void)
 {

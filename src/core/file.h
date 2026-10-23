@@ -27,6 +27,8 @@
 extern const char *custom_data_dir;
 
 const char *data_dir(void);
+const char *get_user_directory(void);
+const char *make_user_directory(void);
 
 FILE *dir_fopen(const char *dir, const char *file, const char *mode);
 FILE *dir_fopen_warn(const char *dir, const char *file, const char *mode);

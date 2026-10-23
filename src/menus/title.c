@@ -19,40 +19,43 @@
 
 #include "config.h"
 #include "custom_episode.h"
+#include "demo.h"
 #include "endless.h"
 #include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_loop.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "high_scores.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
-#include "mainint.h"
 #include "menus.h"
 #include "mouse.h"
 #include "musmast.h"
 #include "net_start.h"
 #include "network.h"
-#include "nortsong.h"
-#include "nortvars.h"
 #include "palette.h"
 #include "params.h"
 #include "picload.h"
 #include "player.h"
 #include "save_menu.h"
 #include "setup_menu.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "tyrian2.h"
-#include "varz.h"
 #include "video.h"
 
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+
+static bool newEndlessGame(void);
+static bool newGame(void);
 
 // Present one supersampled title-slide frame: the composed background with the two logo
 // sprites at fractional positions.
@@ -517,7 +520,7 @@ bool titleScreen(void)
 	}
 }
 
-bool newGame(void)
+static bool newGame(void)
 {
 	if (gameplaySelect())
 	{
@@ -697,7 +700,7 @@ bool newSuperTyrianGame(void)
 
 }
 
-bool newEndlessGame(void)
+static bool newEndlessGame(void)
 {
 	/* Endless roguelite mode. */
 

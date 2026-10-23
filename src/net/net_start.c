@@ -21,12 +21,14 @@
 #include "crashlog.h"
 #include "custom_episode.h"
 #include "custom_weapon.h"
+#include "draw.h"
 #include "editship.h"
 #include "endless.h"
 #include "endless_internal.h"
 #include "episodes.h"
 #include "font.h"
 #include "fonthand.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
@@ -34,15 +36,16 @@
 #include "mouse.h"
 #include "net_rollback.h"
 #include "network.h"
-#include "nortsong.h"
 #include "palette.h"
 #include "picload.h"
 #include "player.h"
 #include "qa.h"
+#include "savegame.h"
+#include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "timing.h"
 #include "touch_ui.h"
-#include "varz.h"
 #include "video.h"
 
 #include <stdio.h>
@@ -1118,4 +1121,21 @@ void networkStartScreen(void)
 		        (int)player[0].items.super_arcade_mode, (int)player[1].items.super_arcade_mode);
 		fflush(stderr);
 	}
+}
+
+void JE_drawNetworkNotice(const char *text)
+{
+	// Drawn into VGAScreenSeg, so this is display space: the playfield is x in [0,
+	// PLAYFIELD_WIDTH) and y in [0, 184), with the HUD to the right of it.
+	const int playfieldRows = 184;
+	const int panelW = MIN(JE_textWidth(text, normal_font) + 28, PLAYFIELD_WIDTH - 16);
+	const int panelH = 26;
+
+	const int px0 = (PLAYFIELD_WIDTH - panelW) / 2, px1 = px0 + panelW;
+	const int py0 = (playfieldRows - panelH) / 2, py1 = py0 + panelH;
+
+	JE_barShade(VGAScreen, px0, py0, px1, py1);
+	JE_barShade(VGAScreen, px0 + 2, py0 + 2, px1 - 2, py1 - 2);
+	JE_dStringOutlined(VGAScreen, (px0 + px1) / 2 - JE_textWidth(text, normal_font) / 2, py0 + 7,
+	                   text, SMALL_FONT_SHAPES);
 }

@@ -19,27 +19,27 @@
 
 #include "config.h"
 #include "debug_menu.h"
+#include "draw.h"
 #include "endless.h"
 #include "episodes.h"
 #include "fonthand.h"
+#include "game_state.h"
 #include "health_bars.h"
 #include "helptext.h"
-#include "mainint.h"
 #include "net_style.h"
 #include "network.h"
-#include "nortvars.h"
 #include "player.h"
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "sprite.h"
-#include "varz.h"
-#include "vga256d.h"
 #include "video.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+
+JE_word textErase;
 
 /* Keep the last message so a visible pass can repaint anything dropped by
  * silent rollback re-simulation. See hud_message_dirty. */
@@ -139,7 +139,8 @@ static int hud_superbomb_p1_right(void)
 	return 30 + 12 * (int)hud_superbomb_count(0);
 }
 
-int hud_fps_row(void)
+// text row the FPS counter occupies
+static int hud_fps_row(void)
 {
 	// Stack above player 2's score and superbombs; one-player leaves this corner free.
 	if (!twoPlayerMode || (galagaMode && !coop_mode_active()))
@@ -1026,7 +1027,8 @@ int armorGaugeFlash[2]  = { 0, 0 };
 #define SHIP_HP_BAR_HIT_TICKS 70   // ~2 seconds at the 35 Hz simulation rate
 static int ship_hp_bar_hit[2] = { 0, 0 };
 
-void hud_ship_hp_bar_reset(void)
+// clear On Hit timers
+static void hud_ship_hp_bar_reset(void)
 {
 	ship_hp_bar_hit[0] = ship_hp_bar_hit[1] = 0;
 }
