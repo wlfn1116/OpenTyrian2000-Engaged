@@ -1617,14 +1617,23 @@ static void JE_helpScreen(void)
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->h * VGAScreen2->pitch);
 	JE_clr256(VGAScreen);
 
+	int actionWidth = 0;
+	for (i = 0; i < 2; i++)
+		for (j = 3; j < 12; j += 2)
+			actionWidth = MAX(actionWidth, JE_textWidth(destructHelp[i * 12 + j], TINY_FONT));
+	const int tableX = (vga_width - 160 - actionWidth) / 2;
+
 	for (i = 0; i < 2; i++)
 	{
-		JE_outText(VGAScreen, 100, 5 + i * 90, destructHelp[i * 12 + 0], 2, 4);
-		JE_outText(VGAScreen, 100, 15 + i * 90, destructHelp[i * 12 + 1], 2, 1);
+		const char *const title = destructHelp[i * 12 + 0];
+		const char *const subtitle = destructHelp[i * 12 + 1];
+		JE_outText(VGAScreen, center_text(title, TINY_FONT), 5 + i * 90, title, 2, 4);
+		JE_outText(VGAScreen, center_text(subtitle, TINY_FONT), 15 + i * 90, subtitle, 2, 1);
 		for (j = 3; j <= 12; j++)
-			JE_outText(VGAScreen, ((j - 1) % 2) * 160 + 10, 15 + ((j - 1) / 2) * 12 + i * 90, destructHelp[i * 12 + j - 1], 1, 3);
+			JE_outText(VGAScreen, tableX + ((j - 1) % 2) * 160, 15 + ((j - 1) / 2) * 12 + i * 90,
+			           destructHelp[i * 12 + j - 1], 1, 3);
 	}
-	JE_outText(VGAScreen, 30, 190, destructHelp[24], 3, 4);
+	JE_outText(VGAScreen, center_text(destructHelp[24], TINY_FONT), 190, destructHelp[24], 3, 4);
 	JE_showVGA();
 	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);   // before the fade, so confirm fades in with it
 	fade_palette(colors, 15, 0, 255);
