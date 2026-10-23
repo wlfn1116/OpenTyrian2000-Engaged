@@ -18,6 +18,7 @@
 #include "enemy_death.h"
 
 #include "config.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "episodes.h"
 #include "explosions.h"

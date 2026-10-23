@@ -134,9 +134,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\opentyr.c" />
+    <ClCompile Include="..\src\audio\audio.c" />
     <ClCompile Include="..\src\audio\fluid_music.c" />
     <ClCompile Include="..\src\audio\lds_play.c" />
-    <ClCompile Include="..\src\audio\loudness.c" />
     <ClCompile Include="..\src\audio\midi_smf.c" />
     <ClCompile Include="..\src\audio\musmast.c" />
     <ClCompile Include="..\src\audio\opl.c" />
@@ -168,12 +168,13 @@
     <ClCompile Include="..\src\endless\endless_rng.c" />
     <ClCompile Include="..\src\endless\endless_save.c" />
     <ClCompile Include="..\src\endless\endless_shop.c" />
-    <ClCompile Include="..\src\game\backgrnd.c" />
+    <ClCompile Include="..\src\game\background.c" />
     <ClCompile Include="..\src\game\custom_weapon.c" />
+    <ClCompile Include="..\src\game\debug_flags.c" />
     <ClCompile Include="..\src\game\demo.c" />
-    <ClCompile Include="..\src\game\editship.c" />
     <ClCompile Include="..\src\game\enemy_death.c" />
     <ClCompile Include="..\src\game\explosions.c" />
+    <ClCompile Include="..\src\game\extra_ships.c" />
     <ClCompile Include="..\src\game\game_loop.c" />
     <ClCompile Include="..\src\game\game_state.c" />
     <ClCompile Include="..\src\game\health_bars.c" />
@@ -186,6 +187,7 @@
     <ClCompile Include="..\src\game\shots.c" />
     <ClCompile Include="..\src\game\sparks.c" />
     <ClCompile Include="..\src\game\specials.c" />
+    <ClCompile Include="..\src\game\vt_ship.c" />
     <ClCompile Include="..\src\input\joystick.c" />
     <ClCompile Include="..\src\input\keyboard.c" />
     <ClCompile Include="..\src\input\mouse.c" />
@@ -207,6 +209,7 @@
     <ClCompile Include="..\src\menus\menus.c" />
     <ClCompile Include="..\src\menus\save_menu.c" />
     <ClCompile Include="..\src\menus\setup_menu.c" />
+    <ClCompile Include="..\src\menus\ship_editor.c" />
     <ClCompile Include="..\src\menus\sprite_viewer.c" />
     <ClCompile Include="..\src\menus\title.c" />
     <ClCompile Include="..\src\menus\weapon_creator.c" />
@@ -215,6 +218,7 @@
     <ClCompile Include="..\src\net\net_savexfer.c" />
     <ClCompile Include="..\src\net\net_start.c" />
     <ClCompile Include="..\src\net\net_style.c" />
+    <ClCompile Include="..\src\net\net_transfer.c" />
     <ClCompile Include="..\src\net\network.c" />
     <ClCompile Include="..\src\net\rollback.c" />
     <ClCompile Include="..\src\net\rollback_state.c" />
@@ -235,15 +239,12 @@
     <ClCompile Include="..\src\video\animlib.c" />
     <ClCompile Include="..\src\video\draw.c" />
     <ClCompile Include="..\src\video\font.c" />
-    <ClCompile Include="..\src\video\fonthand.c" />
     <ClCompile Include="..\src\video\palette.c" />
-    <ClCompile Include="..\src\video\pcxload.c" />
     <ClCompile Include="..\src\video\pcxmast.c" />
     <ClCompile Include="..\src\video\picload.c" />
     <ClCompile Include="..\src\video\render_list.c" />
     <ClCompile Include="..\src\video\sprite.c" />
     <ClCompile Include="..\src\video\starlib.c" />
-    <ClCompile Include="..\src\video\vga_palette.c" />
     <ClCompile Include="..\src\video\video.c" />
     <ClCompile Include="..\src\video\video_scale.c" />
     <ClCompile Include="..\src\video\video_scale_hqNx.c" />
@@ -358,9 +359,9 @@
   <ItemGroup>
     <ClInclude Include="..\src\opentyr.h" />
     <ClInclude Include="..\src\opentyrian_version.h" />
+    <ClInclude Include="..\src\audio\audio.h" />
     <ClInclude Include="..\src\audio\fluid_music.h" />
     <ClInclude Include="..\src\audio\lds_play.h" />
-    <ClInclude Include="..\src\audio\loudness.h" />
     <ClInclude Include="..\src\audio\midi_smf.h" />
     <ClInclude Include="..\src\audio\musmast.h" />
     <ClInclude Include="..\src\audio\opl.h" />
@@ -386,12 +387,13 @@
     <ClInclude Include="..\src\endless\endless.h" />
     <ClInclude Include="..\src\endless\endless_internal.h" />
     <ClInclude Include="..\src\endless\endless_levelprofile.h" />
-    <ClInclude Include="..\src\game\backgrnd.h" />
+    <ClInclude Include="..\src\game\background.h" />
     <ClInclude Include="..\src\game\custom_weapon.h" />
+    <ClInclude Include="..\src\game\debug_flags.h" />
     <ClInclude Include="..\src\game\demo.h" />
-    <ClInclude Include="..\src\game\editship.h" />
     <ClInclude Include="..\src\game\enemy_death.h" />
     <ClInclude Include="..\src\game\explosions.h" />
+    <ClInclude Include="..\src\game\extra_ships.h" />
     <ClInclude Include="..\src\game\game_loop.h" />
     <ClInclude Include="..\src\game\game_state.h" />
     <ClInclude Include="..\src\game\health_bars.h" />
@@ -404,6 +406,7 @@
     <ClInclude Include="..\src\game\shots.h" />
     <ClInclude Include="..\src\game\sparks.h" />
     <ClInclude Include="..\src\game\specials.h" />
+    <ClInclude Include="..\src\game\vt_ship.h" />
     <ClInclude Include="..\src\input\joystick.h" />
     <ClInclude Include="..\src\input\keyboard.h" />
     <ClInclude Include="..\src\input\mouse.h" />
@@ -425,9 +428,11 @@
     <ClInclude Include="..\src\menus\menus.h" />
     <ClInclude Include="..\src\menus\save_menu.h" />
     <ClInclude Include="..\src\menus\setup_menu.h" />
+    <ClInclude Include="..\src\menus\ship_editor.h" />
     <ClInclude Include="..\src\menus\sprite_viewer.h" />
     <ClInclude Include="..\src\menus\title.h" />
     <ClInclude Include="..\src\menus\weapon_creator.h" />
+    <ClInclude Include="..\src\net\net_internal.h" />
     <ClInclude Include="..\src\net\net_lobby.h" />
     <ClInclude Include="..\src\net\net_rollback.h" />
     <ClInclude Include="..\src\net\net_savexfer.h" />
@@ -441,16 +446,13 @@
     <ClInclude Include="..\src\video\animlib.h" />
     <ClInclude Include="..\src\video\draw.h" />
     <ClInclude Include="..\src\video\font.h" />
-    <ClInclude Include="..\src\video\fonthand.h" />
     <ClInclude Include="..\src\video\palette.h" />
-    <ClInclude Include="..\src\video\pcxload.h" />
     <ClInclude Include="..\src\video\pcxmast.h" />
     <ClInclude Include="..\src\video\picload.h" />
     <ClInclude Include="..\src\video\render_list.h" />
     <ClInclude Include="..\src\video\sprite.h" />
     <ClInclude Include="..\src\video\starlib.h" />
     <ClInclude Include="..\src\video\swar.h" />
-    <ClInclude Include="..\src\video\vga_palette.h" />
     <ClInclude Include="..\src\video\video.h" />
     <ClInclude Include="..\src\video\video_scale.h" />
   </ItemGroup>

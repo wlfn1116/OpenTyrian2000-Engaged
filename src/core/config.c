@@ -17,8 +17,10 @@
  */
 #include "config.h"
 
+#include "audio.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "debug_flags.h"
 #include "endless.h"       // endlessDebugConfigLoad/Save ([endless_debug] section)
 #include "custom_episode.h"
 #include "episodes.h"
@@ -26,7 +28,6 @@
 #include "game_state.h"
 #include "helptext.h"      // DESTRUCT_MODES bounds the persisted battle mode
 #include "keyboard.h"
-#include "loudness.h"
 #include "net_rollback.h"
 #include "network.h"
 #include "opentyr.h"
@@ -165,11 +166,11 @@ JE_byte gammaCorrection;
 JE_boolean superPause = false;
 JE_boolean explosionTransparent,
            youAreCheating,
-           displayScore,
            background2, smoothScroll, wild, superWild, starActive,
            topEnemyOver,
            skyEnemyOverAll,
            background2notTransparent;
+static JE_boolean displayScore;
 
 JE_byte    fastPlay;
 JE_boolean pentiumMode;
@@ -640,7 +641,12 @@ void enhancementApplyPreset(EnhancementPreset preset)
 
 Config opentyrian_config;  // implicitly initialized
 
-// Each custom power level is a comma-separated JE_WeaponType payload.
+static void load_int_flag(const ConfigSection *section, const char *key, bool *flag)
+{
+	int value = *flag ? 1 : 0;
+	config_get_int_option(section, key, &value);
+	*flag = (value != 0);
+}
 
 static bool load_opentyrian_config(void)
 {
@@ -691,9 +697,7 @@ static bool load_opentyrian_config(void)
 		config_get_int_option(section, "vsync", &vsync_enabled);
 		set_vsync(vsync_enabled != 0);
 
-		int show_fps_enabled = show_fps ? 1 : 0;
-		config_get_int_option(section, "show_fps", &show_fps_enabled);
-		show_fps = (show_fps_enabled != 0);
+		load_int_flag(section, "show_fps", &show_fps);
 
 		// Ship-control sensitivity slider: touch on the handheld ports, mouse on desktop.
 		config_get_int_option(section, SHIP_SENS_CFG, &ship_sensitivity);
@@ -707,9 +711,7 @@ static bool load_opentyrian_config(void)
 		else if (render_supersample > RENDER_SUPERSAMPLE_NATIVE)
 			render_supersample = RENDER_SUPERSAMPLE_NATIVE;
 
-		int smoothie_full = smoothie_full_res ? 1 : 0;
-		config_get_int_option(section, "smoothie_full_res", &smoothie_full);
-		smoothie_full_res = (smoothie_full != 0);
+		load_int_flag(section, "smoothie_full_res", &smoothie_full_res);
 
 		config_get_int_option(section, "render_threads", &render_threads);
 		if (render_threads < 0)
@@ -765,17 +767,9 @@ static bool load_opentyrian_config(void)
 		if (vulnerableCue < VULN_CUE_OFF || vulnerableCue >= VULN_CUE_COUNT)
 			vulnerableCue = VULN_CUE_BOSSES;
 
-		int armor_alarm_enabled = armorAlarm ? 1 : 0;
-		config_get_int_option(section, "armor_alarm", &armor_alarm_enabled);
-		armorAlarm = (armor_alarm_enabled != 0);
-
-		int link_sounds_enabled = linkSounds ? 1 : 0;
-		config_get_int_option(section, "link_sounds", &link_sounds_enabled);
-		linkSounds = (link_sounds_enabled != 0);
-
-		int debug_mode_enabled = debugMode ? 1 : 0;
-		config_get_int_option(section, "debug_mode", &debug_mode_enabled);
-		debugMode = (debug_mode_enabled != 0);
+		load_int_flag(section, "armor_alarm", &armorAlarm);
+		load_int_flag(section, "link_sounds", &linkSounds);
+		load_int_flag(section, "debug_mode", &debugMode);
 
 		int hang_timeout = crashlog_get_hang_timeout();
 		config_get_int_option(section, "hang_timeout", &hang_timeout);
@@ -785,9 +779,7 @@ static bool load_opentyrian_config(void)
 		config_get_int_option(section, "net_log", &net_log_enabled);
 		crashlog_set_netlog_enabled(net_log_enabled != 0);
 
-		int enemy_bars_enabled = enemyBars ? 1 : 0;
-		config_get_int_option(section, "enemy_bars", &enemy_bars_enabled);
-		enemyBars = (enemy_bars_enabled != 0);
+		load_int_flag(section, "enemy_bars", &enemyBars);
 
 		config_get_int_option(section, "enemy_bar_layout", &enemyBarLayout);
 		config_get_int_option(section, "enemy_bar_position", &enemyBarPosition);
@@ -799,29 +791,12 @@ static bool load_opentyrian_config(void)
 		customEndlessMode = (custom_endless >= CUSTOM_ENDLESS_OFF && custom_endless < CUSTOM_ENDLESS_MODES)
 		                  ? custom_endless : CUSTOM_ENDLESS_OFF;
 
-		int smooth_motion_enabled = smoothMotion ? 1 : 0;
-		config_get_int_option(section, "smooth_motion", &smooth_motion_enabled);
-		smoothMotion = (smooth_motion_enabled != 0);
-
-		int extra_sparks_enabled = extraSparks ? 1 : 0;
-		config_get_int_option(section, "extra_sparks", &extra_sparks_enabled);
-		extraSparks = (extra_sparks_enabled != 0);
-
-		int extra_parallax_enabled = extraParallax ? 1 : 0;
-		config_get_int_option(section, "extra_parallax", &extra_parallax_enabled);
-		extraParallax = (extra_parallax_enabled != 0);
-
-		int mirrored_layers_enabled = mirroredLayers ? 1 : 0;
-		config_get_int_option(section, "mirrored_layers", &mirrored_layers_enabled);
-		mirroredLayers = (mirrored_layers_enabled != 0);
-
-		int touch_sidekick_buttons_enabled = touchSidekickButtons ? 1 : 0;
-		config_get_int_option(section, "touch_sidekick_buttons", &touch_sidekick_buttons_enabled);
-		touchSidekickButtons = (touch_sidekick_buttons_enabled != 0);
-
-		int touch_nav_buttons_enabled = touchNavButtons ? 1 : 0;
-		config_get_int_option(section, "touch_nav_buttons", &touch_nav_buttons_enabled);
-		touchNavButtons = (touch_nav_buttons_enabled != 0);
+		load_int_flag(section, "smooth_motion", &smoothMotion);
+		load_int_flag(section, "extra_sparks", &extraSparks);
+		load_int_flag(section, "extra_parallax", &extraParallax);
+		load_int_flag(section, "mirrored_layers", &mirroredLayers);
+		load_int_flag(section, "touch_sidekick_buttons", &touchSidekickButtons);
+		load_int_flag(section, "touch_nav_buttons", &touchNavButtons);
 
 		config_get_int_option(section, "touch_button_opacity", &touchButtonOpacity);
 		if (touchButtonOpacity < 0 || touchButtonOpacity > TOUCH_OPACITY_MAX)
@@ -964,17 +939,9 @@ static bool load_opentyrian_config(void)
 		config_get_int_option(section, "gauge_grad_shield", &gaugeGradShield);
 		config_get_int_option(section, "gauge_grad_armor", &gaugeGradArmor);
 
-		int gauge_flash_shield_enabled = gaugeFlashShield ? 1 : 0;
-		config_get_int_option(section, "gauge_flash_shield", &gauge_flash_shield_enabled);
-		gaugeFlashShield = (gauge_flash_shield_enabled != 0);
-
-		int gauge_flash_armor_enabled = gaugeFlashArmor ? 1 : 0;
-		config_get_int_option(section, "gauge_flash_armor", &gauge_flash_armor_enabled);
-		gaugeFlashArmor = (gauge_flash_armor_enabled != 0);
-
-		int special_screen_tint = specialScreenTint ? 1 : 0;
-		config_get_int_option(section, "special_screen_tint", &special_screen_tint);
-		specialScreenTint = (special_screen_tint != 0);
+		load_int_flag(section, "gauge_flash_shield", &gaugeFlashShield);
+		load_int_flag(section, "gauge_flash_armor", &gaugeFlashArmor);
+		load_int_flag(section, "special_screen_tint", &specialScreenTint);
 
 		config_get_int_option(section, "zica_l11_base", &zicaLaserBase);
 		if (zicaLaserBase < 0 || zicaLaserBase >= ZICA_BASE_COUNT)
@@ -984,49 +951,17 @@ static bool load_opentyrian_config(void)
 		if (zicaLaserLength < 0 || zicaLaserLength >= ZICA_LEN_COUNT)
 			zicaLaserLength = ZICA_LEN_SHORT;
 
-		int zica_l11_lock = zicaLaserLock ? 1 : 0;
-		config_get_int_option(section, "zica_l11_lock", &zica_l11_lock);
-		zicaLaserLock = (zica_l11_lock != 0);
-
-		int zica_laser_buff = zicaLaserBuff ? 1 : 0;
-		config_get_int_option(section, "zica_laser_buff", &zica_laser_buff);
-		zicaLaserBuff = (zica_laser_buff != 0);
-
-		int charge_laser_cannon = chargeLaserCannon ? 1 : 0;
-		config_get_int_option(section, "charge_laser_cannon", &charge_laser_cannon);
-		chargeLaserCannon = (charge_laser_cannon != 0);
-
-		int restore_base_dispensers = restoreBaseDispensers ? 1 : 0;
-		config_get_int_option(section, "restore_base_dispensers", &restore_base_dispensers);
-		restoreBaseDispensers = (restore_base_dispensers != 0);
-
-		int arcade_life_boost = arcadeLifeBoost ? 1 : 0;
-		config_get_int_option(section, "arcade_life_boost", &arcade_life_boost);
-		arcadeLifeBoost = (arcade_life_boost != 0);
-
-		int arcade_random_balls = arcadeRandomBalls ? 1 : 0;
-		config_get_int_option(section, "arcade_random_balls", &arcade_random_balls);
-		arcadeRandomBalls = (arcade_random_balls != 0);
-
-		int arcade_rear_gun_scale = arcadeRearGunScale ? 1 : 0;
-		config_get_int_option(section, "arcade_rear_gun_scale", &arcade_rear_gun_scale);
-		arcadeRearGunScale = (arcade_rear_gun_scale != 0);
-
-		int unused_shop_sprites = unusedShopSprites ? 1 : 0;
-		config_get_int_option(section, "unused_shop_sprites", &unused_shop_sprites);
-		unusedShopSprites = (unused_shop_sprites != 0);
-
-		int centered_shot_hitboxes = centeredShotHitboxes ? 1 : 0;
-		config_get_int_option(section, "centered_shot_hitboxes", &centered_shot_hitboxes);
-		centeredShotHitboxes = (centered_shot_hitboxes != 0);
-
-		int guided_shot_screen_aim = guidedShotScreenAim ? 1 : 0;
-		config_get_int_option(section, "guided_shot_screen_aim", &guided_shot_screen_aim);
-		guidedShotScreenAim = (guided_shot_screen_aim != 0);
-
-		int ship_editor_stars = shipEditorStars ? 1 : 0;
-		config_get_int_option(section, "ship_editor_stars", &ship_editor_stars);
-		shipEditorStars = (ship_editor_stars != 0);
+		load_int_flag(section, "zica_l11_lock", &zicaLaserLock);
+		load_int_flag(section, "zica_laser_buff", &zicaLaserBuff);
+		load_int_flag(section, "charge_laser_cannon", &chargeLaserCannon);
+		load_int_flag(section, "restore_base_dispensers", &restoreBaseDispensers);
+		load_int_flag(section, "arcade_life_boost", &arcadeLifeBoost);
+		load_int_flag(section, "arcade_random_balls", &arcadeRandomBalls);
+		load_int_flag(section, "arcade_rear_gun_scale", &arcadeRearGunScale);
+		load_int_flag(section, "unused_shop_sprites", &unusedShopSprites);
+		load_int_flag(section, "centered_shot_hitboxes", &centeredShotHitboxes);
+		load_int_flag(section, "guided_shot_screen_aim", &guidedShotScreenAim);
+		load_int_flag(section, "ship_editor_stars", &shipEditorStars);
 
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
@@ -1068,9 +1003,7 @@ static bool load_opentyrian_config(void)
 			config_get_int_option(section, expertSettings[i].cfgKey, expertSettings[i].value);
 		clamp_expert_settings();  // guard against a hand-edited or stale config
 
-		int custom_weapon_enabled = customWeaponEnabled ? 1 : 0;
-		config_get_int_option(section, "custom_weapon_enabled", &custom_weapon_enabled);
-		customWeaponEnabled = (custom_weapon_enabled != 0);
+		load_int_flag(section, "custom_weapon_enabled", &customWeaponEnabled);
 
 		customWeaponEditLevel = 0;
 		customWeaponEditMode = 0;

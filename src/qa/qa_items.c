@@ -1,10 +1,11 @@
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
 #include "config.h"
 #include "episodes.h"
 #include "fnv1a.h"
-#include "game_menu.h"   // JE_getLevelSections
 #include "game_state.h"
 
 #include "SDL.h"

@@ -747,6 +747,18 @@ bool sprite2_has_color(Sprite2_array sprite2s, unsigned int index, Uint8 color)
 	return false;
 }
 
+Uint8 sprite2x2_pixel(Sprite2_array sprite2s, unsigned int index, int x, int y)
+{
+	if (x < 0 || x >= 2 * SPRITE2_CELL_W || y < 0 || y >= 2 * SPRITE2_CELL_H)
+		return 0;
+
+	Uint8 pixels[SPRITE2_CELL_PIXELS];
+	const unsigned int cell = index + x / SPRITE2_CELL_W + (y / SPRITE2_CELL_H) * 19;
+	if (!sprite2_decode_cell(sprite2s, cell, pixels))
+		return 0;
+	return pixels[(y % SPRITE2_CELL_H) * SPRITE2_CELL_W + x % SPRITE2_CELL_W];
+}
+
 static size_t sprite2_encode_cell(const Uint8 pixels[SPRITE2_CELL_PIXELS], Uint8 *encoded)
 {
 	size_t size = 0;
@@ -885,6 +897,42 @@ static void repair_t2000_gencore_ii_hard_left(Sprite2_array *sheet)
 	if (badPixels < 32 || sourceBadPixels != 0)
 		return;
 	(void)sprite2_replace_cells(sheet, destination, &mirrored[0][0], COUNTOF(destination));
+}
+
+static void repair_t2000_gencore_ii_holes(Sprite2_array *sheet)
+{
+	static const struct { unsigned int pose; int x, y; } hole[9] = {
+		{ 79, 11, 1 }, { 79, 12, 2 }, { 79, 20, 10 }, { 79, 19, 11 },
+		{ 81, 13, 2 },
+		{ 83, 12, 1 }, { 83, 11, 2 }, { 83, 3, 10 }, { 83, 4, 11 },
+	};
+	static const unsigned int destination[5] = { 79, 80, 82, 83, 84 };
+	Uint8 filled[5][SPRITE2_CELL_PIXELS];
+
+	for (uint i = 0; i < COUNTOF(hole); ++i)
+	{
+		const unsigned int pose = hole[i].pose;
+		const int x = hole[i].x, y = hole[i].y;
+		if (sprite2x2_pixel(*sheet, pose, x, y) != 0 ||
+		    sprite2x2_pixel(*sheet, pose, x - 1, y) == 0 ||
+		    sprite2x2_pixel(*sheet, pose, x + 1, y) == 0 ||
+		    sprite2x2_pixel(*sheet, pose, x, y - 1) == 0 ||
+		    sprite2x2_pixel(*sheet, pose, x, y + 1) == 0)
+			return;
+	}
+
+	for (uint cell = 0; cell < COUNTOF(destination); ++cell)
+	{
+		if (!sprite2_decode_cell(*sheet, destination[cell], filled[cell]))
+			return;
+		for (uint i = 0; i < COUNTOF(hole); ++i)
+		{
+			const int x = hole[i].x, y = hole[i].y;
+			if (hole[i].pose + x / SPRITE2_CELL_W + (y / SPRITE2_CELL_H) * 19 == destination[cell])
+				filled[cell][(y % SPRITE2_CELL_H) * SPRITE2_CELL_W + x % SPRITE2_CELL_W] = 0x0f;
+		}
+	}
+	(void)sprite2_replace_cells(sheet, destination, &filled[0][0], COUNTOF(destination));
 }
 
 // Clean U-Ship only when every affected cell matches its stock bad-pixel count.
@@ -2259,6 +2307,7 @@ void JE_loadMainShapeTables(const char *shpfile)
 	spriteSheetT2000.size = shpPos[i + 1] - shpPos[i];
 	JE_loadCompShapesB(&spriteSheetT2000, f);
 	repair_t2000_gencore_ii_hard_left(&spriteSheetT2000);
+	repair_t2000_gencore_ii_holes(&spriteSheetT2000);
 
 	fclose(f);
 

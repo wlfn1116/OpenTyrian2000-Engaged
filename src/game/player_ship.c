@@ -17,19 +17,21 @@
  */
 #include "player_ship.h"
 
-#include "backgrnd.h"
+#include "audio.h"
+#include "background.h"
 #include "config.h"
 #include "console_platform.h"
+#include "debug_flags.h"
 #include "debug_menu.h"
 #include "demo.h"
 #include "draw.h"
-#include "editship.h"
 #include "endless.h"
 #include "enemy_death.h"
 #include "episodes.h"
 #include "explosions.h"
+#include "extra_ships.h"
 #include "file.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_loop.h"
 #include "game_state.h"
 #include "health_bars.h"
@@ -39,7 +41,6 @@
 #include "ingame_menu.h"
 #include "joystick.h"
 #include "keyboard.h"
-#include "loudness.h"
 #include "lvlmast.h"
 #include "mouse.h"
 #include "mtrand.h"
@@ -57,10 +58,12 @@
 #include "shots.h"
 #include "sim_math.h"
 #include "sndmast.h"
+#include "sparks.h"
 #include "specials.h"
 #include "sprite.h"
 #include "timing.h"
 #include "video.h"
+#include "vt_ship.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -70,6 +73,126 @@
 bool button[4];
 bool pause_pressed = false, ingamemenu_pressed = false, changefire_pressed = false;
 JE_shortint constantLastX;
+
+static const JE_word SASpecialWeaponB[SA] /* [1..SA] */ = {37, 6, 15, 40, 16, 14, 41, 48, 47 };
+
+static const JE_byte specialArcadeWeapon[PORT_NUM] /* [1..Portnum] */ =
+{
+	17,17,18,0,0,0,10,0,0,0,0,0,44,0,10,0,19,0,0,-0,0,0,0,0,0,0,
+	-0,0,0,0,45,0,0,0,0,0,0,0,0,0,0,0
+};
+
+static const JE_byte optionSelect[16][3][2] /* [0..15, 1..3, 1..2] */ =
+{	/*  MAIN    OPT    FRONT */
+	{ { 0, 0},{ 0, 0},{ 0, 0} },  /**/
+	{ { 1, 1},{16,16},{30,30} },  /*Single Shot*/
+	{ { 2, 2},{29,29},{29,20} },  /*Dual Shot*/
+	{ { 3, 3},{21,21},{12, 0} },  /*Charge Cannon*/
+	{ { 4, 4},{18,18},{16,23} },  /*Vulcan*/
+	{ { 0, 0},{ 0, 0},{ 0, 0} },  /**/
+	{ { 6, 6},{29,16},{ 0,22} },  /*Super Missile*/
+	{ { 7, 7},{19,19},{19,28} },  /*Atom Bomb*/
+	{ { 0, 0},{ 0, 0},{ 0, 0} },  /**/
+	{ { 0, 0},{ 0, 0},{ 0, 0} },  /**/
+	{ {10,10},{21,21},{21,27} },  /*Mini Missile*/
+	{ { 0, 0},{ 0, 0},{ 0, 0} },  /**/
+	{ { 0, 0},{ 0, 0},{ 0, 0} },  /**/
+	{ {13,13},{17,17},{13,26} },  /*MicroBomb*/
+	{ { 0, 0},{ 0, 0},{ 0, 0} },  /**/
+	{ {15,15},{15,16},{15,16} }   /*Post-It*/
+};
+
+const JE_word linkGunWeapons[38] /* [1..38] */ =
+{
+	0,0,0,0,0,0,0,0,444,445,446,447,0,448,449,0,0,0,0,0,450,451,0,506,0,564,
+	  445,446,447,448,449,445,446,447,448,449,450,451
+};
+
+static const JE_word chargeGunWeapons[38] /* [1..38] */ =
+{
+	0,0,0,0,0,0,0,0,476,458,464,482,0,488,470,0,0,0,0,0,494,500,0,528,0,558,
+	  458,458,458,458,458,458,458,458,458,458,458,458
+};
+
+/* YKS: Twiddle cheat sheet:
+ * 1: UP
+ * 2: DOWN
+ * 3: LEFT
+ * 4: RIGHT
+ * 5: UP+FIRE
+ * 6: DOWN+FIRE
+ * 7: LEFT+FIRE
+ * 8: RIGHT+FIRE
+ * 9: Release all keys (directions and fire)
+ */
+const JE_byte keyboardCombos[26][8] /* [1..26, 1..8] */ =
+{
+	{ 2, 1,   2,   5, 137,           0, 0, 0}, /*Invulnerability*/
+	{ 4, 3,   2,   5, 138,           0, 0, 0}, /*Atom Bomb*/
+	{ 3, 4,   6, 139,             0, 0, 0, 0}, /*Seeker Bombs*/
+	{ 2, 5, 142,               0, 0, 0, 0, 0}, /*Ice Blast*/
+	{ 6, 2,   6, 143,             0, 0, 0, 0}, /*Auto Repair*/
+	{ 6, 7,   5,   8,   6,   7,  5, 112     }, /*Spin Wave*/
+	{ 7, 8, 101,               0, 0, 0, 0, 0}, /*Repulsor*/
+	{ 1, 7,   6, 146,             0, 0, 0, 0}, /*Protron Field*/
+	{ 8, 6,   7,   1, 120,           0, 0, 0}, /*Minefield*/
+	{ 3, 6,   8,   5, 121,           0, 0, 0}, /*Post-It Blast*/
+	{ 1, 2,   7,   8, 119,           0, 0, 0}, /*Drone Ship - TBC*/
+	{ 3, 4,   3,   6, 123,           0, 0, 0}, /*Repair Player 2*/
+	{ 6, 7,   5,   8, 124,           0, 0, 0}, /*Super Bomb - TBC*/
+	{ 1, 6, 125,               0, 0, 0, 0, 0}, /*Hot Dog*/
+	{ 9, 5, 126,               0, 0, 0, 0, 0}, /*Lightning UP      */
+	{ 1, 7, 127,               0, 0, 0, 0, 0}, /*Lightning UP+LEFT */
+	{ 1, 8, 128,               0, 0, 0, 0, 0}, /*Lightning UP+RIGHT*/
+	{ 9, 7, 129,               0, 0, 0, 0, 0}, /*Lightning    LEFT */
+	{ 9, 8, 130,               0, 0, 0, 0, 0}, /*Lightning    RIGHT*/
+	{ 4, 2,   3,   5, 131,           0, 0, 0}, /*Warfly            */
+	{ 3, 1,   2,   8, 132,           0, 0, 0}, /*FrontBlaster      */
+	{ 2, 4,   5, 133,             0, 0, 0, 0}, /*Gerund            */
+	{ 3, 4,   2,   8, 134,           0, 0, 0}, /*FireBomb          */
+	{ 1, 4,   6, 135,             0, 0, 0, 0}, /*Indigo            */
+	{ 1, 3,   6, 137,             0, 0, 0, 0}, /*Invulnerability [easier] */
+	{ 1, 4,   3,   4,   7, 136,         0, 0}  /*D-Media Protron Drone    */
+};
+
+static const JE_byte shipCombosB[21] /* [1..21] */ =
+	{15,16,17,18,19,20,21,22,23,24, 7, 8, 5,25,14, 4, 6, 3, 9, 2,26};
+
+const JE_byte shipCombos[19][3] /* [0..12, 1..3] */ =
+{
+	{ 5, 4, 7},  /*2nd Player ship*/
+	{ 1, 2, 0},  /*USP Talon*/
+	{14, 4, 0},  /*Super Carrot*/
+	{ 4, 5, 0},  /*Gencore Phoenix*/
+	{ 6, 5, 0},  /*Gencore Maelstrom*/
+	{ 7, 8, 0},  /*MicroCorp Stalker*/
+	{ 7, 9, 0},  /*MicroCorp Stalker-B*/
+	{10, 3, 5},  /*Prototype Stalker-C*/
+	{ 5, 8, 9},  /*Stalker*/
+	{ 1, 3, 0},  /*USP Fang*/
+	{ 7,16,17},  /*U-Ship*/
+	{ 2,11,12},  /*1st Player ship*/
+	{ 3, 8,10},  /*Nort ship*/
+	{ 0, 0, 0},  // Dummy entry added for Stalker 21.126
+	{ 1, 0, 0},  /*Storm*/
+	{ 4, 0, 0},  /*Red Dragon*/
+	{ 5, 9, 2},  /*Gencore II*/
+	{ 0, 0, 0},  /*PeteZoomer*/
+	{ 0, 0, 0}   /*Rum Bottle*/
+};
+
+/*Street-Fighter Commands*/
+JE_byte SFCurrentCode[2][21]; /* [1..2, 1..21] */
+JE_byte SFExecuted[2]; /* [1..2] */
+
+const uint shadowYDist = 10;
+
+JE_real optionSatelliteRotate;
+
+JE_integer optionAttachmentMove[2];                               // per sidekick slot (LEFT/RIGHT)
+JE_boolean optionAttachmentLinked[2], optionAttachmentReturn[2];  // so both front options can launch
+
+JE_byte chargeWait, chargeLevel, chargeMax, chargeGr, chargeGrWait;
 
 /*Street Fighter codes*/
 void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer mouseX_, JE_integer mouseY_)
@@ -3253,4 +3376,329 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 
 		}
 	}
+}
+
+void JE_resetPlayerOptions(Player *this_player)
+{
+	// Personal perks: Ordnance Reserves and Rapid Recharge size this ship's own magazines.
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer((uint)(this_player - player));
+
+	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
+	{
+		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
+
+		// Scale refill cadence so larger Ordnance Reserves magazines fill in the stock time.
+		this_player->sidekick[i].ammo =
+		this_player->sidekick[i].ammo_max = endlessPerkSidekickAmmo(this_option->ammo);
+
+		this_player->sidekick[i].ammo_refill_ticks =
+		this_player->sidekick[i].ammo_refill_ticks_max =
+			endlessPerkSidekickRefillTicks((105 - this_option->ammo) * 4, this_option->ammo);
+
+		this_player->sidekick[i].style = this_option->tr;
+
+		this_player->sidekick[i].animation_enabled = (this_option->option == 1);
+		this_player->sidekick[i].animation_frame = 0;
+
+		this_player->sidekick[i].charge = 0;
+		this_player->sidekick[i].charge_ticks = endlessPerkChargeTicks(20);
+	}
+
+	endlessSetFxPlayer(fxSaved);
+}
+
+/* Which ships carry the Endless effect layer: both of them in an online co-op run, player 1
+ * otherwise (the campaign debug layer only ever equips one). */
+static bool endlessFxShip(const Player *this_player)
+{
+	return endlessFxActive() && (coopEndlessMode || this_player == &player[0]);
+}
+
+/* Damage sites read the struck ship's generator reserve, not the weapon code's power scratch. */
+static int endlessGeneratorGet(const Player *this_player)
+{
+	return dual_ship_mode() ? (int)this_player->generator_power : (int)power;
+}
+
+static void endlessGeneratorSet(Player *this_player, int v)
+{
+	if (v < 0)
+		v = 0;
+	if (v > 900)
+		v = 900;
+	if (dual_ship_mode())
+		this_player->generator_power = (Uint16)v;
+	else
+		power = (uint)v;
+}
+
+/* Rewind both the ordinary special cadence and the flare-imposed wait. */
+static void endlessKineticCoolSpecial(Player *this_player)
+{
+	JE_byte *const clocks[2] = {
+		dual_ship_mode() ? &this_player->shot_repeat[SHOT_SPECIAL] : &shotRepeat[SHOT_SPECIAL],
+		dual_ship_mode() ? &this_player->special_wait              : &specialWait,
+	};
+
+	for (uint i = 0; i < COUNTOF(clocks); ++i)
+		*clocks[i] -= (JE_byte)endlessPerkKineticCooldownCut(*clocks[i]);
+}
+
+/* Feed sidekick magazines and charge ramps; mark event-drawn ammo gauges dirty. */
+static void endlessKineticFeedSidekicks(Player *this_player, int rounds, int stages)
+{
+	bool refilled = false;
+
+	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
+	{
+		const int cap = this_player->sidekick[i].ammo_max;
+		if (rounds > 0 && cap > 0 && this_player->sidekick[i].ammo < cap)
+		{
+			this_player->sidekick[i].ammo = MIN(this_player->sidekick[i].ammo + rounds, cap);
+			refilled = true;
+		}
+
+		// options[].pwr is the pod's top charge stage; 0 means it has no ramp to advance.
+		const uint stageCap = options[this_player->items.sidekick[i]].pwr;
+		if (stages > 0 && this_player->sidekick[i].charge < stageCap)
+			this_player->sidekick[i].charge =
+				MIN(this_player->sidekick[i].charge + (uint)stages, stageCap);
+	}
+
+	if (refilled && (uint)(this_player - player) == hud_sidekick_player_index())
+		hud_sidekicks_dirty = true;
+}
+
+// Clear enemy shots within this ship's Countermeasures reach. Return the number cleared.
+int endlessCountermeasureBurst(Player *this_player)
+{
+	const int cmRadius = endlessPerkCountermeasureRadius();
+	if (cmRadius <= 0)
+		return 0;
+
+	// The perk's radius begins at the hull edge, not the ship's centre.
+	const int reachX = (int)this_player->shot_hit_area_x + cmRadius;
+	const int reachY = (int)this_player->shot_hit_area_y + cmRadius;
+
+	int swept = 0;
+	for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
+	{
+		if (!enemyShotAvail[es]
+		    && abs(enemyShot[es].sx - this_player->x) <= reachX
+		    && abs(enemyShot[es].sy - this_player->y) <= reachY)
+		{
+			enemy_shot_vaporise_sparks(es);
+			JE_setupExplosion(enemyShot[es].sx, enemyShot[es].sy, 0, 0, false, false);
+			enemyShotAvail[es] = true;
+			++swept;
+		}
+	}
+
+	// Announce only a burst that cleared at least one shot.
+	if (swept > 0)
+	{
+		JE_setupExplosion(this_player->x - reachX, this_player->y, 0, 0, false, false);
+		JE_setupExplosion(this_player->x + reachX, this_player->y, 0, 0, false, false);
+		JE_setupExplosion(this_player->x, this_player->y - reachY, 0, 0, false, false);
+		JE_setupExplosion(this_player->x, this_player->y + reachY, 0, 0, false, false);
+		soundQueue[4] = S_WEAPON_7;  // point-defense "thunk"
+	}
+
+	return swept;
+}
+
+static void shield_hit_ring(const Player *this_player)
+{
+	JE_setupExplosion(this_player->x - 17, this_player->y - 12, 0, 14, false, !twoPlayerMode);
+	JE_setupExplosion(this_player->x - 5 , this_player->y - 12, 0, 15, false, !twoPlayerMode);
+	JE_setupExplosion(this_player->x + 7 , this_player->y - 12, 0, 16, false, !twoPlayerMode);
+	JE_setupExplosion(this_player->x + 19, this_player->y - 12, 0, 17, false, !twoPlayerMode);
+
+	JE_setupExplosion(this_player->x - 17, this_player->y + 2 , 0, 18, false, !twoPlayerMode);
+	JE_setupExplosion(this_player->x + 19, this_player->y + 2 , 0, 19, false, !twoPlayerMode);
+
+	JE_setupExplosion(this_player->x - 17, this_player->y + 16, 0, 20, false, !twoPlayerMode);
+	JE_setupExplosion(this_player->x - 5 , this_player->y + 16, 0, 21, false, !twoPlayerMode);
+	JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
+}
+
+JE_byte JE_playerDamage(JE_byte temp,
+                        Player *this_player)
+{
+	// Nitro and the rest of the personal deals belong to the ship being hit.
+	endlessSetFxPlayer((uint)(this_player - &player[0]));
+
+	int playerDamage = 0;
+	soundQueue[7] = S_SHIELD_HIT;
+
+	const int oldShield = this_player->shield;
+	const int oldArmor  = this_player->armor;
+
+	if (cheatInfiniteShields)
+		return 0;
+
+	// Endless Bulwark relic: soften each incoming hit by a flat amount, but always leave at
+	// least 1 damage (only the main player carries perks; a lone hit of 0 is left untouched).
+	if (endlessFxShip(this_player) && temp > 1)
+	{
+		int t = (int)temp - endlessPlayerDamageReduce();
+		temp = (t < 1) ? 1 : (JE_byte)t;
+	}
+
+	// Nitro (gamble deal): the hull is stripped for raw firepower, so any hit that lands is fatal.
+	if (endlessFxShip(this_player) && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_NITRO))
+		temp = 255;
+
+	// Countermeasure Suite arms only when damage reaches the hull.
+	bool cmHullHit = false;
+
+	/* Player Damage Routines */
+	if (this_player->shield < temp)
+	{
+		playerDamage = temp;
+		temp -= this_player->shield;
+		this_player->shield = 0;
+
+		// Aegis Gate spends the remaining shield and blocks overflow before hull-hit
+		// effects. The helper also starts its cooldown.
+		if (endlessFxShip(this_player) && temp > 0
+		    && endlessAegisGateConsume(oldShield, temp))
+		{
+			temp = 0;
+			// Mark a block with the full shield ring and its unique clink sound.
+			shield_hit_ring(this_player);
+			soundQueue[4] = S_CLINK;  // Deflection cue.
+		}
+
+		if (temp > 0)
+			cmHullHit = true;
+
+		if (temp > 0 && !cheatInfiniteArmor)
+		{
+			/*Through Shields - Now Armor */
+
+			if (this_player->armor < temp)
+			{
+				temp -= this_player->armor;
+				this_player->armor = 0;
+
+				if (this_player->is_alive && !youAreCheating)
+				{
+					if (endlessMode && endlessConsumeRevive((uint)(this_player - &player[0])))
+					{
+						// A revive restores armor and stuns enemy fire. Clear the current volley,
+						// show each bullet popping, and grant brief invulnerability.
+						this_player->invulnerable_ticks = 100;
+						for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
+						{
+							if (!enemyShotAvail[es])
+								JE_setupExplosion(enemyShot[es].sx, enemyShot[es].sy, 0, 0, false, false);
+							enemyShotAvail[es] = 1;
+						}
+						soundQueue[3] = S_POWERUP;
+					}
+					else
+					{
+						if (!timedBattleMode)
+							levelTimer = false;
+						this_player->is_alive = false;
+						this_player->exploding_ticks = 60;
+						// A co-op ship that goes down spectates until the zone ends; the outpost the
+						// survivor reaches puts it back in the air. Both down is an ordinary death.
+						if (coopEndlessMode)
+							endlessPlayerDowned[this_player - &player[0]] = true;
+						levelEnd = 40;
+						tempVolume = tyrMusicVolume;
+						soundQueue[1] = S_EXPLOSION_22;
+					}
+				}
+			}
+			else
+			{
+				this_player->armor -= temp;
+				soundQueue[7] = S_HULL_HIT;
+			}
+		}
+	}
+	else
+	{
+		this_player->shield -= temp;
+
+		// Shield-hit explosions follow the hull's local presentation style.
+		explosionOpacity = netStyleForSeat((this_player == &player[1]) ? 1u : 0u).opacity;
+
+		shield_hit_ring(this_player);
+
+		explosionOpacity = NET_STYLE_SOLID;
+	}
+
+	// Arm presentation-only gauge flashes only on the live pass; rollback must not restart them.
+	const int gi = (this_player == &player[1]) ? 1 : 0;
+	if (!rollback_resim && gaugeFlashShield && this_player->shield < oldShield)
+		shieldGaugeFlash[gi] = GAUGE_FLASH_START;
+	if (!rollback_resim && gaugeFlashArmor && this_player->armor < oldArmor)
+		armorGaugeFlash[gi] = GAUGE_FLASH_START;
+
+	/* Kinetic Converter's generator share needs shield absorption; its other effects need any hit. */
+	if (endlessFxShip(this_player) && (this_player->shield < oldShield || cmHullHit))
+	{
+		// Re-cap at the generator ceiling: the tick's own recharge/cap already ran.
+		// shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
+		if (this_player->shield < oldShield)
+		{
+			const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
+			                                           shields[this_player->items.shield].tpwr);
+			if (gained > 0)
+				endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) + gained);
+		}
+
+		endlessKineticCoolSpecial(this_player);
+
+		// Rounds are stateful: this is the one call per hit, so its answer has to be spent here.
+		endlessKineticFeedSidekicks(this_player, endlessPerkKineticAmmoRounds(),
+		                            endlessPerkKineticChargeStages());
+	}
+
+	if (endlessFxShip(this_player) && cmHullHit)
+		endlessCountermeasureBurst(this_player);
+
+	// Failsafe extends hull-hit invulnerability without shortening a longer revive/respawn window.
+	if (endlessFxShip(this_player) && cmHullHit && this_player->is_alive)
+	{
+		const uint failsafe = (uint)endlessPerkFailsafeTicks();
+		if (this_player->invulnerable_ticks < failsafe)
+			this_player->invulnerable_ticks = failsafe;
+	}
+
+	JE_wipeShieldArmorBars();
+	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
+	JE_drawShield();
+	JE_drawArmor();
+	VGAScreen = game_screen; /* side-effect of game_screen */
+
+	if (endlessFxShip(this_player))
+		endlessRegenHitTaken();
+
+	// Static Discharge uses the actual shield and armor loss because the return value is zero for a
+	// fully absorbed hit. Drain only the affected ship's available generator reserve.
+	if (endlessFxShip(this_player))
+	{
+		int lost = 0;
+		if (this_player->shield < oldShield) lost += oldShield - this_player->shield;
+		if (this_player->armor  < oldArmor)  lost += oldArmor  - this_player->armor;
+		if (lost > 0)
+		{
+			const int drain = (int)endlessStaticDischargeDrain((unsigned)lost);
+			endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) - drain);
+		}
+	}
+
+	return playerDamage;
+}
+
+/* How many firing patterns one ship's rear bay offers. */
+JE_word JE_portConfigs(const Player *this_player)
+{
+	return tempW = weaponPort[this_player->items.weapon[REAR_WEAPON].id].opnum;
 }

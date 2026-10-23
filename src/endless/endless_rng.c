@@ -1,10 +1,11 @@
 /* Endless run seeds, structural RNG, and seed selection. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "endless.h"
 #include "endless_internal.h"
 
 #include "font.h"
-#include "fonthand.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"

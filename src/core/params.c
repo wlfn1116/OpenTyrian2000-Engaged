@@ -18,11 +18,11 @@
 #include "params.h"
 
 #include "arg_parse.h"
+#include "audio.h"
 #include "demo.h"
 #include "file.h"
 #include "game_state.h"
 #include "joystick.h"
-#include "loudness.h"
 #include "network.h"
 #include "opentyr.h"
 #include "qa.h"
@@ -37,7 +37,7 @@
 JE_boolean richMode = false, constantPlay = false, constantDie = false;
 
 /* YKS: Note: LOOT cheat had non letters removed. */
-const char pars[][9] = {
+static const char pars[][9] = {
 	"LOOT", "RECORD", "NOJOY", "CONSTANT", "DEATH", "NOSOUND", "NOXMAS", "YESXMAS"
 };
 

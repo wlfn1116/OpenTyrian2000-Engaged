@@ -1,9 +1,11 @@
 /* Endless modifiers, named themes, danger tiers, and help text. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "endless.h"
 #include "endless_internal.h"
 #include "endless_levelprofile.h"
-#include "fonthand.h"
+#include "font.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -739,7 +741,7 @@ const EndlessTheme endlessDeadgenThemes[] = {
 };
 
 // Martyrdom emits one tier-scaled radial burst per linked enemy unless the shot pool is nearly full.
-const EndlessTheme endlessMartyrdomThemes[] = {
+static const EndlessTheme endlessMartyrdomThemes[] = {
 	{ ENDLESS_MOD_MARTYRDOM,                            "Martyrdom" },
 	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_FORTIFIED,    "Last Rites" },
 	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_ELITEPACK,    "Dead Man's Volley" },
@@ -748,7 +750,7 @@ const EndlessTheme endlessMartyrdomThemes[] = {
 };
 
 // Seeker Rounds gives each enemy projectile one limited correction after launch.
-const EndlessTheme endlessSeekerThemes[] = {
+static const EndlessTheme endlessSeekerThemes[] = {
 	{ ENDLESS_MOD_SEEKER,                            "Seeker Rounds" },
 	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_SWIFT,        "Guided Fire" },   // the +4 Seeker+Swift synergy sector
 	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_FRENZY,       "Smart Swarm" },

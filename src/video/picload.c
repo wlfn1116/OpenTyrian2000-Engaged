@@ -21,6 +21,7 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "pcxmast.h"
+#include "video.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -89,4 +90,54 @@ void JE_loadPic(SDL_Surface *screen, JE_byte PCXnumber, JE_boolean storepal)
 
 	if (storepal)
 		set_palette(colors, 0, 255);
+}
+
+void JE_loadPCX(const char *file) // this is only meant to load tshp2.pcx
+{
+	Uint8 *s = VGAScreen->pixels; /* 8-bit specific */
+	
+	FILE *f = dir_fopen_die(data_dir(), file, "rb");
+	
+	fseek(f, -769, SEEK_END);
+
+	Uint8 temp;
+	fread_u8_die(&temp, 1, f);
+	if (temp == 12)
+	{
+		for (int i = 0; i < 256; i++)
+		{
+			Uint8 rgb[3];
+			fread_u8_die(rgb, 3, f);
+			colors[i].r = rgb[0];
+			colors[i].g = rgb[1];
+			colors[i].b = rgb[2];
+		}
+	}
+	
+	fseek(f, 128, SEEK_SET);
+	
+	for (int i = 0; i < 320 * 200; )
+	{
+		Uint8 p;
+		fread_u8_die(&p, 1, f);
+		if ((p & 0xc0) == 0xc0)
+		{
+			i += (p & 0x3f);
+			fread_u8_die(&temp, 1, f);
+			memset(s, temp, (p & 0x3f));
+			s += (p & 0x3f);
+		}
+		else
+		{
+			i++;
+			*s = p;
+			s++;
+		}
+		if (i && (i % 320 == 0))
+		{
+			s += VGAScreen->pitch - 320;
+		}
+	}
+	
+	fclose(f);
 }

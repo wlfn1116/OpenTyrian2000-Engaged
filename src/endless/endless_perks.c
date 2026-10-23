@@ -1,5 +1,7 @@
 /* Endless run-persistent perks. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "endless.h"
 #include "endless_internal.h"
 
@@ -149,12 +151,12 @@ int endlessPerkShopCostBp(void)
 }
 
 // +max armor from the Ablative Plating perk; added to the ship's armor each level start
-// (game_state.c), alongside the outpost hull upgrade (endlessArmorBonus).
+// (player.c), alongside the outpost hull upgrade (endlessArmorBonus).
 int endlessPerkArmorBonus(void)
 {
 	int bonus = perkFx(PERK_ARMOR) * ENDLESS_PERK_ARMOR_STEP;
 	if (perkFx(PERK_GLASSCANNON))
-		bonus -= ENDLESS_PERK_GLASS_ARMOR;  // Glass Cannon relic drawback (game_state.c clamps armor >= 1)
+		bonus -= ENDLESS_PERK_GLASS_ARMOR;  // Glass Cannon relic drawback (player.c clamps armor >= 1)
 	return bonus;
 }
 
@@ -710,7 +712,7 @@ int endlessPerkChainDamage(bool salvoBoosted)
 // Ordnance Reserves expands sidekick magazines and timed special effects.
 
 // The magazine bonus as a percentage, 0 when it isn't applying. The shop name label (episodes.c)
-// and the in-flight magazine (game_state.c) both come off this, so the number you buy is the number you fly.
+// and the in-flight magazine (player_ship.c) both come off this, so the number you buy is the number you fly.
 int endlessPerkAmmoPercent(void)
 {
 	if (!endlessFxActive())

@@ -3,7 +3,7 @@
  */
 #include "render_list.h"
 
-#include "backgrnd.h"
+#include "background.h"
 #include "rollback.h"
 #include "sprite.h"
 #include "video.h"

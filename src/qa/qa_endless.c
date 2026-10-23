@@ -1,10 +1,13 @@
 /* Online Endless tests use real two-ship entry points for outposts, perks,
  * drives, death states, and restart behavior. */
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "enemy_death.h"
 #include "level_load.h"
 #include "qa.h"
 
 #include "config.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "endless_internal.h"
 #include "game_loop.h"

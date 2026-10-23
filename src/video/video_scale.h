@@ -50,5 +50,6 @@ void scaler_set_native_size(int w, int h);
 void video_scale_deinit(void);
 bool video_scale_test_fit_rows(char *detail, size_t detailSize);
 bool video_scale_test_nn_rows(char *detail, size_t detailSize);
+bool video_scale_test_lock_failure(char *detail, size_t detailSize);
 
 #endif /* VIDEO_SCALE_H */

@@ -146,4 +146,6 @@ void JE_repaintShieldArmorBars(void);
 
 extern JE_word textErase;
 
+void JE_drawOptions(void);
+
 #endif /* HUD_H */

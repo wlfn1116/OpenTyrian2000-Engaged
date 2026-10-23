@@ -1,10 +1,12 @@
+#define ENDLESS_INTERNAL_ACCESS
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
 #include "config.h"
 #include "endless.h"
 #include "endless_internal.h"
-#include "game_menu.h"   // JE_getLevelSections
 #include "hud.h"
 #include "network.h"
 #include "player.h"

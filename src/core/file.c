@@ -19,7 +19,6 @@
 
 #include "console_platform.h"  // SWITCH_/VITA_ data- and user-directory names
 #include "crashlog.h"
-#include "game_state.h"
 #include "opentyr.h"
 
 #include "SDL.h"

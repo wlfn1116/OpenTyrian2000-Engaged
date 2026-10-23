@@ -40,7 +40,7 @@ static int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignme
 static const char *assignment_to_code(const Joystick_assignment *assignment);
 static void code_to_assignment(Joystick_assignment *assignment, const char *buffer);
 
-int joystick_repeat_delay = 300; // milliseconds, repeat delay for buttons
+static int joystick_repeat_delay = 300; // milliseconds, repeat delay for buttons
 bool joydown = false;            // any joystick buttons down, updated by poll_joysticks()
 bool ignore_joystick = false;
 

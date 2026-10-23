@@ -41,6 +41,28 @@ MSBuild visualc\opentyrian.vcxproj /t:Rebuild /p:Configuration=Release /p:Platfo
 Check range warnings instead of hiding them. `OT_ASSUME` belongs after a real
 bounds check.
 
+### Source layout
+
+`src/` groups the game by topic: `audio`, `core`, `destruct`, `endless`,
+`game`, `input`, `level`, `menus`, `net`, `platform`, `qa`, and `video`.
+`opentyr.c` (`main`) stays at the root, and `src/midiproc` is vendored.
+
+- Each build lists the source folders itself: `SRC_DIRS` in the root
+  `Makefile`, `SRCDIRS` in `switch/Makefile`, and `OT_SRC_DIRS` in
+  `android/app/src/main/jni/src/Android.mk` and the Vita, iOS, and macOS
+  `CMakeLists.txt`. A new folder goes into all six. The Visual Studio project
+  and its filters list every file.
+- Every folder is on the include path, so an include names only the header.
+- `endless_internal.h`, `net_internal.h`, and `qa_internal.h` are private to
+  their folders. Each stops the build unless the including file first defines
+  `ENDLESS_INTERNAL_ACCESS`, `NET_INTERNAL_ACCESS`, or `QA_INTERNAL_ACCESS`.
+  The QA suite may also use the Endless header.
+- `game_state.c` holds only state that several subsystems share: enemy pools,
+  level flow, and scratch values. New state belongs with the module that owns
+  its behaviour.
+- Rollback item names keep their old `t2.` and `vz.` prefixes. The layout
+  fingerprint hashes the names, so renaming one is a wire change.
+
 ## Rendering
 
 The simulation runs at 35 Hz. `render_list.c` records one tick and replays it at
@@ -83,7 +105,7 @@ At 1x with Smooth FX off, the Vita keeps the tick's endpoint in
 
 ### Display-rate ship movement
 
-The real-time ship integrator affects simulation.
+The real-time ship integrator (`vt_ship.c`) affects simulation.
 
 - Disable it for demo recording and playback.
 - Advance it on every presentation loop, including loops that also run a tick.
@@ -169,10 +191,14 @@ foreground through `SMOOTHIE` at 1x, and every frame converts through `PLAIN`.
 A Vita player who raises Sub-pixel above 1x, directly or through Auto and a
 larger Scaler, gets the same hi-res sites as the Switch.
 
-- The pool starts with the first job of at least 64K pixels (a 1x frame has
-  71,200), unless Render Threads is 1. `video_rows_max_threads()` sizes it to
-  the CPU count, at most 16 threads (15 helpers). Switch and Vita give games
-  three cores, so they count exactly three CPUs and run two helpers.
+- `init_video` starts the pool unless Render Threads is 1, so creating the
+  threads and running the self-test below happen at startup, outside any frame.
+  A pool that is not running yet, as after Render Threads changes from 1,
+  starts with the next job of at least 64K pixels (a 1x frame has 71,200). Jobs
+  under 64K pixels or with one row always run on the main thread.
+- `video_rows_max_threads()` sizes the pool to the CPU count, at most 16 threads
+  (15 helpers). Switch and Vita give games three cores, so they count exactly
+  three CPUs and run two helpers.
 - A startup self-test runs a small job through the helpers, which must each
   finish within two seconds and match a single-threaded result. If the test
   fails, or not even one helper and its semaphores can be created, every job
@@ -182,12 +208,24 @@ larger Scaler, gets the same hi-res sites as the Switch.
   semaphores and test buffers stay allocated, so a late helper never touches
   freed memory.
 - On Auto, each site tunes its own thread count. It times 1, 2, 4, 8 and 16
-  threads up to the pool size, plus the pool size itself, eight times each,
-  taking turns. The timing covers the rows plus `SDL_UnlockTexture`, where
-  OpenGL drivers copy the texture on the CPU. A larger count wins only when its
-  best time is under 90% of the current pick's.
+  threads up to the pool size, plus the pool size itself, for 20 frames each,
+  taking turns. Each sample is the site's own cost in one frame: the rows plus
+  `SDL_UnlockTexture`, where OpenGL drivers copy the texture on the CPU.
+  Whole-frame times would mix in logic ticks, vsync and frame-cap waits, and
+  the other sites' tuning runs.
+- The pick uses each count's median and 95th percentile (nearest rank, the 19th
+  of 20 frames). A larger count wins only when its median is under 90% of the
+  current pick's and its 95th percentile is no higher than the pick's. A count
+  with two of its twenty frames above the pick's 95th percentile loses whatever
+  its median, and one fast frame cannot win.
 - `HI`, `NATIVE`, `COMPOSE` and `PLAIN` run once per frame and time each call. A
   new pixel count starts a new tuning run.
+- The chosen count stays timed after the pick, in 120-frame windows. A window
+  moves when more than half of its frames cost over twice the median the count
+  had in its tuning run, or more than half cost under half of it. Two moved
+  windows in a row start a new tuning run, which compares every count again,
+  one thread included. This follows cost changes the pixel count does not
+  show, such as sprite load, filters and smoothies on the round sites.
 - `REPLAY`, `SMOOTHIE` and `TICK` can run several times per frame with jobs of
   different sizes, so they tune on rounds. Every call in a round uses the
   round's thread count, the round's time is the sum of its calls, and
@@ -204,6 +242,9 @@ larger Scaler, gets the same hi-res sites as the Switch.
 - A job finishes before `video_rows` returns, and `deinit_video` joins the
   helpers. A band function may write only its own rows and must treat
   everything else as read-only.
+- The scalers and `present_hi` return without drawing when `SDL_LockTexture`
+  fails, so no band writes through an unset pointer and the texture keeps the
+  previous frame.
 
 Band replay lives in `rl_replay_common` (`render_list.c`). Every replay draws in
 bands, in every phase and at every scale, unless `rl_band_reserve` cannot size
@@ -250,13 +291,17 @@ smoothie expand into the hi-res buffer runs through
 Each tuning run ends with one line on stderr per site:
 
 ```text
-video: playfield replay rows on 8 threads (0.383 ms on 1, 0.206 ms on 2, 0.113 ms on 4, 0.065 ms on 8, 0.073 ms on 16)
+video: tick replay rows on 2 threads (median/p95 0.040/0.041 ms on 1, 0.019/0.023 ms on 2, 0.022/0.062 ms on 4, 0.028/0.031 ms on 8, 0.035/0.038 ms on 16)
 ```
 
-The line names the count each site settled on, then the best time for every
-count it tried. For `REPLAY`, `SMOOTHIE` and `TICK` the times are round totals.
-`rows on one thread` means no larger count beat one thread by 10%. A fixed
-Render Threads value prints nothing, since nothing is tuned.
+The line names the count each site settled on, then the median and 95th
+percentile for every count it tried. For `REPLAY`, `SMOOTHIE` and `TICK` the
+times are round totals. `rows on one thread` means no larger count had a median
+under 90% of one thread's without a higher 95th percentile. A fixed Render
+Threads value prints nothing, since nothing is tuned.
+
+`video: <site> rows moved from <ms> ms per frame; tuning again` means two
+windows in a row moved, so the site starts a new tuning run.
 `video: frame rows stay on one thread` means the pool did not start.
 
 Linux and macOS show these lines in the terminal that started the game. The
@@ -281,13 +326,14 @@ second or more, such as menus and pauses, are left out. `frame_times` in
 
 Under `ALPHA`, one `ROWS` line appears for each site used since the previous
 overlay draw, read from `video_rows_stats`. The labels follow the site table
-above. For the round sites the two times are round totals.
+above. The two times are medians from the last tuning run; for the round sites
+they are round totals.
 
 | Line | Meaning |
 | --- | --- |
-| `ROWS HI 8T 0.16/0.03ms` | 8 threads; best one- and 8-thread times |
-| `ROWS REPLAY 1T 0.36/0.40ms` | One thread; fastest larger count second |
-| `ROWS HI TUNING` | The thread-count comparison is still running |
+| `ROWS HI 8T 0.16/0.03ms` | 8 threads; one- and 8-thread medians |
+| `ROWS REPLAY 1T 0.36/0.40ms` | One thread; lowest larger-count median second |
+| `ROWS HI TUNING` | A tuning run is in progress, the first one or a re-run |
 | `ROWS HI 8T SET` | Render Threads fixed at 8, so nothing is timed |
 | `ROWS NATIVE 1T SMALL` | One thread; under 64K pixels or one row |
 | `ROWS HI OFF` | The pool did not start |
@@ -306,6 +352,15 @@ through an Auto tuning run and both fixed settings, and checks the per-site
 counts and modes. `video_test_rows_rounds` checks that the calls of a round
 share a thread count, that a tuning run ends after its rounds, and that a round
 with a different largest job restarts it.
+
+`video_test_rows_pick` feeds the pick synthetic frame times. A steady 20% gain
+must win. A count that spikes on two frames in twenty, a count that is faster on
+only one frame, and a gain under 10% must lose. One slow frame must not outweigh
+a steady gain. `video_test_rows_watch` checks that two slower or two faster
+windows start a new tuning run, and that a single moved window or windows with
+exactly half their frames slow do not. `video_scale_test_lock_failure` hands
+every scaler a static texture, which `SDL_LockTexture` refuses. A scaler that
+writes anyway goes through an unset pointer and crashes the suite.
 
 `qa_test_background_bands` draws random background rows in thread bands and
 compares them with one full-surface pass. `qa_test_filter_subrows` runs each
@@ -350,7 +405,7 @@ tests the NEON path.
 | `endless_course.c` | Course generation and selection |
 | `endless_save.c` | Saves and sortie snapshots |
 | `endless.h` | Public interface |
-| `endless_internal.h` | Private interface and shared tuning |
+| `endless_internal.h` | Private interface and shared tuning, for `src/endless` and the QA suite |
 
 Keep tuning with its owner.
 
@@ -600,8 +655,7 @@ Seven rows fit above a classic help line. Debug headings are not selectable.
 Boss and enemy bars use playfield coordinates.
 
 Press edges (`newkey`, `newmouse`) survive until `service_SDL_events(true)` or
-an explicit clear. Keyboard repeat can re-arm `newkey`; `JE_wipeKey` does
-nothing.
+an explicit clear. Keyboard repeat can re-arm `newkey`.
 
 Screens that require a fresh press must call `wait_noinput(true, true, true)`,
 then clear both edges. This applies to the credits, episode banner, high-score
@@ -638,6 +692,22 @@ either peer resumes. Rendering, audio, and local controls stay local.
 
 `network_is_host` identifies the settings authority.
 `networkHostPlayerNum` identifies the ship flown by the host machine.
+
+### Modules
+
+| File | Owns |
+| --- | --- |
+| `network.c` | Reliable UDP, discovery, connection, settings, shop and run sync, barriers, diagnostics |
+| `net_transfer.c` | Chunked content: custom weapons, extra ships, custom levels and episodes |
+| `net_internal.h` | The `NCW_*` chunk header and the hooks those two files share |
+| `net_start.c` | Session start: game-type setup, ship picks, resume |
+| `net_lobby.c` | Host and join screens |
+| `net_rollback.c` | Rollback driver |
+| `rollback.c`, `rollback_state.c` | State registry and snapshot ring |
+| `net_savexfer.c` | Save and custom-data transfer screens |
+| `net_style.c` | Per-seat ship appearance |
+
+The Endless run transfer in `network.c` uses the same chunk header.
 
 ### Wire compatibility
 
@@ -931,6 +1001,10 @@ Logs are created lazily under `log/`. Network reports keep unsymbolized RVAs to
 avoid blocking the game loop; crash and hang reports may symbolize. Console log
 cleanup removes only recognized OpenTyrian names.
 
+A fresh profile has no user directory. Code that writes a file opens it under
+`make_user_directory()`, which creates the directory. Readers and scans use
+`get_user_directory()` and must not create it.
+
 Switch must keep its SDL window resizable for dock changes and save controller
 changes immediately. Vita boots with the None scaler, resolves Sub-pixel Auto to
 the scaler factor without the desktop's 2x minimum, keeps presenting during IME
@@ -1028,8 +1102,8 @@ identity is the file name, size, and FNV-1a hash.
 
 #### Network sync
 
-`PACKET_CUSTOM_LEVEL` uses the common chunk header. Count values have these
-meanings:
+`PACKET_CUSTOM_LEVEL` uses the common chunk header (`NCW_*` in
+`net_internal.h`). Count values have these meanings:
 
 | Count | Meaning |
 | ---: | --- |

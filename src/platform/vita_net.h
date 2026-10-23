@@ -1,8 +1,8 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Minimal SDL_net-compatible UDP and byte-order API for VitaSDK. It supports one
- * address per channel and leaves SceNet ready for short-lived game sockets.
+ * Minimal SDL_net-compatible UDP API for VitaSDK. It supports one address per channel and leaves
+ * SceNet ready for short-lived game sockets.
  */
 #ifndef VITA_NET_H
 #define VITA_NET_H
@@ -63,36 +63,6 @@ int SDLNet_UDP_Recv(UDPsocket sock, UDPpacket *packet);
 
 UDPpacket *SDLNet_AllocPacket(int size);
 void SDLNet_FreePacket(UDPpacket *packet);
-
-/* Byte-wise helpers support unaligned fields in packed rollback records. */
-
-static inline void SDLNet_Write16(Uint16 value, void *areap)
-{
-	Uint8 *area = (Uint8 *)areap;
-	area[0] = (Uint8)(value >> 8);
-	area[1] = (Uint8)value;
-}
-
-static inline void SDLNet_Write32(Uint32 value, void *areap)
-{
-	Uint8 *area = (Uint8 *)areap;
-	area[0] = (Uint8)(value >> 24);
-	area[1] = (Uint8)(value >> 16);
-	area[2] = (Uint8)(value >> 8);
-	area[3] = (Uint8)value;
-}
-
-static inline Uint16 SDLNet_Read16(const void *areap)
-{
-	const Uint8 *area = (const Uint8 *)areap;
-	return (Uint16)(((Uint16)area[0] << 8) | area[1]);
-}
-
-static inline Uint32 SDLNet_Read32(const void *areap)
-{
-	const Uint8 *area = (const Uint8 *)areap;
-	return ((Uint32)area[0] << 24) | ((Uint32)area[1] << 16) | ((Uint32)area[2] << 8) | area[3];
-}
 
 #endif // __vita__
 

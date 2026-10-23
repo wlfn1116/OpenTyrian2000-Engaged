@@ -20,10 +20,21 @@
 
 #include "opentyr.h"
 
+#include "SDL.h"
+
 extern JE_byte itemAvail[9][10], itemAvailMax[9];
 extern JE_word levelEnemyFrequency;
 
 void JE_loadMap(void);
+
+extern JE_boolean levelWarningDisplay;
+extern JE_byte levelWarningLines;
+extern JE_boolean warningRed;
+extern JE_byte warningSoundDelay;
+extern JE_byte warningCol;
+extern JE_shortint warningColChange;
+
+void JE_updateWarning(SDL_Surface * screen);
 
 extern JE_boolean jumpSection;
 

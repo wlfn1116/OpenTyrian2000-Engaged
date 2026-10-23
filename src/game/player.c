@@ -17,10 +17,10 @@
  */
 #include "player.h"
 
-#include "editship.h"
 #include "endless.h"
 #include "episodes.h"
-#include "game_state.h"  // hud_bars_dirty
+#include "extra_ships.h"
+#include "game_state.h"
 #include "helptext.h"
 #include "hud.h"
 #include "ingame_menu.h"
@@ -33,6 +33,9 @@
 #include <string.h>
 
 Player player[2];
+
+JE_word shipGr, shipGr2;
+Sprite2_array *shipGrPtr, *shipGr2ptr;
 
 uint gameplay_local_player_index(void)
 {

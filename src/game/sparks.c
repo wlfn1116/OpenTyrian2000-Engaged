@@ -36,7 +36,7 @@ static unsigned int last_uncapped_superpixel;  // write cursor for the high wind
 static unsigned int sp_live_lo = MAX_SUPERPIXELS, sp_live_hi;
 
 bool superpixelClipActive = false;
-int superpixelClipX0, superpixelClipY0, superpixelClipX1, superpixelClipY1;
+static int superpixelClipX0, superpixelClipY0, superpixelClipX1, superpixelClipY1;
 
 void JE_setSPClip(int x0, int y0, int x1, int y1)
 {

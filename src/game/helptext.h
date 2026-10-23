@@ -44,7 +44,6 @@ extern JE_byte helpBoxColor, helpBoxBrightness, helpBoxShadeType;
 #define HELPTEXT_SPECIALNAME_COUNT 11
 #define HELPTEXT_SHIPINFO_COUNT 20
 
-extern char helpTxt[39][231];
 extern char pName[21][16];
 extern char miscText[HELPTEXT_MISCTEXT_COUNT][42];
 extern char miscTextB[HELPTEXT_MISCTEXTB_COUNT][HELPTEXT_MISCTEXTB_SIZE];
@@ -65,8 +64,6 @@ extern char destructHelp[25][22];
 extern char weaponNames[17][17];
 extern char destructModeName[DESTRUCT_MODES][13];
 extern char shipInfo[HELPTEXT_SHIPINFO_COUNT][2][256];
-extern char licensingInfo[3][46];
-extern char orderingInfo[6][32];
 extern char superTyrianText[6][64];
 extern char menuInt[MENU_MAX+1][14][24];
 

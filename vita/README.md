@@ -72,6 +72,6 @@ may not hold 60 fps.
 Open **Online Multiplayer** from the main menu. LAN discovery and direct address
 joining are available on UDP port 1333.
 
-Vita can play with Windows, Linux, and Switch builds of the same game version.
-VitaSDK has no SDL2_net package, so `src/platform/vita_net.c` supplies the UDP subset used
-by the game.
+Vita can play with the Windows, macOS, Linux, Android, iOS, and Switch builds of
+the same game version. VitaSDK has no SDL2_net package, so
+`src/platform/vita_net.c` supplies the UDP subset used by the game.

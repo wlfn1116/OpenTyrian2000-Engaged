@@ -17,7 +17,8 @@
  */
 #include "level_events.h"
 
-#include "backgrnd.h"
+#include "audio.h"
+#include "background.h"
 #include "config.h"
 #include "endless.h"
 #include "episodes.h"
@@ -28,13 +29,13 @@
 #include "hud.h"
 #include "level_end.h"
 #include "level_load.h"
-#include "loudness.h"
 #include "lvlmast.h"
 #include "mtrand.h"
 #include "musmast.h"
 #include "player.h"
 #include "sfx.h"
 #include "sndmast.h"
+#include "specials.h"
 #include "sprite.h"
 #include "video.h"
 
@@ -44,6 +45,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+  /*!! SUPER Tyrian !!*/
+static const JE_byte superTyrianSpecials[4] /* [1..4] */ = {1,2,4,5};
 
 void JE_eventJump(JE_word jump)
 {

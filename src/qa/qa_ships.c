@@ -1,21 +1,26 @@
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
 #include "config.h"
 #include "custom_weapon.h"
+#include "debug_flags.h"
 #include "draw.h"
-#include "editship.h"
 #include "episodes.h"
-#include "fonthand.h"
+#include "extra_ships.h"
+#include "font.h"
 #include "game_loop.h"
-#include "game_menu.h"   // JE_getLevelSections
+#include "game_menu.h"
 #include "game_state.h"
 #include "health_bars.h"
 #include "hud.h"
 #include "item_prices.h"
 #include "network.h"
 #include "player.h"
+#include "player_ship.h"
 #include "rollback.h"
+#include "ship_editor.h"
 #include "specials.h"
 #include "sprite.h"
 #include "video.h"
@@ -663,6 +668,21 @@ void qa_test_ship_editor_file(void)
 		         sprite2_hflip_equal(spriteSheetT2000, gr + 15, gr + 24) &&
 		         sprite2_hflip_equal(spriteSheetT2000, gr + 16, gr + 23),
 		         "Gencore II replaces its malformed hard-left pose with a clean mirror");
+	}
+	{
+		static const struct { int pose, x, y; } hole[9] = {
+			{ -2, 11, 1 }, { -2, 12, 2 }, { -2, 20, 10 }, { -2, 19, 11 },
+			{ 0, 13, 2 },
+			{ 2, 12, 1 }, { 2, 11, 2 }, { 2, 3, 10 }, { 2, 4, 11 },
+		};
+		const unsigned int gr = ships[16].shipgraphic - 500;
+		bool white = ships[16].shipgraphic == 581;
+		for (uint i = 0; i < COUNTOF(hole); ++i)
+		{
+			const unsigned int pose = gr + hole[i].pose;
+			white = white && sprite2x2_pixel(spriteSheetT2000, pose, hole[i].x, hole[i].y) == 0x0f;
+		}
+		qa_check(white, "Gencore II fills the highlight holes in its center and slight-bank poses");
 	}
 	{
 		const unsigned int gr = ships[10].shipgraphic;

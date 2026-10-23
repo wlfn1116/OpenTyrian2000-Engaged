@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef BACKGRND_H
-#define BACKGRND_H
+#ifndef BACKGROUND_H
+#define BACKGROUND_H
 
 #include "opentyr.h"
 
@@ -30,7 +30,7 @@ extern JE_word backMove, backMove2, backMove3;
 extern int endlessScrollExtraPx1, endlessScrollExtraPx2, endlessScrollExtraPx3;
 
 // TRUE per-tick vertical scroll (px) of each background layer [1..3], computed at draw time in
-// backgrnd.c/game_loop.c.
+// background.c/game_loop.c.
 extern int bgScrollDeltaY[4];
 
 // Offscreen rows retained below each background layer. Scroll modifiers widen the
@@ -143,4 +143,6 @@ void draw_starfield_star_scaled(SDL_Surface* surface, int x, int y, Uint8 color,
 void draw_starfield_star_band(SDL_Surface *band, int x, int y, Uint8 color, int scale,
                               int y_offset);
 
-#endif /* BACKGRND_H */
+void background_register_rollback(void);
+
+#endif /* BACKGROUND_H */

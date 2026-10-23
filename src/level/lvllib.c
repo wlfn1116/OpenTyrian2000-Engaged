@@ -20,7 +20,6 @@
 #include "custom_episode.h"
 #include "episodes.h"
 #include "file.h"
-#include "game_state.h"
 #include "helptext.h"
 #include "opentyr.h"
 
@@ -97,19 +96,14 @@ bool JE_levelFileNumValid(JE_word fileNum)
 	return fileNum >= 1 && fileNum <= lvlNum / 2;
 }
 
-uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut)
+static FILE *open_level_script(int episode, long *end)
 {
-	static bool missingLevelWarned[EPISODE_MAX][256];
-	const unsigned int levelFileCount = JE_levelFileCount(episode);
-	if (levelFileCount == 0)
-		return 0;
-
 	FILE *f;
-	long end = 0;
+	*end = 0;
 	if (episode >= CUSTOM_EPISODE_ID_BASE)
 	{
 		// Extended IDs can read an inactive container's script.
-		f = customEpisodeOpenScript(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE), &end);
+		f = customEpisodeOpenScript(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE), end);
 	}
 	else if (customEpisodeActive() && episode == episodeNum)
 	{
@@ -122,10 +116,32 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 		snprintf(fname, sizeof(fname), "levels%d.dat", episode);
 		f = dir_fopen_warn(data_dir(), fname, "rb");
 	}
+	if (f != NULL && *end == 0)
+		*end = ftell_eof(f);
+	return f;
+}
+
+// The name is a fixed 9-char field (offset 13), space-padded, with the file number following at
+// offset 25. Copy exactly nine characters, not the full tail.
+static void level_entry_name(const char *entry, char *name, size_t size)
+{
+	SDL_strlcpy(name, entry + 13, size);
+	size_t len = strlen(name);
+	while (len > 0 && name[len - 1] == ' ')
+		name[--len] = '\0';
+}
+
+uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut)
+{
+	static bool missingLevelWarned[EPISODE_MAX][256];
+	const unsigned int levelFileCount = JE_levelFileCount(episode);
+	if (levelFileCount == 0)
+		return 0;
+
+	long end;
+	FILE *f = open_level_script(episode, &end);
 	if (f == NULL)
 		return 0;
-	if (end == 0)
-		end = ftell_eof(f);
 
 	JE_word section = 0;
 	bool sectionUnsafe = false;  // a mode-switch command seen since the last '*'
@@ -165,10 +181,7 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 
 				// Strip the level name (padded with spaces) for a name blocklist too.
 				char name[10];
-				SDL_strlcpy(name, s + 13, sizeof(name));
-				size_t len = strlen(name);
-				while (len > 0 && name[len - 1] == ' ')
-					name[--len] = '\0';
+				level_entry_name(s, name, sizeof(name));
 
 				const bool special = sectionUnsafe
 					|| SDL_strcasecmp(name, "ALE") == 0
@@ -206,26 +219,10 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 	if (levelFileCount == 0)
 		return;
 
-	FILE *f;
-	long end = 0;
-	if (episode >= CUSTOM_EPISODE_ID_BASE)
-	{
-		f = customEpisodeOpenScript(customEpisodeIdToLocal(episode - CUSTOM_EPISODE_ID_BASE), &end);
-	}
-	else if (customEpisodeActive() && episode == episodeNum)
-	{
-		f = dir_fopen_warn(custom_episode_dir(), CUSTOM_EP_SCRIPT_NAME, "rb");
-	}
-	else
-	{
-		char fname[16];
-		snprintf(fname, sizeof(fname), "levels%d.dat", episode);
-		f = dir_fopen_warn(data_dir(), fname, "rb");
-	}
+	long end;
+	FILE *f = open_level_script(episode, &end);
 	if (f == NULL)
 		return;
-	if (end == 0)
-		end = ftell_eof(f);
 
 	JE_word sec = 0;
 	char s[256];
@@ -246,13 +243,8 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 			if (sec != section || (fileNum != 0 && fn != (int)fileNum))
 				continue;
 
-			// The name is a fixed 9-char field (offset 13), space-padded, with the file number
-			// following at offset 25. Copy exactly nine characters, not the full tail.
 			char name[10];
-			SDL_strlcpy(name, s + 13, sizeof(name));
-			size_t len = strlen(name);
-			while (len > 0 && name[len - 1] == ' ')
-				name[--len] = '\0';
+			level_entry_name(s, name, sizeof(name));
 			SDL_strlcpy(out, name, outSize);
 			break;
 		}

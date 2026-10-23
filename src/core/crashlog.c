@@ -822,7 +822,6 @@ void watchdog_init(void)
 
 // Non-Windows builds write reduced netplay reports under the user directory.
 
-#include "config.h"
 #include "file.h"
 #include "opentyr.h"
 

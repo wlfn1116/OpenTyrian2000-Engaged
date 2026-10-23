@@ -37,6 +37,25 @@ static FILE *demo_file = NULL;
 static Uint8 demo_keys;
 static Uint16 demo_keys_wait;
 
+static Uint8 *const demo_header_fields[] =
+{
+	&lvlFileNum,
+	&player[0].items.weapon[FRONT_WEAPON].id,
+	&player[0].items.weapon[REAR_WEAPON].id,
+	&player[0].items.super_arcade_mode,
+	&player[0].items.sidekick[LEFT_SIDEKICK],
+	&player[0].items.sidekick[RIGHT_SIDEKICK],
+	&player[0].items.generator,
+	&player[0].items.sidekick_level,   // could probably ignore
+	&player[0].items.sidekick_series,  // could probably ignore
+	&initial_episode_num,              // could probably ignore
+	&player[0].items.shield,
+	&player[0].items.special,
+	&player[0].items.ship,
+	&player[0].items.weapon[0].power,
+	&player[0].items.weapon[1].power,
+};
+
 bool load_next_demo(void)
 {
 	if (++demo_num > 5)
@@ -56,26 +75,8 @@ bool load_next_demo(void)
 	fread_die(levelName, 1, 10, demo_file);
 	levelName[10] = '\0';
 
-	fread_u8_die(&lvlFileNum, 1, demo_file);
-
-	fread_u8_die(&player[0].items.weapon[FRONT_WEAPON].id,  1, demo_file);
-	fread_u8_die(&player[0].items.weapon[REAR_WEAPON].id,   1, demo_file);
-	fread_u8_die(&player[0].items.super_arcade_mode,        1, demo_file);
-	fread_u8_die(&player[0].items.sidekick[LEFT_SIDEKICK],  1, demo_file);
-	fread_u8_die(&player[0].items.sidekick[RIGHT_SIDEKICK], 1, demo_file);
-	fread_u8_die(&player[0].items.generator,                1, demo_file);
-
-	fread_u8_die(&player[0].items.sidekick_level,           1, demo_file); // could probably ignore
-	fread_u8_die(&player[0].items.sidekick_series,          1, demo_file); // could probably ignore
-
-	fread_u8_die(&initial_episode_num,                      1, demo_file); // could probably ignore
-
-	fread_u8_die(&player[0].items.shield,                   1, demo_file);
-	fread_u8_die(&player[0].items.special,                  1, demo_file);
-	fread_u8_die(&player[0].items.ship,                     1, demo_file);
-
-	for (uint i = 0; i < 2; ++i)
-		fread_u8_die(&player[0].items.weapon[i].power,      1, demo_file);
+	for (size_t i = 0; i < COUNTOF(demo_header_fields); ++i)
+		fread_u8_die(demo_header_fields[i], 1, demo_file);
 
 	Uint8 unused[3];
 	fread_u8_die(unused, 3, demo_file);
@@ -152,26 +153,8 @@ void begin_demo_recording(void)
 			levelName[i] = '\0';
 	fwrite_u8_die((Uint8 *)levelName, 10, demo_file);
 
-	fwrite_u8_die(&lvlFileNum, 1, demo_file);
-
-	fwrite_u8_die(&player[0].items.weapon[FRONT_WEAPON].id,  1, demo_file);
-	fwrite_u8_die(&player[0].items.weapon[REAR_WEAPON].id,   1, demo_file);
-	fwrite_u8_die(&player[0].items.super_arcade_mode,        1, demo_file);
-	fwrite_u8_die(&player[0].items.sidekick[LEFT_SIDEKICK],  1, demo_file);
-	fwrite_u8_die(&player[0].items.sidekick[RIGHT_SIDEKICK], 1, demo_file);
-	fwrite_u8_die(&player[0].items.generator,                1, demo_file);
-
-	fwrite_u8_die(&player[0].items.sidekick_level,           1, demo_file);
-	fwrite_u8_die(&player[0].items.sidekick_series,          1, demo_file);
-
-	fwrite_u8_die(&initial_episode_num,                      1, demo_file);
-
-	fwrite_u8_die(&player[0].items.shield,                   1, demo_file);
-	fwrite_u8_die(&player[0].items.special,                  1, demo_file);
-	fwrite_u8_die(&player[0].items.ship,                     1, demo_file);
-
-	for (uint i = 0; i < 2; ++i)
-		fwrite_u8_die(&player[0].items.weapon[i].power,      1, demo_file);
+	for (size_t i = 0; i < COUNTOF(demo_header_fields); ++i)
+		fwrite_u8_die(demo_header_fields[i], 1, demo_file);
 
 	Uint8 unused[3] = { 0, 0, 0 };
 	fwrite_u8_die(unused, 3, demo_file);

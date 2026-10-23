@@ -43,13 +43,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\opentyr.c" />
+    <ClCompile Include="..\src\audio\audio.c">
+      <Filter>audio</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\audio\fluid_music.c">
       <Filter>audio</Filter>
     </ClCompile>
     <ClCompile Include="..\src\audio\lds_play.c">
-      <Filter>audio</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\audio\loudness.c">
       <Filter>audio</Filter>
     </ClCompile>
     <ClCompile Include="..\src\audio\midi_smf.c">
@@ -145,22 +145,25 @@
     <ClCompile Include="..\src\endless\endless_shop.c">
       <Filter>endless</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\backgrnd.c">
+    <ClCompile Include="..\src\game\background.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\custom_weapon.c">
       <Filter>game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\demo.c">
+    <ClCompile Include="..\src\game\debug_flags.c">
       <Filter>game</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\game\editship.c">
+    <ClCompile Include="..\src\game\demo.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\enemy_death.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\explosions.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\extra_ships.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\game_loop.c">
@@ -197,6 +200,9 @@
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\game\specials.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\vt_ship.c">
       <Filter>game</Filter>
     </ClCompile>
     <ClCompile Include="..\src\input\joystick.c">
@@ -262,6 +268,9 @@
     <ClCompile Include="..\src\menus\setup_menu.c">
       <Filter>menus</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\menus\ship_editor.c">
+      <Filter>menus</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\menus\sprite_viewer.c">
       <Filter>menus</Filter>
     </ClCompile>
@@ -284,6 +293,9 @@
       <Filter>net</Filter>
     </ClCompile>
     <ClCompile Include="..\src\net\net_style.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\net_transfer.c">
       <Filter>net</Filter>
     </ClCompile>
     <ClCompile Include="..\src\net\network.c">
@@ -346,13 +358,7 @@
     <ClCompile Include="..\src\video\font.c">
       <Filter>video</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\video\fonthand.c">
-      <Filter>video</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\video\palette.c">
-      <Filter>video</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\video\pcxload.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\pcxmast.c">
@@ -368,9 +374,6 @@
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\starlib.c">
-      <Filter>video</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\video\vga_palette.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\video.c">
@@ -425,13 +428,13 @@
   <ItemGroup>
     <ClInclude Include="..\src\opentyr.h" />
     <ClInclude Include="..\src\opentyrian_version.h" />
+    <ClInclude Include="..\src\audio\audio.h">
+      <Filter>audio</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\audio\fluid_music.h">
       <Filter>audio</Filter>
     </ClInclude>
     <ClInclude Include="..\src\audio\lds_play.h">
-      <Filter>audio</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\audio\loudness.h">
       <Filter>audio</Filter>
     </ClInclude>
     <ClInclude Include="..\src\audio\midi_smf.h">
@@ -509,22 +512,25 @@
     <ClInclude Include="..\src\endless\endless_levelprofile.h">
       <Filter>endless</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\backgrnd.h">
+    <ClInclude Include="..\src\game\background.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\custom_weapon.h">
       <Filter>game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\demo.h">
+    <ClInclude Include="..\src\game\debug_flags.h">
       <Filter>game</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\game\editship.h">
+    <ClInclude Include="..\src\game\demo.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\enemy_death.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\explosions.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\extra_ships.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\game_loop.h">
@@ -561,6 +567,9 @@
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\specials.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\vt_ship.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\input\joystick.h">
@@ -626,6 +635,9 @@
     <ClInclude Include="..\src\menus\setup_menu.h">
       <Filter>menus</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\menus\ship_editor.h">
+      <Filter>menus</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\menus\sprite_viewer.h">
       <Filter>menus</Filter>
     </ClInclude>
@@ -634,6 +646,9 @@
     </ClInclude>
     <ClInclude Include="..\src\menus\weapon_creator.h">
       <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\net_internal.h">
+      <Filter>net</Filter>
     </ClInclude>
     <ClInclude Include="..\src\net\net_lobby.h">
       <Filter>net</Filter>
@@ -674,13 +689,7 @@
     <ClInclude Include="..\src\video\font.h">
       <Filter>video</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\video\fonthand.h">
-      <Filter>video</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\video\palette.h">
-      <Filter>video</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\video\pcxload.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\pcxmast.h">
@@ -699,9 +708,6 @@
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\swar.h">
-      <Filter>video</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\video\vga_palette.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\video.h">

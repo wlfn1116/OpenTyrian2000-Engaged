@@ -23,7 +23,7 @@
 #include "draw.h"
 #include "endless.h"
 #include "fnv1a.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_state.h"
 #include "ingame_menu.h"
 #include "keyboard.h"

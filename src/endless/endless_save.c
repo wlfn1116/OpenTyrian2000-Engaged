@@ -1,5 +1,7 @@
 /* Endless saves and Quit Level sortie snapshots. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "endless.h"
 #include "endless_internal.h"
 

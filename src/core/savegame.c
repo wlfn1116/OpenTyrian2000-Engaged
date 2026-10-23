@@ -20,6 +20,7 @@
 #include "config.h"
 #include "config_file.h"
 #include "custom_episode.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "episodes.h"
 #include "file.h"

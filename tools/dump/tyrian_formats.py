@@ -357,7 +357,7 @@ def load_main_shp(path):
 # shapes?.dat tilesets (src/level/level_load.c, JE_loadMap)
 #
 # 600 records: a "blank" byte and, when it is zero, a 24x28 tile. Palette index
-# 0 is transparent in every background layer (src/game/backgrnd.c).
+# 0 is transparent in every background layer (src/game/background.c).
 
 
 def load_tileset(path):
@@ -379,7 +379,7 @@ def load_tileset(path):
 
 
 # tyrian.pic and stand-alone PCX files use the same PCX run-length encoding.
-# See src/video/picload.c and src/video/pcxload.c.
+# See src/video/picload.c.
 
 
 def decode_pcx_rle(data, width=320, height=200):
@@ -459,7 +459,7 @@ def wav_from_signed8(samples, rate=SAMPLE_RATE):
     return header + body
 
 
-# music.mus and its LDS songs (src/audio/loudness.c and src/audio/lds_play.c)
+# music.mus and its LDS songs (src/audio/audio.c and src/audio/lds_play.c)
 
 
 def load_music_bank(path):

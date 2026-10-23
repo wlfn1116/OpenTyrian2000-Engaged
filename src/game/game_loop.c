@@ -17,9 +17,11 @@
  */
 #include "game_loop.h"
 
-#include "backgrnd.h"
+#include "audio.h"
+#include "background.h"
 #include "config.h"
 #include "crashlog.h"
+#include "debug_flags.h"
 #include "debug_levels.h"
 #include "debug_menu.h"
 #include "demo.h"
@@ -29,7 +31,7 @@
 #include "episodes.h"
 #include "explosions.h"
 #include "file.h"
-#include "fonthand.h"
+#include "font.h"
 #include "health_bars.h"
 #include "high_scores.h"
 #include "hud.h"
@@ -40,7 +42,6 @@
 #include "level_end.h"
 #include "level_events.h"
 #include "level_load.h"
-#include "loudness.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "musmast.h"
@@ -66,6 +67,7 @@
 #include "sprite.h"
 #include "timing.h"
 #include "video.h"
+#include "vt_ship.h"
 
 #include <assert.h>
 #include <math.h>
@@ -81,6 +83,9 @@
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool outline);
 
 static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueShapeTableI);
+// Arcade weapon-ball randomizer: re-scan enemyDat for the front/rear/sidekick/special ball
+// pools. Must run after any load that rewrites enemyDat (JE_loadItemDat).
+static void JE_buildArcadeBallPools(void);
 
 /* Derive flip, spotlight, and inverted controls from level state and synchronized Endless
  * modifiers. The result affects simulation and must also run online. */
@@ -148,12 +153,12 @@ static void endlessSeekerCorrect(EnemyShotType *s)
 }
 
 char tempStr[31];
-
-// Render-rate ship movement: the displayed ship extrapolates its last per-tick velocity each
-// frame and is reconciled to the 35Hz simulation through the ship override.
-static int ship_tick_x[2], ship_tick_y[2];   // ship position captured at the last tick
-static int ship_vel_x[2], ship_vel_y[2];       // per-tick movement (cur - prev tick)
-static bool ship_pred_have_tick = false;
+JE_word armorShipDelay;
+JE_boolean editShip1, editShip2;
+JE_byte     doIced;
+JE_boolean  infiniteShot;
+static JE_boolean dispenserBasesActive = false;  /* this level wakes the dormant dispenser bases (set at level start) */
+static const JE_byte randomEnemyLaunchSounds[3] /* [1..3] */ = {13,6,26};
 
 // Fixed-timestep accumulator: each display frame presents at alpha = accumulator/period, the
 // simulation ticks once per full period. Uses the performance counter, not SDL_GetTicks.
@@ -260,496 +265,9 @@ bool present_overlay_on_last_hi_frame(void)
 	return true;
 }
 
-static void ship_pred_on_tick(void)
-{
-	const int players = twoPlayerMode ? 2 : 1;
-	for (int p = 0; p < players; ++p)
-	{
-		if (ship_pred_have_tick)
-		{
-			ship_vel_x[p] = player[p].x - ship_tick_x[p];
-			ship_vel_y[p] = player[p].y - ship_tick_y[p];
-		}
-		ship_tick_x[p] = player[p].x;
-		ship_tick_y[p] = player[p].y;
-	}
-	ship_pred_have_tick = true;
-}
-
 static int round_signed(float v)
 {
 	return (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
-}
-
-static void update_ship_override(float alpha)
-{
-	// Extrapolate actual tick velocity. Rollback peers ease presentation-only corrections; shadows
-	// and charge meters share the ship offset, while sidekicks interpolate separately.
-	static float  rsm_x[2], rsm_y[2];
-	static bool   rsm_valid[2];
-	static Uint64 rsm_last_counter;
-	float rsm_ease = 1.0f;
-	if (nrb_active())
-	{
-		const Uint64 now = SDL_GetPerformanceCounter();
-		if (rsm_last_counter != 0)
-		{
-			const float dt_ms = (float)(now - rsm_last_counter) * 1000.0f
-			                  / (float)SDL_GetPerformanceFrequency();
-			// Exponential easing remains frame-rate independent when a frame exceeds the time constant.
-			rsm_ease = 1.0f - expf(-dt_ms / 60.0f);
-			if (rsm_ease > 1.0f) rsm_ease = 1.0f;
-			if (rsm_ease < 0.0f) rsm_ease = 0.0f;
-		}
-		rsm_last_counter = now;
-	}
-
-	const int players = twoPlayerMode ? 2 : 1;
-	for (int p = 0; p < players; ++p)
-	{
-		const bool local  = (uint)(p + 1) == thisPlayerNum;
-		const bool docked = (p == 1 && twoPlayerLinked);
-
-		// VT drives the local rollback ship per render frame; docked ships still use the carrier.
-		if (nrb_active() && vt_ship_owns() && local && !docked)
-			continue;
-
-		// A docked ship shares player 1's presentation offset between ticks.
-		if (nrb_active() && docked)
-		{
-			rl_set_ship_override(p, rl_get_ship_override_dx(0), rl_get_ship_override_dy(0));
-			continue;
-		}
-
-		int vx = ship_vel_x[p], vy = ship_vel_y[p];
-		// A large jump (warp, dragonwing spawn, level start) isn't real velocity;
-		// snap rather than fling the ship along a bogus extrapolation.
-		const bool snapped = vx > 40 || vx < -40 || vy > 40 || vy < -40;
-		if (snapped)
-		{
-			vx = 0;
-			vy = 0;
-		}
-
-		if (nrb_active() && !local)
-		{
-			// Clamp remote extrapolation to plausible ship speed so corrections are not amplified.
-			const int RVMAX = 6;
-			if (vx >  RVMAX) vx =  RVMAX; else if (vx < -RVMAX) vx = -RVMAX;
-			if (vy >  RVMAX) vy =  RVMAX; else if (vy < -RVMAX) vy = -RVMAX;
-
-			const float tgt_x = (float)ship_tick_x[p] + vx * alpha;
-			const float tgt_y = (float)ship_tick_y[p] + vy * alpha;
-
-			// Ease remote corrections, but snap across jumps larger than any ordinary misprediction.
-			if (!rsm_valid[p] ||
-			    tgt_x - rsm_x[p] > 100.0f || tgt_x - rsm_x[p] < -100.0f ||
-			    tgt_y - rsm_y[p] > 100.0f || tgt_y - rsm_y[p] < -100.0f)
-			{
-				rsm_x[p] = tgt_x;
-				rsm_y[p] = tgt_y;
-				rsm_valid[p] = true;
-			}
-			else
-			{
-				rsm_x[p] += (tgt_x - rsm_x[p]) * rsm_ease;
-				rsm_y[p] += (tgt_y - rsm_y[p]) * rsm_ease;
-			}
-
-			rl_set_ship_override(p, rsm_x[p] - (float)ship_tick_x[p],
-			                        rsm_y[p] - (float)ship_tick_y[p]);
-			continue;
-		}
-		if (endLevel && levelEnd > 0 && !snapped)
-			--vy;
-
-		// Float offset: the replay rounds it at the render scale, so a supersampled
-		// ship glides on the sub-pixel grid instead of stepping whole pixels.
-		rl_set_ship_override(p, vx * alpha, vy * alpha);
-	}
-}
-
-// Variable-timestep (VT) player ship: the ship alone is simulated at the render rate with
-// real dt while the world stays on the fixed 35Hz tick.
-bool vt_ship = true;
-
-#define VT_ACCEL      1.0f  // velocity gained per tick while a direction is held (orig accelXC: +1/tick)
-#define VT_DIRECT     1.0f  // immediate px/tick while a direction is held (orig CURRENT_KEY_SPEED; kills momentum lag)
-#define VT_FRICTION_X 1.0f  // velocity bled per tick with no x input (orig ~1/tick)
-#define VT_FRICTION_Y 0.5f  // orig y friction fires every 2nd tick => half rate
-#define VT_VMAX       4.0f  // velocity clamp/axis (orig: vel clamp 4); +VT_DIRECT gives ~5 total like the original
-// VT_MOUSE_SENS lives in game_loop.h: the classic per-tick mouse path shares it
-
-static float vt_x[2], vt_y[2], vt_vx[2], vt_vy[2];
-static int vt_wrote_vx[2], vt_wrote_vy[2];  // last velocity VT wrote to player[]
-static bool vt_seeded[2] = { false, false };
-
-/* Lockstep does not predict the local sprite because shots, sidekicks, and collisions remain at the
- * simulation position. Lower network_delay instead. */
-
-// Raw (un-inverted) mouse motion accumulated by vt_ship_step since the last twiddle
-// read; consumed by vt_ship_twiddle_dir (rationale there).
-static float vt_twiddle_mx[2], vt_twiddle_my[2];
-
-bool vt_ship_owns(void)
-{
-	return vt_ship
-	    && smoothMotion                            // user's Graphics-menu toggle
-	    && smoothScroll != 0 && frameCountMax > 0  // the render-rate present loop must run
-	    // Demos replay fixed-tick input and cannot use render-rate ship movement.
-	    && !play_demo && !record_demo
-	    && !endLevel;
-}
-
-static void vt_seed_player(int p)
-{
-	vt_x[p] = (float)player[p].x;
-	vt_y[p] = (float)player[p].y;
-	vt_vx[p] = (float)player[p].x_velocity;
-	vt_vy[p] = (float)player[p].y_velocity;
-	vt_wrote_vx[p] = player[p].x_velocity;
-	vt_wrote_vy[p] = player[p].y_velocity;
-	vt_seeded[p] = true;
-}
-
-static float vt_friction(float v, float f)
-{
-	if (v > 0.0f) { v -= f; if (v < 0.0f) v = 0.0f; }
-	else if (v < 0.0f) { v += f; if (v > 0.0f) v = 0.0f; }
-	return v;
-}
-
-static void vt_ship_step_player(int p, float dt)
-{
-	if (!player[p].is_alive)
-	{
-		// Reset only this dead ship's offset; the other player may still use VT.
-		vt_seeded[p] = false;
-		rl_set_ship_override(p, 0.0f, 0.0f);
-		return;
-	}
-
-	// Reseed after local discontinuities. Netplay seeds once because its simulation position lags VT.
-	if (!vt_seeded[p]
-	    || (!isNetworkGame
-	        && (abs(player[p].x - (int)lrintf(vt_x[p])) > 8
-	         || abs(player[p].y - (int)lrintf(vt_y[p])) > 8)))
-	{
-		vt_seed_player(p);
-	}
-
-	// Directional input feeds momentum; relative mouse motion applies directly.
-	const bool invert_y = smoothies[9 - 1];
-	float ix = 0.0f, iy = 0.0f;   // directional input -> momentum
-	float mdx = 0.0f, mdy = 0.0f; // mouse relative motion -> direct position
-
-	// Per-player device selection applies only to local two-player. Other modes read any device;
-	// 0 = any, 1 = keyboard, 2 = mouse, 3+ = one joystick.
-	const JE_byte device = (twoPlayerMode && !galagaMode && !isNetworkGame)
-	                     ? inputDevice[p]
-	                     : 0;
-	const bool use_keyboard = (device == 0 || device == 1);
-	const bool use_mouse    = (device == 0 || device == 2);
-	const bool use_joystick = (device == 0 || device >= 3);
-	const int  joy_first    = (device >= 3) ? device - 3 : 0;
-	const int  joy_last     = (device >= 3) ? device - 3 : joysticks - 1;
-
-	if (use_keyboard)
-	{
-		if (keysactive[keySettings[KEY_SETTING_UP]])    iy -= 1.0f;
-		if (keysactive[keySettings[KEY_SETTING_DOWN]])  iy += 1.0f;
-		if (keysactive[keySettings[KEY_SETTING_LEFT]])  ix -= 1.0f;
-		if (keysactive[keySettings[KEY_SETTING_RIGHT]]) ix += 1.0f;
-	}
-
-	if (use_joystick)
-	{
-		for (int j = joy_first; j <= joy_last && j < joysticks; ++j)
-		{
-			poll_joystick(j);
-
-			// Preserve edge-triggered actions consumed by the display-rate poll.
-			if (joystick[j].action_pressed[4]) ingamemenu_pressed = true;  // "menu"
-			if (joystick[j].action_pressed[5]) pause_pressed = true;        // "pause"
-			if (joystick[j].action_pressed[1]) changefire_pressed = true;   // "change fire"
-
-			if (joystick[j].analog)
-			{
-				// Stick deflection -> proportional momentum input (clamped ~[-1,1]).
-				float ax = joystick_axis_reduce(j, joystick[j].x) / 32.0f;
-				float ay = joystick_axis_reduce(j, joystick[j].y) / 32.0f;
-				ix += (ax < -1.0f) ? -1.0f : (ax > 1.0f) ? 1.0f : ax;
-				iy += (ay < -1.0f) ? -1.0f : (ay > 1.0f) ? 1.0f : ay;
-			}
-
-			// D-pad / digital directions, read in both modes so the d-pad works even when
-			// the stick is configured analog. (The combined input is clamped below.)
-			if (joystick[j].direction[0]) iy -= 1.0f;  // up
-			if (joystick[j].direction[2]) iy += 1.0f;  // down
-			if (joystick[j].direction[3]) ix -= 1.0f;  // left
-			if (joystick[j].direction[1]) ix += 1.0f;  // right
-		}
-	}
-
-	if (has_mouse && use_mouse)
-	{
-		// Float relative motion since our last frame (per-frame sampling would round
-		// small/diagonal motion away); returns 0 when relative mode is off.
-		float mxr = 0.0f, myr = 0.0f;
-		mouseGetRelativeMotionF(&mxr, &myr);
-		mdx = mxr * VT_MOUSE_SENS;
-		mdy = myr * VT_MOUSE_SENS;
-
-		// Stash the raw mouse direction for the twiddle-code detector, un-inverted;
-		// the detector applies the "inverted controls" flip itself, like keyboard.
-		vt_twiddle_mx[p] += mxr;
-		vt_twiddle_my[p] += myr;
-	}
-
-	if (invert_y) { iy = -iy; mdy = -mdy; }
-
-	// Clamp combined directional input (keyboard + analog stick + d-pad) to full
-	// deflection so overlapping sources can't push past 1.
-	if (ix < -1.0f) ix = -1.0f; else if (ix > 1.0f) ix = 1.0f;
-	if (iy < -1.0f) iy = -1.0f; else if (iy > 1.0f) iy = 1.0f;
-
-	// Integrate momentum; dt=1 is one classic tick.
-	if (ix != 0.0f)
-		vt_vx[p] += ix * VT_ACCEL * dt;
-	else
-		vt_vx[p] = vt_friction(vt_vx[p], VT_FRICTION_X * dt);
-
-	if (iy != 0.0f)
-		vt_vy[p] += iy * VT_ACCEL * dt;
-	else
-		vt_vy[p] = vt_friction(vt_vy[p], VT_FRICTION_Y * dt);
-
-	if (vt_vx[p] >  VT_VMAX) vt_vx[p] =  VT_VMAX;
-	if (vt_vx[p] < -VT_VMAX) vt_vx[p] = -VT_VMAX;
-	if (vt_vy[p] >  VT_VMAX) vt_vy[p] =  VT_VMAX;
-	if (vt_vy[p] < -VT_VMAX) vt_vy[p] = -VT_VMAX;
-
-	// Combine momentum, immediate directional movement, and mouse/touch delta. Endless movement
-	// scaling applies to the complete displacement.
-	const float mscale = endlessMoveScale();
-	const float step_x = ((vt_vx[p] + ix * VT_DIRECT) * dt + mdx) * mscale;
-	const float step_y = ((vt_vy[p] + iy * VT_DIRECT) * dt + mdy) * mscale;
-
-	// Online this is an unlagged VT position; player[p].x trails by the network delay and cannot be
-	// its base.
-	vt_x[p] += step_x;
-	vt_y[p] += step_y;
-
-	// Apply render-rate-independent Endless gravity; the bounds below handle every heading. Online,
-	// folding it into VT motion lets vt_ship_commit_net deliver it exactly once.
-	vt_x[p] += endlessGravityDriftX() * dt;
-	vt_y[p] += endlessGravityDriftY() * dt;
-
-	// Same playfield bounds the sim enforces (player_ship.c). Stop velocity at walls
-	// so we don't accumulate phantom momentum while held against an edge.
-	if (vt_x[p] > PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN) { vt_x[p] = PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN; if (vt_vx[p] > 0) vt_vx[p] = 0; }
-	if (vt_x[p] < SHIP_LEFT_MARGIN)                    { vt_x[p] = SHIP_LEFT_MARGIN;                    if (vt_vx[p] < 0) vt_vx[p] = 0; }
-	if (vt_y[p] > SHIP_BOTTOM_MARGIN)                  { vt_y[p] = SHIP_BOTTOM_MARGIN;                  if (vt_vy[p] > 0) vt_vy[p] = 0; }
-	if (vt_y[p] < SHIP_TOP_MARGIN)                     { vt_y[p] = SHIP_TOP_MARGIN;                     if (vt_vy[p] < 0) vt_vy[p] = 0; }
-
-	if (isNetworkGame)
-	{
-		// Rollback applies local VT at the next tick, so present the live integrator position.
-		// Lockstep presents the simulation position so sprite, shots, and hitbox agree.
-		if (nrb_active() && (uint)(p + 1) == thisPlayerNum)
-			rl_set_ship_override(p, vt_x[p] - (float)ship_tick_x[p], vt_y[p] - (float)ship_tick_y[p]);
-		return;
-	}
-
-	// Write back so the next 35Hz tick (collisions, firing, homing) sees the
-	// current position/velocity.
-	player[p].x = (int)lrintf(vt_x[p]);
-	player[p].y = (int)lrintf(vt_y[p]);
-	player[p].x_velocity = (int)lrintf(vt_vx[p]);
-	player[p].y_velocity = (int)lrintf(vt_vy[p]);
-	vt_wrote_vx[p] = player[p].x_velocity;
-	vt_wrote_vy[p] = player[p].y_velocity;
-
-	// Display the recorded (tick-time) ship sprite at its new continuous position via the override
-	// channel the interpolator already understands.
-	rl_set_ship_override(p, vt_x[p] - (float)ship_tick_x[p], vt_y[p] - (float)ship_tick_y[p]);
-}
-
-// Netplay: publish VT's current (unlagged) position into the ship, so the netcode picks it up
-// as this tick's absolute.
-void vt_ship_commit_net(int player_index)
-{
-	if (!vt_ship_owns() || !isNetworkGame)
-		return;
-
-	const int p = (player_index <= 0) ? 0 : 1;
-	if (!player[p].is_alive || !vt_seeded[p])
-		return;  // nothing meaningful to hand over; the simulation keeps the ship where it is
-
-	// Expose the display-rate position for delay-based network input.
-	player[p].x = (int)lrintf(vt_x[p]);
-	player[p].y = (int)lrintf(vt_y[p]);
-
-	// The wire carries position. Local tilt and banking still need the matching velocity.
-	player[p].x_velocity = (int)lrintf(vt_vx[p]);
-	player[p].y_velocity = (int)lrintf(vt_vy[p]);
-	vt_wrote_vx[p] = player[p].x_velocity;
-	vt_wrote_vy[p] = player[p].y_velocity;
-}
-
-// The other player in a network game: its ship is placed from the deltas arriving on the wire,
-// so VT must not integrate input for it; that input belongs to the machine it is sitting at.
-static bool vt_player_is_net_remote(int p)
-{
-	return isNetworkGame && (uint)(p + 1) != thisPlayerNum;
-}
-
-// Docked Dragonwing placement remains owned by simulation until it undocks.
-static bool vt_player_is_sim_driven(int p)
-{
-	return vt_player_is_net_remote(p) || (p == 1 && twoPlayerLinked);
-}
-
-void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
-{
-	if (dt <= 0.0f)
-		return;
-
-	const int players = twoPlayerMode ? 2 : 1;
-	for (int p = 0; p < players; ++p)
-	{
-		if (vt_player_is_sim_driven(p))
-		{
-			vt_seeded[p] = false;
-
-			// In netplay VT owns no ship's rendering at all; update_ship_override() runs
-			// immediately after this and drives both ships. Leave the channel unchanged.
-			if (!isNetworkGame)
-			{
-				if (p == 1 && twoPlayerLinked)
-				{
-					// A docked Dragonwing shares player 1's current sub-tick offset.
-					rl_set_ship_override(p, rl_get_ship_override_dx(0), rl_get_ship_override_dy(0));
-				}
-				else
-				{
-					rl_set_ship_override(p, 0.0f, 0.0f);
-				}
-			}
-			continue;
-		}
-
-		vt_ship_step_player(p, dt);
-	}
-}
-
-// Refresh trailing-sidekick history when VT, rather than the sim tick, moves the ship.
-static int hist_prev_x[2] = { -32768, -32768 }, hist_prev_y[2] = { -32768, -32768 };
-
-static void vt_refresh_position_history(int p)
-{
-	if (player[p].x == hist_prev_x[p] && player[p].y == hist_prev_y[p])
-		return;
-	hist_prev_x[p] = player[p].x;
-	hist_prev_y[p] = player[p].y;
-
-	for (unsigned int i = 1; i < COUNTOF(player[p].old_x); ++i)
-	{
-		player[p].old_x[i - 1] = player[p].old_x[i];
-		player[p].old_y[i - 1] = player[p].old_y[i];
-	}
-	player[p].old_x[COUNTOF(player[p].old_x) - 1] = player[p].x;
-	player[p].old_y[COUNTOF(player[p].old_x) - 1] = player[p].y;
-}
-
-static void vt_ship_tick_player(int p)
-{
-	if (!vt_seeded[p] || !player[p].is_alive)
-		return;
-
-	// Reseed display-rate motion after an offline respawn, warp, or link jump.
-	if (!isNetworkGame
-	    && (abs(player[p].x - (int)lrintf(vt_x[p])) > 8
-	     || abs(player[p].y - (int)lrintf(vt_y[p])) > 8))
-	{
-		vt_seed_player(p);
-		return;
-	}
-
-	// Fold external velocity impulses (magnet fields, knockback) into VT: they modify
-	// player.x_velocity during the tick and JE_playerMovement's integration is skipped.
-	vt_vx[p] += (float)(player[p].x_velocity - vt_wrote_vx[p]);
-	vt_vy[p] += (float)(player[p].y_velocity - vt_wrote_vy[p]);
-
-	// Rollback applies positions mid-tick, where the normal history update already runs.
-	if (!nrb_active())
-		vt_refresh_position_history(p);
-}
-
-void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
-{
-	if (!vt_ship_owns())
-		return;
-
-	const int players = twoPlayerMode ? 2 : 1;
-	for (int p = 0; p < players; ++p)
-	{
-		if (vt_player_is_net_remote(p))
-		{
-			// Maintain remote trailing-sidekick history unless rollback or docking already did so.
-			if (!nrb_active() && !(p == 1 && twoPlayerLinked))
-				vt_refresh_position_history(p);
-			continue;
-		}
-
-		if (vt_player_is_sim_driven(p))
-			continue;
-
-		vt_ship_tick_player(p);
-	}
-}
-
-// Per-tick ship movement for shots that track the ship (delta_x_shot_move, e.g. the laser).
-void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy)
-{
-	const int p = (player_index <= 0) ? 0 : 1;
-	if (!ship_pred_have_tick)
-	{
-		*out_dx = 0;
-		*out_dy = 0;
-		return;
-	}
-	*out_dx = player[p].x - ship_tick_x[p];
-	*out_dy = player[p].y - ship_tick_y[p];
-}
-
-// Hand the twiddle-code detector the mouse direction since the last call as a -1/0/+1 per axis
-// (raw / un-inverted), then reset the accumulator.
-void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy)
-{
-	const int p = (player_index <= 0) ? 0 : 1;
-	const float deadzone = 1.0f;  // screen px of motion before a direction counts
-
-	const float ax = vt_twiddle_mx[p], ay = vt_twiddle_my[p];
-	vt_twiddle_mx[p] = 0.0f;
-	vt_twiddle_my[p] = 0.0f;
-
-	*out_dx = 0;
-	*out_dy = 0;
-
-	// Resolve the twiddle cone before quantizing display-rate input.
-	if (ax > deadzone)       *out_dx =  1;
-	else if (ax < -deadzone) *out_dx = -1;
-	if (ay > deadzone)       *out_dy =  1;
-	else if (ay < -deadzone) *out_dy = -1;
-
-	if (*out_dx != 0 && *out_dy != 0)
-	{
-		if (fabsf(ax) > 2.0f * fabsf(ay))
-			*out_dy = 0;
-		else if (fabsf(ay) > 2.0f * fabsf(ax))
-			*out_dx = 0;
-	}
 }
 
 /* Put the spotlight on the local ship's displayed position. */
@@ -758,8 +276,7 @@ static void spotlight_anchor(bool interpolate, float *out_x, float *out_y)
 	const int p = (isNetworkGame && thisPlayerNum >= 2) ? 1 : 0;
 	if (interpolate)
 	{
-		*out_x = (float)ship_tick_x[p] + rl_get_ship_override_dx(p);
-		*out_y = (float)ship_tick_y[p] + rl_get_ship_override_dy(p);
+		vt_ship_display_position(p, out_x, out_y);
 	}
 	else
 	{
@@ -1370,7 +887,7 @@ static void JE_starShowVGA(void)
 					debug_interp_alpha = alpha;  // expose for the perf overlay
 					// Interpolate ships whose positions remain owned by simulation or the wire.
 					if (!vt_owns || isNetworkGame)
-						update_ship_override(alpha);
+						vt_ship_update_override(alpha);
 
 					if (anySmoothies)
 					{
@@ -2153,6 +1670,43 @@ static void endlessGroupHoming(void)
 	}
 }
 
+static void enemy_shot_aim(int b, JE_byte aim, JE_integer fromX, JE_integer fromY, JE_byte *target)
+{
+	/*DIF*/
+	if (difficultyLevel > DIFFICULTY_NORMAL)
+		aim += difficultyLevel - 2;
+
+	JE_word targetX = player[0].x;
+	JE_word targetY = player[0].y;
+
+	if (twoPlayerMode)
+	{
+		// fire at live player(s)
+		if (player[0].is_alive && !player[1].is_alive)
+			*target = 0;
+		else if (player[1].is_alive && !player[0].is_alive)
+			*target = 1;
+		else
+			*target = mt_rand() % 2;
+
+		if (*target == 1)
+		{
+			targetX = player[1].x - 25;
+			targetY = player[1].y;
+		}
+	}
+
+	JE_integer aimX = (targetX + 25) - fromX - tempMapXOfs - 4;
+	if (aimX == 0)
+		aimX = 1;
+	JE_integer aimY = targetY - fromY;
+	if (aimY == 0)
+		aimY = 1;
+	const JE_integer maxMagAim = MAX(abs(aimX), abs(aimY));
+	enemyShot[b].sxm = roundf((float)aimX / maxMagAim * aim);
+	enemyShot[b].sym = roundf((float)aimY / maxMagAim * aim);
+}
+
 // Base Dispenser volley: one enemy-84 aimed shot plus a four-segment lightning column.
 static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 {
@@ -2213,37 +1767,8 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 	enemyShot[b].sym = weapons[w].sy[0];
 
 	{
-		JE_byte aim = weapons[w].aim;
-		if (difficultyLevel > DIFFICULTY_NORMAL)
-			aim += difficultyLevel - 2;
-
-		JE_word targetX = player[0].x;
-		JE_word targetY = player[0].y;
-		if (twoPlayerMode)
-		{
-			int t;
-			if (player[0].is_alive && !player[1].is_alive)
-				t = 0;
-			else if (player[1].is_alive && !player[0].is_alive)
-				t = 1;
-			else
-				t = mt_rand() % 2;
-			if (t == 1)
-			{
-				targetX = player[1].x - 25;
-				targetY = player[1].y;
-			}
-		}
-
-		JE_integer aimX = (targetX + 25) - eyeX - tempMapXOfs - 4;
-		if (aimX == 0)
-			aimX = 1;
-		JE_integer aimY = targetY - eyeY;
-		if (aimY == 0)
-			aimY = 1;
-		const JE_integer maxMagAim = MAX(abs(aimX), abs(aimY));
-		enemyShot[b].sxm = roundf((float)aimX / maxMagAim * aim);
-		enemyShot[b].sym = roundf((float)aimY / maxMagAim * aim);
+		JE_byte target;
+		enemy_shot_aim(b, weapons[w].aim, eyeX, eyeY, &target);
 	}
 
 	if (endlessFxActive())
@@ -2864,43 +2389,7 @@ enemy_still_exists:
 								}
 
 								if (weapons[temp3].aim > 0)
-								{
-									JE_byte aim = weapons[temp3].aim;
-
-									/*DIF*/
-									if (difficultyLevel > DIFFICULTY_NORMAL)
-										aim += difficultyLevel - 2;
-
-									JE_word targetX = player[0].x;
-									JE_word targetY = player[0].y;
-
-									if (twoPlayerMode)
-									{
-										// fire at live player(s)
-										if (player[0].is_alive && !player[1].is_alive)
-											temp = 0;
-										else if (player[1].is_alive && !player[0].is_alive)
-											temp = 1;
-										else
-											temp = mt_rand() % 2;
-
-										if (temp == 1)
-										{
-											targetX = player[1].x - 25;
-											targetY = player[1].y;
-										}
-									}
-
-									JE_integer aimX = (targetX + 25) - tempX - tempMapXOfs - 4;
-									if (aimX == 0)
-										aimX = 1;
-									JE_integer aimY = targetY - tempY;
-									if (aimY == 0)
-										aimY = 1;
-									const JE_integer maxMagAim = MAX(abs(aimX), abs(aimY));
-									enemyShot[b].sxm = roundf((float)aimX / maxMagAim * aim);
-									enemyShot[b].sym = roundf((float)aimY / maxMagAim * aim);
-								}
+									enemy_shot_aim(b, weapons[temp3].aim, tempX, tempY, &temp);
 
 								if (endlessFxActive())
 								{
@@ -3737,16 +3226,9 @@ start_level_first:
 	// Initialize rollback after finalizing ship spawn positions.
 	rollback_level_start();
 	// Reset per-tick ship motion at each level boundary.
-	ship_pred_have_tick = false;
+	vt_ship_pred_reset();
 	rl_feedback_reset();
 	rl_forget_previous();
-	memset(ship_vel_x, 0, sizeof(ship_vel_x));
-	memset(ship_vel_y, 0, sizeof(ship_vel_y));
-	for (int p = 0; p < 2; ++p)
-	{
-		ship_tick_x[p] = player[p].x;
-		ship_tick_y[p] = player[p].y;
-	}
 	if (isNetworkGame && nrb_active())
 		nrb_level_reset();
 
@@ -4006,7 +3488,7 @@ level_loop:
 		}
 
 		oldMapX3Ofs = mapX3Ofs;
-		oldMapX3Ofs_f = mapX3Ofs_f;  // matching un-floored mirror (see backgrnd.c)
+		oldMapX3Ofs_f = mapX3Ofs_f;  // matching un-floored mirror (see background.c)
 
 		enemyOnScreen = 0;
 	}
@@ -5474,7 +4956,7 @@ draw_player_shot_loop_end:
 	}
 
 	// Snapshot ship velocity inside the simulation so replayed inherited-velocity shots agree.
-	ship_pred_on_tick();
+	vt_ship_pred_tick();
 
 	/* Restart backgrounds or end the level when no enemies remain. This is simulation state and
 	 * must run before the rollback driver. */
@@ -5784,8 +5266,7 @@ draw_player_shot_loop_end:
 		rl_capture_residual_delta(VGAScreen2, game_screen);
 	vt_ship_tick();       // fold external forces / repositions into the variable-dt ship
 	// Publish tick velocity for render interpolation of ship-attached shots.
-	for (int p = 0; p < (twoPlayerMode ? 2 : 1); ++p)
-		rl_set_ship_vel(p, ship_vel_x[p], ship_vel_y[p]);
+	vt_ship_publish_velocity();
 #if RL_SELFTEST
 	{
 		static int seen = 0;
@@ -5878,7 +5359,7 @@ static int arcadeBallClass(Uint16 eDatI)
 }
 
 // Rebuilt per level, after the episode's item data is in place (see the level init below).
-void JE_buildArcadeBallPools(void)
+static void JE_buildArcadeBallPools(void)
 {
 	memset(ballPoolLen, 0, sizeof(ballPoolLen));
 
@@ -6427,10 +5908,7 @@ void game_loop_register_rollback(void)
 {
 	rollback_register("t2.eventRec",         eventRec, sizeof(eventRec));
 	enemy_death_register_rollback();
-	rollback_register("t2.shipTick",         ship_tick_x, sizeof(ship_tick_x));
-	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
-	/* The latch that arms them. */
-	rollback_register("t2.shipPredHave",     &ship_pred_have_tick, sizeof(ship_pred_have_tick));
+	vt_ship_register_rollback();
 	rollback_register("t2.tempMapXOfsFrac",  &tempMapXOfs_frac, sizeof(tempMapXOfs_frac));
 	rollback_register("t2.tempMapXOfsLayer", &tempMapXOfs_layer, sizeof(tempMapXOfs_layer));
 	rollback_register("t2.tempScrollYBase",  &tempScrollYBase, sizeof(tempScrollYBase));

@@ -5,6 +5,10 @@
 #ifndef ENDLESS_INTERNAL_H
 #define ENDLESS_INTERNAL_H
 
+#ifndef ENDLESS_INTERNAL_ACCESS
+#error "endless_internal.h is private to src/endless and the QA suite; include endless.h"
+#endif
+
 #include "endless.h"
 
 // Clamp without evaluating the value twice.
@@ -350,8 +354,6 @@ extern const EndlessTheme endlessEvilThemes[30];
 extern const EndlessTheme endlessRedlineThemes[2];
 extern const EndlessTheme endlessSluggishThemes[5];
 extern const EndlessTheme endlessDeadgenThemes[5];
-extern const EndlessTheme endlessMartyrdomThemes[5];
-extern const EndlessTheme endlessSeekerThemes[5];
 extern const EndlessTheme endlessTwinSeekThemes[5];
 extern const EndlessTheme endlessHunterThemes[5];
 extern const EndlessTheme endlessTrueAimThemes[5];

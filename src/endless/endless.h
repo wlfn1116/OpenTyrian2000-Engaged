@@ -931,4 +931,7 @@ void   endlessSetPersonalBuffMods(uint p, Uint64 bits);
 
 bool endlessSaveTestTextCodec(char *detail, size_t detailSize);
 
+void endless_combat_register_rollback(void);
+void endless_register_rollback(void);
+
 #endif // ENDLESS_H

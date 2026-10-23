@@ -17,16 +17,15 @@
  */
 #include "help.h"
 
+#include "audio.h"
 #include "config.h"
 #include "draw.h"
 #include "font.h"
-#include "fonthand.h"
 #include "game_state.h"
 #include "helptext.h"
 #include "hud.h"
 #include "joystick.h"
 #include "keyboard.h"
-#include "loudness.h"
 #include "menus.h"
 #include "mouse.h"
 #include "musmast.h"

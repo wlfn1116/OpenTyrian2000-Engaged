@@ -58,7 +58,7 @@ static bool cursorPresentPending = false;
 static bool cursorPresentFiltered = false;
 static Uint8 cursorPresentFilter = 0;
 
-static void JE_drawShapeTypeOne(JE_word x, JE_word y, JE_byte *shape)
+static void JE_copyShapeTypeOne(JE_word x, JE_word y, JE_byte *shape, bool grab)
 {
 	JE_word xloop = 0, yloop = 0;
 	JE_byte *p = shape; /* shape pointer */
@@ -77,34 +77,10 @@ static void JE_drawShapeTypeOne(JE_word x, JE_word y, JE_byte *shape)
 		{
 			if (s >= s_limit)
 				return;
-			*s = *p;
-			s++; p++;
-		}
-		s -= 24;
-		s += VGAScreen->pitch;
-	}
-}
-
-static void JE_grabShapeTypeOne(JE_word x, JE_word y, JE_byte *shape)
-{
-	JE_word xloop = 0, yloop = 0;
-	JE_byte *p = shape; /* shape pointer */
-	Uint8 *s;   /* screen pointer, 8-bit specific */
-	Uint8 *s_limit; /* buffer boundary */
-
-	s = (Uint8 *)VGAScreen->pixels;
-	s += y * VGAScreen->pitch + x;
-
-	s_limit = (Uint8 *)VGAScreen->pixels;
-	s_limit += VGAScreen->h * VGAScreen->pitch;
-
-	for (yloop = 0; yloop < 28; yloop++)
-	{
-		for (xloop = 0; xloop < 24; xloop++)
-		{
-			if (s >= s_limit)
-				return;
-			*p = *s;
+			if (grab)
+				*p = *s;
+			else
+				*s = *p;
 			s++; p++;
 		}
 		s -= 24;
@@ -132,38 +108,48 @@ static const MousePointerSpriteInfo mousePointerSprites[] = // fka mouseCursorGr
 	{ 281, 8, 0, 16, 21,  7, 10 },
 };
 
+static void mouse_start(bool filtered, Uint8 filter)
+{
+	mouseButton = mousedown ? lastmouse_but : 0; /* incorrect, possibly unimportant */
+
+	// Let JE_showVGA draw cursors that belong on the final composed frame.
+	if (video_get_menu_x_offset() != 0 || effective_supersample() > 1)
+	{
+		mouseGrabbed = false;
+		cursorPresentPending = true;
+		cursorPresentFiltered = filtered;
+		if (filtered)
+			cursorPresentFilter = filter;
+		return;
+	}
+
+	const MousePointerSpriteInfo *spriteInfo = &mousePointerSprites[mouseCursor];
+
+	mouseGrabX = MIN(MAX(spriteInfo->fx, mouse_x), vga_width - (spriteInfo->w - spriteInfo->fx)) - spriteInfo->fx;
+	mouseGrabY = MIN(MAX(spriteInfo->fy, mouse_y), vga_height - (spriteInfo->h - spriteInfo->fy)) - spriteInfo->fy;
+
+	JE_copyShapeTypeOne(mouseGrabX, mouseGrabY, mouseGrabShape, true);
+	mouseGrabbed = true;
+
+	if (!mouseInactive && !MOUSE_CURSOR_HIDDEN)
+	{
+		const Sint32 x = mouse_x - spriteInfo->x - spriteInfo->fx;
+		const Sint32 y = mouse_y - spriteInfo->y - spriteInfo->fy;
+		if (filtered)
+			blit_sprite2x2_filter_clip(VGAScreen, x, y, shopSpriteSheet, spriteInfo->index, filter);
+		else
+			blit_sprite2x2_clip(VGAScreen, x, y, shopSpriteSheet, spriteInfo->index);
+	}
+}
+
 void JE_mouseStart(void)
 {
 	if (has_mouse)
 	{
 		service_SDL_events(false);
 
-		mouseButton = mousedown ? lastmouse_but : 0; /* incorrect, possibly unimportant */
-
-		// Let JE_showVGA draw cursors that belong on the final composed frame.
-		if (video_get_menu_x_offset() != 0 || effective_supersample() > 1)
-		{
-			mouseGrabbed = false;
-			cursorPresentPending = true;
-			cursorPresentFiltered = false;
-			return;
-		}
-
-		const MousePointerSpriteInfo *spriteInfo = &mousePointerSprites[mouseCursor];
-
-		mouseGrabX = MIN(MAX(spriteInfo->fx, mouse_x), vga_width - (spriteInfo->w - spriteInfo->fx)) - spriteInfo->fx;
-		mouseGrabY = MIN(MAX(spriteInfo->fy, mouse_y), vga_height - (spriteInfo->h - spriteInfo->fy)) - spriteInfo->fy;
-
-		JE_grabShapeTypeOne(mouseGrabX, mouseGrabY, mouseGrabShape);
-		mouseGrabbed = true;
-
-		if (!mouseInactive && !MOUSE_CURSOR_HIDDEN)
-		{
-			const Sint32 x = mouse_x - spriteInfo->x - spriteInfo->fx;
-			const Sint32 y = mouse_y - spriteInfo->y - spriteInfo->fy;
-			blit_sprite2x2_clip(VGAScreen, x, y, shopSpriteSheet, spriteInfo->index);
-		}
-	 }
+		mouse_start(false, 0);
+	}
 }
 
 // Draw the live cursor over the completed pillarboxed menu frame.
@@ -224,38 +210,12 @@ void JE_drawMouseToHiFrame(SDL_Surface *hi, int scale, int x_offset)
 	blit_sprite2_scaled(hi, x2, y2, shopSpriteSheet, gr + 20, scale, op, filter);
 }
 
+// Same deferral as JE_mouseStart, carrying the darken filter
+// (the title screen uses this variant).
 void JE_mouseStartFilter(Uint8 filter)
 {
 	if (has_mouse)
-	{
-		mouseButton = mousedown ? lastmouse_but : 0; /* incorrect, possibly unimportant */
-
-		// Same deferral as JE_mouseStart, carrying the darken filter
-		// (the title screen uses this variant).
-		if (video_get_menu_x_offset() != 0 || effective_supersample() > 1)
-		{
-			mouseGrabbed = false;
-			cursorPresentPending = true;
-			cursorPresentFiltered = true;
-			cursorPresentFilter = filter;
-			return;
-		}
-
-		const MousePointerSpriteInfo *spriteInfo = &mousePointerSprites[mouseCursor];
-
-		mouseGrabX = MIN(MAX(spriteInfo->fx, mouse_x), vga_width - (spriteInfo->w - spriteInfo->fx)) - spriteInfo->fx;
-		mouseGrabY = MIN(MAX(spriteInfo->fy, mouse_y), vga_height - (spriteInfo->h - spriteInfo->fy)) - spriteInfo->fy;
-
-		JE_grabShapeTypeOne(mouseGrabX, mouseGrabY, mouseGrabShape);
-		mouseGrabbed = true;
-
-		if (!mouseInactive && !MOUSE_CURSOR_HIDDEN)
-		{
-			const Sint32 x = mouse_x - spriteInfo->x - spriteInfo->fx;
-			const Sint32 y = mouse_y - spriteInfo->y - spriteInfo->fy;
-			blit_sprite2x2_filter_clip(VGAScreen, x, y, shopSpriteSheet, spriteInfo->index, filter);
-		}
-	}
+		mouse_start(true, filter);
 }
 
 void JE_mouseReplace(void)
@@ -264,7 +224,7 @@ void JE_mouseReplace(void)
 	// mode the cursor lives on the composited frame instead.
 	if (has_mouse && mouseGrabbed)
 	{
-		JE_drawShapeTypeOne(mouseGrabX, mouseGrabY, mouseGrabShape);
+		JE_copyShapeTypeOne(mouseGrabX, mouseGrabY, mouseGrabShape, false);
 		mouseGrabbed = false;
 	}
 }

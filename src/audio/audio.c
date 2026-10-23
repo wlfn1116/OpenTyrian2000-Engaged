@@ -15,14 +15,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include "loudness.h"
+#include "audio.h"
 
 #include "file.h"
 #include "lds_play.h"
 #include "opentyr.h"
 #include "sfx.h"
 
-// Optional MIDI music backends; FluidSynth or the OS synth (see loudness.h and
+// Optional MIDI music backends; FluidSynth or the OS synth (see audio.h and
 // OPL stays the default.
 #ifdef WITH_MIDI
 #include <midiproc.h>
@@ -42,7 +42,7 @@
 
 int audioSampleRate = 0;
 
-bool music_stopped = true;
+static bool music_stopped = true;
 unsigned int song_playing = 0;
 
 bool audio_disabled = false, music_disabled = false, samples_disabled = false;
@@ -115,7 +115,7 @@ static Uint16 song_count = 0;
 
 #define NO_SONG_PLAYING 0xFFFFFFFF
 
-#define CHANNEL_COUNT 9  // 8 soundQueue slots + SFX_CUE_CHANNEL (loudness.h)
+#define CHANNEL_COUNT 9  // 8 soundQueue slots + SFX_CUE_CHANNEL (audio.h)
 static const Sint16 *channelSamples[CHANNEL_COUNT];
 static size_t channelSampleCount[CHANNEL_COUNT] = { 0 };
 static Uint8 channelVolume[CHANNEL_COUNT];

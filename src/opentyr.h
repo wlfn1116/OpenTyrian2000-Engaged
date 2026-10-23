@@ -80,7 +80,6 @@ extern const char *opentyrian_str;
 extern const char *opentyrian_version;
 extern const char *opentyrian_commit;
 
-void JE_tyrianShutdown(bool saveConfiguration);
 void JE_tyrianHalt(JE_byte code); /* This ends the game */
 
 #endif /* OPENTYR_H */

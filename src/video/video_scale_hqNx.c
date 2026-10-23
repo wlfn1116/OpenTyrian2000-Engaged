@@ -189,7 +189,8 @@ void hq2x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	          width = vga_width;   // src_surface->w
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
 
 	int prevline, nextline;
@@ -2993,7 +2994,8 @@ void hq3x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	          width = vga_width;   // src_surface->w
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
 	
 	int prevline, nextline;
@@ -6857,7 +6859,8 @@ void hq4x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	          width = vga_width;   // src_surface->w
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
 	
 	int prevline, nextline;

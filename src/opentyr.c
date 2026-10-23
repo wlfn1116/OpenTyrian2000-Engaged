@@ -17,14 +17,16 @@
  */
 #include "opentyr.h"
 
+#include "audio.h"
 #include "config.h"
 #include "crashlog.h"
 #include "custom_episode.h"
+#include "debug_flags.h"
 #include "demo.h"
 #include "destruct.h"
-#include "editship.h"
 #include "endless.h"
 #include "episodes.h"
+#include "extra_ships.h"
 #include "file.h"
 #include "game_loop.h"
 #include "game_menu.h"
@@ -34,7 +36,6 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "level_load.h"
-#include "loudness.h"
 #include "mtrand.h"
 #include "net_start.h"
 #include "network.h"
@@ -68,7 +69,7 @@ const char *opentyrian_str = "OpenTyrian 2000 Engaged";
 const char *opentyrian_version = OPENTYRIAN_VERSION;
 const char *opentyrian_commit = OPENTYRIAN_COMMIT;
 
-void JE_tyrianShutdown(bool saveConfiguration)
+static void JE_tyrianShutdown(bool saveConfiguration)
 {
 	network_shutdown();
 	deinit_audio();

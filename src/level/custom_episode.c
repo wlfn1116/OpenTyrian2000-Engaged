@@ -7,9 +7,8 @@
  */
 #include "custom_episode.h"
 
-#include "config.h"    // get_user_directory
 #include "episodes.h"  // JE_initEpisode, episodeNum, JE_forceEpisodeReload
-#include "file.h"      // data_dir, malloc_die
+#include "file.h"      // data_dir, get_user_directory, malloc_die
 #include "fnv1a.h"
 #include "network.h"   // isNetworkGame
 #include "lvllib.h"    // lvlNum, JE_levelFileCount

@@ -318,9 +318,9 @@
    "bytes": 138507,
    "category": "audio",
    "contents": "LOUDNESS (LDS) AdLib songs",
-   "readBy": "src/audio/loudness.c load_music; src/audio/lds_play.c lds_load",
+   "readBy": "src/audio/audio.c load_music; src/audio/lds_play.c lds_load",
    "sourceReferences": [
-    "loudness.c"
+    "audio.c"
    ],
    "dumpedTo": [
     "audio/music"

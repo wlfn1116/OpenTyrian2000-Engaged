@@ -1,4 +1,4 @@
-/* 
+/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2007-2009  The OpenTyrian Development Team
  *
@@ -15,11 +15,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef PCXLOAD_H
-#define PCXLOAD_H
+#ifndef SHIP_EDITOR_H
+#define SHIP_EDITOR_H
 
 #include "opentyr.h"
 
-void JE_loadPCX(const char *file);
+void JE_shipEditor(void);
+bool JE_shapeCodecSelfTest(void);
+bool JE_legacyUserShapeSelfTest(void);
+bool JE_captureHullListSelfTest(void);
+bool JE_shipEditorGraphicCycleSelfTest(void);
+bool JE_shipEditorConfirmationSelfTest(void);
 
-#endif /* PCXLOAD_H */
+#endif /* SHIP_EDITOR_H */

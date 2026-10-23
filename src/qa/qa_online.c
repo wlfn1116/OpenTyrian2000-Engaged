@@ -1,5 +1,7 @@
 /* Tests for online-mode boundaries: Arcade rules, Campaign wallets, and co-op
  * records must not leak into one another or solo play. */
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "debug_levels.h"
 #include "health_bars.h"
 #include "high_scores.h"
@@ -9,13 +11,11 @@
 #include "qa.h"
 
 #include "config.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "endless_internal.h"  // endlessPerkEffective, for reading a seat's row that is not ours
 #include "episodes.h"
 #include "font.h"      // small_font, for measuring the picker's names against its columns
-#include "fonthand.h"
-#include "game_loop.h"  // difficulty bump, Super Arcade equip, picker and boss-bar layout
-#include "game_menu.h"  // the Endless zone jump's staging, carried by the departure handshake
 #include "game_state.h"
 #include "helptext.h"  // superShips[]
 #include "lvlmast.h"

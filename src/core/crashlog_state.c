@@ -2,16 +2,17 @@
  * Crash-handler state snapshot. Keep this file free of windows.h and avoid
  * allocation, locks, and untrusted pointers.
  */
+#include "audio.h"
 #include "config.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "debug_flags.h"
 #include "demo.h"
 #include "endless.h"
 #include "episodes.h"
 #include "explosions.h"
 #include "game_loop.h"
 #include "game_state.h"
-#include "loudness.h"
 #include "musmast.h"
 #include "player.h"
 #include "render_list.h"

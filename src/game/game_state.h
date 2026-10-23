@@ -205,24 +205,9 @@ typedef struct {
 } EnemyShotType;
 
 extern JE_integer tempDat, tempDat2, tempDat3;
-extern const JE_byte SANextShip[SA + 2];
 extern const JE_word SASpecialWeapon[SA];
-extern const JE_word SASpecialWeaponB[SA];
 extern const JE_byte SAShip[SA];
 extern const JE_word SAWeapon[SA][5];
-extern const JE_byte specialArcadeWeapon[PORT_NUM];
-extern const JE_byte optionSelect[16][3][2];
-extern const JE_word PGR[21];
-extern const JE_byte PAni[21];
-extern const JE_word linkGunWeapons[38];
-extern const JE_word chargeGunWeapons[38];
-extern const JE_byte randomEnemyLaunchSounds[3];
-extern const JE_byte keyboardCombos[26][8];
-extern const JE_byte shipCombosB[21];
-extern const JE_byte superTyrianSpecials[4];
-extern const JE_byte shipCombos[19][3];
-extern JE_byte SFCurrentCode[2][21];
-extern JE_byte SFExecuted[2];
 extern JE_byte lvlFileNum;
 // One-shot override for the next level load; zero uses the section default.
 extern JE_byte forcedLvlFileNum;
@@ -267,12 +252,9 @@ extern JE_boolean levelTimer;
 extern JE_word levelTimerCountdown;
 extern JE_word levelTimerJumpTo;
 extern JE_boolean randomExplosions;
-extern JE_boolean editShip1, editShip2;
 extern JE_boolean globalFlags[10];
 extern JE_byte levelSong;
 extern JE_boolean loadDestruct;
-extern JE_word mapOrigin, mapPNum;
-extern JE_byte mapPlanet[5], mapSection[5];
 extern JE_boolean moveTyrianLogoUp;
 extern JE_boolean skipStarShowVGA;
 extern JE_MultiEnemyType enemy;
@@ -282,107 +264,10 @@ extern JE_word enemyOnScreen;
 extern JE_word enemyParkedAbove;
 extern JE_word mapStopStallTicks;
 extern JE_word superEnemy254Jump;
-extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
 extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
-extern JE_byte zinglonDuration;
-extern JE_byte zinglonRamp;
-extern bool zinglonPillarActive[2];
-extern int zinglonPillarCX[2];
-extern int zinglonPillarTemp[2];
-extern JE_byte astralDuration;
-extern JE_word flareDuration;
-extern JE_boolean flareStart;
-extern JE_shortint flareColChg;
-extern bool flareOwnsFilter;  // the live screen grade is a flare's, not the level's (see game_state.c)
-extern JE_byte specialWait;
-extern JE_byte nextSpecialWait;
-extern JE_boolean spraySpecial;
-extern JE_byte doIced;
-extern JE_boolean infiniteShot;
-extern JE_boolean cheatInfiniteSidekickAmmo;
-extern JE_boolean cheatInfiniteShields;
-extern JE_boolean cheatInfiniteArmor;
-extern JE_boolean cheatInfiniteGenerator;  /* debug: weapons don't drain generator power */
-extern JE_boolean cheatNoEnemyFire;  /* debug: suppress enemy projectiles */
-extern JE_boolean cheatInstantCharge;  /* debug: charge sidekicks reach full charge instantly */
-
-// Noclip debug mode (cycled in the debug menu): pass through enemies without
-// collision. The transparent state additionally draws the ship semi-transparent.
-enum
-{
-	NOCLIP_OFF         = 0,  // normal collision
-	NOCLIP_ON          = 1,  // pass through enemies, ship drawn normally
-	NOCLIP_TRANSPARENT = 2,  // pass through enemies, ship drawn semi-transparent
-	NOCLIP_NUM         = 3,
-};
-extern JE_byte noclipMode;
-
-extern JE_boolean debugHitboxOverlay;  /* debug: draw collision boxes */
-extern JE_boolean debugPerfOverlay;    /* debug: draw FPS/timing/counts overlay */
-extern JE_boolean autoFireSpecial;
-extern JE_byte    debugTwiddleSpecial;      /* debug: selected twiddle's special index (0 = none) */
-extern JE_boolean debugAutofireTwiddle;     /* debug: auto-fire the selected twiddle while fire is held */
-extern JE_boolean debugTwiddleTrigger;      /* debug: one-shot fire request from the debug menu */
-extern JE_boolean debugToggleFire;          /* debug: fire button toggles auto-fire on/off */
-extern JE_boolean debugToggleFireActive;    /* debug: Toggle Fire latch; currently auto-firing */
-
-// "Autofire Charge Sidekicks" mode (cycled in the debug menu). Governs whether a
-// charge sidekick (pwr > 0) fires while the main fire button is held.
-enum
-{
-	CHARGE_AUTOFIRE_OFF  = 0,  // only fires on its own dedicated sidekick button
-	CHARGE_AUTOFIRE_ON   = 1,  // autofires while the main fire button is held
-	CHARGE_AUTOFIRE_FULL = 2,  // autofires on the main button only when fully charged
-	CHARGE_AUTOFIRE_FAST = 3,  // like ON, but reloads at the fastest charge stage's shotrepeat;
-	                           // paired with Instant Charge this fires full-power shots at top speed
-	CHARGE_AUTOFIRE_NUM  = 4,  // (append new modes; the value is saved per slot; don't renumber)
-};
-extern JE_byte    chargeSidekickAutofire;
-extern JE_boolean dispenserBasesActive;
-extern JE_boolean difficultyAdjust;
-extern JE_boolean expertMode;
-
-// Expert-mode defaults, adjustable from the Expert Settings debug menu.
-#define EXPERT_DEF_BOSS_HP      3    /* boss HP multiplier (x)            */
-#define EXPERT_DEF_ENEMY_ARMOR  125  /* regular enemy armor scaling (%)   */
-#define EXPERT_DEF_ENERGY       150  /* weapon energy use (%)             */
-#define EXPERT_DEF_SHOP_COST    2    /* shop purchase cost multiplier (x) */
-#define EXPERT_DEF_UPGRADE_COST 2    /* weapon upgrade cost multiplier (x)*/
-#define EXPERT_DEF_CASH         150  /* cash earned from enemies (%)      */
-
-extern int expertBossHpMult;     /* divisor: bosses take 1/N damage -> Nx HP */
-extern int expertEnemyArmorPct;  /* >=100; scales non-boss enemy armor       */
-extern int expertEnergyPct;      /* >=100; scales weapon energy use          */
-extern int expertShopCostMult;   /* >=1; scales shop purchase prices         */
-extern int expertUpgradeCostMult;/* >=1; scales weapon power upgrade prices  */
-extern int expertScorePct;       /* >=100; scales cash earned from enemies   */
-
-/* Shared descriptor for the expert tunables: one source of truth driving the
- * debug submenu, the config load/save, and reset-to-defaults. */
-typedef struct
-{
-	const char* label;   /* submenu label                  */
-	const char* cfgKey;  /* opentyrian.cfg option key      */
-	int*        value;   /* the live global                */
-	int         lo, hi;  /* inclusive adjustable range     */
-	int         step;    /* adjust increment               */
-	int         def;     /* default value                  */
-	char        fmt;     /* 'x' multiplier or '%' percent  */
-}
-ExpertSetting;
-
-extern ExpertSetting expertSettings[];
-extern const int expertSettingsCount;
-
-void clamp_expert_settings(void);  /* clamp each tunable into [lo, hi] */
 
 extern JE_boolean allPlayersGone;
-extern const uint shadowYDist;
-extern JE_real optionSatelliteRotate;
-extern JE_integer optionAttachmentMove[2];                               // per sidekick slot (LEFT/RIGHT)
-extern JE_boolean optionAttachmentLinked[2], optionAttachmentReturn[2];  // so both front options can launch
-extern JE_byte chargeWait, chargeLevel, chargeMax, chargeGr, chargeGrWait;
 extern JE_word neat;
 extern JE_byte temp, temp2, temp3;
 extern JE_word tempW;
@@ -390,22 +275,5 @@ extern JE_boolean doNotSaveBackup;
 extern JE_word x, y;
 extern JE_integer b;
 extern JE_byte **BKwrap1to, **BKwrap2to, **BKwrap3to, **BKwrap1, **BKwrap2, **BKwrap3;
-extern JE_shortint specialWeaponFilter, specialWeaponFreq;
-extern JE_word specialWeaponWpn;
-extern JE_boolean linkToPlayer;
-extern JE_word shipGr, shipGr2;
-extern Sprite2_array *shipGrPtr, *shipGr2ptr;
-
-void JE_drawOptions(void);
-void JE_resetPlayerOptions(Player *this_player);
-
-
-JE_byte JE_playerDamage(JE_byte temp, Player *);
-// Clear enemy shots within a ship's Countermeasures reach; return the number cleared.
-int endlessCountermeasureBurst(Player *);
-
-
-// Firing patterns this ship's rear bay offers; clamp its weapon_mode against its own, not another's.
-JE_word JE_portConfigs(const Player *this_player);
 
 #endif /* GAME_STATE_H */

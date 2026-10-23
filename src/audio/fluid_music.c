@@ -363,7 +363,7 @@ void fm_set_volume(uint8_t vol255)
 
 bool fm_soundfont_loaded(void) { return g_sf_loaded; }
 
-#else  /* !WITH_MIDI; no FluidSynth; loudness.c only calls these WITH_MIDI */
+#else  /* !WITH_MIDI; no FluidSynth; audio.c only calls these WITH_MIDI */
 
 bool fm_init(const char *soundfont, int sample_rate) { (void)soundfont; (void)sample_rate; return false; }
 void fm_quit(void) {}

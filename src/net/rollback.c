@@ -24,6 +24,7 @@
 #include "episodes.h"
 #include "explosions.h"
 #include "fnv1a.h"
+#include "game_loop.h"
 #include "game_state.h"
 #include "hud.h"
 #include "net_rollback.h"
@@ -896,9 +897,6 @@ void rollback_level_end(void)
 
 /* Registration root. Public globals live in rollback_state.c; modules register
  * their own private simulation state here. */
-void rollback_state_register_globals(void);   /* rollback_state.c  */
-void game_loop_register_rollback(void);       /* game_loop.c statics */
-
 /* Registers without allocating the snapshot ring.  For callers that need the
  * registry described (the layout fingerprint) but are not about to roll back. */
 static void rollback_ensure_registered(void)

@@ -38,7 +38,6 @@ extern superpixel_type superpixels[MAX_SUPERPIXELS];
 // Optional clip window for JE_drawSP. While active, superpixels are only plotted (and recorded
 // for smooth replay) inside [x0,x1) x [y0,y1).
 extern bool superpixelClipActive;
-extern int superpixelClipX0, superpixelClipY0, superpixelClipX1, superpixelClipY1;
 void JE_setSPClip(int x0, int y0, int x1, int y1);
 void JE_clearSPClip(void);
 

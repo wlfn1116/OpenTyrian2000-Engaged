@@ -18,13 +18,15 @@
 #include "level_load.h"
 
 #include "animlib.h"
-#include "backgrnd.h"
+#include "audio.h"
+#include "background.h"
 #include "config.h"
 #include "crashlog.h"
 #include "demo.h"
+#include "draw.h"
 #include "episodes.h"
 #include "file.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_loop.h"
 #include "game_menu.h"
 #include "game_state.h"
@@ -33,7 +35,6 @@
 #include "item_prices.h"
 #include "keyboard.h"
 #include "level_end.h"
-#include "loudness.h"
 #include "lvllib.h"
 #include "lvlmast.h"
 #include "mtrand.h"
@@ -41,12 +42,13 @@
 #include "network.h"
 #include "palette.h"
 #include "params.h"
-#include "pcxload.h"
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
 #include "qa.h"
 #include "savegame.h"
+#include "sfx.h"
+#include "sndmast.h"
 #include "sprite.h"
 #include "str_util.h"
 #include "timing.h"
@@ -70,6 +72,17 @@ JE_word levelEnemy[40]; /* [1..40] */
 /* Data used for ItemScreen procedure to indicate items available */
 JE_byte itemAvail[9][10]; /* [1..9, 1..10] */
 JE_byte itemAvailMax[9]; /* [1..9] */
+
+JE_boolean levelWarningDisplay;
+JE_byte levelWarningLines;
+static char levelWarningText[12][61]; /* [1..10] of string [60] */
+JE_boolean warningRed;
+
+JE_byte warningSoundDelay;
+JE_byte warningCol;
+JE_shortint warningColChange;
+
+static const JE_byte SANextShip[SA + 2] /* [0..SA + 1] */ = { 3, 8, 6, 2, 5, 1, 4, 10, 9, 7, 3 };
 
 static void JE_displayText(void);
 
@@ -337,6 +350,34 @@ static void event_backdate_savara_cannons(void)
 }
 
 /* --- Load Level/Map Data --- */
+void JE_updateWarning(SDL_Surface * screen)
+{
+	if (getDelayTicks2() == 0)
+	{ /*Update Color Bars*/
+
+		warningCol += warningColChange;
+		if (warningCol > 14 * 16 + 10 || warningCol < 14 * 16 + 4)
+		{
+			warningColChange = -warningColChange;
+		}
+		fill_rectangle_xy(screen, 0, 0, 319, 5, warningCol);
+		fill_rectangle_xy(screen, 0, 194, 319, 199, warningCol);
+		JE_showVGA();
+
+		setDelay2(6);
+
+		if (warningSoundDelay > 0)
+		{
+			warningSoundDelay--;
+		}
+		else
+		{
+			warningSoundDelay = 14;
+			JE_playSampleNum(S_WARNING);
+		}
+	}
+}
+
 void JE_loadMap(void)
 {
 	JE_DanCShape shape;

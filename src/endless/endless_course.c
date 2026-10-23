@@ -1,5 +1,7 @@
 /* Endless course generation and selection. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "endless.h"
 #include "endless_internal.h"
 

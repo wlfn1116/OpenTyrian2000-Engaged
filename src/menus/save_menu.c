@@ -24,7 +24,6 @@
 #include "endless.h"
 #include "episodes.h"
 #include "font.h"
-#include "fonthand.h"
 #include "game_loop.h"
 #include "game_menu.h"
 #include "game_state.h"

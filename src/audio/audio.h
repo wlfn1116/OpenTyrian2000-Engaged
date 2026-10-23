@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef LOUDNESS_H
-#define LOUDNESS_H
+#ifndef AUDIO_H
+#define AUDIO_H
 
 #include "opentyr.h"
 #include "opl.h"
@@ -89,4 +89,4 @@ void music_fade_out_finish(MusicFadeOut *fade);
 void multiSamplePlay(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol);
 void stop_sample_channels(void);
 
-#endif /* LOUDNESS_H */
+#endif /* AUDIO_H */

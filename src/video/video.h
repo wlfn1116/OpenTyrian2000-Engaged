@@ -151,6 +151,8 @@ void video_palette_rows(const Uint8 *src, int src_pitch, Uint8 *dst, int dst_pit
 bool video_test_parallel_rows(char *detail, size_t detailSize);
 bool video_test_rows_stats(char *detail, size_t detailSize);
 bool video_test_rows_rounds(char *detail, size_t detailSize);
+bool video_test_rows_pick(char *detail, size_t detailSize);
+bool video_test_rows_watch(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.

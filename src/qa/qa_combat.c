@@ -1,3 +1,6 @@
+#define ENDLESS_INTERNAL_ACCESS
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 

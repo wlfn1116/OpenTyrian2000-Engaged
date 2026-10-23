@@ -46,6 +46,7 @@ void rollback_register_callback(const char *name, size_t size,
 void rollback_register_fixup(void (*fn)(void));
 /* Registers everything (rollback_state.c + per-file registrars); idempotent. */
 void rollback_register_all(void);
+void rollback_state_register_globals(void);
 void rollback_deinit(void);
 size_t rollback_state_size(void);
 

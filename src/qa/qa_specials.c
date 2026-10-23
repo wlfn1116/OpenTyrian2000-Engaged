@@ -1,12 +1,15 @@
+#define ENDLESS_INTERNAL_ACCESS
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
 #include "config.h"
+#include "debug_flags.h"
 #include "demo.h"
 #include "endless.h"
 #include "episodes.h"
 #include "endless_internal.h"
-#include "game_menu.h"   // JE_getLevelSections
 #include "game_state.h"
 #include "player.h"
 #include "player_ship.h"

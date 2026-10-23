@@ -1,18 +1,20 @@
 /* Endless run state, lifecycle, milestones, and run-over screen. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "endless.h"
 #include "endless_internal.h"
 
+#include "audio.h"
 #include "config.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_state.h"
 #include "helptext.h"
 #include "keyboard.h"
-#include "loudness.h"
 #include "mtrand.h"
 #include "rollback.h"
 #include "palette.h"
-#include "pcxload.h"
+#include "picload.h"
 #include "network.h"
 #include "player.h"
 #include "sprite.h"

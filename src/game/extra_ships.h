@@ -15,31 +15,33 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef EDITSHIP_H
-#define EDITSHIP_H
+#ifndef EXTRA_SHIPS_H
+#define EXTRA_SHIPS_H
 
 #include "opentyr.h"
 #include "sprite.h"
 
+#include <stdio.h>
+
 /* Serialized table width; preserve the byte layout. */
 typedef JE_byte JE_ShipsType[154]; /* [1..154] */
+
+#define EXTRA_SHIPS_STOCK_FILE "newsh$.shp"
 
 extern JE_boolean extraAvail;
 extern JE_ShipsType extraShips;
 extern Sprite2_array extraShapes;
+extern bool extraUserAvail;
 
 JE_boolean JE_decryptShips(void);
 void JE_encryptShips(JE_ShipsType dst);
 void JE_loadExtraShapes(void);
+bool JE_saveExtraShapes(void);
 void JE_freeExtraShapes(void);
-void JE_shipEditor(void);
-bool JE_shapeCodecSelfTest(void);
-bool JE_legacyUserShapeSelfTest(void);
+FILE *extraShipsOpenLegacyUserShapes(const char **location);
+bool extraShipsReadCompiled(FILE *f, JE_ShipsType table, Sprite2_array *shapes);
 bool JE_legacyUserShapeCaseSelfTest(void);
 bool JE_stockExtraShapesSelfTest(void);
-bool JE_captureHullListSelfTest(void);
-bool JE_shipEditorGraphicCycleSelfTest(void);
-bool JE_shipEditorConfirmationSelfTest(void);
 
 enum { EXTRA_SHIP_PREVIEW_BANK_MS = 220 };
 // Return a banking pose from -2 to 2 for menu and editor previews.
@@ -72,4 +74,4 @@ bool extraShipsAdoptLocal(const Uint8 *buf, size_t len);
 void extraShipsNetInstallLocal(uint seat);
 void extraShipsNetReset(void);
 
-#endif /* EDITSHIP_H */
+#endif /* EXTRA_SHIPS_H */

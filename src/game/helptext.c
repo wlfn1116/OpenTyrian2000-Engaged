@@ -20,7 +20,7 @@
 #include "config.h"
 #include "episodes.h"
 #include "file.h"
-#include "fonthand.h"
+#include "font.h"
 #include "menus.h"
 #include "opentyr.h"
 
@@ -59,7 +59,7 @@ JE_byte helpBoxColor = 12;
 JE_byte helpBoxBrightness = 1;
 JE_byte helpBoxShadeType = FULL_SHADE;
 
-char helpTxt[39][231];                                                   /* [1..39] of string [230] */
+static char helpTxt[39][231];                                                   /* [1..39] of string [230] */
 char pName[21][16];                                                      /* [1..21] of string [15] */
 char miscText[HELPTEXT_MISCTEXT_COUNT][42];                              /* [1..68] of string [41] */
 char miscTextB[HELPTEXT_MISCTEXTB_COUNT][HELPTEXT_MISCTEXTB_SIZE];       /* [1..5] of string [10] */
@@ -80,8 +80,8 @@ char destructHelp[25][22];                                               /* [1..
 char weaponNames[17][17];                                                /* [1..17] of string [16] */
 char destructModeName[DESTRUCT_MODES][13];                               /* [1..destructmodes] of string [12] */
 char shipInfo[HELPTEXT_SHIPINFO_COUNT][2][256];                          /* [1..13, 1..2] of string */
-char licensingInfo[3][46];                                               /* [1..3] of string */
-char orderingInfo[6][32];                                                /* [1..6] of string */
+static char licensingInfo[3][46];                                               /* [1..3] of string */
+static char orderingInfo[6][32];                                                /* [1..6] of string */
 char superTyrianText[6][64];                                             /* [1..6] of string */
 char menuInt[MENU_MAX+1][14][24];
 

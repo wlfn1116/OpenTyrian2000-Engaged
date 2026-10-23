@@ -149,6 +149,7 @@ static bool gradient_cache_valid = false;
 
 static void init_renderer(void);
 static void deinit_renderer(void);
+static bool video_rows_ready(void);
 static void video_rows_shutdown(void);
 static void video_rows_end_frame(void);
 static void init_texture(void);
@@ -241,6 +242,9 @@ void init_video(void)
 	// Seed the repaint watchdog with the starting output size so the first event-pump
 	// poll doesn't see a spurious change (see video_repaint_if_stale()).
 	video_output_size(&last_present_w, &last_present_h);
+
+	if (render_threads != 1)
+		video_rows_ready();
 }
 
 void deinit_video(void)
@@ -917,10 +921,11 @@ typedef enum
 	VIDEO_ROWS_OFF,
 } VideoRowsState;
 
-#define VIDEO_ROWS_MAX_HELPERS 15
-#define VIDEO_ROWS_MIN_PIXELS  (64 * 1024)
-#define VIDEO_ROWS_TUNE_FRAMES 8
-#define VIDEO_ROWS_PROBE_MS    2000
+#define VIDEO_ROWS_MAX_HELPERS  15
+#define VIDEO_ROWS_MIN_PIXELS   (64 * 1024)
+#define VIDEO_ROWS_TUNE_FRAMES  20
+#define VIDEO_ROWS_WATCH_FRAMES 120
+#define VIDEO_ROWS_PROBE_MS     2000
 
 static struct
 {
@@ -947,8 +952,12 @@ typedef struct
 	int tune_frame;
 	int candidates;
 	int count[COUNTOF(video_rows_counts) + 1];
-	Uint64 best[COUNTOF(video_rows_counts) + 1];
+	Uint64 samples[COUNTOF(video_rows_counts) + 1][VIDEO_ROWS_TUNE_FRAMES];
+	Uint64 median[COUNTOF(video_rows_counts) + 1];
+	Uint64 p95[COUNTOF(video_rows_counts) + 1];
 	int chosen;
+	Uint64 tuned;
+	int watch_frames, watch_high, watch_low, watch_windows;
 	Uint32 calls;
 	bool small;
 	bool rounds;
@@ -1144,30 +1153,94 @@ static void video_rows_tune_begin(VideoRowsSite *s, int pixels, int pool_threads
 		s->count[s->candidates++] = video_rows_counts[i];
 	if (s->count[s->candidates - 1] != pool_threads)
 		s->count[s->candidates++] = pool_threads;
+	s->watch_frames = s->watch_high = s->watch_low = s->watch_windows = 0;
+}
+
+static void video_rows_spread(const Uint64 *samples, Uint64 *median, Uint64 *p95)
+{
+	Uint64 sorted[VIDEO_ROWS_TUNE_FRAMES];
+	for (int i = 0; i < VIDEO_ROWS_TUNE_FRAMES; ++i)
+	{
+		int j = i;
+		for (; j > 0 && sorted[j - 1] > samples[i]; --j)
+			sorted[j] = sorted[j - 1];
+		sorted[j] = samples[i];
+	}
+	*median = (sorted[(VIDEO_ROWS_TUNE_FRAMES - 1) / 2] + sorted[VIDEO_ROWS_TUNE_FRAMES / 2]) / 2;
+	*p95 = sorted[(VIDEO_ROWS_TUNE_FRAMES * 95 + 99) / 100 - 1];
+}
+
+static void video_rows_measure(VideoRowsSite *s)
+{
 	for (int i = 0; i < s->candidates; ++i)
-		s->best[i] = SDL_MAX_UINT64;
+		video_rows_spread(s->samples[i], &s->median[i], &s->p95[i]);
+}
+
+static int video_rows_pick(const VideoRowsSite *s)
+{
+	int pick = 0;
+	for (int i = 1; i < s->candidates; ++i)
+		if (s->median[i] * 10 < s->median[pick] * 9 && s->p95[i] <= s->p95[pick])
+			pick = i;
+	return pick;
 }
 
 static void video_rows_tune_end(int site, VideoRowsSite *s)
 {
-	int pick = 0;
-	for (int i = 1; i < s->candidates; ++i)
-		if (s->best[i] * 10 < s->best[pick] * 9)
-			pick = i;
+	video_rows_measure(s);
+	const int pick = video_rows_pick(s);
 	s->chosen = s->count[pick];
+	s->tuned = s->median[pick];
 
 	const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
-	char timings[192];
+	char timings[256];
 	size_t used = 0;
 	for (int i = 0; i < s->candidates && used < sizeof(timings); ++i)
-		used += (size_t)snprintf(timings + used, sizeof(timings) - used, "%s%.3f ms on %d",
-		                         i != 0 ? ", " : "", (double)s->best[i] * ms, s->count[i]);
+		used += (size_t)snprintf(timings + used, sizeof(timings) - used, "%s%.3f/%.3f ms on %d",
+		                         i != 0 ? ", " : "", (double)s->median[i] * ms,
+		                         (double)s->p95[i] * ms, s->count[i]);
 	if (s->chosen == 1)
-		fprintf(stderr, "video: %s rows on one thread (%s)\n", video_rows_site_names[site],
-		        timings);
+		fprintf(stderr, "video: %s rows on one thread (median/p95 %s)\n",
+		        video_rows_site_names[site], timings);
 	else
-		fprintf(stderr, "video: %s rows on %d threads (%s)\n", video_rows_site_names[site],
-		        s->chosen, timings);
+		fprintf(stderr, "video: %s rows on %d threads (median/p95 %s)\n",
+		        video_rows_site_names[site], s->chosen, timings);
+}
+
+static void video_rows_watch(int site, VideoRowsSite *s, Uint64 spent)
+{
+	if (s->tuned == 0)
+		return;
+	if (spent > s->tuned * 2)
+		++s->watch_high;
+	else if (spent * 2 < s->tuned)
+		++s->watch_low;
+	if (++s->watch_frames < VIDEO_ROWS_WATCH_FRAMES)
+		return;
+
+	const bool moved = s->watch_high * 2 > VIDEO_ROWS_WATCH_FRAMES
+	                || s->watch_low * 2 > VIDEO_ROWS_WATCH_FRAMES;
+	s->watch_windows = moved ? s->watch_windows + 1 : 0;
+	s->watch_frames = s->watch_high = s->watch_low = 0;
+	if (s->watch_windows < 2)
+		return;
+
+	const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
+	fprintf(stderr, "video: %s rows moved from %.3f ms per frame; tuning again\n",
+	        video_rows_site_names[site], (double)s->tuned * ms);
+	video_rows_tune_begin(s, s->pixels, video_rows_pool.helpers + 1);
+}
+
+static void video_rows_sample(int site, VideoRowsSite *s, int candidate, Uint64 spent)
+{
+	if (candidate < 0)
+	{
+		video_rows_watch(site, s, spent);
+		return;
+	}
+	s->samples[candidate][s->tune_frame / s->candidates] = spent;
+	if (++s->tune_frame == s->candidates * VIDEO_ROWS_TUNE_FRAMES)
+		video_rows_tune_end(site, s);
 }
 
 static void video_rows_round_begin(VideoRowsSite *s, int pixels, int pool_threads)
@@ -1193,12 +1266,7 @@ static void video_rows_end_frame(void)
 			video_rows_tune_begin(s, s->round_pixels, video_rows_pool.helpers + 1);
 			continue;
 		}
-		if (s->round_candidate < 0)
-			continue;
-		if (s->round_spent < s->best[s->round_candidate])
-			s->best[s->round_candidate] = s->round_spent;
-		if (++s->tune_frame == s->candidates * VIDEO_ROWS_TUNE_FRAMES)
-			video_rows_tune_end(site, s);
+		video_rows_sample(site, s, s->round_candidate, s->round_spent);
 	}
 }
 
@@ -1211,6 +1279,7 @@ void video_rows(int site, VideoRowsFn fn, void *job, int rows, int pixels, SDL_T
 
 	int threads = 1;
 	int candidate = -1;
+	bool timed = false;
 	if (!s->small && render_threads != 1 && video_rows_ready())
 	{
 		const int pool_threads = video_rows_pool.helpers + 1;
@@ -1226,6 +1295,7 @@ void video_rows(int site, VideoRowsFn fn, void *job, int rows, int pixels, SDL_T
 				s->round_pixels = pixels;
 			candidate = s->round_candidate;
 			threads = candidate >= 0 ? s->count[candidate] : s->chosen;
+			timed = true;
 		}
 		else
 		{
@@ -1240,26 +1310,22 @@ void video_rows(int site, VideoRowsFn fn, void *job, int rows, int pixels, SDL_T
 				candidate = s->tune_frame % s->candidates;
 				threads = s->count[candidate];
 			}
+			timed = true;
 		}
 	}
 
-	const Uint64 start = candidate >= 0 ? SDL_GetPerformanceCounter() : 0;
+	const Uint64 start = timed ? SDL_GetPerformanceCounter() : 0;
 	video_rows_run(fn, job, rows, MIN(threads, rows) - 1);
 	if (unlock != NULL)
 		SDL_UnlockTexture(unlock);
-	if (candidate < 0)
+	if (!timed)
 		return;
 
 	const Uint64 spent = SDL_GetPerformanceCounter() - start;
 	if (s->rounds)
-	{
 		s->round_spent += spent;
-		return;
-	}
-	if (spent < s->best[candidate])
-		s->best[candidate] = spent;
-	if (++s->tune_frame == s->candidates * VIDEO_ROWS_TUNE_FRAMES)
-		video_rows_tune_end(site, s);
+	else
+		video_rows_sample(site, s, candidate, spent);
 }
 
 bool video_rows_threaded(VideoRowsFn fn, void *job, int rows)
@@ -1314,15 +1380,16 @@ void video_rows_stats(int site, VideoRowsStats *stats)
 	int shown = 1;
 	for (int i = 1; i < s->candidates; ++i)
 	{
-		const bool better = s->chosen > 1 ? s->count[i] == s->chosen : s->best[i] < s->best[shown];
+		const bool better = s->chosen > 1 ? s->count[i] == s->chosen
+		                                  : s->median[i] < s->median[shown];
 		if (better)
 			shown = i;
 	}
 	const double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
 	stats->mode = s->chosen > 1 ? VIDEO_ROWS_THREADED : VIDEO_ROWS_ONE_THREAD;
 	stats->threads = s->chosen;
-	stats->one_ms = (double)s->best[0] * ms;
-	stats->many_ms = (double)s->best[shown] * ms;
+	stats->one_ms = (double)s->median[0] * ms;
+	stats->many_ms = (double)s->median[shown] * ms;
 }
 
 typedef struct
@@ -1657,6 +1724,78 @@ bool video_test_rows_rounds(char *detail, size_t detailSize)
 
 	free(src);
 	free(dst);
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+bool video_test_rows_pick(char *detail, size_t detailSize)
+{
+	enum { STEADY = 1000 };
+	static const struct
+	{
+		Uint64 typical, odd;
+		int odd_frames, want;
+		const char *fault;
+	} cases[] = {
+		{ 800, 800, 0, 2, "a steady 20% gain was not taken" },
+		{ 700, 5000, 2, 1, "a count that spikes on two frames in twenty was taken" },
+		{ STEADY, 100, 1, 1, "one fast frame decided the pick" },
+		{ 800, 50000, 1, 2, "one slow frame outweighed a steady gain" },
+		{ 950, 950, 0, 1, "a gain under 10% was taken" },
+	};
+	static VideoRowsSite s;
+	const char *fault = NULL;
+
+	for (size_t k = 0; k < COUNTOF(cases) && fault == NULL; ++k)
+	{
+		s = (VideoRowsSite){ .candidates = 2, .count = { 1, 2 } };
+		for (int i = 0; i < VIDEO_ROWS_TUNE_FRAMES; ++i)
+		{
+			s.samples[0][i] = STEADY;
+			s.samples[1][i] = i < cases[k].odd_frames ? cases[k].odd : cases[k].typical;
+		}
+		video_rows_measure(&s);
+		if (s.count[video_rows_pick(&s)] != cases[k].want)
+			fault = cases[k].fault;
+	}
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+bool video_test_rows_watch(char *detail, size_t detailSize)
+{
+	enum { STEADY = 1000, PIXELS = 4321 };
+	static const struct
+	{
+		Uint64 cost[2];
+		bool alternate, retune;
+		const char *fault;
+	} cases[] = {
+		{ { 2500, 2500 }, false, true, "two slower windows did not start a new tuning run" },
+		{ { 400, 400 }, false, true, "two faster windows did not start a new tuning run" },
+		{ { 2500, STEADY }, false, false, "one slower window started a new tuning run" },
+		{ { 2500, 2500 }, true, false, "windows half at the tuned cost started a new tuning run" },
+	};
+	static VideoRowsSite s;
+	const char *fault = NULL;
+
+	for (size_t k = 0; k < COUNTOF(cases) && fault == NULL; ++k)
+	{
+		s = (VideoRowsSite){ .pixels = PIXELS, .candidates = 2, .count = { 1, 2 }, .chosen = 2,
+		                     .tuned = STEADY };
+		for (int window = 0; window < 2; ++window)
+			for (int frame = 0; frame < VIDEO_ROWS_WATCH_FRAMES; ++frame)
+				video_rows_watch(VIDEO_ROWS_REPLAY, &s,
+				                 cases[k].alternate && (frame & 1) != 0 ? STEADY
+				                                                        : cases[k].cost[window]);
+		const bool retuned = s.chosen == 0 && s.tune_frame == 0 && s.pixels == PIXELS;
+		if (retuned != cases[k].retune)
+			fault = cases[k].fault;
+	}
+
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);
 	return fault == NULL;

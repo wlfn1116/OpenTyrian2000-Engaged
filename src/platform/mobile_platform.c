@@ -11,7 +11,6 @@
 
 #include "draw.h"
 #include "font.h"
-#include "fonthand.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"

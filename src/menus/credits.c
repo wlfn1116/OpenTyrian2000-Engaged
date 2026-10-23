@@ -17,16 +17,16 @@
  */
 #include "credits.h"
 
+#include "audio.h"
 #include "config.h"
 #include "draw.h"
 #include "episodes.h"
 #include "file.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_loop.h"
 #include "game_state.h"
 #include "helptext.h"
 #include "keyboard.h"
-#include "loudness.h"
 #include "mtrand.h"
 #include "network.h"
 #include "palette.h"

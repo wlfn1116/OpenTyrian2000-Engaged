@@ -176,7 +176,6 @@ typedef struct
 	JE_WeaponType raw[CUSTOM_WEAPON_MODES][CUSTOM_POWER_LEVELS];
 } CustomWeaponSlot;
 
-extern CustomWeaponSlot customWeaponLib[CUSTOM_WEAPON_LIB_MAX];
 extern int customWeaponLibCount;    // number of saved weapons (always >= 1)
 extern int customWeaponCurrentSlot; // which slot the working copy came from
 
@@ -189,9 +188,6 @@ int  customWeaponLibraryNew(void);
 int  customWeaponLibraryDuplicate(void);
 int  customWeaponLibraryDelete(void);
 
-// Load / save the whole library file. Load is called once from customWeaponInit (seeds a
-// single slot from the working copy when no file exists yet).
-void customWeaponLibraryLoad(void);
 bool customWeaponLibrarySave(void);
 
 /* Serialize or replace the full library. Serialization first captures the active design. */

@@ -17,20 +17,19 @@
  */
 #include "high_scores.h"
 
+#include "audio.h"
 #include "config.h"
 #include "console_platform.h"
 #include "draw.h"
 #include "endless.h"
 #include "episodes.h"
 #include "font.h"
-#include "fonthand.h"
 #include "game_state.h"
 #include "helptext.h"
 #include "item_prices.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "lds_play.h"
-#include "loudness.h"
 #include "menus.h"
 #include "mouse.h"
 #include "network.h"
@@ -592,6 +591,28 @@ static bool JE_endlessRecordPageInput(EndlessPageState *page)
 	}
 }
 
+static void JE_drawHighScoreRows(int board, int y0)
+{
+	char buffer[64];
+
+	for (Uint8 i = 0; i < 3; ++i)
+	{
+		const int y = y0 + 10 * i;
+
+		if (t2kHighScores[board][i].difficulty > 9)
+			t2kHighScores[board][i].difficulty = 0;
+
+		const int rank = t2kHighScores[board][i].difficulty;
+		const Sint64 score = t2kHighScores[board][i].score;
+		const char *name = t2kHighScores[board][i].playerName;
+
+		snprintf(buffer, sizeof buffer, "~#%d:~  %lld", i + 1, (long long)score);
+		JE_textShade(VGAScreen, 20, y, buffer, 15, 0, FULL_SHADE);
+		JE_textShade(VGAScreen, 110, y, name, 15, 2, FULL_SHADE);
+		JE_textShade(VGAScreen, 250, y, difficultyNameB[rank], 15, rank + (rank == 0 ? 0 : -1), FULL_SHADE);
+	}
+}
+
 void JE_highScoreScreen(void)
 {
 	set_menu_centered(true);
@@ -685,46 +706,16 @@ void JE_highScoreScreen(void)
 
 		// Draw 1-player scores.
 		if (boardOnePlayer >= 0)
-			draw_font_hv_shadow(VGAScreen, xCenter, 55, miscText[46], normal_font, centered, 15, -3, false, 2);
-
-		for (Uint8 i = 0; boardOnePlayer >= 0 && i < 3; ++i)
 		{
-			const int y = 75 + 10 * i;
-
-			if (t2kHighScores[boardOnePlayer][i].difficulty > 9)
-				t2kHighScores[boardOnePlayer][i].difficulty = 0;
-
-			const int rank = t2kHighScores[boardOnePlayer][i].difficulty;
-			const Sint64 score = t2kHighScores[boardOnePlayer][i].score;
-			const char *playerName = t2kHighScores[boardOnePlayer][i].playerName;
-
-			snprintf(buffer, sizeof buffer, "~#%d:~  %lld", i + 1, (long long)score);
-			JE_textShade(VGAScreen, 20, y, buffer, 15, 0, FULL_SHADE);
-			JE_textShade(VGAScreen, 110, y, playerName, 15, 2, FULL_SHADE);
-			JE_textShade(VGAScreen, 250, y, difficultyNameB[rank], 15, rank + (rank == 0 ? 0 : -1), FULL_SHADE);
+			draw_font_hv_shadow(VGAScreen, xCenter, 55, miscText[46], normal_font, centered, 15, -3, false, 2);
+			JE_drawHighScoreRows(boardOnePlayer, 75);
 		}
 
 		// Draw 2-player scores.
 		if (boardTwoPlayer >= 0)
 		{
 			draw_font_hv_shadow(VGAScreen, xCenter, 120, miscText[47], normal_font, centered, 15, -3, false, 2);
-
-			for (Uint8 i = 0; i < 3; ++i)
-			{
-				const int y = 135 + 10 * i;
-
-				if (t2kHighScores[boardTwoPlayer][i].difficulty > 9)
-					t2kHighScores[boardTwoPlayer][i].difficulty = 0;
-
-				const int rank = t2kHighScores[boardTwoPlayer][i].difficulty;
-				const Sint64 score = t2kHighScores[boardTwoPlayer][i].score;
-				const char *teamName = t2kHighScores[boardTwoPlayer][i].playerName;
-
-				snprintf(buffer, sizeof buffer, "~#%d:~  %lld", i + 1, (long long)score);
-				JE_textShade(VGAScreen, 20, y, buffer, 15, 0, FULL_SHADE);
-				JE_textShade(VGAScreen, 110, y, teamName, 15, 2, FULL_SHADE);
-				JE_textShade(VGAScreen, 250, y, difficultyNameB[rank], 15, rank + (rank == 0 ? 0 : -1), FULL_SHADE);
-			}			
+			JE_drawHighScoreRows(boardTwoPlayer, 135);
 		}
 
 		// Draw paging controls. A breakdown or a pending erase owns the page, so paging away is

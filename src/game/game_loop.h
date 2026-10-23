@@ -64,6 +64,7 @@ Uint32 rl_presented_frames(void);
 extern float debug_interp_alpha;  // last presented interpolation fraction
 
 extern char tempStr[31];
+extern JE_word armorShipDelay;
 
 void JE_createNewEventEnemy(JE_byte enemytypeofs, JE_word enemyoffset, Sint16 uniqueShapeTableI);
 int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_SingleEnemyType *e);
@@ -74,24 +75,14 @@ Sint16 JE_newEnemy(int enemyOffset, Uint16 eDatI, Sint16 uniqueShapeTableI);
 void JE_main(void);
 JE_byte backup_save_slot(void);
 void game_loop_deinit(void);
+void game_loop_register_rollback(void);
 // The flip/spotlight special code and inverted-control flag, from level and Endless state.
 void JE_deriveStarShowSpecial(void);
 
-// Arcade weapon-ball randomizer: re-scan enemyDat for the front/rear/sidekick/special ball
-// pools. Must run after any load that rewrites enemyDat (JE_loadItemDat).
-void JE_buildArcadeBallPools(void);
 bool arcadeSuperPickupRandomActive(void);
 
-// Experimental variable-timestep ship. Its mouse scale matches classic movement.
-#define VT_MOUSE_SENS 0.25f
-extern bool vt_ship;       // runtime toggle for render-rate ship simulation
-bool vt_ship_owns(void);   // true when VT currently controls the player ship
-void vt_ship_step(float dt);  // advance the ship one displayed frame (dt in ticks)
-void vt_ship_tick(void);   // per-35Hz-tick reconcile (external forces / reposition)
-// Netplay only: commit this tick's accumulated VT motion to the ship as whole pixels, so the
-// netcode transmits it as its per-tick delta. No-op outside a network game.
-void vt_ship_commit_net(int player_index);
-void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy);  // inter-tick ship move for tracking shots
-void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy);  // mouse steering dir for twiddle codes
+extern JE_boolean editShip1, editShip2;
+extern JE_byte doIced;
+extern JE_boolean infiniteShot;
 
 #endif /* GAME_LOOP_H */

@@ -144,4 +144,7 @@ extern int endlessCoopCourse;
 void shopWaitNotice(const char *text, const char *detail, const char *hint);
 void shopWaitFrame(void);
 
+extern JE_word mapOrigin, mapPNum;
+extern JE_byte mapPlanet[5], mapSection[5];
+
 #endif // GAME_MENU_H

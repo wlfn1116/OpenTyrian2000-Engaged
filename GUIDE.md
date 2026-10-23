@@ -31,7 +31,8 @@ Graphics settings are under **Setup > Graphics**.
   builds default it off.
 - **Render Threads** sets how many CPU threads draw each frame, including the
   ice, water and lava effects, with or without Sub-pixel. **Auto** times each
-  choice and keeps the fastest, preferring fewer threads when the gain is small.
+  choice and keeps the fastest, preferring fewer threads when the gain is small,
+  and times them again when a scene gets much cheaper or costlier to draw.
   A number fixes the count, and 1 keeps drawing on one thread. The choices stop
   at your CPU's thread count, 16 at most; consoles offer up to three.
 - **FPS Cap** accepts a preset or a typed number. Zero means Uncapped. Online
@@ -392,6 +393,10 @@ also provide **Clear Logs**.
 Debug Mode adds a menu to shops and the in-game menu, plus a level browser. It
 can change equipment, cash, cheats, difficulty, and Endless effects. Rollback
 Self-Test writes failures to `rollback_selftest.log`.
+
+**Perf Overlay** in the in-game debug menu shows the frame rate, enemy and shot
+counts, how a frame's time splits between logic, drawing, and presenting, and
+the thread count each drawing stage uses.
 
 ## Extra menu and Ship Editor
 

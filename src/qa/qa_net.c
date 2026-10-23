@@ -1,10 +1,13 @@
 /* Two-peer protocol checks driven by testing/network_fault_test.py. Each process validates its
  * view of the other, covering one-way state loss and rendezvous ordering. */
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "ingame_menu.h"
 #include "qa.h"
 
 #include "config.h"
 #include "crashlog.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "endless_internal.h"
 #include "episodes.h"

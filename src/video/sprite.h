@@ -127,6 +127,7 @@ Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank 
 bool sprite2_ink_bounds(Sprite2_array, unsigned int index, int *x0, int *y0, int *x1, int *y1);
 bool sprite2_hflip_equal(Sprite2_array, unsigned int index, unsigned int mirrored_index);
 bool sprite2_has_color(Sprite2_array, unsigned int index, Uint8 color);
+Uint8 sprite2x2_pixel(Sprite2_array, unsigned int index, int x, int y);
 
 void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);

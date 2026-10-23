@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include "backgrnd.h"
+#include "background.h"
 
 #include "config.h"
 #include "game_state.h"
@@ -44,11 +44,11 @@ JE_word backMove, backMove2, backMove3;
 // Per-layer Endless smooth-scroll increments; zero when inactive.
 int endlessScrollExtraPx1 = 0, endlessScrollExtraPx2 = 0, endlessScrollExtraPx3 = 0;
 
-// See backgrnd.h: true during the sim tick (advance scroll as normal), false
+// See background.h: true during the sim tick (advance scroll as normal), false
 // during interpolated re-draws so the layer can be re-rendered without moving.
 bool background_advance = true;
 
-// See backgrnd.h. bgScrollDeltaY holds the true per-tick vertical scroll of each layer;
+// See background.h. bgScrollDeltaY holds the true per-tick vertical scroll of each layer;
 // bgMarginRows widens the interpolation's bottom margin under a speed modifier.
 int bgScrollDeltaY[4] = { 0, 0, 0, 0 };
 int bgMarginRows = 1;
@@ -412,7 +412,7 @@ static inline void blit_expanded_row(Uint8 *dst, const Uint8 *src, int n, bool b
 #define BG_SCALED_ROW_BYTES \
 	((BG_TILE_COUNT + BG_EDGE_TILES) * BG_TILE_W * RENDER_SUPERSAMPLE_LIMIT + sizeof(Swar8))
 
-// Supersampled tile row (render-list replay only; see backgrnd.h). One loop serves
+// Supersampled tile row (render-list replay only; see background.h). One loop serves
 // both the copy and blend ops; the pixel math matches the 1x blitters above.
 static void background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale,
                                   bool blend, int mirror_w, int col0, Uint8 *expanded)
@@ -535,7 +535,7 @@ static Uint8 **bg_mirror_setup(Uint8 **map, Uint8 **base, int width, int col0, i
 	return map;
 }
 
-// See backgrnd.h: layer 1's per-tick scroll delta and pan phase, published separately from its
+// See background.h: layer 1's per-tick scroll delta and pan phase, published separately from its
 // rows so a tick that skips the draw still leaves them current.
 void bg_publish_layer_1_phase(void)
 {
@@ -1246,7 +1246,7 @@ static inline void lava_span_scaled(Uint8 *dp, const Uint8 *sp, int row_step, bo
 }
 
 /* Supersampled smoothie filters preserve the 1x math and scan order on an NxN
- * buffer. See backgrnd.h for spatial scaling. */
+ * buffer. See background.h for spatial scaling. */
 void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
 	lava_filter_scaled_subrows(dst, src, scale, 0, scale);
@@ -1679,7 +1679,7 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 /* Register private starfield simulation state. Public scroll state is registered
  * centrally in rollback_state.c. */
 
-void backgrnd_register_rollback(void)
+void background_register_rollback(void)
 {
 	rollback_register("bg.starfieldStars", starfield_stars, sizeof(starfield_stars));
 	rollback_register("bg.starfieldPhase", &starfield_spawn_phase, sizeof(starfield_spawn_phase));

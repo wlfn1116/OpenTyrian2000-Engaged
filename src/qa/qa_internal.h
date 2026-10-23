@@ -1,6 +1,10 @@
 #ifndef QA_INTERNAL_H
 #define QA_INTERNAL_H
 
+#ifndef QA_INTERNAL_ACCESS
+#error "qa_internal.h is private to src/qa; include qa.h"
+#endif
+
 #include "opentyr.h"
 
 Uint32 qa_prng(Uint32 *state);

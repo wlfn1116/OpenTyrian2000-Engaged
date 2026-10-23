@@ -229,7 +229,8 @@ static void nn_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 
 	void *tmp_ptr;
 	int dst_pitch;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 
 	if (scale == 1)
 	{
@@ -262,9 +263,10 @@ static void nn_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	assert(scale == dst_height / height);
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
-	
+
 	for (int y = height; y > 0; y--)
 	{
 		src_temp = src;
@@ -374,7 +376,8 @@ static void nn_fit(SDL_Surface *src_surface, SDL_Texture *dst_texture, VideoRows
 	const int *const x_map = nn_fit_x_map(src_surface->w, dst_width);
 
 	void *tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 
 	const FitRows job = { src_surface->pixels, src_surface->pitch, src_surface->w, src_surface->h,
 	                      tmp_ptr, dst_pitch, dst_width, dst_height, x_map };
@@ -537,6 +540,47 @@ bool video_scale_test_nn_rows(char *detail, size_t detailSize)
 	return fault == NULL;
 }
 
+bool video_scale_test_lock_failure(char *detail, size_t detailSize)
+{
+	static Uint8 src_pixels[vga_width * vga_height];
+	const char *fault = NULL;
+
+	SDL_Surface *const src = SDL_CreateRGBSurfaceFrom(src_pixels, vga_width, vga_height, 8,
+	                                                  vga_width, 0, 0, 0, 0);
+	SDL_Surface *const target = SDL_CreateRGBSurface(0, 16, 16, 32, 0, 0, 0, 0);
+	SDL_Renderer *const renderer = target != NULL ? SDL_CreateSoftwareRenderer(target) : NULL;
+	if (src == NULL || renderer == NULL)
+		fault = "could not create a software renderer";
+
+	for (uint i = 0; i < scalers_count && fault == NULL; ++i)
+	{
+		const ScalerFunction fns[] = { scalers[i].scaler16, scalers[i].scaler32 };
+		for (size_t k = 0; k < COUNTOF(fns) && fault == NULL; ++k)
+		{
+			if (fns[k] == NULL)
+				continue;
+			SDL_Texture *const texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB888,
+			                                               SDL_TEXTUREACCESS_STATIC,
+			                                               scalers[i].width, scalers[i].height);
+			if (texture == NULL)
+			{
+				fault = "could not create a static texture";
+				break;
+			}
+			fns[k](src, texture);
+			SDL_DestroyTexture(texture);
+		}
+	}
+
+	if (renderer != NULL)
+		SDL_DestroyRenderer(renderer);
+	SDL_FreeSurface(target);
+	SDL_FreeSurface(src);
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
 static void scale2x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 {
 	Uint8 *src = src_surface->pixels, *src_temp;
@@ -550,7 +594,8 @@ static void scale2x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	          width = vga_width;   // src_surface->w
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
 	
 	int prevline, nextline;
@@ -613,7 +658,8 @@ static void scale2x_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	          width = vga_width;   // src_surface->w
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
 	
 	int prevline, nextline;
@@ -676,7 +722,8 @@ static void scale3x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	          width = vga_width;   // src_surface->w
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
 	
 	int prevline, nextline;
@@ -753,7 +800,8 @@ static void scale3x_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 	          width = vga_width;   // src_surface->w
 
 	void* tmp_ptr;
-	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
+	if (SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch) != 0)
+		return;
 	dst = tmp_ptr;
 	
 	int prevline, nextline;

@@ -24,7 +24,7 @@ license.doc,7869,text,"DOS-era manual, licence or ordering document in CP437 tex
 loudness.awe,34382,audio,AWE32 instrument bank from the DOS build,not read at runtime,,raw/audio/loudness.awe,1
 manual.doc,32318,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/manual.txt,1
 modems.txt,3082,text,Modem notes for the DOS network game,not read at runtime,,text/docs/modems.txt,1
-music.mus,153482,audio,LOUDNESS (LDS) AdLib songs,src/audio/loudness.c load_music; src/audio/lds_play.c lds_load,loudness.c,audio/music,1
+music.mus,153482,audio,LOUDNESS (LDS) AdLib songs,src/audio/audio.c load_music; src/audio/lds_play.c lds_load,audio.c,audio/music,1
 netarena.exe,74678,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/netarena.exe|raw/executable/netarena.exe.strings.txt,1
 netarena.pcx,22826,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/netarena.png,1
 netfont1.pcx,8692,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/netfont1.png,1
@@ -86,7 +86,7 @@ shapesz.dat,243712,tiles,Level tileset: 600 slots of 24x28 tiles,"src/level/leve
 shipedit.doc,17174,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/shipedit.txt,1
 shipedit.exe,82944,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/shipedit.exe|raw/executable/shipedit.exe.strings.txt,1
 shipedit.pcx,13450,graphics,Backdrop for the DOS ship editor,not read at runtime,,images/pcx/shipedit.png,1
-tshp2.pcx,62168,graphics,PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen,src/video/pcxload.c JE_loadPCX; src/level/level_load.c; src/endless/endless.c ENDLESS_RUNEND_PIC,endless.c|level_load.c|pcxload.c,images/pcx/tshp2.png,1
+tshp2.pcx,62168,graphics,PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen,src/video/picload.c JE_loadPCX; src/level/level_load.c; src/endless/endless.c ENDLESS_RUNEND_PIC,endless.c|level_load.c|picload.c,images/pcx/tshp2.png,1
 tyrend.anm,3315848,animation,"Episode 3 ending animation, DeluxePaint LPF","src/video/animlib.c JE_playAnim, from the ']A' episode script command",level_load.c,anim/tyrend,1
 tyrian.cdt,1125,text,"Credits roll, one colour-tagged line per record",src/menus/credits.c JE_playCredits,credits.c,text/credits.txt,1
 tyrian.exe,4336,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/tyrian.exe|raw/executable/tyrian.exe.strings.txt,1
@@ -101,7 +101,7 @@ tyrian3.lvl,393398,levels,"Level headers, event scripts and tile maps; some also
 tyrian4.lvl,800006,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat,episodes.c|lvllib.c,gamedata/episode_4|levels/episode_4,1
 tyrianc.shp,444862,sprites,Christmas variant of tyrian.shp,"src/video/sprite.c JE_loadMainShapeTables, when the Christmas theme is on",opentyr.c|setup_menu.c|sprite.c,sprites/tyrianc_shp,1
 tyrset.pcx,53766,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/tyrset.png,1
-user1.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,editship.c|sprite_viewer.c,sprites/standalone/user1_shp,1
+user1.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,ship_editor.c|sprite_viewer.c,sprites/standalone/user1_shp,1
 user2.shp,27674,sprites,Player ship written by the DOS ship editor,not read at runtime; browsable in the debug sprite viewer,sprite_viewer.c,sprites/standalone/user2_shp,1
 voices.snd,132767,audio,Voice samples in the same format,src/audio/sfx.c loadSndFile,sfx.c,audio/voices,1
 voicesc.snd,188275,audio,Christmas variant of voices.snd,"src/audio/sfx.c loadSndFile, when the Christmas theme is on",opentyr.c|setup_menu.c|sfx.c,audio/voices_christmas,1

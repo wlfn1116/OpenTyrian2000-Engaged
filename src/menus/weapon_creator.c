@@ -17,7 +17,7 @@
  */
 #include "weapon_creator.h"
 
-#include "backgrnd.h"
+#include "background.h"
 #include "config.h"
 #include "console_platform.h"
 #include "custom_weapon.h"
@@ -25,7 +25,6 @@
 #include "episodes.h"
 #include "explosions.h"
 #include "font.h"
-#include "fonthand.h"
 #include "game_menu.h"
 #include "game_state.h"
 #include "joystick.h"

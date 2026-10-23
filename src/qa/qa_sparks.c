@@ -1,3 +1,6 @@
+#define ENDLESS_INTERNAL_ACCESS
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
@@ -6,7 +9,6 @@
 #include "episodes.h"
 #include "endless_internal.h"
 #include "fnv1a.h"
-#include "game_menu.h"   // JE_getLevelSections
 #include "game_state.h"
 #include "mtrand.h"
 #include "palette.h"

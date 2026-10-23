@@ -322,7 +322,7 @@ void wnm_set_volume(uint8_t vol255)
 	SDL_AtomicSet(&g_vol_dirty, 1);
 }
 
-#else  /* !_WIN32; no native MIDI; loudness.c only calls these on Windows */
+#else  /* !_WIN32; no native MIDI; audio.c only calls these on Windows */
 
 bool wnm_init(void) { return false; }
 void wnm_quit(void) {}

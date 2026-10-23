@@ -348,9 +348,9 @@
    "bytes": 153482,
    "category": "audio",
    "contents": "LOUDNESS (LDS) AdLib songs",
-   "readBy": "src/audio/loudness.c load_music; src/audio/lds_play.c lds_load",
+   "readBy": "src/audio/audio.c load_music; src/audio/lds_play.c lds_load",
    "sourceReferences": [
-    "loudness.c"
+    "audio.c"
    ],
    "dumpedTo": [
     "audio/music"
@@ -1222,11 +1222,11 @@
    "bytes": 62168,
    "category": "graphics",
    "contents": "PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen",
-   "readBy": "src/video/pcxload.c JE_loadPCX; src/level/level_load.c; src/endless/endless.c ENDLESS_RUNEND_PIC",
+   "readBy": "src/video/picload.c JE_loadPCX; src/level/level_load.c; src/endless/endless.c ENDLESS_RUNEND_PIC",
    "sourceReferences": [
     "endless.c",
     "level_load.c",
-    "pcxload.c"
+    "picload.c"
    ],
    "dumpedTo": [
     "images/pcx/tshp2.png"
@@ -1446,7 +1446,7 @@
    "contents": "Player ship written by the DOS ship editor",
    "readBy": "not read at runtime; browsable in the debug sprite viewer",
    "sourceReferences": [
-    "editship.c",
+    "ship_editor.c",
     "sprite_viewer.c"
    ],
    "dumpedTo": [

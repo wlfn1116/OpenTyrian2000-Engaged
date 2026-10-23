@@ -17,25 +17,24 @@
  */
 #include "setup_menu.h"
 
+#include "audio.h"
 #include "config.h"
 #include "console_platform.h"
 #include "crashlog.h"
 #include "custom_episode.h"
 #include "custom_weapon.h"
+#include "debug_flags.h"
 #include "destruct.h"
 #include "draw.h"
-#include "editship.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
-#include "fonthand.h"
 #include "game_state.h"
 #include "help.h"
 #include "helptext.h"
 #include "joystick.h"
 #include "jukebox.h"
 #include "keyboard.h"
-#include "loudness.h"
 #include "mouse.h"
 #include "net_savexfer.h"
 #include "palette.h"
@@ -43,6 +42,7 @@
 #include "picload.h"
 #include "save_menu.h"
 #include "sfx.h"
+#include "ship_editor.h"
 #include "sndmast.h"
 #include "sprite.h"
 #include "timing.h"
@@ -652,7 +652,7 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 				break;
 		}
 		music_device = (MusicDevice)next;
-		restart_audio();  // apply live (tears down + re-inits the synth; see loudness.c)
+		restart_audio();  // apply live (tears down + re-inits the synth; see audio.c)
 		JE_playSampleNum(S_CURSOR);
 		break;
 	}
@@ -1387,7 +1387,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		}
 
 		// Draw status text. The Music Synth row shows live SoundFont status so the
-		// user can confirm FluidSynth actually picked up their .sf2 (see loudness.c).
+		// user can confirm FluidSynth actually picked up their .sf2 (see audio.c).
 		const char *statusText = menuItems[*selectedMenuItemIndex].description;
 		char musicSynthStatus[128];
 		if (menuItems[*selectedMenuItemIndex].id == MENU_ITEM_ENH_PRESET)

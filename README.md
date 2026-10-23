@@ -45,6 +45,8 @@ The simulation runs at 35 Hz. Smooth Motion interpolates between ticks,
 while Sub-pixel rendering removes whole-pixel stepping from slow movement
 and scrolling. Smooth Motion also moves your own ship at the display rate,
 rollback network games included. Demos keep fixed-step ship movement.
+Frames are drawn on several CPU threads where the machine has them; see
+[Graphics](GUIDE.md#graphics).
 
 Default keyboard controls:
 
@@ -140,8 +142,8 @@ make sanitize-test
 ```
 
 The suite covers deterministic replays, rollback state, save codecs, upstream
-save import, malformed inputs, Endless generation, and two network peers behind
-a fault proxy.
+save import, malformed inputs, Endless generation, pixel loops and threaded
+rendering, and two network peers behind a fault proxy.
 [testing/README.md](testing/README.md) lists the runners and scenarios.
 
 GitHub Actions builds Windows (x86-64 and ARM64), Linux (x86-64 and aarch64),

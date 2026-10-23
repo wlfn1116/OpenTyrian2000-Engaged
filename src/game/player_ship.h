@@ -20,7 +20,6 @@
 
 #include "opentyr.h"
 #include "player.h"
-#include "sprite.h"
 
 // One ship's Endless per-tick work; see the definition in player_ship.c.
 void endlessPerShipTick(Player *this_player);
@@ -48,5 +47,23 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum);
 extern bool button[4]; // fire, left fire, right fire, mode swap
 extern bool pause_pressed, ingamemenu_pressed, changefire_pressed;
 extern JE_shortint constantLastX;
+
+extern const JE_word linkGunWeapons[38];
+extern const JE_byte keyboardCombos[26][8];
+extern const JE_byte shipCombos[19][3];
+extern JE_byte SFCurrentCode[2][21];
+extern JE_byte SFExecuted[2];
+extern const uint shadowYDist;
+extern JE_real optionSatelliteRotate;
+extern JE_integer optionAttachmentMove[2];                               // per sidekick slot (LEFT/RIGHT)
+extern JE_boolean optionAttachmentLinked[2], optionAttachmentReturn[2];  // so both front options can launch
+extern JE_byte chargeWait, chargeLevel, chargeMax, chargeGr, chargeGrWait;
+
+void JE_resetPlayerOptions(Player *this_player);
+JE_byte JE_playerDamage(JE_byte temp, Player *);
+// Clear enemy shots within a ship's Countermeasures reach; return the number cleared.
+int endlessCountermeasureBurst(Player *);
+// Firing patterns this ship's rear bay offers; clamp its weapon_mode against its own, not another's.
+JE_word JE_portConfigs(const Player *this_player);
 
 #endif /* PLAYER_SHIP_H */

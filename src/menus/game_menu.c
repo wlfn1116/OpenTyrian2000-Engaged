@@ -17,21 +17,20 @@
  */
 #include "game_menu.h"
 
-#include "backgrnd.h"
+#include "audio.h"
+#include "background.h"
 #include "config.h"
 #include "crashlog.h"
-#include "custom_episode.h"
 #include "custom_weapon.h"
+#include "debug_flags.h"
 #include "debug_levels.h"
 #include "debug_menu.h"
 #include "draw.h"
-#include "editship.h"
 #include "endless.h"
-#include "endless_internal.h"  // the QA auto-visit reaches the perk and course internals
 #include "episodes.h"
+#include "extra_ships.h"
 #include "file.h"
 #include "font.h"
-#include "fonthand.h"
 #include "game_loop.h"
 #include "game_state.h"
 #include "help.h"
@@ -41,7 +40,6 @@
 #include "keyboard.h"
 #include "level_end.h"
 #include "level_load.h"
-#include "loudness.h"
 #include "mouse.h"
 #include "musmast.h"
 #include "net_style.h"
@@ -51,6 +49,7 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
+#include "player_ship.h"
 #include "qa.h"
 #include "render_list.h"
 #include "save_menu.h"
@@ -67,6 +66,21 @@
 
 #include <assert.h>
 #include <math.h>
+
+/* MapView Data */
+JE_word mapOrigin, mapPNum;
+JE_byte mapPlanet[5], mapSection[5]; /* [1..5] */
+
+static const JE_word PGR[21] /* [1..21] */ =
+{
+	4,
+	1,2,3,
+	41-21,57-21,73-21,89-21,105-21,
+	121-21,137-21,153-21,
+	151,151,151,151,73-21,73-21,1,2,4
+	/*151,151,151*/
+};
+static const JE_byte PAni[21] /* [1..21] */ = {1,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1};
 
 enum
 {
@@ -885,7 +899,7 @@ static void configure_endless_perk_list_menu(void)
 	const int cap   = (int)(sizeof(perkListId) / sizeof(perkListId[0]));
 	int n = 0;
 	for (int id = 0; id < total && n < cap; ++id)
-		if (endlessPerkEffective(endlessEconomyIndex(), id) > 0)
+		if (endlessPerkGetOwnedFor(endlessEconomyIndex(), id) > 0)
 			perkListId[n++] = id;
 
 	if (n == 0)              // nothing earned yet: a single "(none yet)" info row
@@ -991,7 +1005,7 @@ static void draw_endless_perk_list(void)
 		{
 			char cnt[16];
 			snprintf(cnt, sizeof(cnt), "%d/%d",
-			         endlessPerkEffective(endlessEconomyIndex(), id), endlessPerkMaxStack(id));
+			         endlessPerkGetOwnedFor(endlessEconomyIndex(), id), endlessPerkMaxStack(id));
 
 			char cline[18];
 			if (selected)  // match the row's highlight so the count brightens with its name
@@ -2204,7 +2218,7 @@ static void qa_shop_auto_visit(void)
 	if (endlessMode && endlessPerkPending)
 	{
 		if (endlessPerkChoiceCount() > 0)
-			endlessPerkGrant(me, endlessPerkChoice[0], 1);
+			qa_net_grant_perk_offer(me, 0);
 		endlessPerkPending = false;
 	}
 
@@ -2230,7 +2244,7 @@ static void qa_shop_auto_visit(void)
 	if (endlessCoop() && !endlessLockedSortie && !gameLoaded)
 	{
 		const int course = 0;
-		endlessCourseMod[course] = qa_net_zone_mods(endlessRunDepth);
+		qa_net_force_course_mods(course);
 		if (endlessLocalPlayerCharts())
 		{
 			endlessCoopCourse = course;

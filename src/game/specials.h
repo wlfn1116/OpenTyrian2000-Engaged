@@ -35,4 +35,24 @@ void JE_doSpecialShot(JE_byte playernum, uint *armor, uint *shield);
 void JE_resetTwiddleClocks(void);  // both ships' twiddle cooldowns and any twiddle-owned flare
 void JE_resetSpecialState(void);   // every special clock and live flare, so none crosses a level
 
+void specials_register_rollback(void);
+
+extern JE_boolean fireButtonHeld;
+extern JE_byte zinglonDuration;
+extern JE_byte zinglonRamp;
+extern bool zinglonPillarActive[2];
+extern int zinglonPillarCX[2];
+extern int zinglonPillarTemp[2];
+extern JE_byte astralDuration;
+extern JE_word flareDuration;
+extern JE_boolean flareStart;
+extern JE_shortint flareColChg;
+extern bool flareOwnsFilter;  // the live screen grade is a flare's, not the level's (see specials.c)
+extern JE_byte specialWait;
+extern JE_byte nextSpecialWait;
+extern JE_boolean spraySpecial;
+extern JE_shortint specialWeaponFilter, specialWeaponFreq;
+extern JE_word specialWeaponWpn;
+extern JE_boolean linkToPlayer;
+
 #endif /* SPECIALS_H */

@@ -1,4 +1,7 @@
 /* Project-owned unit, property, serialization, and replay tests. */
+#define ENDLESS_INTERNAL_ACCESS
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
@@ -111,7 +114,7 @@ bool qa_net_guest_esc = false;
 
 /* Deterministic modifier slates for the first ten Endless wire-test zones.
  * Later zones fly unmodified. */
-Uint64 qa_net_zone_mods(int depth)
+static Uint64 qa_net_zone_mods(int depth)
 {
 	static const Uint64 slate[] = {
 		ENDLESS_MOD_TOPSY | ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_GRAVITY,
@@ -137,6 +140,16 @@ Uint64 qa_net_zone_mods(int depth)
 	if (depth < 0 || depth >= (int)COUNTOF(slate))
 		return 0;
 	return slate[depth];
+}
+
+void qa_net_grant_perk_offer(uint p, int offer)
+{
+	endlessPerkGrant(p, endlessPerkChoice[offer], 1);
+}
+
+void qa_net_force_course_mods(int course)
+{
+	endlessCourseMod[course] = qa_net_zone_mods(endlessRunDepth);
 }
 
 // First sidekick whose mount style matches, for the wire tests' loadout profiles. Styles:

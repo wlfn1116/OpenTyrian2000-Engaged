@@ -22,13 +22,14 @@
 #include "draw.h"
 #include "endless.h"
 #include "episodes.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_state.h"
 #include "health_bars.h"
 #include "helptext.h"
 #include "net_style.h"
 #include "network.h"
 #include "player.h"
+#include "player_ship.h"
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
@@ -1018,6 +1019,25 @@ void JE_drawOptionLevel(void)
 			fill_rectangle_xy(VGAScreenSeg, HUD_X(268), 127 + (temp - 1) * 6, HUD_X(269), 127 + 3 + (temp - 1) * 6, 193 + ((player[1].items.sidekick_level - 100) == temp) * 11);
 		}
 	}
+}
+
+void JE_drawOptions(void)
+{
+	SDL_Surface *temp_surface = VGAScreen;
+	VGAScreen = VGAScreenSeg;
+
+	JE_labelAmmoSidekicks();  // keep the shop names in step with the magazines we're about to load
+
+	const uint first_player = dual_ship_mode() ? 0 : (twoPlayerMode ? 1 : 0);
+	const uint last_player = dual_ship_mode() ? COUNTOF(player) : first_player + 1;
+	for (uint p = first_player; p < last_player; ++p)
+		JE_resetPlayerOptions(&player[p]);
+
+	JE_drawOptionsHUD();
+
+	VGAScreen = temp_surface;
+
+	JE_drawOptionLevel();
 }
 
 int shieldGaugeFlash[2] = { 0, 0 };

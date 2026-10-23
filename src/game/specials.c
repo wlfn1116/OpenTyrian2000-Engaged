@@ -18,6 +18,7 @@
 #include "specials.h"
 
 #include "config.h"
+#include "debug_flags.h"
 #include "demo.h"
 #include "endless.h"
 #include "episodes.h"
@@ -35,6 +36,32 @@
 #include "video.h"
 
 #include <stdlib.h>
+
+JE_boolean fireButtonHeld;
+
+/* Player Shot Data */
+JE_byte     zinglonDuration;
+JE_byte     zinglonRamp;  /* how far the pillar has opened so far, 0..ZINGLON_PILLAR_HALF_W */
+
+/* Per-ship Soul of Zinglon render request. The display pass places the pillar at
+ * the render-rate ship position; an explicit flag distinguishes spent duration 1. */
+bool        zinglonPillarActive[2] = { false, false };
+int         zinglonPillarCX[2] = { 0, 0 };    /* pillar centre x in game_screen coords */
+int         zinglonPillarTemp[2] = { 0, 0 };  /* pillar half-width */
+
+JE_byte     astralDuration;
+JE_word     flareDuration;
+JE_boolean  flareStart;
+JE_shortint flareColChg;
+/* The rollback-registered flare grade is separate from the level's screen filter. */
+bool        flareOwnsFilter = false;
+JE_byte     specialWait;
+JE_byte     nextSpecialWait;
+JE_boolean  spraySpecial;
+
+JE_shortint specialWeaponFilter, specialWeaponFreq;
+JE_word     specialWeaponWpn;
+JE_boolean  linkToPlayer;
 
 // Give shotless boosted specials a green ship-centered Salvo cue.
 static void salvo_special_burst(JE_byte playerNum)

@@ -1,3 +1,6 @@
+#define ENDLESS_INTERNAL_ACCESS
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
@@ -7,7 +10,7 @@
 #include "endless.h"
 #include "episodes.h"
 #include "endless_internal.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_menu.h"
 #include "lvllib.h"
 #include "mtrand.h"

@@ -19,6 +19,7 @@
 
 #include "config.h"
 #include "custom_weapon.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "explosions.h"
 #include "game_state.h"

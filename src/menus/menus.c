@@ -21,7 +21,6 @@
 #include "custom_episode.h"
 #include "episodes.h"
 #include "font.h"
-#include "fonthand.h"
 #include "game_state.h"  // SA_NONE, for clearing the one-player rulesets before an online session
 #include "keyboard.h"
 #include "mouse.h"
@@ -155,6 +154,85 @@ void menuKeySelect(size_t *selectedIndex, size_t count, bool *action, bool *canc
 	}
 }
 
+typedef struct
+{
+	const char *header;
+	const char *message;
+	int yMessage;
+	const char *const *items;
+	size_t count;
+	const JE_boolean *available;
+	size_t availableCount;
+	int yMenuItems;
+	int dyMenuItems;
+	int *widths;
+	size_t selectedIndex;
+	bool restart;
+} MenuList;
+
+static int menuRunList(MenuList *menu)
+{
+	/* Menus render on a 320px virtual screen centered in the wider VGA buffer; center on
+	 * the virtual width, not vga_width, or text drifts when the menu is blitted over. */
+	const int xCenter = 320 / 2;
+	const int yMenuHeader = 20;
+	const int hMenuItem = 13;
+
+	for (; ; )
+	{
+		if (menu->restart)
+		{
+			JE_loadPic(VGAScreen2, 2, false);
+
+			// Draw header.
+			draw_font_hv_shadow(VGAScreen2, xCenter, yMenuHeader, menu->header, large_font,
+			                    centered, 15, -3, false, 2);
+
+			// The message is part of the backdrop; only the options redraw per frame.
+			if (menu->message != NULL)
+				JE_dString(VGAScreen2, JE_fontCenter(menu->message, SMALL_FONT_SHAPES),
+				           menu->yMessage, menu->message, SMALL_FONT_SHAPES);
+		}
+
+		// Restore background and header.
+		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		// Draw menu items.
+		for (size_t i = 0; i < menu->count; ++i)
+		{
+			const bool selected = i == menu->selectedIndex;
+			const bool disabled = menu->available != NULL && i < menu->availableCount
+			                      && !menu->available[i];
+
+			menuDrawItem(menu->items[i], xCenter, menu->yMenuItems + menu->dyMenuItems * (int)i,
+			             -4 + (selected ? 2 : 0) + (disabled ? -4 : 0), &menu->widths[i]);
+		}
+
+		const bool mouseMoved = menuPresentAndWait(&menu->restart);
+
+		// Handle interaction.
+
+		bool action = false;
+		bool cancel = false;
+
+		if (mouseMoved || newmouse)
+			action = menuPointerSelect(&menu->selectedIndex, menu->count, xCenter, menu->yMenuItems,
+			                           menu->dyMenuItems, hMenuItem, menu->widths);
+
+		menuKeySelect(&menu->selectedIndex, menu->count, &action, &cancel);
+
+		if (action)
+			return (int)menu->selectedIndex;
+
+		if (cancel)
+		{
+			fade_black(15);
+
+			return -1;
+		}
+	}
+}
+
 bool gameplaySelect(void)
 {
 	enum MenuItemIndex
@@ -171,124 +249,85 @@ bool gameplaySelect(void)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
-	bool restart = true;
+	// Endless is inserted after Full Game; later labels keep their gameplay_name indices.
+	const char *items[MENU_ITEM_COUNT];
+	for (size_t i = 0; i < MENU_ITEM_COUNT; ++i)
+		items[i] = (i == MENU_ITEM_ENDLESS)             ? "1 Player Endless"
+		         : (i == MENU_ITEM_NETWORK)             ? "Online Multiplayer"
+		         : (i == MENU_ITEM_1_PLAYER_FULL_GAME)  ? gameplay_name[1]
+		         :                                        gameplay_name[i];
 
-	const size_t menuItemsCount = MENU_ITEM_COUNT;
-	size_t selectedIndex = MENU_ITEM_1_PLAYER_FULL_GAME;
-
-	/* Menus render on a 320px virtual screen centered in the wider VGA buffer; center on
-	 * the virtual width, not vga_width, or text drifts when the menu is blitted over. */
-	const int xCenter = 320 / 2;
-	const int yMenuHeader = 20;
-	const int yMenuItems = 54;
-	const int dyMenuItems = 24;
-	const int hMenuItem = 13;
 	int wMenuItem[MENU_ITEM_COUNT] = { 0 };
+	MenuList menu = {
+		.header = gameplay_name[0],
+		.items = items,
+		.count = MENU_ITEM_COUNT,
+		.yMenuItems = 54,
+		.dyMenuItems = 24,
+		.widths = wMenuItem,
+		.selectedIndex = MENU_ITEM_1_PLAYER_FULL_GAME,
+		.restart = true,
+	};
 
 	for (; ; )
 	{
-		if (restart)
-		{
-			JE_loadPic(VGAScreen2, 2, false);
+		const int choice = menuRunList(&menu);
+		if (choice < 0)
+			return false;
 
-			// Draw header.
-			draw_font_hv_shadow(VGAScreen2, xCenter, yMenuHeader, gameplay_name[0], large_font, centered, 15, -3, false, 2);
+		switch (choice)
+		{
+		case MENU_ITEM_1_PLAYER_FULL_GAME:
+		case MENU_ITEM_1_PLAYER_ARCADE:
+		case MENU_ITEM_1_PLAYER_TIMED_BATTLE:
+		case MENU_ITEM_2_PLAYER_ARCADE:
+		{
+			JE_playSampleNum(S_SELECT);
+
+			fade_black(10);
+
+			onePlayerAction = choice == MENU_ITEM_1_PLAYER_ARCADE;
+			timedBattleMode = choice == MENU_ITEM_1_PLAYER_TIMED_BATTLE;
+			twoPlayerMode = choice == MENU_ITEM_2_PLAYER_ARCADE;
+			endlessMode = false;
+			return true;
 		}
-
-		// Restore background and header.
-		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
-
-		// Draw menu items.
-		for (size_t i = 0; i < menuItemsCount; ++i)
+		case MENU_ITEM_ENDLESS:
 		{
-			// Endless is inserted after Full Game; later labels keep their gameplay_name indices.
-			const char *const text = (i == MENU_ITEM_ENDLESS)             ? "1 Player Endless"
-			                       : (i == MENU_ITEM_NETWORK)             ? "Online Multiplayer"
-			                       : (i == MENU_ITEM_1_PLAYER_FULL_GAME)  ? gameplay_name[1]
-			                       :                                        gameplay_name[i];
+			JE_playSampleNum(S_SELECT);
 
-			const bool selected = i == selectedIndex;
+			fade_black(10);
 
-			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
-			             &wMenuItem[i]);
+			onePlayerAction = false;
+			timedBattleMode = false;
+			twoPlayerMode = false;
+			endlessMode = true;  // newGame() runs the endless setup (difficulty + first shop)
+			return true;
 		}
-
-		const bool mouseMoved = menuPresentAndWait(&restart);
-
-		// Handle interaction.
-
-		bool action = false;
-		bool cancel = false;
-
-		if (mouseMoved || newmouse)
-			action = menuPointerSelect(&selectedIndex, menuItemsCount, xCenter, yMenuItems,
-			                           dyMenuItems, hMenuItem, wMenuItem);
-
-		menuKeySelect(&selectedIndex, menuItemsCount, &action, &cancel);
-
-		if (action)
+		case MENU_ITEM_NETWORK:
 		{
-			switch (selectedIndex)
+			JE_playSampleNum(S_SELECT);
+
+			// Continue only after the lobby returns with an initialized peer connection.
+			if (!networkLobby())
 			{
-			case MENU_ITEM_1_PLAYER_FULL_GAME:
-			case MENU_ITEM_1_PLAYER_ARCADE:
-			case MENU_ITEM_1_PLAYER_TIMED_BATTLE:
-			case MENU_ITEM_2_PLAYER_ARCADE:
-			{
-				JE_playSampleNum(S_SELECT);
-
-				fade_black(10);
-
-				onePlayerAction = selectedIndex == MENU_ITEM_1_PLAYER_ARCADE;
-				timedBattleMode = selectedIndex == MENU_ITEM_1_PLAYER_TIMED_BATTLE;
-				twoPlayerMode = selectedIndex == MENU_ITEM_2_PLAYER_ARCADE;
-				endlessMode = false;
-				return true;
-			}
-			case MENU_ITEM_ENDLESS:
-			{
-				JE_playSampleNum(S_SELECT);
-
-				fade_black(10);
-
-				onePlayerAction = false;
-				timedBattleMode = false;
-				twoPlayerMode = false;
-				endlessMode = true;  // newGame() runs the endless setup (difficulty + first shop)
-				return true;
-			}
-			case MENU_ITEM_NETWORK:
-			{
-				JE_playSampleNum(S_SELECT);
-
-				// Continue only after the lobby returns with an initialized peer connection.
-				if (!networkLobby())
-				{
-					restart = true;
-					break;
-				}
-
-				onePlayerAction = false;
-				timedBattleMode = false;
-				endlessMode = false;
-				coopCampaignMode = false;
-				coopEndlessMode = false;
-				superTyrian = false;
-				superArcadeMode = SA_NONE;
-				endlessMode = network_game_type == NETWORK_GAME_ENDLESS;
-				twoPlayerMode = true;  // networkStartScreen() sets the rest up
-				return true;
-			}
-			default:
+				menu.restart = true;
 				break;
 			}
+
+			onePlayerAction = false;
+			timedBattleMode = false;
+			endlessMode = false;
+			coopCampaignMode = false;
+			coopEndlessMode = false;
+			superTyrian = false;
+			superArcadeMode = SA_NONE;
+			endlessMode = network_game_type == NETWORK_GAME_ENDLESS;
+			twoPlayerMode = true;  // networkStartScreen() sets the rest up
+			return true;
 		}
-
-		if (cancel)
-		{
-			fade_black(15);
-
-			return false;
+		default:
+			break;
 		}
 	}
 }
@@ -397,95 +436,61 @@ bool episodeSelect(void)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
-	bool restart = true;
-
 	// Hide Custom when no valid container is installed.
 	customEpisodeScan();
 	const bool haveCustom = customEpisodeCount() > 0;
 	const size_t stockCount = EPISODE_AVAILABLE;
-	const size_t menuItemsCount = stockCount + (haveCustom ? 1 : 0);
-	size_t selectedIndex = 0;
 
-	const int xCenter = 320 / 2;
-	const int yMenuHeader = 20;
-	// Six rows require tighter spacing.
-	const int yMenuItems = haveCustom ? 46 : 50;
-	const int dyMenuItems = haveCustom ? 24 : 30;
-	const int hMenuItem = 13;
+	const char *items[EPISODE_AVAILABLE + 1];
+	for (size_t i = 0; i < stockCount; ++i)
+		items[i] = episode_name[i + 1];
+	items[stockCount] = "Custom";
+
 	int wMenuItem[EPISODE_AVAILABLE + 1] = { 0 };
+	MenuList menu = {
+		.header = episode_name[0],
+		.items = items,
+		.count = stockCount + (haveCustom ? 1 : 0),
+		.available = episodeAvail,
+		.availableCount = stockCount,
+		// Six rows require tighter spacing.
+		.yMenuItems = haveCustom ? 46 : 50,
+		.dyMenuItems = haveCustom ? 24 : 30,
+		.widths = wMenuItem,
+		.selectedIndex = 0,
+		.restart = true,
+	};
 
 	for (; ; )
 	{
-		if (restart)
-		{
-			JE_loadPic(VGAScreen2, 2, false);
-
-			// Draw header.
-			draw_font_hv_shadow(VGAScreen2, xCenter, yMenuHeader, episode_name[0], large_font, centered, 15, -3, false, 2);
-		}
-
-		// Restore background and header.
-		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
-
-		// Draw menu items.
-		for (size_t i = 0; i < menuItemsCount; ++i)
-		{
-			const char* const text = (i < stockCount) ? episode_name[i + 1] : "Custom";
-
-			const bool selected = i == selectedIndex;
-			const bool disabled = (i < stockCount) && !episodeAvail[i];
-
-			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i,
-			             -4 + (selected ? 2 : 0) + (disabled ? -4 : 0), &wMenuItem[i]);
-		}
-
-		const bool mouseMoved = menuPresentAndWait(&restart);
-
-		// Handle interaction.
-
-		bool action = false;
-		bool cancel = false;
-
-		if (mouseMoved || newmouse)
-			action = menuPointerSelect(&selectedIndex, menuItemsCount, xCenter, yMenuItems,
-			                           dyMenuItems, hMenuItem, wMenuItem);
-
-		menuKeySelect(&selectedIndex, menuItemsCount, &action, &cancel);
-
-		if (action)
-		{
-			if (selectedIndex >= stockCount)
-			{
-				JE_playSampleNum(S_SELECT);
-
-				fade_black(10);
-
-				if (customEpisodeSelect())
-					return true;
-
-				restart = true;   // backed out of the Custom list; fade this menu back in
-			}
-			else if (episodeAvail[selectedIndex])
-			{
-				JE_playSampleNum(S_SELECT);
-
-				fade_black(10);
-
-				JE_initEpisode(selectedIndex + 1);
-				initial_episode_num = episodeNum;
-				return true;
-			}
-			else
-			{
-				JE_playSampleNum(S_SPRING);
-			}
-		}
-
-		if (cancel)
-		{
-			fade_black(15);
-
+		const int choice = menuRunList(&menu);
+		if (choice < 0)
 			return false;
+
+		if ((size_t)choice >= stockCount)
+		{
+			JE_playSampleNum(S_SELECT);
+
+			fade_black(10);
+
+			if (customEpisodeSelect())
+				return true;
+
+			menu.restart = true;   // backed out of the Custom list; fade this menu back in
+		}
+		else if (episodeAvail[choice])
+		{
+			JE_playSampleNum(S_SELECT);
+
+			fade_black(10);
+
+			JE_initEpisode(choice + 1);
+			initial_episode_num = episodeNum;
+			return true;
+		}
+		else
+		{
+			JE_playSampleNum(S_SPRING);
 		}
 	}
 }
@@ -495,96 +500,54 @@ bool difficultySelect(void)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
-	bool restart = true;
-
-	const size_t menuItemsCount = COUNTOF(difficulty_name) - 1;
 	// Show every difficulty without the classic unlock codes.
-	size_t menuItemsVisibleCount = menuItemsCount;
-	size_t selectedIndex = 1;
+	const char *items[COUNTOF(difficulty_name) - 1];
+	for (size_t i = 0; i < COUNTOF(items); ++i)
+		items[i] = difficulty_name[i + 1];
 
-	/* See gameplaySelect() for rationale behind using a fixed 320px center. */
-	const int xCenter = 320 / 2;
-	const int yMenuHeader = 20;
-	const int yMenuItems = 54;
-	const int dyMenuItems = 24;
-	const int hMenuItem = 13;
-	int wMenuItem[COUNTOF(difficulty_name) - 1] = { 0 };
+	int wMenuItem[COUNTOF(items)] = { 0 };
+	MenuList menu = {
+		.header = difficulty_name[0],
+		.items = items,
+		.count = COUNTOF(items),
+		.yMenuItems = 54,
+		.dyMenuItems = 24,
+		.widths = wMenuItem,
+		.selectedIndex = 1,
+		.restart = true,
+	};
 
-	for (; ; )
+	const int choice = menuRunList(&menu);
+	if (choice < 0)
+		return false;
+
+	JE_playSampleNum(S_SELECT);
+
+	switch (choice)
 	{
-		if (restart)
-		{
-			JE_loadPic(VGAScreen2, 2, false);
-
-			// Draw header.
-			draw_font_hv_shadow(VGAScreen2, xCenter, yMenuHeader, difficulty_name[0], large_font, centered, 15, -3, false, 2);
-		}
-
-		// Restore background and header.
-		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
-
-		// Draw menu items.
-		for (size_t i = 0; i < menuItemsVisibleCount; ++i)
-		{
-			const char *const text = difficulty_name[i + 1];
-
-			const bool selected = i == selectedIndex;
-
-			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
-			             &wMenuItem[i]);
-		}
-
-		const bool mouseMoved = menuPresentAndWait(&restart);
-
-		// Handle interaction.
-
-		bool action = false;
-		bool cancel = false;
-
-		if (mouseMoved || newmouse)
-			action = menuPointerSelect(&selectedIndex, menuItemsVisibleCount, xCenter, yMenuItems,
-			                           dyMenuItems, hMenuItem, wMenuItem);
-
-		menuKeySelect(&selectedIndex, menuItemsVisibleCount, &action, &cancel);
-
-		if (action)
-		{
-			JE_playSampleNum(S_SELECT);
-
-			switch (selectedIndex)
-			{
-			case 0:
-				difficultyLevel = DIFFICULTY_EASY;
-				break;
-			case 1:
-				difficultyLevel = DIFFICULTY_NORMAL;
-				break;
-			case 2:
-				difficultyLevel = DIFFICULTY_HARD;
-				break;
-			case 3:
-				difficultyLevel = DIFFICULTY_IMPOSSIBLE;
-				break;
-			case 4:
-				difficultyLevel = DIFFICULTY_SUICIDE;
-				break;
-			case 5:
-				difficultyLevel = DIFFICULTY_LORD_OF_GAME;
-				break;
-			}
-
-			fade_black(10);
-
-			return true;
-		}
-
-		if (cancel)
-		{
-			fade_black(15);
-
-			return false;
-		}
+	case 0:
+		difficultyLevel = DIFFICULTY_EASY;
+		break;
+	case 1:
+		difficultyLevel = DIFFICULTY_NORMAL;
+		break;
+	case 2:
+		difficultyLevel = DIFFICULTY_HARD;
+		break;
+	case 3:
+		difficultyLevel = DIFFICULTY_IMPOSSIBLE;
+		break;
+	case 4:
+		difficultyLevel = DIFFICULTY_SUICIDE;
+		break;
+	case 5:
+		difficultyLevel = DIFFICULTY_LORD_OF_GAME;
+		break;
 	}
+
+	fade_black(10);
+
+	return true;
 }
 
 // Host start choice. Returns a loaded slot (1-based), 0 for new game, or -1 to cancel.
@@ -607,82 +570,43 @@ int networkHostStartSelect(void)
 	}
 
 	static const char *const menu_item[] = { "New Game", "Load Game" };
-	const size_t menuItemsCount = COUNTOF(menu_item);
 
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
-	bool restart = true;
-	size_t selectedIndex = 0;
-
-	/* See gameplaySelect() for rationale behind using a fixed 320px center. */
-	const int xCenter = 320 / 2;
-	// Only two options, so center the pair on the screen rather than stacking them under
-	// the header: the block spans dyMenuItems + hMenuItem, so 81 puts its center on y=99.5.
-	const int yMenuItems = 81;
-	const int dyMenuItems = 24;  // half a row of breathing space between the two options
-	const int hMenuItem = 13;
 	int wMenuItem[COUNTOF(menu_item)] = { 0 };
+	MenuList menu = {
+		// Same header the lobby screens carry.
+		.header = "Online Multiplayer",
+		.items = menu_item,
+		.count = COUNTOF(menu_item),
+		// Only two options, so center the pair on the screen rather than stacking them under
+		// the header: the block spans dyMenuItems + hMenuItem, so 81 puts its center on y=99.5.
+		.yMenuItems = 81,
+		.dyMenuItems = 24,  // half a row of breathing space between the two options
+		.widths = wMenuItem,
+		.selectedIndex = 0,
+		.restart = true,
+	};
 
 	for (; ; )
 	{
-		if (restart)
-		{
-			JE_loadPic(VGAScreen2, 2, false);
-
-			// Same header the lobby screens carry.
-			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
-		}
-
-		// Restore background.
-		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
-
-		// Draw menu items.
-		for (size_t i = 0; i < menuItemsCount; ++i)
-		{
-			const char *const text = menu_item[i];
-
-			const bool selected = i == selectedIndex;
-
-			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
-			             &wMenuItem[i]);
-		}
-
-		const bool mouseMoved = menuPresentAndWait(&restart);
-
-		// Handle interaction.
-
-		bool action = false;
-		bool cancel = false;
-
-		if (mouseMoved || newmouse)
-			action = menuPointerSelect(&selectedIndex, menuItemsCount, xCenter, yMenuItems,
-			                           dyMenuItems, hMenuItem, wMenuItem);
-
-		menuKeySelect(&selectedIndex, menuItemsCount, &action, &cancel);
-
-		if (action)
-		{
-			JE_playSampleNum(S_SELECT);
-
-			fade_black(10);
-
-			if (selectedIndex == 0)
-				return 0;
-
-			const int slot = JE_loadScreen(true, false);
-			if (slot > 0)
-				return slot;
-
-			restart = true;  // backed out of the load menu; redraw this screen
-		}
-
-		if (cancel)
-		{
-			fade_black(15);
-
+		const int choice = menuRunList(&menu);
+		if (choice < 0)
 			return -1;
-		}
+
+		JE_playSampleNum(S_SELECT);
+
+		fade_black(10);
+
+		if (choice == 0)
+			return 0;
+
+		const int slot = JE_loadScreen(true, false);
+		if (slot > 0)
+			return slot;
+
+		menu.restart = true;  // backed out of the load menu; redraw this screen
 	}
 }
 
@@ -690,7 +614,6 @@ int networkHostStartSelect(void)
 bool networkDisconnectSavePrompt(const char *message)
 {
 	static const char *const menu_item[] = { "Save Game", "Don't Save" };
-	const size_t menuItemsCount = COUNTOF(menu_item);
 
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
@@ -706,72 +629,29 @@ bool networkDisconnectSavePrompt(const char *message)
 	wait_noinput(true, true, true);
 	newkey = newmouse = false;
 
-	bool restart = true;
-	size_t selectedIndex = 0;
-
-	/* See gameplaySelect() for rationale behind using a fixed 320px center. */
-	const int xCenter = 320 / 2;
-	const int yMessage = 60;
-	const int yMenuItems = 110;
-	const int dyMenuItems = 24;
-	const int hMenuItem = 13;
 	int wMenuItem[COUNTOF(menu_item)] = { 0 };
+	MenuList menu = {
+		.header = "Online Multiplayer",
+		.message = message,
+		.yMessage = 60,
+		.items = menu_item,
+		.count = COUNTOF(menu_item),
+		.yMenuItems = 110,
+		.dyMenuItems = 24,
+		.widths = wMenuItem,
+		.selectedIndex = 0,
+		.restart = true,
+	};
 
-	for (; ; )
-	{
-		if (restart)
-		{
-			JE_loadPic(VGAScreen2, 2, false);
+	const int choice = menuRunList(&menu);
+	if (choice < 0)
+		return false;
 
-			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
+	JE_playSampleNum(S_SELECT);
 
-			// The message is part of the backdrop; only the two options redraw per frame.
-			JE_dString(VGAScreen2, JE_fontCenter(message, SMALL_FONT_SHAPES), yMessage, message, SMALL_FONT_SHAPES);
-		}
+	fade_black(10);
 
-		// Restore background and message.
-		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
-
-		// Draw menu items.
-		for (size_t i = 0; i < menuItemsCount; ++i)
-		{
-			const char *const text = menu_item[i];
-
-			const bool selected = i == selectedIndex;
-
-			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
-			             &wMenuItem[i]);
-		}
-
-		const bool mouseMoved = menuPresentAndWait(&restart);
-
-		// Handle interaction.
-
-		bool action = false;
-		bool cancel = false;
-
-		if (mouseMoved || newmouse)
-			action = menuPointerSelect(&selectedIndex, menuItemsCount, xCenter, yMenuItems,
-			                           dyMenuItems, hMenuItem, wMenuItem);
-
-		menuKeySelect(&selectedIndex, menuItemsCount, &action, &cancel);
-
-		if (action)
-		{
-			JE_playSampleNum(S_SELECT);
-
-			fade_black(10);
-
-			return selectedIndex == 0;
-		}
-
-		if (cancel)
-		{
-			fade_black(15);
-
-			return false;
-		}
-	}
+	return choice == 0;
 }
 
 bool timedBattleSelect(void)
@@ -779,73 +659,32 @@ bool timedBattleSelect(void)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
-	bool restart = true;
+	const char *items[COUNTOF(timed_battle_name) - 1];
+	for (size_t i = 0; i < COUNTOF(items); ++i)
+		items[i] = timed_battle_name[i + 1];
 
-	const size_t menuItemsCount = COUNTOF(timed_battle_name) - 1;
-	size_t selectedIndex = 0;
+	int wMenuItem[COUNTOF(items)] = { 0 };
+	MenuList menu = {
+		.header = timed_battle_name[0],
+		.items = items,
+		.count = COUNTOF(items),
+		.yMenuItems = 54,
+		.dyMenuItems = 24,
+		.widths = wMenuItem,
+		.selectedIndex = 0,
+		.restart = true,
+	};
 
-	/* See gameplaySelect() for rationale behind using a fixed 320px center. */
-	const int xCenter = 320 / 2;
-	const int yMenuHeader = 20;
-	const int yMenuItems = 54;
-	const int dyMenuItems = 24;
-	const int hMenuItem = 13;
-	int wMenuItem[COUNTOF(timed_battle_name) - 1] = { 0 };
+	const int choice = menuRunList(&menu);
+	if (choice < 0)
+		return false;
 
-	for (; ; )
-	{
-		if (restart)
-		{
-			JE_loadPic(VGAScreen2, 2, false);
+	JE_playSampleNum(S_SELECT);
 
-			// Draw header.
-			draw_font_hv_shadow(VGAScreen2, xCenter, yMenuHeader, timed_battle_name[0], large_font, centered, 15, -3, false, 2);
-		}
+	fade_black(10);
 
-		// Restore background and header.
-		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
-
-		// Draw menu items.
-		for (size_t i = 0; i < menuItemsCount; ++i)
-		{
-			const char *const text = timed_battle_name[i + 1];
-
-			const bool selected = i == selectedIndex;
-
-			menuDrawItem(text, xCenter, yMenuItems + dyMenuItems * (int)i, -4 + (selected ? 2 : 0),
-			             &wMenuItem[i]);
-		}
-
-		const bool mouseMoved = menuPresentAndWait(&restart);
-
-		// Handle interaction.
-
-		bool action = false;
-		bool cancel = false;
-
-		if (mouseMoved || newmouse)
-			action = menuPointerSelect(&selectedIndex, menuItemsCount, xCenter, yMenuItems,
-			                           dyMenuItems, hMenuItem, wMenuItem);
-
-		menuKeySelect(&selectedIndex, menuItemsCount, &action, &cancel);
-
-		if (action)
-		{
-			JE_playSampleNum(S_SELECT);
-
-			fade_black(10);
-
-			// Time Battle selections map directly to episodes 1 and 5.
-			JE_initEpisode(selectedIndex == 0 ? 1 : 5);
-			timeBattleSelection = selectedIndex + 1;
-			return true;
-		}
-
-		if (cancel)
-		{
-			fade_black(15);
-
-			return false;
-		}
-	}
+	// Time Battle selections map directly to episodes 1 and 5.
+	JE_initEpisode(choice == 0 ? 1 : 5);
+	timeBattleSelection = choice + 1;
+	return true;
 }

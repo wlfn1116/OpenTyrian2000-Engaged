@@ -53,7 +53,7 @@ int  customSidekickAnimate   = 1;   // animate while firing
 CustomBulletPreset customBulletPreset[CUSTOM_BULLET_PRESET_MAX];
 int                customBulletPresetCount = 0;
 
-CustomWeaponSlot customWeaponLib[CUSTOM_WEAPON_LIB_MAX];
+static CustomWeaponSlot customWeaponLib[CUSTOM_WEAPON_LIB_MAX];
 int              customWeaponLibCount    = 0;
 int              customWeaponCurrentSlot = 0;
 
@@ -1460,7 +1460,9 @@ bool customWeaponLibrarySave(void)
 	return ok;
 }
 
-void customWeaponLibraryLoad(void)
+// Load the whole library file. Called once from customWeaponInit (seeds a single slot from the
+// working copy when no file exists yet).
+static void customWeaponLibraryLoad(void)
 {
 	FILE *f = dir_fopen_warn(get_user_directory(), "custom_weapons.cfg", "r");
 	if (f == NULL)

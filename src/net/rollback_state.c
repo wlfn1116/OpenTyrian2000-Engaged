@@ -22,11 +22,14 @@
 #include "level_load.h"
 #include "rollback.h"
 
-#include "backgrnd.h"
+#include "background.h"
 #include "config.h"
+#include "debug_flags.h"
+#include "endless.h"
 #include "episodes.h"
 #include "explosions.h"
-#include "fonthand.h"
+#include "font.h"
+#include "game_loop.h"
 #include "game_state.h"
 #include "mouse.h"
 #include "mtrand.h"
@@ -36,13 +39,9 @@
 #include "player_ship.h"
 #include "sfx.h"
 #include "shots.h"
+#include "specials.h"
 #include "sprite.h"
 #include "timing.h"
-
-void specials_register_rollback(void);
-void backgrnd_register_rollback(void);
-void endless_combat_register_rollback(void);
-void endless_register_rollback(void);
 
 /* Rebind player[].lives after restore instead of trusting its copied interior
  * pointer. player_lives_port preserves the original weapon-bay ownership. */
@@ -277,7 +276,7 @@ void rollback_state_register_globals(void)
 
 	/* File-local statics registered by their owners. */
 	specials_register_rollback();
-	backgrnd_register_rollback();
+	background_register_rollback();
 	endless_combat_register_rollback();
 	endless_register_rollback();
 }

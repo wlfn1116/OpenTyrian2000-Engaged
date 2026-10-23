@@ -1,11 +1,14 @@
 /* Endless base-level selection, music, and per-zone setup. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "endless.h"
 #include "endless_internal.h"
 
 #include "config.h"
 #include "custom_episode.h"
 #include "episodes.h"
+#include "game_menu.h"
 #include "game_state.h"
 #include "lvllib.h"
 #include "lvlmast.h"

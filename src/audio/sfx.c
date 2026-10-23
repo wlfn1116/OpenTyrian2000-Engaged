@@ -17,8 +17,8 @@
  */
 #include "sfx.h"
 
+#include "audio.h"
 #include "file.h"
-#include "loudness.h"
 #include "opentyr.h"
 #include "sndmast.h"
 

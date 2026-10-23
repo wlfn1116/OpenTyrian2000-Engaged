@@ -32,6 +32,15 @@ It covers:
 - both-player Endless perks, shops, drives, deaths, and course choices
 - deterministic generation across 768 course seeds
 - hostile values, truncation, string termination, and guard bytes
+- SSE2, NEON, and SWAR pixel loops against frozen scalar copies
+- threaded frame rows, Render Threads tuning, band replay, and scalers whose
+  texture lock fails
+
+The suite lives in `src/qa/`. `qa_run_unit_suite` in `qa.c` calls the checks in
+a fixed order, which some of them rely on. The topic files beside it, such as
+`qa_course.c`, `qa_saves.c`, and `qa_render.c`, hold the checks, and
+`qa_internal.h` declares them. `qa_net.c` is the in-game side of the network
+fault suite.
 
 ## Replay suite
 

@@ -1,9 +1,10 @@
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
-#include "backgrnd.h"
+#include "background.h"
 #include "config.h"
-#include "game_menu.h"   // JE_getLevelSections
 #include "game_state.h"
 #include "palette.h"
 #include "render_list.h"
@@ -84,6 +85,24 @@ void qa_test_present_paths(void)
 	snprintf(label, sizeof(label), "frame-row rounds tune on whole frames%s%s",
 	         detail[0] ? ": " : "", detail);
 	qa_check(rowRounds, label);
+
+	detail[0] = '\0';
+	const bool rowPick = video_test_rows_pick(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "frame-row tuning picks on median and 95th percentile%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(rowPick, label);
+
+	detail[0] = '\0';
+	const bool rowWatch = video_test_rows_watch(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "frame-row tuning restarts when a site's cost moves%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(rowWatch, label);
+
+	detail[0] = '\0';
+	const bool lockFail = video_scale_test_lock_failure(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "every scaler skips a texture it cannot lock%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(lockFail, label);
 
 	detail[0] = '\0';
 	const bool nnRows = video_scale_test_nn_rows(detail, sizeof(detail));

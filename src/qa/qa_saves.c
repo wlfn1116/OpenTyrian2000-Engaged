@@ -1,12 +1,15 @@
+#define QA_INTERNAL_ACCESS
+
 #include "qa.h"
 #include "qa_internal.h"
 
 #include "config.h"
 #include "custom_weapon.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "episodes.h"
 #include "explosions.h"
-#include "game_menu.h"   // JE_getLevelSections
+#include "game_menu.h"
 #include "game_state.h"
 #include "net_style.h"
 #include "network.h"

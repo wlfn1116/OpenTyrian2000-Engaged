@@ -28,6 +28,7 @@
 #include "vita_net.h"
 #else
 #include "SDL_net.h"
+#endif
 
 /* Byte-wise big-endian access for unaligned packed fields. */
 static inline void net_bytes_write16(Uint16 value, void *areap)
@@ -66,7 +67,6 @@ static inline Uint32 net_bytes_read32(const void *areap)
 #define SDLNet_Write32 net_bytes_write32
 #define SDLNet_Read16  net_bytes_read16
 #define SDLNet_Read32  net_bytes_read32
-#endif
 
 // The 64-bit pair, big-endian and byte-wise like the ones above; wallets travel with these.
 static inline void net_bytes_write64(Uint64 value, void *areap)
@@ -270,7 +270,7 @@ bool network_interface_carries_lan(unsigned int flags);
 int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void));
 
 extern UDPpacket *packet_out_temp;
-extern UDPpacket *packet_in[], *packet_out[],
+extern UDPpacket *packet_in[],
                  *packet_state_in[], *packet_state_out[];
 
 extern uint thisPlayerNum;
@@ -399,11 +399,6 @@ void network_level_rendezvous(void);
  * earlier announcement; receiving the peer's marker is sufficient to enter the level. */
 void network_level_loaded_rendezvous(void);
 
-/* Non-blocking, retractable ready barrier for Destruct and Timed Battle cards. Poll returns -1 for
- * no update, 0 for withdrawal, and 1 for ready; release also waits for network_is_sync(). */
-void network_ready_publish(bool ready);
-int network_ready_peer(void);
-
 typedef struct
 {
 	bool localReady, peerReady;
@@ -496,7 +491,7 @@ void network_debug_state_pack(Uint8 *buf);
 void network_debug_state_adopt(const Uint8 *buf, bool in_level);
 
 /* Expert-tunable capacity, shared by the two blocks that carry them: this one and the settings
- * block. game_state.c asserts that its table fits, so a seventh tunable needs no wire change. */
+ * block. debug_flags.c asserts that its table fits, so a seventh tunable needs no wire change. */
 #define NETWORK_EXPERT_SLOTS 8
 
 // Independent simulation hashes used to identify the first divergent subsystem.

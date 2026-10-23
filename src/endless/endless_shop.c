@@ -1,20 +1,22 @@
 /* Endless outpost stock, pricing, E-Shop purchases, and gambles. */
 
+#define ENDLESS_INTERNAL_ACCESS
+
 #include "credits.h"
 #include "endless.h"
 #include "endless_internal.h"
 
+#include "audio.h"
 #include "config.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "episodes.h"
-#include "fonthand.h"
+#include "font.h"
 #include "game_menu.h"
 #include "game_state.h"
 #include "helptext.h"
 #include "keyboard.h"
 #include "level_load.h"
-#include "loudness.h"
 #include "lvlmast.h"
 #include "musmast.h"
 #include "network.h"
@@ -723,7 +725,7 @@ static void endlessApplyGambleOutcome(int id, Sint64 cost)
 		snprintf(msg, GAMBLE_MSG_LEN, "Loan shark: +$%lld, +25%% tax", (long long)win);
 		break;
 	}
-	case EGO_NITRO:  // +damage next sector, but any hit is fatal (see game_state.c damage path)
+	case EGO_NITRO:  // +damage next sector, but any hit is fatal (see player_ship.c damage path)
 		endlessPurchasedMods[me()] |= (ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_NITRO);
 		SDL_strlcpy(msg, "Nitro: +power, one hit kills!", GAMBLE_MSG_LEN);
 		break;

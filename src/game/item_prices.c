@@ -18,6 +18,7 @@
 #include "item_prices.h"
 
 #include "config.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "episodes.h"
 #include "game_menu.h"

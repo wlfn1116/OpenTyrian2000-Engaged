@@ -24,7 +24,6 @@
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
-#include "fonthand.h"
 #include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"

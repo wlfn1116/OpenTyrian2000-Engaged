@@ -20,6 +20,7 @@
 
 #include "config.h"
 #include "opentyr.h"
+#include "sprite.h"
 
 enum
 {
@@ -257,5 +258,8 @@ void JE_getShipInfo(void);
 void JE_initPlayerData(void);
 const char *JE_getName(JE_byte pnum);
 void JE_playerScoreLabel(JE_byte pnum, char *out, size_t outSize);
+
+extern JE_word shipGr, shipGr2;
+extern Sprite2_array *shipGrPtr, *shipGr2ptr;
 
 #endif // PLAYER_H
