@@ -7,7 +7,7 @@
    "bytes": 36169,
    "category": "text",
    "contents": "Datacube text for one episode",
-   "readBy": "src/game_menu.c load_cube",
+   "readBy": "src/menus/game_menu.c load_cube",
    "sourceReferences": [
     "episodes.c"
    ],
@@ -21,7 +21,7 @@
    "bytes": 8108,
    "category": "text",
    "contents": "Datacube text for one episode",
-   "readBy": "src/game_menu.c load_cube",
+   "readBy": "src/menus/game_menu.c load_cube",
    "sourceReferences": [
     "episodes.c"
    ],
@@ -35,7 +35,7 @@
    "bytes": 12294,
    "category": "text",
    "contents": "Datacube text for one episode",
-   "readBy": "src/game_menu.c load_cube",
+   "readBy": "src/menus/game_menu.c load_cube",
    "sourceReferences": [
     "episodes.c"
    ],
@@ -49,7 +49,7 @@
    "bytes": 62424,
    "category": "text",
    "contents": "Datacube text for one episode",
-   "readBy": "src/game_menu.c load_cube",
+   "readBy": "src/menus/game_menu.c load_cube",
    "sourceReferences": [
     "episodes.c"
    ],
@@ -63,9 +63,9 @@
    "bytes": 2745,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_1.json"
@@ -77,9 +77,9 @@
    "bytes": 2193,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_2.json"
@@ -91,9 +91,9 @@
    "bytes": 1974,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_3.json"
@@ -105,9 +105,9 @@
    "bytes": 699,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_4.json"
@@ -119,9 +119,9 @@
    "bytes": 1122,
    "category": "demos",
    "contents": "Recorded attract-mode input for one level",
-   "readBy": "src/mainint.c load_next_demo and replay_demo_keys",
+   "readBy": "src/game/demo.c load_next_demo and replay_demo_keys",
    "sourceReferences": [
-    "mainint.c"
+    "demo.c"
    ],
    "dumpedTo": [
     "demos/demo_5.json"
@@ -146,9 +146,10 @@
    "bytes": 115338,
    "category": "sprites",
    "contents": "Ending and credits sprites",
-   "readBy": "src/mainint.c JE_playCredits",
+   "readBy": "src/menus/credits.c JE_playCredits",
    "sourceReferences": [
-    "mainint.c"
+    "credits.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/standalone/estsc_shp"
@@ -235,10 +236,11 @@
    "bytes": 9359,
    "category": "levels",
    "contents": "Episode script: shop stock, planets, datacubes, text and level order",
-   "readBy": "src/tyrian2.c JE_loadMap",
+   "readBy": "src/level/level_load.c JE_loadMap",
    "sourceReferences": [
+    "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -250,10 +252,11 @@
    "bytes": 5534,
    "category": "levels",
    "contents": "Episode script: shop stock, planets, datacubes, text and level order",
-   "readBy": "src/tyrian2.c JE_loadMap",
+   "readBy": "src/level/level_load.c JE_loadMap",
    "sourceReferences": [
+    "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -265,10 +268,11 @@
    "bytes": 6052,
    "category": "levels",
    "contents": "Episode script: shop stock, planets, datacubes, text and level order",
-   "readBy": "src/tyrian2.c JE_loadMap",
+   "readBy": "src/level/level_load.c JE_loadMap",
    "sourceReferences": [
+    "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -280,10 +284,11 @@
    "bytes": 11103,
    "category": "levels",
    "contents": "Episode script: shop stock, planets, datacubes, text and level order",
-   "readBy": "src/tyrian2.c JE_loadMap",
+   "readBy": "src/level/level_load.c JE_loadMap",
    "sourceReferences": [
+    "debug_levels.c",
     "episodes.c",
-    "game_menu.c"
+    "lvllib.c"
    ],
    "dumpedTo": [
     "text/episode_scripts"
@@ -343,9 +348,9 @@
    "bytes": 153482,
    "category": "audio",
    "contents": "LOUDNESS (LDS) AdLib songs",
-   "readBy": "src/loudness.c load_music; src/lds_play.c lds_load",
+   "readBy": "src/audio/audio.c load_music; src/audio/lds_play.c lds_load",
    "sourceReferences": [
-    "loudness.c"
+    "audio.c"
    ],
    "dumpedTo": [
     "audio/music"
@@ -481,10 +486,10 @@
    "bytes": 17750,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh#"
@@ -496,10 +501,10 @@
    "bytes": 14096,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh0"
@@ -511,11 +516,11 @@
    "bytes": 29941,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
     "episodes.c",
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh1"
@@ -527,10 +532,10 @@
    "bytes": 35236,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh2"
@@ -542,10 +547,10 @@
    "bytes": 37130,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh3"
@@ -557,10 +562,10 @@
    "bytes": 29449,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh4"
@@ -572,10 +577,10 @@
    "bytes": 35813,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh5"
@@ -587,10 +592,10 @@
    "bytes": 17578,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh6"
@@ -602,10 +607,10 @@
    "bytes": 44079,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh7"
@@ -617,10 +622,10 @@
    "bytes": 35152,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh8"
@@ -632,10 +637,10 @@
    "bytes": 38831,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh9"
@@ -647,10 +652,10 @@
    "bytes": 34888,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh^"
@@ -662,10 +667,10 @@
    "bytes": 25622,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsha"
@@ -677,10 +682,10 @@
    "bytes": 39025,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshb"
@@ -692,10 +697,10 @@
    "bytes": 40714,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshc"
@@ -707,10 +712,10 @@
    "bytes": 42012,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshd"
@@ -722,10 +727,10 @@
    "bytes": 28945,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshe"
@@ -737,10 +742,10 @@
    "bytes": 33543,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshf"
@@ -752,10 +757,10 @@
    "bytes": 36643,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshg"
@@ -767,10 +772,10 @@
    "bytes": 46639,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshh"
@@ -782,10 +787,10 @@
    "bytes": 30860,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshi"
@@ -797,10 +802,10 @@
    "bytes": 43999,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshj"
@@ -812,10 +817,10 @@
    "bytes": 22913,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshk"
@@ -827,10 +832,10 @@
    "bytes": 14846,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshl"
@@ -842,10 +847,10 @@
    "bytes": 22378,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshm"
@@ -857,10 +862,10 @@
    "bytes": 41201,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshn"
@@ -872,10 +877,10 @@
    "bytes": 24478,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsho"
@@ -887,10 +892,10 @@
    "bytes": 46204,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshp"
@@ -902,10 +907,10 @@
    "bytes": 28249,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshr"
@@ -917,10 +922,10 @@
    "bytes": 46566,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshs"
@@ -932,10 +937,10 @@
    "bytes": 14187,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsht"
@@ -947,10 +952,10 @@
    "bytes": 35657,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshu"
@@ -962,10 +967,10 @@
    "bytes": 23343,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newshv"
@@ -977,10 +982,10 @@
    "bytes": 16219,
    "category": "sprites",
    "contents": "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-   "readBy": "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",
+   "readBy": "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file",
    "sourceReferences": [
-    "mainint.c",
-    "sprite.c"
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/newsh/newsh~"
@@ -1029,7 +1034,7 @@
    "bytes": 17664,
    "category": "graphics",
    "contents": "VGA palettes of 256 six-bit colours",
-   "readBy": "src/palette.c JE_loadPals; every 8-bit draw resolves through one of these",
+   "readBy": "src/video/palette.c JE_loadPals; every 8-bit draw resolves through one of these",
    "sourceReferences": [
     "palette.c"
    ],
@@ -1105,10 +1110,10 @@
    "bytes": 118720,
    "category": "tiles",
    "contents": "Level tileset: 600 slots of 24x28 tiles",
-   "readBy": "src/tyrian2.c JE_loadMap, chosen by the level header",
+   "readBy": "src/level/level_load.c JE_loadMap, chosen by the level header",
    "sourceReferences": [
-    "mainint.c",
-    "tyrian2.c"
+    "level_load.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "tiles/shapes)"
@@ -1120,10 +1125,10 @@
    "bytes": 172480,
    "category": "tiles",
    "contents": "Level tileset: 600 slots of 24x28 tiles",
-   "readBy": "src/tyrian2.c JE_loadMap, chosen by the level header",
+   "readBy": "src/level/level_load.c JE_loadMap, chosen by the level header",
    "sourceReferences": [
-    "mainint.c",
-    "tyrian2.c"
+    "level_load.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "tiles/shapesw"
@@ -1135,10 +1140,10 @@
    "bytes": 217504,
    "category": "tiles",
    "contents": "Level tileset: 600 slots of 24x28 tiles",
-   "readBy": "src/tyrian2.c JE_loadMap, chosen by the level header",
+   "readBy": "src/level/level_load.c JE_loadMap, chosen by the level header",
    "sourceReferences": [
-    "mainint.c",
-    "tyrian2.c"
+    "level_load.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "tiles/shapesx"
@@ -1150,10 +1155,10 @@
    "bytes": 152992,
    "category": "tiles",
    "contents": "Level tileset: 600 slots of 24x28 tiles",
-   "readBy": "src/tyrian2.c JE_loadMap, chosen by the level header",
+   "readBy": "src/level/level_load.c JE_loadMap, chosen by the level header",
    "sourceReferences": [
-    "mainint.c",
-    "tyrian2.c"
+    "level_load.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "tiles/shapesy"
@@ -1165,10 +1170,10 @@
    "bytes": 243712,
    "category": "tiles",
    "contents": "Level tileset: 600 slots of 24x28 tiles",
-   "readBy": "src/tyrian2.c JE_loadMap, chosen by the level header",
+   "readBy": "src/level/level_load.c JE_loadMap, chosen by the level header",
    "sourceReferences": [
-    "mainint.c",
-    "tyrian2.c"
+    "level_load.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "tiles/shapesz"
@@ -1217,11 +1222,11 @@
    "bytes": 62168,
    "category": "graphics",
    "contents": "PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen",
-   "readBy": "src/pcxload.c JE_loadPCX; src/tyrian2.c; src/endless.c ENDLESS_RUNEND_PIC",
+   "readBy": "src/video/picload.c JE_loadPCX; src/level/level_load.c; src/endless/endless.c ENDLESS_RUNEND_PIC",
    "sourceReferences": [
     "endless.c",
-    "pcxload.c",
-    "tyrian2.c"
+    "level_load.c",
+    "picload.c"
    ],
    "dumpedTo": [
     "images/pcx/tshp2.png"
@@ -1233,9 +1238,9 @@
    "bytes": 3315848,
    "category": "animation",
    "contents": "Episode 3 ending animation, DeluxePaint LPF",
-   "readBy": "src/animlib.c JE_playAnim, from the ']A' episode script command",
+   "readBy": "src/video/animlib.c JE_playAnim, from the ']A' episode script command",
    "sourceReferences": [
-    "tyrian2.c"
+    "level_load.c"
    ],
    "dumpedTo": [
     "anim/tyrend"
@@ -1247,9 +1252,9 @@
    "bytes": 1125,
    "category": "text",
    "contents": "Credits roll, one colour-tagged line per record",
-   "readBy": "src/mainint.c JE_playCredits",
+   "readBy": "src/menus/credits.c JE_playCredits",
    "sourceReferences": [
-    "mainint.c"
+    "credits.c"
    ],
    "dumpedTo": [
     "text/credits.txt"
@@ -1274,9 +1279,8 @@
    "bytes": 153657,
    "category": "text",
    "contents": "Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",
-   "readBy": "src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat",
+   "readBy": "src/game/helptext.c JE_loadHelpText; src/level/episodes.c JE_loadItemDat",
    "sourceReferences": [
-    "config.h",
     "episodes.c",
     "game_menu.c",
     "helptext.c"
@@ -1305,7 +1309,7 @@
    "bytes": 365969,
    "category": "graphics",
    "contents": "Run-length 320x200 interface backdrops",
-   "readBy": "src/picload.c JE_loadPic",
+   "readBy": "src/video/picload.c JE_loadPic",
    "sourceReferences": [
     "picload.c"
    ],
@@ -1319,11 +1323,12 @@
    "bytes": 443871,
    "category": "sprites",
    "contents": "Sprite banks: fonts, planets, faces, menu art, player shots and ships",
-   "readBy": "src/sprite.c JE_loadMainShapeTables",
+   "readBy": "src/video/sprite.c JE_loadMainShapeTables",
    "sourceReferences": [
-    "mainint.c",
     "opentyr.c",
-    "sprite.c"
+    "setup_menu.c",
+    "sprite.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/tyrian_shp"
@@ -1335,9 +1340,9 @@
    "bytes": 264512,
    "category": "audio",
    "contents": "Sound effects, signed 8-bit mono at 11025 Hz",
-   "readBy": "src/nortsong.c loadSndFile",
+   "readBy": "src/audio/sfx.c loadSndFile",
    "sourceReferences": [
-    "nortsong.c"
+    "sfx.c"
    ],
    "dumpedTo": [
     "audio/sfx"
@@ -1349,7 +1354,7 @@
    "bytes": 538262,
    "category": "levels",
    "contents": "Level headers, event scripts and tile maps; some also hold their episode's item tables",
-   "readBy": "src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat",
+   "readBy": "src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat",
    "sourceReferences": [
     "episodes.c",
     "file.c",
@@ -1365,7 +1370,7 @@
    "bytes": 381242,
    "category": "levels",
    "contents": "Level headers, event scripts and tile maps; some also hold their episode's item tables",
-   "readBy": "src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat",
+   "readBy": "src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat",
    "sourceReferences": [
     "episodes.c",
     "lvllib.c"
@@ -1380,7 +1385,7 @@
    "bytes": 393398,
    "category": "levels",
    "contents": "Level headers, event scripts and tile maps; some also hold their episode's item tables",
-   "readBy": "src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat",
+   "readBy": "src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat",
    "sourceReferences": [
     "episodes.c",
     "lvllib.c"
@@ -1395,7 +1400,7 @@
    "bytes": 800006,
    "category": "levels",
    "contents": "Level headers, event scripts and tile maps; some also hold their episode's item tables",
-   "readBy": "src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat",
+   "readBy": "src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat",
    "sourceReferences": [
     "episodes.c",
     "lvllib.c"
@@ -1411,9 +1416,10 @@
    "bytes": 444862,
    "category": "sprites",
    "contents": "Christmas variant of tyrian.shp",
-   "readBy": "src/sprite.c JE_loadMainShapeTables, when the Christmas theme is on",
+   "readBy": "src/video/sprite.c JE_loadMainShapeTables, when the Christmas theme is on",
    "sourceReferences": [
     "opentyr.c",
+    "setup_menu.c",
     "sprite.c"
    ],
    "dumpedTo": [
@@ -1440,8 +1446,8 @@
    "contents": "Player ship written by the DOS ship editor",
    "readBy": "not read at runtime; browsable in the debug sprite viewer",
    "sourceReferences": [
-    "editship.c",
-    "mainint.c"
+    "ship_editor.c",
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/standalone/user1_shp"
@@ -1455,7 +1461,7 @@
    "contents": "Player ship written by the DOS ship editor",
    "readBy": "not read at runtime; browsable in the debug sprite viewer",
    "sourceReferences": [
-    "mainint.c"
+    "sprite_viewer.c"
    ],
    "dumpedTo": [
     "sprites/standalone/user2_shp"
@@ -1467,9 +1473,9 @@
    "bytes": 132767,
    "category": "audio",
    "contents": "Voice samples in the same format",
-   "readBy": "src/nortsong.c loadSndFile",
+   "readBy": "src/audio/sfx.c loadSndFile",
    "sourceReferences": [
-    "nortsong.c"
+    "sfx.c"
    ],
    "dumpedTo": [
     "audio/voices"
@@ -1481,10 +1487,11 @@
    "bytes": 188275,
    "category": "audio",
    "contents": "Christmas variant of voices.snd",
-   "readBy": "src/nortsong.c loadSndFile, when the Christmas theme is on",
+   "readBy": "src/audio/sfx.c loadSndFile, when the Christmas theme is on",
    "sourceReferences": [
-    "nortsong.c",
-    "opentyr.c"
+    "opentyr.c",
+    "setup_menu.c",
+    "sfx.c"
    ],
    "dumpedTo": [
     "audio/voices_christmas"

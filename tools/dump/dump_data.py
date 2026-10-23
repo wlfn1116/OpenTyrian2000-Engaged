@@ -51,21 +51,21 @@ SECTIONS = ["palettes", "images", "sprites", "tiles", "anim",
 # Data-file catalog. Match specific names before wildcards; src_references adds other users.
 CATALOG = [
     ("palette.dat", "graphics", "VGA palettes of 256 six-bit colours",
-     "src/palette.c JE_loadPals; every 8-bit draw resolves through one of these"),
+     "src/video/palette.c JE_loadPals; every 8-bit draw resolves through one of these"),
     ("tyrian.pic", "graphics", "Run-length 320x200 interface backdrops",
-     "src/picload.c JE_loadPic"),
+     "src/video/picload.c JE_loadPic"),
     ("tshp2.pcx", "graphics", "PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen",
-     "src/pcxload.c JE_loadPCX; src/tyrian2.c; src/endless.c ENDLESS_RUNEND_PIC"),
+     "src/video/picload.c JE_loadPCX; src/level/level_load.c; src/endless/endless.c ENDLESS_RUNEND_PIC"),
     ("shipedit.pcx", "graphics", "Backdrop for the DOS ship editor",
      "not read at runtime"),
     ("tyrian.shp", "sprites", "Sprite banks: fonts, planets, faces, menu art, player shots and ships",
-     "src/sprite.c JE_loadMainShapeTables"),
+     "src/video/sprite.c JE_loadMainShapeTables"),
     ("tyrianc.shp", "sprites", "Christmas variant of tyrian.shp",
-     "src/sprite.c JE_loadMainShapeTables, when the Christmas theme is on"),
+     "src/video/sprite.c JE_loadMainShapeTables, when the Christmas theme is on"),
     ("newsh*.shp", "sprites", "Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct",
-     "src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file"),
+     "src/video/sprite.c JE_loadCompShapes; enemy records name the bank, src/level/lvlmast.c maps it to the file"),
     ("estsc.shp", "sprites", "Ending and credits sprites",
-     "src/mainint.c JE_playCredits"),
+     "src/menus/credits.c JE_playCredits"),
     ("estpa.shp", "sprites", "Ending sprites in the same format, unused by the game",
      "not read at runtime; browsable in the debug sprite viewer"),
     ("user1.shp", "sprites", "Player ship written by the DOS ship editor",
@@ -73,37 +73,37 @@ CATALOG = [
     ("user2.shp", "sprites", "Player ship written by the DOS ship editor",
      "not read at runtime; browsable in the debug sprite viewer"),
     ("shapes*.dat", "tiles", "Level tileset: 600 slots of 24x28 tiles",
-     "src/tyrian2.c JE_loadMap, chosen by the level header"),
+     "src/level/level_load.c JE_loadMap, chosen by the level header"),
     ("tyrian?.lvl", "levels", "Level headers, event scripts and tile maps; some also hold their episode's item tables",
-     "src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat"),
+     "src/level/lvllib.c JE_analyzeLevel; src/level/level_load.c JE_loadMap; src/level/episodes.c JE_loadItemDat"),
     ("levels?.dat", "levels", "Episode script: shop stock, planets, datacubes, text and level order",
-     "src/tyrian2.c JE_loadMap"),
+     "src/level/level_load.c JE_loadMap"),
     ("cubetxt?.dat", "text", "Datacube text for one episode",
-     "src/game_menu.c load_cube"),
+     "src/menus/game_menu.c load_cube"),
     ("tyrian.hdt", "text", "Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",
-     "src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat"),
+     "src/game/helptext.c JE_loadHelpText; src/level/episodes.c JE_loadItemDat"),
     ("tyrian.cdt", "text", "Credits roll, one colour-tagged line per record",
-     "src/mainint.c JE_playCredits"),
+     "src/menus/credits.c JE_playCredits"),
     ("exitmsg.bin", "text", "80x25 DOS text screen shown on exit",
      "not read at runtime"),
     ("readme.txt", "text", "Readme shipped with the game data",
      "not read at runtime"),
     ("tyrian.snd", "audio", "Sound effects, signed 8-bit mono at 11025 Hz",
-     "src/nortsong.c loadSndFile"),
+     "src/audio/sfx.c loadSndFile"),
     ("voices.snd", "audio", "Voice samples in the same format",
-     "src/nortsong.c loadSndFile"),
+     "src/audio/sfx.c loadSndFile"),
     ("voicesc.snd", "audio", "Christmas variant of voices.snd",
-     "src/nortsong.c loadSndFile, when the Christmas theme is on"),
+     "src/audio/sfx.c loadSndFile, when the Christmas theme is on"),
     ("music.mus", "audio", "LOUDNESS (LDS) AdLib songs",
-     "src/loudness.c load_music; src/lds_play.c lds_load"),
+     "src/audio/audio.c load_music; src/audio/lds_play.c lds_load"),
     ("loudness.awe", "audio", "AWE32 instrument bank from the DOS build",
      "not read at runtime"),
     ("gm.sf2", "audio", "General MIDI SoundFont for the FluidSynth music device",
-     "src/fluid_music.c, through the soundfont path in opentyrian.cfg"),
+     "src/audio/fluid_music.c, through the soundfont path in opentyrian.cfg"),
     ("tyrend.anm", "animation", "Episode 3 ending animation, DeluxePaint LPF",
-     "src/animlib.c JE_playAnim, from the ']A' episode script command"),
+     "src/video/animlib.c JE_playAnim, from the ']A' episode script command"),
     ("demo.?", "demos", "Recorded attract-mode input for one level",
-     "src/mainint.c load_next_demo and replay_demo_keys"),
+     "src/game/demo.c load_next_demo and replay_demo_keys"),
     ("setup.box", "misc", "24-byte marker written by the DOS setup program",
      "not read at runtime"),
     ("*.ico", "graphics", "Windows icon for one of the DOS-era launchers",
@@ -111,11 +111,11 @@ CATALOG = [
     ("*.pif", "misc", "Windows program information file for a DOS tool",
      "not read at runtime"),
     ("opentyrian.cfg", "config", "OpenTyrian settings written by this port",
-     "src/config.c; player state, not shipped data"),
+     "src/core/config.c; player state, not shipped data"),
     ("tyrian.cfg", "config", "Original Tyrian settings block",
-     "src/config.c"),
+     "src/core/config.c"),
     ("tyrian.sav", "save", "Save slots, high scores and unlock flags",
-     "src/config.c JE_loadConfiguration; player state, not shipped data"),
+     "src/core/savegame.c legacy_save_load, from JE_loadConfiguration; player state, not shipped data"),
     ("*.ovl", "executable", "DOS extender overlay",
      "not read at runtime"),
     ("*.exe", "executable", "DOS or Windows executable shipped with the data",
@@ -583,7 +583,7 @@ class Dumper(object):
         return len(frames)
 
     def face_palette(self, n):
-        """The palette the shop and cutscenes draw face `n` with (src/pcxmast.c)."""
+        """The palette the shop and cutscenes draw face `n` with (src/video/pcxmast.c)."""
         return tf.FACE_PALETTE[n] if n < len(tf.FACE_PALETTE) else self.palette_index
 
     def write_contact_sheet(self, path, decoded, columns=None, cell=None,
@@ -1051,7 +1051,7 @@ class Dumper(object):
 
     @staticmethod
     def parse_level_record(line):
-        """One ']L' record: the level a section plays (src/tyrian2.c, case 'L')."""
+        """One ']L' record: the level a section plays (src/level/level_load.c, case 'L')."""
         def number(at, width):
             try:
                 return int(line[at:at + width].strip() or 0)
@@ -1112,7 +1112,7 @@ class Dumper(object):
         write_json(os.path.join(out, "events.json"), level["events"])
         write_json(os.path.join(out, "tile_lookup.json"),
                    {"note": "map byte to 1-based tile in %s; 0 draws nothing. Layer 2 forces slot "
-                            "71 empty and layer 3 slots 70 and 71 (src/tyrian2.c, JE_loadMap)"
+                            "71 empty and layer 3 slots 70 and 71 (src/level/level_load.c, JE_loadMap)"
                             % level["shapeFile"],
                     "layers": level["tileLookup"]})
 
@@ -1174,7 +1174,7 @@ class Dumper(object):
     # -- audio -------------------------------------------------------------
 
     def dump_audio(self):
-        titles = tf.name_list_from_source(os.path.join(REPO, "src", "sndmast.c"), "soundTitle")
+        titles = tf.name_list_from_source(os.path.join(REPO, "src", "audio", "sndmast.c"), "soundTitle")
         banks = [("tyrian.snd", "sfx", tf.SFX_COUNT, 0),
                  ("voices.snd", "voices", tf.VOICE_COUNT, 100),
                  ("voicesc.snd", "voices_christmas", tf.VOICE_COUNT, 100)]
@@ -1207,7 +1207,7 @@ class Dumper(object):
             self.log("audio: %s (%d samples)" % (name, len(samples)))
 
         if self.exists("music.mus"):
-            names = tf.name_list_from_source(os.path.join(REPO, "src", "musmast.c"), "musicTitle")
+            names = tf.name_list_from_source(os.path.join(REPO, "src", "audio", "musmast.c"), "musicTitle")
             songs = tf.load_music_bank(self.path("music.mus"))
             out = ensure_dir(self.dest("audio", "music"))
             index = []
@@ -1313,11 +1313,14 @@ class Dumper(object):
             src_dir = os.path.join(REPO, "src")
             if not os.path.isdir(src_dir):
                 return []
-            for entry in sorted(os.listdir(src_dir)):
-                if entry.endswith((".c", ".h")):
-                    with open(os.path.join(src_dir, entry), "r",
-                              encoding="utf-8", errors="replace") as f:
-                        self.source_text[entry] = f.read()
+            sources = []
+            for root, dirs, files in os.walk(src_dir):
+                dirs[:] = [d for d in dirs if d != "midiproc"]
+                sources += [(entry, os.path.join(root, entry)) for entry in files
+                            if entry.endswith((".c", ".h"))]
+            for entry, path in sorted(sources):
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    self.source_text[entry] = f.read()
 
         # Files the game opens through a format string never appear by name, so
         # each family also matches the format string that builds it.

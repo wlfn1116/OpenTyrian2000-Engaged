@@ -1,0 +1,720 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="audio">
+      <UniqueIdentifier>{B7469C31-CDD8-5BB7-9C44-C9F4DC3C5757}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core">
+      <UniqueIdentifier>{2F642CF7-B439-51EC-98B8-B72624D8611E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="destruct">
+      <UniqueIdentifier>{D118E94A-716C-52DD-BAD6-BC862517A64E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="endless">
+      <UniqueIdentifier>{990C54E3-BF5E-58E0-884C-1DE477F0C09C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="game">
+      <UniqueIdentifier>{E0B19E60-C51C-57C8-BF4C-B2DBF5E55106}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="input">
+      <UniqueIdentifier>{E0CD5637-2F15-513E-9755-BB2A8EE54673}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="level">
+      <UniqueIdentifier>{FF8D11E2-D81C-5439-971B-0B26EC1B0299}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="menus">
+      <UniqueIdentifier>{E846B7B1-E183-5C70-9375-7919BDD2328D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="net">
+      <UniqueIdentifier>{9BCAD78B-FA45-5171-A99C-49B506A863A3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="platform">
+      <UniqueIdentifier>{B2073126-09FA-539D-A56A-0C02F1513C8B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="qa">
+      <UniqueIdentifier>{7B1651BC-1349-57B4-8F2D-56D7488BDD19}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="video">
+      <UniqueIdentifier>{16FCFDDD-D8D6-5482-A2DF-C9A5238004AB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="midiproc">
+      <UniqueIdentifier>{132B81C4-4F52-5D68-93EE-041B75D148DD}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\opentyr.c" />
+    <ClCompile Include="..\src\audio\audio.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\fluid_music.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\lds_play.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\midi_smf.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\musmast.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\opl.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\sfx.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\sndmast.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\win_native_midi.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\arg_parse.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\config.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\config_file.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\crashlog.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\crashlog_state.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\file.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\mtrand.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\params.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\savegame.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\sim_math.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\sizebuf.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\str_util.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\timing.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\core\xmas.c">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\destruct\destruct.c">
+      <Filter>destruct</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\destruct\destruct_rollback.c">
+      <Filter>destruct</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_combat.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_course.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_level.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_mods.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_perks.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_rng.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_save.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\endless\endless_shop.c">
+      <Filter>endless</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\background.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\custom_weapon.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\debug_flags.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\demo.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\enemy_death.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\explosions.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\extra_ships.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\game_loop.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\game_state.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\health_bars.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\helptext.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\hud.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\item_prices.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\level_end.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\player.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\player_ship.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\shots.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\sparks.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\specials.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\game\vt_ship.c">
+      <Filter>game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\input\joystick.c">
+      <Filter>input</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\input\keyboard.c">
+      <Filter>input</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\input\mouse.c">
+      <Filter>input</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\input\touch_ui.c">
+      <Filter>input</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\level\custom_episode.c">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\level\episodes.c">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\level\level_events.c">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\level\level_load.c">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\level\lvllib.c">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\level\lvlmast.c">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\credits.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\debug_levels.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\debug_menu.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\game_menu.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\help.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\high_scores.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\ingame_menu.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\jukebox.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\menus.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\save_menu.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\setup_menu.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\ship_editor.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\sprite_viewer.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\title.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\weapon_creator.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\net_lobby.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\net_rollback.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\net_savexfer.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\net_start.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\net_style.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\net_transfer.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\network.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\rollback.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\net\rollback_state.c">
+      <Filter>net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_combat.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_course.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_economy.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_endless.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_items.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_net.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_netplay.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_online.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_render.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_saves.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_ships.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_sparks.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_specials.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\animlib.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\draw.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\font.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\palette.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\pcxmast.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\picload.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\render_list.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\sprite.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\starlib.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\video.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\video_scale.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\video_scale_hqNx.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIContainer.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessor.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorGMF.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorHMI.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorHMP.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorLDS.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorMDS.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorMUS.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorRCP.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorRIFF.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorSMF.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\MIDIProcessorXMI.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\midiproc\src\midiproc.cpp">
+      <Filter>midiproc</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\opentyr.h" />
+    <ClInclude Include="..\src\opentyrian_version.h" />
+    <ClInclude Include="..\src\audio\audio.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\fluid_music.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\lds_play.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\midi_smf.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\musmast.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\opl.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\sfx.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\sndmast.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\win_native_midi.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\arg_parse.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\config.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\config_file.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\crashlog.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\file.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\fnv1a.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\mtrand.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\params.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\savegame.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\sim_math.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\sizebuf.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\str_util.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\timing.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\xmas.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\destruct\destruct.h">
+      <Filter>destruct</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\destruct\destruct_rollback.h">
+      <Filter>destruct</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\endless\endless.h">
+      <Filter>endless</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\endless\endless_internal.h">
+      <Filter>endless</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\endless\endless_levelprofile.h">
+      <Filter>endless</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\background.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\custom_weapon.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\debug_flags.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\demo.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\enemy_death.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\explosions.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\extra_ships.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\game_loop.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\game_state.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\health_bars.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\helptext.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\hud.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\item_prices.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\level_end.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\player.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\player_ship.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\shots.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\sparks.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\specials.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\vt_ship.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\input\joystick.h">
+      <Filter>input</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\input\keyboard.h">
+      <Filter>input</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\input\mouse.h">
+      <Filter>input</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\input\touch_ui.h">
+      <Filter>input</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\level\custom_episode.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\level\episodes.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\level\level_events.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\level\level_load.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\level\lvllib.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\level\lvlmast.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\credits.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\debug_levels.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\debug_menu.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\game_menu.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\help.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\high_scores.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\ingame_menu.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\jukebox.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\menus.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\save_menu.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\setup_menu.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\ship_editor.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\sprite_viewer.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\title.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\weapon_creator.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\net_internal.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\net_lobby.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\net_rollback.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\net_savexfer.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\net_start.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\net_style.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\network.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\net\rollback.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\console_platform.h">
+      <Filter>platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\qa\qa.h">
+      <Filter>qa</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\qa\qa_internal.h">
+      <Filter>qa</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\animlib.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\draw.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\font.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\palette.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\pcxmast.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\picload.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\render_list.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\sprite.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\starlib.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\swar.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\video.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\video_scale.h">
+      <Filter>video</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

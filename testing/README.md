@@ -23,7 +23,7 @@ python3 testing/run_unit_suite.py \
 It covers:
 
 - rollback snapshots, restore fixups, and malformed wire state
-- every supported Endless save version and migration
+- the campaign and Endless save codecs, and upstream `tyrian.sav` import
 - custom-episode activation, Endless pools, save dependencies, and transfer envelopes
 - custom weapon serialization and capacity limits
 - modifier, perk, course, and economy invariants
@@ -32,6 +32,15 @@ It covers:
 - both-player Endless perks, shops, drives, deaths, and course choices
 - deterministic generation across 768 course seeds
 - hostile values, truncation, string termination, and guard bytes
+- SSE2, NEON, and SWAR pixel loops against frozen scalar copies
+- threaded frame rows, Render Threads tuning, band replay, and scalers whose
+  texture lock fails
+
+The suite lives in `src/qa/`. `qa_run_unit_suite` in `qa.c` calls the checks in
+a fixed order, which some of them rely on. The topic files beside it, such as
+`qa_course.c`, `qa_saves.c`, and `qa_render.c`, hold the checks, and
+`qa_internal.h` declares them. `qa_net.c` is the in-game side of the network
+fault suite.
 
 ## Replay suite
 
@@ -106,20 +115,8 @@ their identities and complete contents.
 
 ## Save fixtures
 
-`fixtures/endless/v03.sav` through `v27.sav` cover every binary `endless.sav`
-version. They are generated independently of the C reader and must import and
-round-trip through the current text format. No new versions are added to this
-corpus.
-
-Regenerate only to repair a fixture:
-
-```sh
-python3 testing/generate_save_fixtures.py
-```
-
-`fixtures/legacy/` holds a real `tyrian.sav` and `endless.sav` pair from before
-`opentyrian.sav`. The suite checks first-launch import and repair of a zone slot
-whose Endless section is missing. Any replacement pair needs equivalent known
-contents.
-
-Review generated records before committing them.
+`fixtures/upstream_tyrian.sav` is the `tyrian.sav` that ships with the freeware
+Tyrian 2000 data, in the layout OpenTyrian, OpenTyrian2000, and DOS Tyrian
+write. The suite imports it and checks known slot and high-score values, so
+keep its bytes stable. Its name keeps it clear of the repository's `tyrian.sav`
+ignore rule.

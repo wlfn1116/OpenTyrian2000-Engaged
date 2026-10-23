@@ -33,7 +33,14 @@ set(SDL_NET_SOURCES
   "${SDL_NET_DIR}/SDLnetselect.c"
 )
 
+set(OT_SRC_DIRS audio core destruct endless game input level menus net platform qa video)
 file(GLOB OT_SOURCES "${OT_ROOT}/src/*.c")
+set(OT_INCLUDE_DIRS "${OT_ROOT}/src")
+foreach(dir IN LISTS OT_SRC_DIRS)
+  file(GLOB OT_DIR_SOURCES "${OT_ROOT}/src/${dir}/*.c")
+  list(APPEND OT_SOURCES ${OT_DIR_SOURCES})
+  list(APPEND OT_INCLUDE_DIRS "${OT_ROOT}/src/${dir}")
+endforeach()
 
 if(NOT EXISTS "${OT_ROOT}/data/tyrian1.lvl")
   message(FATAL_ERROR "No Tyrian 2000 data in ${OT_ROOT}/data; install it before configuring.")
@@ -62,14 +69,13 @@ add_custom_command(TARGET OpenTyrian2000 POST_BUILD
           "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/Info.plist"
   COMMENT "Compiling the icon asset catalog")
 
-target_include_directories(OpenTyrian2000 PRIVATE "${OT_ROOT}/src" "${SDL_NET_DIR}")
+target_include_directories(OpenTyrian2000 PRIVATE ${OT_INCLUDE_DIRS} "${SDL_NET_DIR}")
 
 # Keep iOS simulation compatible with the other netplay and replay targets.
 target_compile_definitions(OpenTyrian2000 PRIVATE
   NDEBUG
   TARGET_UNIX
   TARGET_IOS
-  WITH_NETWORK
   TYRIAN_DIR="data"
 )
 target_compile_options(OpenTyrian2000 PRIVATE -fsigned-char -ffp-contract=off -Wall

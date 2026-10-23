@@ -1,0 +1,48 @@
+/* 
+ * OpenTyrian: A modern cross-platform port of Tyrian
+ * Copyright (C) 2007-2009  The OpenTyrian Development Team
+ *
+ * This program is free software: you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+#ifndef MENUS_H
+#define MENUS_H
+
+#include "opentyr.h"
+
+#include <stddef.h>
+
+#define GAMEPLAY_NAME_COUNT 6
+extern char episode_name[6][31];
+extern char difficulty_name[7][21];
+extern char gameplay_name[GAMEPLAY_NAME_COUNT][26];
+extern char timed_battle_name[4][23];
+
+bool menuPointerSelect(size_t *selectedIndex, size_t count, int xCenter, int yMenuItems,
+                       int dyMenuItems, int hMenuItem, const int *wMenuItem);
+void menuKeySelect(size_t *selectedIndex, size_t count, bool *action, bool *cancel);
+
+bool gameplaySelect(void);
+bool episodeSelect(void);
+bool difficultySelect(void);
+bool timedBattleSelect(void);
+
+// Host-side New Game / Load Game choice after the peers connect: the loaded 2-player-page
+// slot (1-based, save already applied), 0 for a new game, or -1 to abandon hosting.
+int networkHostStartSelect(void);
+
+// Session-died dialog: true = the player wants to keep the pre-level backup (caller opens
+// the save menu), false = let it go.  `message` names what ended the session.
+bool networkDisconnectSavePrompt(const char *message);
+
+#endif /* MENUS_H */

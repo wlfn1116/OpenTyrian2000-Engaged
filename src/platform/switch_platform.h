@@ -1,0 +1,37 @@
+/* Nintendo Switch platform services. Inert unless __SWITCH__ is defined. */
+#ifndef SWITCH_PLATFORM_H
+#define SWITCH_PLATFORM_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __SWITCH__
+
+// Writable data directory on the SD card: holds opentyrian.cfg, save files, and any
+// user-supplied data files. Kept in one place so file.c and switch_platform.c agree.
+#define SWITCH_USER_DIR   "sdmc:/switch/opentyrian2000"
+
+// Read-only data bundled inside the .nro, mounted by romfsInit().
+#define SWITCH_ROMFS_DIR  "romfs:"
+
+// Mount romfs, ensure the SD-card user directory exists, and register cleanup.
+// Call once, as early as possible in main() (before any file access).
+void switch_platform_init(void);
+
+// Show the modal Switch keyboard. `max_len` 0 uses the output buffer's full
+// capacity, and `numeric` selects the number pad. Returns false on cancel.
+bool switch_swkbd(char *out, size_t out_size, size_t max_len,
+                  const char *initial, const char *guide, bool numeric);
+
+// This console's own IPv4 address, in network byte order (the layout SDL_net's IPaddress.host
+// uses).
+bool switch_get_local_ip(uint32_t *out);
+
+// Return the native output size: 1280x720 handheld or 1920x1080 docked.
+// Either output pointer may be NULL.
+void switch_get_output_size(int *w, int *h);
+
+#endif // __SWITCH__
+
+#endif // SWITCH_PLATFORM_H

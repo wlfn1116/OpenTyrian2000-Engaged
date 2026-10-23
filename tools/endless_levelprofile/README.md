@@ -1,7 +1,7 @@
 # Endless level profile
 
 `gen_profile.py` turns measured level difficulty into
-`src/endless_levelprofile.h`. Endless uses the result as a small adjustment to
+`src/endless/endless_levelprofile.h`. Endless uses the result as a small adjustment to
 danger and payout.
 
 The measurements come from

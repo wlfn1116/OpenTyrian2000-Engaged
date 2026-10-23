@@ -1,0 +1,937 @@
+/*
+ * Public Endless mode interface.
+ * Implementation details are private to endless.c and endless_*.c.
+ */
+#ifndef ENDLESS_H
+#define ENDLESS_H
+
+#include "config.h"
+#include "opentyr.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+
+// Combat effects can be enabled in a campaign without enabling Endless run flow.
+static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
+
+/* Co-op shares the route and modifiers, but each player owns their economy and upgrades.
+ * See doc/notes.md#session-and-outpost. */
+
+// The ship this machine outfits and spends for: player 1 solo, the local ship in co-op.
+uint    endlessEconomyIndex(void);
+// ...and the other one, which is the same ship outside co-op.
+uint    endlessPartnerIndex(void);
+// Ships a per-player Endless effect walks: two in co-op, one otherwise.
+uint    endlessEffectPlayers(void);
+
+/* Sector modifiers as ONE ship sees them: the charted set, plus whatever that player bought for
+ * themselves. */
+extern Uint64 endlessPlayerMods[2];
+void endlessSetFxPlayer(uint p);
+uint endlessFxPlayer(void);
+
+// Bits a purchase applies to the buyer alone. Everything else it can buy changes the sector.
+#define ENDLESS_PERSONAL_MOD_MASK ((Uint64)( \
+	ENDLESS_MOD_KILLFIRE_ANY | ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_NITRO | \
+	ENDLESS_MOD_OVERHEAT | ENDLESS_MOD_DUD))
+
+// Fold each player's purchases into their own mask; the shared bits go into endlessActiveMods.
+void endlessApplyPurchasedMods(void);
+static inline bool endlessCoop(void) { return endlessMode && coopEndlessMode; }
+
+// Who charts the next course. Persisted in the run save and the lobby block, so append only.
+typedef enum {
+	ENDLESS_PICK_HOST = 0,
+	ENDLESS_PICK_GUEST,
+	ENDLESS_PICK_ALTERNATE,   // takes turns; the turn flag rides the run save
+	ENDLESS_PICK_COINFLIP,    // seeded from the run RNG, so both machines agree
+	ENDLESS_PICK_COUNT
+}
+EndlessCourseChooser;
+
+/* Whose combo a kill feeds. Individual keeps each ship's kill-fire streak its own, which is what
+ * a drive one player paid for is worth; Shared has every kill feed both. Host-authoritative. */
+extern bool endlessCoopComboShared;
+// A kill nobody can be credited with, so neither player's streak is punished for it.
+#define ENDLESS_KILLER_NONE (-1)
+
+extern EndlessCourseChooser endlessCourseChooser;  // host-authoritative session setting
+extern bool endlessCoopHostCharts;                 // Alternating: is the host charting this one?
+const char *endlessCourseChooserName(EndlessCourseChooser mode);
+bool endlessLocalPlayerCharts(void);   // does this machine pick the next course?
+uint endlessChartingPlayerIndex(void); // which SEAT picks it, identical on both machines
+void endlessAdvanceCourseTurn(void);   // call once a sector has been flown to its end
+
+// A downed player spectates until the zone ends, then revives at the outpost.
+extern bool endlessPlayerDowned[2];
+/* Handle a peer's in-game Quit as a shared return to the outpost. */
+void endlessCoopPeerQuitLevel(void);
+bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not downed
+// Which ship a homing or course-correcting shot at (fromX, fromY) goes for: the nearer one
+// still flying, and player 1 outside co-op.
+uint endlessDangerTargetPlayer(int fromX, int fromY);
+// A homing enemy picks its ship by coin toss when it is created (0 outside co-op, and no roll is
+// spent there), and keeps it for life unless that ship goes down.
+uint endlessRollHomingTarget(void);
+uint endlessHomingTargetPlayer(uint stored);
+// True while the sector floors enemy tracking: Light Homing, Kamikaze, or Rampage.
+bool endlessHomingTierActive(void);
+void endlessReviveDownedAtOutpost(void);
+
+// Number of active modifier bits.
+static inline int endlessPopCount64(Uint64 v)
+{
+	int n = 0;
+	for (; v != 0; v &= v - 1)
+		++n;
+	return n;
+}
+
+// Sector modifiers. Bits 0-30 fit in the enum; later bits use Uint64 defines.
+enum {
+	ENDLESS_MOD_FORTIFIED   = 1u << 0,  // enemy and boss HP
+	ENDLESS_MOD_FRENZY      = 1u << 1,  // enemy fire rate
+	ENDLESS_MOD_SWIFT       = 1u << 2,  // enemy shot speed
+	ENDLESS_MOD_FRAGILE     = 1u << 3,  // lower enemy HP
+	ENDLESS_MOD_BOUNTY      = 1u << 4,  // larger clear reward
+	ENDLESS_MOD_DEVASTATING = 1u << 5,  // enemy shot damage
+	ENDLESS_MOD_ELITEPACK   = 1u << 6,  // 50% special enemies
+	ENDLESS_MOD_APEX        = 1u << 7,  // 100% special enemies
+	ENDLESS_MOD_LEGION      = 1u << 8,  // 100% champions
+	ENDLESS_MOD_ENRAGE      = 1u << 9,  // time-based enemy fire ramp
+	ENDLESS_MOD_KAMIKAZE    = 1u << 10, // moderate homing
+	ENDLESS_MOD_GRAVITY     = 1u << 11, // downward pull
+	ENDLESS_MOD_TURBODRIVE  = 1u << 12, // kill-fed fire boost
+	ENDLESS_MOD_OVERCHARGE  = 1u << 13, // player damage boost
+	ENDLESS_MOD_DILATION    = 1u << 14, // slower enemy shots
+	ENDLESS_MOD_FAVOR       = 1u << 15, // next-shop discount
+	ENDLESS_MOD_CURSED      = 1u << 16, // cash now, empty next shop
+	ENDLESS_MOD_OVERCLOCK   = 1u << 17, // enemy fire, shots, and scroll
+	ENDLESS_MOD_SLIPSTREAM  = 1u << 18, // faster scroll
+	ENDLESS_MOD_OVERLOAD    = 1u << 19, // stronger Overclock
+	ENDLESS_MOD_WARP        = 1u << 20, // stronger Slipstream
+	ENDLESS_MOD_OVERDRIVE   = 1u << 21, // Turbodrive and Overblast
+	ENDLESS_MOD_BACKFIRE    = 1u << 22, // kill-fed gun jam
+	ENDLESS_MOD_BURNOUT     = 1u << 23, // jam and damage penalty
+	ENDLESS_MOD_OVERBLAST   = 1u << 24, // kill-fed damage boost
+	ENDLESS_MOD_MISFIRE     = 1u << 25, // kill-fed damage penalty
+
+	// Gamble-only next-sector effects.
+	ENDLESS_MOD_MARKED    = 1u << 26,
+	ENDLESS_MOD_NITRO     = 1u << 27,
+	ENDLESS_MOD_OVERHEAT  = 1u << 28,
+	ENDLESS_MOD_DUD       = 1u << 29,
+
+	ENDLESS_MOD_HOMING    = 1u << 30, // weak homing
+};
+
+// Bit 31 cannot be a C enum constant because it may not fit in int.
+#define ENDLESS_MOD_RAMPAGE (1u << 31)
+
+// Bits 32 and above require Uint64 storage throughout courses and saves.
+#define ENDLESS_MOD_TOPSY    ((Uint64)1 << 32)  // flipped playfield and controls
+#define ENDLESS_MOD_SLUGGISH ((Uint64)1 << 33)  // slower ship movement
+#define ENDLESS_MOD_GRAVITY_OMNI ((Uint64)1 << 34) // random fixed gravity heading
+#define ENDLESS_MOD_SHIELDLESS ((Uint64)1 << 35)
+#define ENDLESS_MOD_DEADGEN    ((Uint64)1 << 36)
+#define ENDLESS_MOD_NOCHAMP    ((Uint64)1 << 37)
+#define ENDLESS_MOD_NOELITE    ((Uint64)1 << 38)
+
+// Finale marker; mechanics remain in the other modifier bits.
+#define ENDLESS_MOD_THEEND     ((Uint64)1 << 39)
+#define ENDLESS_MOD_MARTYRDOM   ((Uint64)1 << 40)
+#define ENDLESS_MOD_SEEKER      ((Uint64)1 << 41)
+#define ENDLESS_MOD_STATIC      ((Uint64)1 << 42)
+#define ENDLESS_MOD_RETALIATION ((Uint64)1 << 43)
+#define ENDLESS_MOD_AEGIS        ((Uint64)1 << 44)
+#define ENDLESS_MOD_FLAKSCREEN   ((Uint64)1 << 45)
+#define ENDLESS_MOD_AUXREACTOR   ((Uint64)1 << 46)
+#define ENDLESS_MOD_LOWPROFILE   ((Uint64)1 << 47)
+#define ENDLESS_MOD_GIANTKILLER  ((Uint64)1 << 48)
+#define ENDLESS_MOD_SHOCKWAVE    ((Uint64)1 << 49)
+#define ENDLESS_MOD_STARCHARTS   ((Uint64)1 << 50)
+#define ENDLESS_MOD_BREAKTHROUGH ((Uint64)1 << 51)
+#define ENDLESS_MOD_SOFTLANDING  ((Uint64)1 << 52)
+#define ENDLESS_MOD_CLEANSIGNALS ((Uint64)1 << 53)
+#define ENDLESS_MOD_TWINSEEK     ((Uint64)1 << 54)
+#define ENDLESS_MOD_HUNTER       ((Uint64)1 << 55)
+#define ENDLESS_MOD_TRUEAIM      ((Uint64)1 << 56)
+#define ENDLESS_MOD_KILLSHOT     ((Uint64)1 << 57)
+
+#define ENDLESS_MOD_SEEKER_ANY (ENDLESS_MOD_SEEKER | ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_HUNTER | \
+                                ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_KILLSHOT)
+
+// A course carries at most one kill-fire modifier.
+#define ENDLESS_MOD_FIREBOOST      (ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERDRIVE)
+#define ENDLESS_MOD_FIREJAM        (ENDLESS_MOD_BACKFIRE | ENDLESS_MOD_BURNOUT)
+#define ENDLESS_MOD_DMGUP          (ENDLESS_MOD_OVERDRIVE | ENDLESS_MOD_OVERBLAST)
+#define ENDLESS_MOD_DMGDOWN        (ENDLESS_MOD_BURNOUT | ENDLESS_MOD_MISFIRE)
+#define ENDLESS_MOD_STACKED        (ENDLESS_MOD_DMGUP | ENDLESS_MOD_DMGDOWN)
+#define ENDLESS_MOD_KILLFIRE_GOOD  (ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERDRIVE | ENDLESS_MOD_OVERBLAST)
+#define ENDLESS_MOD_KILLFIRE_EVIL  (ENDLESS_MOD_BACKFIRE | ENDLESS_MOD_BURNOUT | ENDLESS_MOD_MISFIRE)
+#define ENDLESS_MOD_KILLFIRE_ANY   (ENDLESS_MOD_KILLFIRE_GOOD | ENDLESS_MOD_KILLFIRE_EVIL)
+
+// Sprite-filter banks shared by special enemies and their health bars.
+#define ENDLESS_ELITE_FILTER    0xD0
+#define ENDLESS_CHAMPION_FILTER 0x50  // bank 5 = purple (an "epic" aura; 0xB0 read as brown)
+
+// Shade lift that keeps aura and icon sparks visible over dark backgrounds.
+#define ENDLESS_SPARK_BRIGHT 6
+
+// Shade lift for explosions blended into elite and champion banks.
+#define ENDLESS_EXPLOSION_BRIGHT 3
+
+// Shade lift that keeps dark projectile pixels visible in tier palettes.
+#define ENDLESS_SHOT_BRIGHT 2
+
+// Player-side kill-fire tint banks.
+#define ENDLESS_TURBODRIVE_SHIP_FILTER 0xC0
+#define ENDLESS_OVERDRIVE_SHIP_FILTER  0x70
+#define ENDLESS_OVERBLAST_SHIP_FILTER  0x90
+#define ENDLESS_EVIL_SHIP_FILTER       0x40
+
+// Gauge bases must leave room for all 14 shades inside one palette bank.
+#define ENDLESS_FREE_POWER_GAUGE_BASE 1
+#define ENDLESS_SALVO_GAUGE_BASE  (12 * 16 + 1)
+#define ENDLESS_SALVO_SPARK_COLOR (12 << 4)
+
+// Kill-fire damage reaches this bonus at the stack cap.
+#define ENDLESS_OVERDRIVE_MAX_STACKS 200
+#define ENDLESS_OVERDRIVE_DMG_MAX    150
+
+// Global effective-HP multiplier ceiling, wide enough for an elite boss at the 32x boss ceiling.
+#define ENDLESS_HP_MULT_MAX 64
+
+// Hundredths: the unit the boss and combined HP multipliers are carried in, so a boss gains health
+// a fraction of a multiplier at a time. Matches ENEMY_DAMAGE_ACCUM_SCALE, which spends them.
+#define ENDLESS_HP_MULT_SCALE 100
+
+// Authored level identity retained after levelName becomes "ZONE n".
+const char *endlessBaseLevelName(void);
+int         endlessBaseLevelEpisode(void);
+int         endlessBaseLevelSection(void);
+const char *endlessPrevLevelName(void);
+int         endlessPrevLevelEpisode(void);
+int         endlessPrevLevelSection(void);
+
+// Recent authored levels, newest first. Out-of-range accessors return 0.
+int endlessRecentLevelCount(void);
+int endlessRecentLevelEpisode(int i);
+int endlessRecentLevelSection(int i);
+
+// Cleared zones; drives progression and score.
+extern int endlessRunDepth;
+
+// Per-run kill totals. Boss kills count only enemies with a boss bar.
+extern int endlessRunKills;
+extern int endlessRunBossKills;
+
+// Run income sources. Append only.
+typedef enum {
+	ENDLESS_CASH_KILL = 0,   // enemy value, paid the instant a ship is destroyed
+	ENDLESS_CASH_PICKUP,     // cash and gems collected off the playfield
+	ENDLESS_CASH_BOUNTY,     // Elite / Champion kill bounties
+	ENDLESS_CASH_CLEAR,      // the zone-clear bonus
+	ENDLESS_CASH_INTEREST,   // bank interest on unspent cash
+	ENDLESS_CASH_GAMBLE,     // E-Shop gamble winnings
+	ENDLESS_CASH_PERK,       // the cash taken instead of a perk
+	ENDLESS_CASH_OTHER,      // undeclared: the audit saw a rise no endlessCashCredit announced
+	ENDLESS_CASH_START,      // the difficulty-based stake the run is handed at zone 1
+	ENDLESS_CASH_TRADEIN,    // gear sold beyond what buying it booked as spent (granted gear, e.g. the starting gun)
+	ENDLESS_CASH_SOURCES
+} EndlessCashSource;
+
+// Run spending sinks. Append only.
+typedef enum {
+	ENDLESS_SINK_GEAR = 0,   // upgrade-shop trades: guns, power steps, shields, generators, sidekicks
+	ENDLESS_SINK_SUPPLIES,   // E-Shop kit: specials, superbombs, sabotage charges
+	ENDLESS_SINK_BUFF,       // kill-fire buffs: Turbodrive / Overdrive / Overblast
+	ENDLESS_SINK_REVIVE,     // revive tokens
+	ENDLESS_SINK_PERK,       // bought extra perk picks
+	ENDLESS_SINK_REROLL,     // shop-stock rerolls
+	ENDLESS_SINK_HULL,       // Reinforce hull tiers
+	ENDLESS_SINK_GAMBLE,     // wagers and the machine's crueller outcomes
+	ENDLESS_CASH_SINKS
+} EndlessCashSink;
+
+// Route every Endless wallet change through this interface. Credit and Debit book ordinary
+// movement; Begin/Commit brackets the upgrade menu's temporary balance and full-refund trades.
+void endlessCashCredit(Sint64 amount, EndlessCashSource src);
+void endlessCashDebit(Sint64 amount, EndlessCashSink sink);
+void endlessShopTradeBegin(void);
+void endlessShopTradeCommit(void);
+
+// Saturating run totals and their source/sink breakdowns.
+extern Uint64 endlessRunCashEarned;
+extern Uint64 endlessRunCashSpent;
+extern Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES];
+extern Uint64 endlessCashBySink[ENDLESS_CASH_SINKS];
+const char *endlessCashSourceName(EndlessCashSource src);
+const char *endlessCashSinkName(EndlessCashSink sink);
+
+// Report and book wallet drift caused by bypassing the economy interface. Expected to no-op.
+void endlessCashAudit(void);
+void endlessCashResync(void);          // re-anchor without booking either way (run start, load, sortie revert)
+void endlessCashDebugOverwrite(void);  // the debug screen overwrote the wallet: book the delta, no warning
+
+// Count one logical enemy, credited to `killer` (0/1, or ENDLESS_KILLER_NONE when nothing can
+// claim it). All kill paths go through enemy_logical_death.
+void endlessCountKill(int linknum, int killer);
+
+extern Uint64 endlessActiveMods;
+
+// Run-persistent Reinforce bonus, per player.
+extern int endlessArmorBonus[2];
+
+void endlessResetRun(void);
+
+// All-time records live in opentyrian.cfg, including Hardcore runs.
+void endlessNoteZoneReached(int zone);
+void endlessRecordRunStart(void);
+
+// The six difficulties an Endless run can start on, in difficulty-select order. That order is the
+// on-disk order of the per-difficulty records too, so append to it rather than reordering it.
+#define ENDLESS_DIFFICULTY_COUNT 6
+extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
+
+/* Records are kept apart by crew size: two ships clear zones a solo run cannot, so the two are
+ * never compared. Index 0 is a one-player run, 1 an online co-op one. */
+#define ENDLESS_PLAYER_TABLES 2
+const char *endlessRecordTableName(int players);
+
+/* Persistent chart-rule values. Append new rules; do not reorder them. */
+typedef enum {
+	ENDLESS_BASE_VARIED = 0,       // every charted route is its own level
+	ENDLESS_BASE_SAME,             // one level fills the chart, leaving the modifiers as the choice
+	ENDLESS_BASE_VARIED_SHUFFLE,   // Varied; see doc/notes.md#rng-and-level-shuffle
+	ENDLESS_BASE_SAME_SHUFFLE,     // Same, drawing its one level from that bag
+	ENDLESS_BASE_RULE_COUNT
+}
+EndlessBaseRule;
+
+/* Records are separate for each persistent chart-rule value. */
+#define ENDLESS_BASE_TABLES ENDLESS_BASE_RULE_COUNT
+const char *endlessBaseLevelRuleName(int variant);   // the Base Level row's value for that rule
+const char *endlessBaseLevelRuleHelp(int variant);   // the one-line explanation both pickers show
+
+// Menu and record-page order, which is not the enum order. Both directions clamp to Varied.
+EndlessBaseRule endlessBaseRuleAtMenuIndex(int index);
+int             endlessBaseRuleMenuIndex(EndlessBaseRule rule);
+
+/* The rule the run in progress is flying, picked on the seed screen (or by the host in the Endless
+ * lobby) and fixed from there: nothing can move a run between the four sets of records. */
+extern EndlessBaseRule endlessRunBaseRule;
+
+// Both Same rules fill every route from one draw; both Shuffle rules take their draws in bag order.
+static inline bool endlessBaseRuleShared(EndlessBaseRule rule)
+{
+	return rule == ENDLESS_BASE_SAME || rule == ENDLESS_BASE_SAME_SHUFFLE;
+}
+
+static inline bool endlessBaseRuleShuffled(EndlessBaseRule rule)
+{
+	return rule == ENDLESS_BASE_VARIED_SHUFFLE || rule == ENDLESS_BASE_SAME_SHUFFLE;
+}
+
+// Slot a difficulty level occupies, or -1 when runs on it are not broken out.
+int endlessDifficultySlot(int difficulty);
+
+// A custom weapon only counts once the run has fought with it: a shot has to leave the custom port
+// inside a running zone (shots.c calls this for every one), and that zone has to end.
+void endlessNoteCustomWeaponShot(void);
+void endlessNoteCustomShip(void);
+void endlessCustomWeaponZoneEnd(void);
+extern bool endlessRunUsedCustom;
+
+void endlessRecordConfigSave(ConfigSection *section);
+void endlessRecordConfigLoad(const ConfigSection *section);
+
+// Run seed. Structural randomness is deterministic; combat randomness is not.
+#define ENDLESS_SEED_MAXLEN 24
+
+// How forgiving the run is. Picked on the seed screen, fixed for the whole run.
+typedef enum {
+	ENDLESS_RUNMODE_RELAXED = 0,  // a fatal hit opens the death menu: retry the zone, or back to the outpost
+	ENDLESS_RUNMODE_STANDARD,     // a fatal hit ends the run (the pause menu's Quit Level is still a bail)
+	ENDLESS_RUNMODE_HARDCORE,     // no saving, and no bail once the ship is hit
+	ENDLESS_RUNMODE_COUNT
+}
+EndlessRunMode;
+
+extern EndlessRunMode endlessRunMode;
+
+// Hardcore disables all run saves.
+static inline bool endlessHardcore(void) { return endlessRunMode == ENDLESS_RUNMODE_HARDCORE; }
+
+// "Relaxed" / "Standard" / "Hardcore", as shown on the seed, run-over and Zone Records screens.
+const char *endlessRunModeName(EndlessRunMode mode);
+
+// The mode's record on one difficulty slot, and its deepest on any of them. The latter also counts
+// the untagged record a config written before the breakdown existed still carries.
+int endlessBestZoneForDifficulty(int variant, int players, EndlessRunMode mode, int slot);
+int endlessBestZoneAny(int variant, int players, EndlessRunMode mode);
+
+// ...and the deepest under any base-level rule, the figure the record page opens on.
+int endlessBestZoneAnyRule(int players, EndlessRunMode mode);
+
+// " C" when a custom weapon set that record, otherwise an empty string. Every record is shown
+// against a named mode and difficulty, so the zone number carries this mark alone.
+const char *endlessRecordAnyCustomMark(int variant, int players, EndlessRunMode mode);
+const char *endlessRecordDiffCustomMark(int variant, int players, EndlessRunMode mode, int slot);
+const char *endlessRecordAnyRuleCustomMark(int players, EndlessRunMode mode);
+
+// Erase records. Destructive, so only call these behind a confirmation. Clearing the deepest peels
+// a mode back one record at a time, which keeps its any-difficulty figure equal to what is left.
+void endlessClearDeepestRecord(int variant, int players, EndlessRunMode mode);
+void endlessClearRecordDifficulty(int variant, int players, EndlessRunMode mode, int slot);
+
+// Returns false when the seed screen is cancelled.
+bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode,
+                       EndlessBaseRule *outBaseRule);
+
+void endlessSetSeed(const char *s);
+const char *endlessSeedString(void);
+
+// Re-fork both players' outpost draw streams from the run seed.
+void endlessReseedPlayers(Uint64 salt);
+
+/* In-memory Endless halves of the save slots owned by savegame.c. */
+bool endlessSlotHasRun(JE_byte slot);
+void endlessSaveCaptureSlot(JE_byte slot);
+/* Access a slot's cached Endless record without touching the live run. Serialize returns 0 when
+ * the slot has no Endless record. */
+size_t endlessSlotSerialize(JE_byte slot, Uint8 *out, size_t max);
+bool   endlessSlotAdopt(JE_byte slot, const Uint8 *bytes, size_t len);
+void   endlessSlotClear(JE_byte slot);
+void endlessSaveConfigRead(Config *config);
+void endlessSaveConfigWrite(Config *config);
+
+/* Fixed-width personal state carried by every co-op outpost sync. */
+#define ENDLESS_PLAYER_BLOCK_PERKS 32
+#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 11 + 8 * 3 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
+int  endlessPackPlayerBlock(Uint8 *buf, uint p);
+void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
+
+/* Whole simulation state edited by the Endless debug panel: depth, modifiers, and both ships'
+ * perks and personal buffs. Host generation wins simultaneous edits. */
+#define ENDLESS_DEBUG_BLOCK_PERKS 32
+#define ENDLESS_DEBUG_BLOCK_SIZE  (8 + 2 + 2 * ENDLESS_DEBUG_BLOCK_PERKS + 2 * 8 + 2 * 4)
+void endlessPackDebugBlock(Uint8 *buf);
+void endlessUnpackDebugBlock(const Uint8 *buf);
+
+/* Online co-op resume. The host serializes the live run as the text a save slot holds and the
+ * joiner adopts it. Returns 0 / false when there is nothing usable. */
+#define ENDLESS_RUN_WIRE_MAX 16384
+size_t endlessRunSerialize(Uint8 *out, size_t max);
+bool   endlessRunAdopt(const Uint8 *bytes, size_t len);
+// Redeal this seat's shop rows: the fallback when an adopted record carries no partner half.
+void endlessShopRedrawStock(void);
+/* Partner outpost state held for the local save. */
+#define ENDLESS_OUTPOST_BLOCK_SIZE (9 + 90 + 8)
+int  endlessPackOwnOutpost(Uint8 *buf);
+void endlessPartnerOutpostStash(uint seat, const Uint8 *block);
+void endlessPartnerOutpostClear(void);
+bool endlessLoadSlot(JE_byte slot);
+bool endlessResumePending(void);
+
+// Quit Level restores the launch snapshot. Hardcore keeps the sortie locked.
+extern bool endlessQuitToOutpost;
+extern bool endlessLockedSortie;
+
+void endlessCaptureSortie(void);
+void endlessRestoreSortie(void);
+bool endlessSortieValid(void);
+void endlessArmLockedRelaunch(void);
+
+// Death menu "Restart Zone": restore + re-arm the same level, skipping the outpost.
+void endlessRestartSortie(void);
+
+// Fallback picker; normal runs use the course path.
+JE_byte endlessPickNextLevel(void);
+
+// Course list for the current outpost.
+void        endlessGenerateCourses(void);
+int         endlessCourseCount(void);
+const char *endlessCourseName(int i);
+const char *endlessCourseHelp(int i);
+const char *endlessCourseRank(int i);
+int         endlessCourseRankLevel(int i);
+JE_byte     endlessCoursePlanet(int i);
+JE_byte     endlessCourseSection(int i);
+JE_byte     endlessSelectCourse(int i);
+Sint64      endlessCoursePayout(int i);
+
+// Radar perk: one reroll of the whole chart per outpost (the menu row in game_menu.c).
+bool        endlessCourseRerollOffered(void);
+bool        endlessCourseRerollSpent(void);
+const char *endlessCourseRerollHelp(void);
+void        endlessCourseReroll(void);
+
+// One modifier row on a course card.
+typedef struct {
+	const char *word;
+	int         weight;
+	bool        hostile;
+	bool        cleansed;
+} EndlessCourseModRow;
+
+// Returns rows in descending danger order.
+int endlessCourseModRows(int i, EndlessCourseModRow *rows, int max);
+
+// Registry description for one modifier bit.
+const char *endlessModWord(Uint64 bit);
+
+// Pay the clear reward and open the outpost.
+void endlessBetweenLevels(void);
+
+// Outpost actions; prices escalate within one visit.
+void endlessResetShopPrices(void);
+Sint64 endlessRerollPrice(void);
+Sint64 endlessHullPrice(void);
+bool endlessHullMaxed(void);
+bool endlessTryReroll(void);
+bool endlessTryReinforce(void);
+
+// Cash-fraction purchases use the balance recorded on shop entry.
+Sint64 endlessTurbodrivePrice(void);
+Sint64 endlessOverblastPrice(void);
+Sint64 endlessOverdrivePrice(void);
+Sint64 endlessSpecialPrice(void);
+
+// Persisted IDs: append only.
+enum {
+	ENDLESS_BUFF_KIND_NONE = 0,
+	ENDLESS_BUFF_KIND_TURBODRIVE,
+	ENDLESS_BUFF_KIND_OVERDRIVE,
+	ENDLESS_BUFF_KIND_OVERBLAST,
+};
+int  endlessBuffKindBought(void);
+bool endlessBuffOnCooldown(void);
+int  endlessBuffCooldownLeft(void);
+bool endlessTryBuyTurbodrive(void);
+bool endlessTryBuyOverblast(void);
+bool endlessTryBuyOverdrive(void);
+bool endlessTryBuySpecial(void);
+
+// Remaining E-Shop purchases.
+Sint64 endlessBombPrice(void);
+bool endlessBombFull(void);
+bool endlessTryBuyBomb(void);
+Sint64 endlessRevivePrice(void);
+bool endlessReviveArmed(void);
+bool endlessTryBuyRevive(void);
+
+// A successful revive arms a short enemy-fire grace period. The caller clears
+// the bullet field when endlessConsumeRevive returns true.
+bool endlessConsumeRevive(uint p);
+bool endlessReviveGraceActive(void);
+
+Sint64 endlessExtraPerkPrice(void);
+bool endlessTryBuyExtraPerk(void);
+
+// Maximum queued Sabotage charges per visit, counted across both players: the charges buy off the
+// shared sector, so co-op spends one queue between the two of them.
+#define ENDLESS_CLEANSE_MAX_CHARGES 3
+Sint64 endlessCleansePrice(void);
+int  endlessCleanseCharges(void);
+bool endlessCleanseMaxed(void);
+bool endlessTryBuyCleanse(void);
+Sint64 endlessGamblePrice(void);
+bool endlessTryGamble(void);
+const char *endlessGambleResult(void);
+bool endlessGambleWonPerk(void);
+void endlessClearGamblePerk(void);
+int  endlessShopTaxPercent(void);
+
+// Financier's shop multiplier in basis points; 10000 leaves prices unchanged.
+int  endlessPerkShopCostBp(void);
+
+// Debug and menu accessors for the current shop visit.
+int  endlessGambleOutcomeCount(void);
+const char *endlessGambleOutcomeName(int id);
+void endlessForceGambleOutcome(int id);
+const char *endlessLastGrantedSpecial(void);
+unsigned endlessPendingMods(void);
+// Purchased kill-fire modifiers win conflicts.
+Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased);
+
+// Initialize fork state after an Endless level is loaded.
+void endlessRegenerateLevel(void);
+
+// Reset only effect state for campaign debug mode.
+void endlessCampaignLevelStart(void);
+
+// Seed-repeatable per-zone coin: does this zone wake the dormant dispenser bases?
+bool endlessDispenserBaseRoll(void);
+
+// Recompute state chosen once per sector, such as gravity heading.
+void endlessRefreshModDerivedState(void);
+
+// Campaign-effect debug state in opentyrian.cfg.
+void endlessDebugConfigSave(ConfigSection *section);
+void endlessDebugConfigLoad(const ConfigSection *section);
+
+// Prevent run purchases from leaking into campaign debug mode.
+void endlessCampaignModsArm(void);
+
+// Milestone zones ignore script music changes.
+bool endlessMilestoneZone(void);
+
+// 0 ordinary, 1 half-century, 2 century, 3 odd multiple of 25.
+int endlessMilestoneKindOfZone(int zone);
+
+// Seeded replacement for level-script spotlight state.
+bool endlessLightConeActive(void);
+
+// Preload sprite banks needed before their script event.
+void endlessPreloadBanks(void);
+
+Sint64 endlessStartingCash(void);
+
+// Apply fixed starting gear before any purchase can occur.
+void endlessApplyStartingLoadout(void);
+
+// Move the starting gun to the first row of the opening shop.
+void endlessHoistStartWeapon(void);
+
+// A destroyed ship gets the death menu instead of GAME OVER and the run summary.
+bool endlessDeathMenuDue(void);
+
+// True after a fatal Standard or Hardcore death; closes the Quit Level escape.
+bool endlessDeathLocksMenu(void);
+
+void endlessOnRunEnd(void);
+
+// Hardcore quits show the same final summary as death.
+void endlessEndRunToTitle(void);
+
+// Apply the level-clear payout and return its components.
+void endlessApplyLevelPayout(Sint64 *interestOut, Sint64 *bonusOut);
+
+// Replace Endless data cubes and secret orbs with a safe special for player p.
+void endlessGrantSpecial(uint p);
+
+// Pickups that hand out a random special. Drives the "?" art (game_loop.c) and the pickup box
+// (player_ship.c). Reads enemy state, writes none.
+bool endlessSpecialPickup(int slot);
+
+// Unknown-item glyph extent and pickup padding from the enemy anchor.
+#define ENDLESS_SPECIAL_PICKUP_ICON 125
+#define ENDLESS_SPECIAL_GLYPH_INK_X0 2
+#define ENDLESS_SPECIAL_GLYPH_INK_X1 9
+#define ENDLESS_SPECIAL_GLYPH_INK_Y0 2
+#define ENDLESS_SPECIAL_GLYPH_INK_Y1 12
+#define ENDLESS_SPECIAL_GLYPH_GRAB   5
+#define ENDLESS_SPECIAL_GLYPH_X0    (ENDLESS_SPECIAL_GLYPH_INK_X0 - ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_X1    (ENDLESS_SPECIAL_GLYPH_INK_X1 + ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_Y0    (ENDLESS_SPECIAL_GLYPH_INK_Y0 - ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_Y1    (ENDLESS_SPECIAL_GLYPH_INK_Y1 + ENDLESS_SPECIAL_GLYPH_GRAB)
+
+// Outline shade within the glyph's cycling palette bank.
+#define ENDLESS_SPECIAL_OUTLINE_SHADE 2
+
+// Replace an embedded data cube with a gem at the enemy slot.
+void endlessDropCubeGem(int slot);
+
+// Replace the random-special event drop with a weapon power-up.
+JE_word endlessPowerupDropEnemy(void);
+
+// Redirect a maxed-port power-up to the other port, then to a gem.
+JE_word endlessResolvePowerupDrop(JE_word eDatI);
+
+// Depth and modifier scaling. Percentages use 100 as stock; HP multipliers use
+// hundredths because ordinary armor is byte-sized.
+int endlessArmorPercent(void);
+int endlessArmorOverflow100(void);
+int endlessBossHpMult100(void);
+int endlessBossHpMult(void);
+int endlessFireDelayPercent(void);
+int endlessShotSpeedPercent(void);
+int endlessShotDamagePercent(void);
+int endlessContactDamagePercent(void);
+
+// The scaling ramp for one (zone, difficulty, mods) tuple.
+typedef struct {
+	int  effDepth;       // Internal clock used by the scaling levers.
+	int  diffZone;       // Zone used by player-facing thresholds.
+	int  rampPercent;    // Difficulty tilt: 50 on Wimp through 160 on Insanity.
+	int  armorPct;       // Ordinary enemy HP, including overflow.
+	int  bossMult100;
+	int  fireDelayPct;   // Lower values fire faster.
+	int  shotSpeedPct;
+	int  shotDmgPct;
+	int  tide;
+	int  extraShots;
+	int  contactPct;
+	int  elitePct;
+	int  eliteHpMult100;
+	int  playerDmgPct;
+	int  piercePct;
+	int  pierceLock100;  // Hundredths of a simulation tick.
+	long eliteBounty;
+	long champBounty;
+} EndlessScaling;
+
+// Temporarily swaps the three input globals; not reentrant.
+void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScaling *out);
+
+// An active override bypasses depth and modifiers for one lever. Armor uses one
+// override for both its base and overflow values.
+enum {
+	ESO_ARMOR,
+	ESO_BOSSHP,
+	ESO_FIREDELAY,
+	ESO_SHOTSPEED,
+	ESO_SHOTDMG,
+	ESO_CONTACT,
+	ESO_TIDE,
+	ESO_EXTRASHOTS,
+	ESO_ELITECHANCE,
+	ESO_ELITEHP,
+	ESO_PLAYERDMG,
+	ESO_PIERCEDMG,
+	ESO_PIERCELOCK,
+	ESO_COUNT
+};
+
+typedef struct {
+	int  value;
+	bool active;
+} EndlessScalingOverride;
+
+extern EndlessScalingOverride endlessScalingOverride[ESO_COUNT];
+
+const char *endlessScalingOverrideName(int id);
+
+// Config keys are persisted and must not be renamed.
+const char *endlessScalingOverrideKey(int id);
+int         endlessScalingOverrideStock(int id);
+int         endlessScalingOverrideMin(int id);
+int         endlessScalingOverrideMax(int id);
+void        endlessScalingOverridesClear(void);
+int         endlessScalingOverrideCount(void);
+
+// Rising tide adds projectile count after the ordinary intensity ramps flatten.
+int endlessExtraEnemyShots(void);
+int endlessFanPhaseNow(void);
+
+// Player-side scaling and per-tick state.
+int  endlessPlayerDamagePercent(void);
+int  endlessScaleOwnDamage(int base, bool salvoBoosted);
+void endlessGameplayTick(void);
+bool endlessConsumeArmorHudDirty(void);
+bool endlessTurbodriveActive(void);
+
+// Live kill-fire values for the HUD.
+int endlessKillBuffTicksLeft(void);
+int endlessKillBuffTicksMax(void);
+int endlessKillBuffComboCount(void);
+int endlessKillBuffColorBank(void);
+int endlessKillBuffFireMultiplier(void);
+int endlessKillBuffDamagePercent(void);
+int endlessKillBuffFireDecrements(void);
+int endlessPerkSpecialCooldownDecrements(void);
+
+// Integer gravity offsets serve the classic ship path; float components serve
+// the velocity-based path. Drift values are pixels per 35 Hz tick.
+int   endlessGravityPullX(uint p);
+int   endlessGravityPullY(uint p);
+float endlessGravityDrift(void);
+float endlessGravityDriftX(void);
+float endlessGravityDriftY(void);
+float endlessMoveScale(void);
+
+// Power-system modifiers.
+bool     endlessShieldRegenOff(void);
+bool     endlessShieldRegenFree(void);
+unsigned endlessGeneratorPowerAdd(unsigned normalAdd);
+
+// Scroll boost is stable for the tick. Ask for each layer's extra pixels once
+// per tick, using channels 0 through 2.
+int  endlessScrollBoostPercent(void);
+bool endlessScrollBoostActive(void);
+int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick, float *rateOut, float *fracOut);
+int  endlessShipTintFilter(void);
+
+// Combat hooks for modifiers that need engine-owned object pools.
+int      endlessMartyrdomBurstShots(int linknum, int eliteState);
+JE_word  endlessMartyrShotSprite(void);
+bool     endlessSeekerActive(void);
+
+typedef enum {
+	ENDLESS_SEEK_NONE = 0,
+	ENDLESS_SEEK_CURVE,
+	ENDLESS_SEEK_TWIN,
+	ENDLESS_SEEK_WIDE,
+	ENDLESS_SEEK_TRUE,
+	ENDLESS_SEEK_KILL,
+	ENDLESS_SEEK_TIERS
+}
+EndlessSeekerTier;
+
+// Turn returns the cosine and sine of the tier's maximum correction angle. A
+// cosine of -1 allows a direct re-aim.
+EndlessSeekerTier endlessSeekerTier(void);
+JE_byte endlessSeekerPasses(void);
+void    endlessSeekerTurn(float *turnCos, float *turnSin);
+
+void endlessRegenHitTaken(void);
+
+// The caller caps this drain at the generator's current reserve.
+unsigned endlessStaticDischargeDrain(unsigned actualDamage);
+
+// Boons queried at collision or death sites.
+int  endlessHitboxScale(int area);
+
+// A successful gate check arms its cooldown, so call it once per hit.
+bool endlessAegisGateConsume(int shieldBefore, int spill);
+int  endlessEliteContactPercent(int eliteState);
+bool endlessRamWhileInvulnerable(uint invulnerableTicks);
+int  endlessShockwaveRadius(int linknum, int eliteState);
+bool endlessShockwaveActive(void);
+
+// Bank Star Charts and Breakthrough after a clear, and hand Alternating its next turn.
+void endlessOnSectorCleared(void);
+
+// Hostile kill-fire effects share the normal combo machinery.
+bool endlessKillFireIsEvil(void);
+int  endlessKillFireJamTicks(void);
+const char *endlessKillFireEvilName(void);
+
+// Tier rolls are cached by link group.
+void endlessResetElites(void);
+
+// True if player shots can damage this body now or after an armor event.
+bool endlessEnemyDestructible(JE_byte avail, JE_byte linknum, JE_byte armorleft);
+
+// Tier is settled on the body's first frame: 1 normal, 2 elite, 3 champion.
+int  endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem);
+int  endlessEliteHpMult100(void);
+int  endlessEliteHpMult(void);
+
+// Combined per-hit HP divisor, hundredths.
+int  endlessEnemyHpMult100(bool hasBossBar, int bossHpMult100, int eliteState);
+
+// Repeat-hit delay for piercing bullets, in hundredths of a tick.
+#define ENDLESS_PIERCE_LOCK_SCALE 100
+int  endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState);
+
+// Piercing damage, carried between ticks in hundredths of a point.
+#define ENDLESS_PIERCE_DMG_SCALE 100
+int  endlessPiercePotencyPercent(void);
+
+// Whole points one piercing bullet lands this tick. `carry100` is that bullet's remainder in
+// ENDLESS_PIERCE_DMG_SCALE units, read and advanced here.
+int  endlessPierceHitDamage(int rawDamage, int dmgPct, JE_byte *carry100);
+
+long endlessEliteBounty(void);
+long endlessChampionBounty(void);
+
+// Bounty Hunter also multiplies score pickups; `p` is the ship collecting one (JE_playerCollide).
+long endlessScorePickupValue(uint p, long value);
+
+int  endlessChampionFireDelayPercent(void);
+int  endlessChampionShotDamagePercent(void);
+Uint8 endlessEliteTint(int eliteState);
+
+// Colour an invulnerable part borrows from its link group, 0 when that group holds no tier.
+Uint8 endlessEliteShellTint(JE_byte linknum, JE_byte armorleft);
+
+// Call for every logical death so ordinary enemies break the link-group latch.
+void endlessAwardEliteKill(int linknum, int eliteState, int killer);
+
+// Run-persistent perks.
+extern bool endlessPerkPending;
+
+// Generate choices before entering the shop.
+void        endlessGeneratePerkChoices(int offers);
+int         endlessPerkChoiceCount(void);
+const char *endlessPerkChoiceName(int i);
+const char *endlessPerkChoiceDesc(int i);
+const char *endlessPerkChoiceOwnedText(int i);
+void        endlessTakePerk(int i);
+Sint64      endlessPerkDeclineBonus(void);
+void        endlessDeclinePerk(void);
+
+// General perk effects.
+int  endlessPerkArmorBonus(void);
+int  endlessPerkFireDecrements(void);
+int  endlessPerkPreviewFireDecrements(void);
+int  endlessPlayerDamageReduce(void);
+bool endlessPerkAutoFireSpecial(void);
+int  endlessPerkPowerUsePercent(void);
+int  endlessPerkShieldWait(int base);
+int  endlessPerkChargeTicks(int base);
+int  endlessPerkShotSpeedPercent(void);
+bool endlessPerkRadarActive(void);
+int  endlessPerkSurveyorRoutes(void);
+// Surveyor's per-kill pickup rolls: the killer's stacks decide, once per linked hull.
+void endlessPerkSurveyorDrops(unsigned int slot, int linknum, int killer);
+int  endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss);
+
+// Opening Salvo.
+void endlessOpeningSalvoTick(void);
+bool endlessOpeningSalvoConsume(void);
+bool endlessOpeningSalvoVolleyActive(void);
+int  endlessOpeningSalvoGaugePercent(void);
+int  endlessOpeningSalvoScale(int value);
+int  endlessOpeningSalvoDamagePercent(void);
+
+// Kinetic Converter. Ammo-round bookkeeping is stateful; call it once per hit.
+int endlessPerkKineticPower(int shieldAbsorbed, int tpwr);
+int endlessPerkKineticCooldownCut(int remaining);
+int endlessPerkKineticAmmoRounds(void);
+int endlessPerkKineticChargeStages(void);
+int endlessPerkKineticTwiddleCost(int listCost);
+
+// Countermeasure Suite. The effect context selects the ship being hit.
+int  endlessPerkCountermeasureRadius(void);
+
+// Chain Reaction.
+bool endlessPerkChainReactionActive(void);
+uint endlessPerkChainOwner(int killer);
+int  endlessPerkChainRadius(void);
+int  endlessPerkChainDamage(bool salvoBoosted);
+
+// Ordnance Reserves. A duration cap of zero is unlimited.
+int endlessPerkAmmoPercent(void);
+int endlessPerkSidekickAmmo(int base);
+int endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo);
+int endlessPerkSpecialDuration(int base, int cap);
+
+// Collision and weapon perks. Guidance returns zero for an unsteered shot;
+// endlessShipHullGapPx returns zero while the hulls touch.
+int  endlessPerkFailsafeTicks(void);
+int  endlessPerkGuidanceDelay(uint bay, int ownDelay);
+int  endlessPerkTwinPodOffset(uint p, uint sidekick);
+int  endlessPerkProwRamDamage(int damage);
+int  endlessPerkProwContactPercent(void);
+int  endlessShipHullGapPx(uint p, unsigned slot);
+int  endlessPerkKnifeFightPercent(unsigned slot);
+int  endlessPerkKnifeFightBonus(int damage, int pct);
+void endlessPerkKnifeFightBlood(unsigned slot, int pct);
+int  endlessPerkDeflectDamage(int absorbed);
+int  endlessPerkDeflectShieldSpared(int absorbed);
+
+// Perk registry accessors for the debug screen.
+int         endlessPerkCount(void);
+const char *endlessPerkName(int id);
+const char *endlessPerkDesc(int id);
+int         endlessPerkMaxStack(int id);
+
+// The first pair addresses this machine's player. The second names the ship.
+int         endlessPerkGetOwned(int id);
+void        endlessPerkSetOwned(int id, int n);
+int         endlessPerkGetOwnedFor(uint p, int id);
+void        endlessPerkSetOwnedFor(uint p, int id, int n);
+
+// The setter re-derives the ship's live personal-modifier mask.
+Uint64 endlessPersonalBuffMods(uint p);
+void   endlessSetPersonalBuffMods(uint p, Uint64 bits);
+
+bool endlessSaveTestTextCodec(char *detail, size_t detailSize);
+
+void endless_combat_register_rollback(void);
+void endless_register_rollback(void);
+
+#endif // ENDLESS_H

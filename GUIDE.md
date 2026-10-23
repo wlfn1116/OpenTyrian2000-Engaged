@@ -29,13 +29,22 @@ Graphics settings are under **Setup > Graphics**.
 - **Native** follows the fitted output size and costs the most GPU time.
 - **Sub-pixel FX** applies the same treatment to ice, water, and lava. Console
   builds default it off.
+- **Render Threads** sets how many CPU threads draw each frame, including the
+  ice, water and lava effects, with or without Sub-pixel. **Auto** times each
+  choice and keeps the fastest, preferring fewer threads when the gain is small,
+  and times them again when a scene gets much cheaper or costlier to draw.
+  A number fixes the count, and 1 keeps drawing on one thread. The choices stop
+  at your CPU's thread count, 16 at most; consoles offer up to three.
 - **FPS Cap** accepts a preset or a typed number. Zero means Uncapped. Online
   play requires at least 35.
 
 The simulation remains fixed at 35 Hz. Demos always use fixed-step movement.
 
-Vita resolves Sub-pixel to 1x. Its **Smooth FX** switch controls whether
-feedback backgrounds update at display rate or once per simulation tick.
+On Vita, Sub-pixel Auto follows the Scaler, so the default None scaler renders
+at 1x. A larger Scaler or a fixed Sub-pixel value raises the rendering
+resolution; it costs more CPU and GPU time and may not hold 60 fps.
+**Smooth FX** draws ice, water and lava at the display rate and at the
+Sub-pixel resolution; turning it off is cheaper.
 
 ## Endless mode
 
@@ -385,6 +394,10 @@ Debug Mode adds a menu to shops and the in-game menu, plus a level browser. It
 can change equipment, cash, cheats, difficulty, and Endless effects. Rollback
 Self-Test writes failures to `rollback_selftest.log`.
 
+**Perf Overlay** in the in-game debug menu shows the frame rate, enemy and shot
+counts, how a frame's time splits between logic, drawing, and presenting, and
+the thread count each drawing stage uses.
+
 ## Extra menu and Ship Editor
 
 **Title screen > Extra** contains Instructions, Transfer, Ship Editor, Jukebox,
@@ -497,5 +510,8 @@ files in private storage that is deleted on uninstall.
 `opentyrian.cfg` and `opentyrian.sav` are plain text. Edit them only while the
 game is closed.
 
-Older builds used `tyrian.sav`, `endless.sav`, and `tyrian.cfg`. The first launch
-without `opentyrian.sav` imports them and leaves the old files in place.
+The first launch without `opentyrian.sav` imports the save slots from a
+`tyrian.sav` written by OpenTyrian, OpenTyrian2000, or DOS Tyrian, along with its
+Tyrian 2000 high scores when it has them, and leaves that file in place. Earlier
+builds of this port wrote their own `tyrian.sav`, `endless.sav`, and
+`tyrian.cfg`; those are not imported.

@@ -7,14 +7,18 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := main
 
-LOCAL_SRC_FILES := $(notdir $(wildcard $(LOCAL_PATH)/*.c))
+OT_SRC_DIRS := audio core destruct endless game input level menus net platform qa video
 
-LOCAL_C_INCLUDES := $(JNI_PATH)/../SDL2/include $(JNI_PATH)/../SDL2_net
+LOCAL_SRC_FILES := $(notdir $(wildcard $(LOCAL_PATH)/*.c)) \
+                   $(foreach dir,$(OT_SRC_DIRS),$(addprefix $(dir)/,$(notdir $(wildcard $(LOCAL_PATH)/$(dir)/*.c))))
+
+LOCAL_C_INCLUDES := $(JNI_PATH)/../SDL2/include $(JNI_PATH)/../SDL2_net \
+                    $(LOCAL_PATH) $(addprefix $(LOCAL_PATH)/,$(OT_SRC_DIRS))
 
 # Keep character and floating-point behavior consistent with other netplay targets.
 LOCAL_CFLAGS := -std=iso9899:1999 -O2 -fsigned-char -ffp-contract=off \
                 -Wall -Wno-format-truncation -Wno-missing-field-initializers \
-                -DNDEBUG -DTARGET_UNIX -DWITH_NETWORK -DTYRIAN_DIR=\"data\"
+                -DNDEBUG -DTARGET_UNIX -DTYRIAN_DIR=\"data\"
 
 ifneq ($(OPENTYRIAN_COMMIT),)
 LOCAL_CFLAGS += -DOPENTYRIAN_COMMIT=\"$(OPENTYRIAN_COMMIT)\"

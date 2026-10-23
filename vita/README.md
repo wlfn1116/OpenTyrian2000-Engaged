@@ -63,13 +63,15 @@ error `0x8010113D`.
 Bindings and touch sensitivity are configurable. Text fields use the system
 IME. Rear touch and MIDI are disabled.
 
-Smooth Motion is available, but Sub-pixel rendering is fixed at 1x.
+Smooth Motion is available. The game starts at 1x with the None scaler. A
+larger Scaler or Sub-pixel setting works but costs more CPU and GPU time, so it
+may not hold 60 fps.
 
 ## Online play
 
 Open **Online Multiplayer** from the main menu. LAN discovery and direct address
 joining are available on UDP port 1333.
 
-Vita can play with Windows, Linux, and Switch builds of the same game version.
-VitaSDK has no SDL2_net package, so `src/vita_net.c` supplies the UDP subset used
-by the game.
+Vita can play with the Windows, macOS, Linux, Android, iOS, and Switch builds of
+the same game version. VitaSDK has no SDL2_net package, so
+`src/platform/vita_net.c` supplies the UDP subset used by the game.

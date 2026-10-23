@@ -7,10 +7,10 @@ are little-endian unless stated otherwise.
 import os
 import struct
 
-# Palette index each shop/menu face uses (src/pcxmast.c, facepal).
+# Palette index each shop/menu face uses (src/video/pcxmast.c, facepal).
 FACE_PALETTE = [1, 2, 3, 4, 6, 9, 11, 12, 16, 13, 14, 15]
 
-# Palette index each tyrian.pic screen is drawn with (src/pcxmast.c). Tyrian 1.1
+# Palette index each tyrian.pic screen is drawn with (src/video/pcxmast.c). Tyrian 1.1
 # stops after the first PCX_NUM of these.
 PCX_PALETTE = [0, 7, 5, 8, 10, 5, 18, 19, 19, 20, 21, 22, 5, 23]
 
@@ -18,9 +18,9 @@ TILE_W, TILE_H = 24, 28
 TILES_PER_SET = 600
 
 VOICE_COUNT = 9
-SAMPLE_RATE = 11025  # signed 8-bit mono (src/nortsong.c builds the converter from this)
+SAMPLE_RATE = 11025  # signed 8-bit mono (src/audio/sfx.c builds the converter from this)
 
-# Layout of the map layers inside a level record (src/tyrian2.c, JE_loadMap).
+# Layout of the map layers inside a level record (src/level/level_load.c, JE_loadMap).
 MAP_LAYERS = ((14, 300), (14, 600), (15, 600))
 
 # use_version binds release-specific tables before decoding. Tyrian 2000 is the default.
@@ -100,7 +100,7 @@ def data_index(data_dir):
             if os.path.isfile(os.path.join(data_dir, name))}
 
 
-# Encrypted Pascal strings (src/helptext.c, decrypt_string)
+# Encrypted Pascal strings (src/game/helptext.c, decrypt_string)
 
 CRYPT_KEY = (204, 129, 63, 255, 71, 19, 25, 62, 1, 99)
 
@@ -134,7 +134,7 @@ def read_script_lines(data):
     return lines
 
 
-# palette.dat (src/palette.c, JE_loadPals)
+# palette.dat (src/video/palette.c, JE_loadPals)
 
 
 def load_palettes(path):
@@ -158,7 +158,7 @@ def load_palettes(path):
     return expanded, raw
 
 
-# Sprite_array .shp files (src/sprite.c, load_sprites)
+# Sprite_array .shp files (src/video/sprite.c, load_sprites)
 #
 # u16 sprite count, then per sprite a "populated" byte and, when set, u16
 # width/height/size followed by `size` bytes of run-length data:
@@ -217,7 +217,7 @@ def load_sprite_array(data, offset=0):
     return sprites
 
 
-# Compiled 12px sheets, "Sprite2" (src/sprite.c, blit_sprite2)
+# Compiled 12px sheets, "Sprite2" (src/video/sprite.c, blit_sprite2)
 #
 # A table of u16 byte offsets, then the frames. Frame N (1-based) starts at
 # offsets[N - 1] and runs to a 0x0f terminator. Each control byte packs a
@@ -298,7 +298,7 @@ def load_raw_cell_sheet(path, offset=2):
     return cells, data[:offset], body[count * size:]
 
 
-# tyrian.shp / tyrianc.shp (src/sprite.c, JE_loadMainShapeTables)
+# tyrian.shp / tyrianc.shp (src/video/sprite.c, JE_loadMainShapeTables)
 #
 # u16 bank count, s32 bank offsets, then the banks. The Sprite_array tables come
 # first and the compiled 12px sheets follow. Tyrian 2000 holds 13 banks and
@@ -354,10 +354,10 @@ def load_main_shp(path):
     return banks
 
 
-# shapes?.dat tilesets (src/tyrian2.c, JE_loadMap)
+# shapes?.dat tilesets (src/level/level_load.c, JE_loadMap)
 #
 # 600 records: a "blank" byte and, when it is zero, a 24x28 tile. Palette index
-# 0 is transparent in every background layer (src/backgrnd.c).
+# 0 is transparent in every background layer (src/game/background.c).
 
 
 def load_tileset(path):
@@ -379,7 +379,7 @@ def load_tileset(path):
 
 
 # tyrian.pic and stand-alone PCX files use the same PCX run-length encoding.
-# See src/picload.c and src/pcxload.c.
+# See src/video/picload.c.
 
 
 def decode_pcx_rle(data, width=320, height=200):
@@ -426,7 +426,7 @@ def load_pcx(path):
     return decode_pcx_rle(body), palette
 
 
-# tyrian.snd / voices.snd / voicesc.snd (src/nortsong.c, loadSndFile)
+# tyrian.snd / voices.snd / voicesc.snd (src/audio/sfx.c, loadSndFile)
 #
 # u16 sample count, u32 offsets, then signed 8-bit mono at 11025 Hz. Voice
 # banks carry 100 bytes of junk at the end of each sample.
@@ -459,7 +459,7 @@ def wav_from_signed8(samples, rate=SAMPLE_RATE):
     return header + body
 
 
-# music.mus and its LDS songs (src/loudness.c and src/lds_play.c)
+# music.mus and its LDS songs (src/audio/audio.c and src/audio/lds_play.c)
 
 
 def load_music_bank(path):
@@ -522,7 +522,7 @@ def parse_lds(blob):
     return song
 
 
-# tyrend.anm, a DeluxePaint Animation "LPF" file (src/animlib.c)
+# tyrend.anm, a DeluxePaint Animation "LPF" file (src/video/animlib.c)
 
 ANM_PALETTE_OFFSET = 0x100
 ANM_PAGEHEADER_OFFSET = 0x500
@@ -621,7 +621,7 @@ def anm_apply_frame(screen, record):
     return screen
 
 
-# Item and enemy tables (src/episodes.c, JE_loadItemDat)
+# Item and enemy tables (src/level/episodes.c, JE_loadItemDat)
 #
 # Episodes 1-3 keep them in tyrian.hdt at the offset its first int32 names.
 # Episodes 4 and 5 keep their own copy at the end of the episode's .lvl file.
@@ -795,7 +795,7 @@ def load_item_data(data, offset):
     }
 
 
-# tyrian.hdt text blocks (src/helptext.c, JE_loadHelpText)
+# tyrian.hdt text blocks (src/game/helptext.c, JE_loadHelpText)
 #
 # A group is a label record, its entries, then a closing record the game skips.
 # The counts below are the ones the game reads; a mismatch desynchronises the
@@ -957,7 +957,7 @@ def load_hdt_text(path):
     return {"itemDataOffset": item_offset, "textEndOffset": r.pos, "groups": groups}
 
 
-# tyrian?.lvl level files (src/lvllib.c, JE_analyzeLevel; src/tyrian2.c, JE_loadMap)
+# tyrian?.lvl level files (src/level/lvllib.c, JE_analyzeLevel; src/level/level_load.c, JE_loadMap)
 #
 # u16 offset count, s32 offsets. Each playable level owns two offsets and the
 # last offset marks the end. Episodes 4 and 5 keep item data at the final one.
@@ -1007,7 +1007,7 @@ def load_level(data, offset):
     level["events"] = events
 
     # The tile lookup is the one big-endian field in the format: the game reads
-    # it little-endian and then swaps every entry (src/tyrian2.c, JE_loadMap).
+    # it little-endian and then swaps every entry (src/level/level_load.c, JE_loadMap).
     level["tileLookup"] = [[r.u16_be() for _ in range(128)] for _ in range(3)]
 
     maps = []
@@ -1018,7 +1018,7 @@ def load_level(data, offset):
     return level
 
 
-# demo.1 .. demo.5 (src/mainint.c, load_next_demo / replay_demo_keys)
+# demo.1 .. demo.5 (src/game/demo.c, load_next_demo / replay_demo_keys)
 
 DEMO_KEY_BITS = ("up", "down", "left", "right", "fire", "changeFire",
                  "leftSidekick", "rightSidekick")
@@ -1122,7 +1122,7 @@ def name_list_from_source(src_path, array_name):
 # What changed between releases
 
 # Enemy shapebank (1-based) to the newsh<c>.shp that holds its frames
-# (src/lvlmast.c). The table only ever grew: Tyrian 1.1 defines the first 30
+# (src/level/lvlmast.c). The table only ever grew: Tyrian 1.1 defines the first 30
 # banks, Tyrian 2.1 the first 34 and Tyrian 2000 all 36, with no slot ever
 # reassigned. Each release stores its own copy verbatim in file0001.exe, which
 # is where these lengths come from.

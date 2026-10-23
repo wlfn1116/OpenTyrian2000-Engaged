@@ -1,0 +1,320 @@
+/* 
+ * OpenTyrian: A modern cross-platform port of Tyrian
+ * Copyright (C) 2007-2009  The OpenTyrian Development Team
+ *
+ * This program is free software: you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+#include "palette.h"
+
+#include "config.h"
+#include "file.h"
+#include "keyboard.h"
+#include "opentyr.h"
+#include "pcxmast.h"
+#include "timing.h"
+#include "video.h"
+
+#include <assert.h>
+#include <math.h>
+#include <string.h>
+
+static Uint32 rgb_to_yuv(int r, int g, int b);
+
+#define PALETTE_COUNT 24
+
+Palette palettes[PALETTE_COUNT];
+int palette_count;
+
+static Palette palette;
+Uint32 rgb_palette[256], yuv_palette[256];
+
+Palette colors;
+
+void JE_loadPals(void)
+{
+	FILE *f = dir_fopen_die(data_dir(), "palette.dat", "rb");
+	
+	palette_count = ftell_eof(f) / (256 * 3);
+	assert(palette_count == PALETTE_COUNT);
+	
+	for (int p = 0; p < palette_count; ++p)
+	{
+		for (int i = 0; i < 256; ++i)
+		{
+			// Replicate the high two bits while expanding VGA 6-bit components to 8 bits,
+			// preserving both endpoints 0 and 255.
+
+			Uint8 rgb[3];
+			fread_u8_die(rgb, 3, f);
+			palettes[p][i].r = (rgb[0] << 2) | (rgb[0] >> 4);
+			palettes[p][i].g = (rgb[1] << 2) | (rgb[1] >> 4);
+			palettes[p][i].b = (rgb[2] << 2) | (rgb[2] >> 4);
+		}
+	}
+	
+	fclose(f);
+}
+
+void set_palette(Palette colors, unsigned int first_color, unsigned int last_color)
+{
+	for (uint i = first_color; i <= last_color; ++i)
+	{
+		palette[i] = colors[i];
+		rgb_palette[i] = SDL_MapRGB(main_window_tex_format, palette[i].r, palette[i].g, palette[i].b);
+		yuv_palette[i] = rgb_to_yuv(palette[i].r, palette[i].g, palette[i].b);
+	}
+}
+
+/* Timestamp of the last palette-fade step, used by overlays outside the indexed frame. */
+static Uint32 fade_step_ms;
+
+bool palette_fading(void)
+{
+	// Long enough to bridge the gap between fade steps at the slowest frame rate, short
+	// enough that the screen does not sit stripped after the last one.
+	const Uint32 quiet_ms = 120;
+
+	return fade_step_ms != 0 && SDL_GetTicks() - fade_step_ms < quiet_ms;
+}
+
+/* Brightest live palette component. Rendered overlays use it to follow fades and remain
+ * hidden between a fade-out and fade-in. */
+Uint8 palette_peak(void)
+{
+	Uint8 peak = 0;
+
+	for (uint i = 0; i < 256; ++i)
+	{
+		if (palette[i].r > peak)
+			peak = palette[i].r;
+		if (palette[i].g > peak)
+			peak = palette[i].g;
+		if (palette[i].b > peak)
+			peak = palette[i].b;
+	}
+
+	return peak;
+}
+
+void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color)
+{
+	for (uint i = first_color; i <= last_color; ++i)
+	{
+		palette[i] = color;
+		rgb_palette[i] = SDL_MapRGB(main_window_tex_format, palette[i].r, palette[i].g, palette[i].b);
+		yuv_palette[i] = rgb_to_yuv(palette[i].r, palette[i].g, palette[i].b);
+	}
+}
+
+void init_step_fade_palette(int diff[256][3], Palette colors, unsigned int first_color, unsigned int last_color)
+{
+	for (unsigned int i = first_color; i <= last_color; i++)
+	{
+		diff[i][0] = (int)colors[i].r - palette[i].r;
+		diff[i][1] = (int)colors[i].g - palette[i].g;
+		diff[i][2] = (int)colors[i].b - palette[i].b;
+	}
+}
+
+void init_step_fade_solid(int diff[256][3], SDL_Color color, unsigned int first_color, unsigned int last_color)
+{
+	for (unsigned int i = first_color; i <= last_color; i++)
+	{
+		diff[i][0] = (int)color.r - palette[i].r;
+		diff[i][1] = (int)color.g - palette[i].g;
+		diff[i][2] = (int)color.b - palette[i].b;
+	}
+}
+
+void step_fade_palette(int diff[256][3], int steps, unsigned int first_color, unsigned int last_color)
+{
+	assert(steps > 0);
+
+	fade_step_ms = SDL_GetTicks();
+
+	for (unsigned int i = first_color; i <= last_color; i++)
+	{
+		const int delta[3] = { diff[i][0] / steps, diff[i][1] / steps, diff[i][2] / steps };
+		
+		diff[i][0] -= delta[0];
+		diff[i][1] -= delta[1];
+		diff[i][2] -= delta[2];
+		
+		palette[i].r += delta[0];
+		palette[i].g += delta[1];
+		palette[i].b += delta[2];
+		
+		rgb_palette[i] = SDL_MapRGB(main_window_tex_format, palette[i].r, palette[i].g, palette[i].b);
+		yuv_palette[i] = rgb_to_yuv(palette[i].r, palette[i].g, palette[i].b);
+	}
+}
+
+// Present a palette fade at display refresh rate: the framebuffer is static during a fade, so
+// 35 steps/sec stutters. The classic step is linear -> a per-frame lerp reproduces it exactly.
+static void smooth_fade_to(const SDL_Color *target, int steps, unsigned int first_color, unsigned int last_color)
+{
+	// Only [first_color, last_color] is filled and only that range is read back, but zeroing makes
+	// that pairing local rather than something a reader (or analysis) has to match up across loops.
+	SDL_Color start[256] = { { 0, 0, 0, 0 } };
+	for (unsigned int i = first_color; i <= last_color; i++)
+		start[i] = palette[i];
+
+	const float duration = steps * get_delay_period();  // ms; == classic (steps x one delay unit)
+	const Uint64 freq = SDL_GetPerformanceFrequency();
+	const Uint64 begin = SDL_GetPerformanceCounter();
+	const float counter_to_ms = 1000.0f / (float)freq;
+
+	for (;;)
+	{
+		float frac = (float)(SDL_GetPerformanceCounter() - begin) * counter_to_ms / duration;
+		const bool done = frac >= 1.0f;
+		if (done)
+			frac = 1.0f;  // land exactly on the target palette
+
+		for (unsigned int i = first_color; i <= last_color; i++)
+		{
+			palette[i].r = start[i].r + (int)((target[i].r - start[i].r) * frac);
+			palette[i].g = start[i].g + (int)((target[i].g - start[i].g) * frac);
+			palette[i].b = start[i].b + (int)((target[i].b - start[i].b) * frac);
+
+			rgb_palette[i] = SDL_MapRGB(main_window_tex_format, palette[i].r, palette[i].g, palette[i].b);
+			yuv_palette[i] = rgb_to_yuv(palette[i].r, palette[i].g, palette[i].b);
+		}
+
+		// Stamped here as well as in step_fade_palette, because this path replaces it whenever
+		// Smooth Motion is on: without it palette_fading() reads false through most real fades.
+		fade_step_ms = SDL_GetTicks();
+
+		JE_showVGA();
+
+		if (done)
+			break;
+
+		if (!output_vsync)
+			limit_render_fps();
+		service_SDL_events(false);
+	}
+}
+
+void fade_palette(Palette colors, int steps, unsigned int first_color, unsigned int last_color)
+{
+	assert(steps > 0);
+
+	if (smoothMotion)
+	{
+		smooth_fade_to(colors, steps, first_color, last_color);
+		return;
+	}
+
+	static int diff[256][3];
+	init_step_fade_palette(diff, colors, first_color, last_color);
+
+	for (; steps > 0; steps--)
+	{
+		setDelay(1);
+
+		step_fade_palette(diff, steps, first_color, last_color);
+
+		JE_showVGA();
+
+		service_wait_delay();
+	}
+}
+
+static void fade_solid(SDL_Color color, int steps, unsigned int first_color,
+                       unsigned int last_color)
+{
+	assert(steps > 0);
+
+	if (smoothMotion)
+	{
+		SDL_Color target[256];
+		for (unsigned int i = first_color; i <= last_color; i++)
+			target[i] = color;
+		smooth_fade_to(target, steps, first_color, last_color);
+		return;
+	}
+
+	static int diff[256][3];
+	init_step_fade_solid(diff, color, first_color, last_color);
+
+	for (; steps > 0; steps--)
+	{
+		setDelay(1);
+
+		step_fade_palette(diff, steps, first_color, last_color);
+
+		JE_showVGA();
+
+		service_wait_delay();
+	}
+}
+
+void fade_black(int steps)
+{
+	SDL_Color black = { 0, 0, 0 };
+	fade_solid(black, steps, 0, 255);
+}
+
+void fade_white(int steps)
+{
+	SDL_Color white = { 255, 255, 255 };
+	fade_solid(white, steps, 0, 255);
+}
+
+static Uint32 rgb_to_yuv(int r, int g, int b)
+{
+	int y = (r + g + b) >> 2,
+	    u = 128 + ((r - b) >> 2),
+	    v = 128 + ((-r + 2 * g - b) >> 3);
+	return (y << 16) + (u << 8) + v;
+}
+
+static void JE_gammaCorrect_func(JE_byte *col, JE_real r)
+{
+	int temp = roundf(*col * r);
+	if (temp > 255)
+	{
+		temp = 255;
+	}
+	*col = temp;
+}
+
+void JE_gammaCorrect(Palette *colorBuffer, JE_byte gamma)
+{
+	int x;
+	JE_real r = 1 + (JE_real)gamma / 10;
+
+	for (x = 0; x < 256; x++)
+	{
+		JE_gammaCorrect_func(&(*colorBuffer)[x].r, r);
+		JE_gammaCorrect_func(&(*colorBuffer)[x].g, r);
+		JE_gammaCorrect_func(&(*colorBuffer)[x].b, r);
+	}
+}
+
+JE_boolean JE_gammaCheck(void)
+{
+	bool temp = keysactive[SDL_SCANCODE_F11] != 0;
+	if (temp)
+	{
+		keysactive[SDL_SCANCODE_F11] = false;
+		newkey = false;
+		gammaCorrection = (gammaCorrection + 1) % 4;
+		memcpy(colors, palettes[pcxpal[3-1]], sizeof(colors));
+		JE_gammaCorrect(&colors, gammaCorrection);
+		set_palette(colors, 0, 255);
+	}
+	return temp;
+}

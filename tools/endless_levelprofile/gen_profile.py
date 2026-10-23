@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate src/endless_levelprofile.h from threat.csv.
+"""Generate src/endless/endless_levelprofile.h from threat.csv.
 
 See README.md for the export command. Each level and difficulty produces a
 coarse danger-grade adjustment and a finer payout adjustment.
@@ -8,7 +8,7 @@ import csv, os, math
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CSV = os.path.join(HERE, "threat.csv")
-OUT = os.path.normpath(os.path.join(HERE, "..", "..", "src", "endless_levelprofile.h"))
+OUT = os.path.normpath(os.path.join(HERE, "..", "..", "src", "endless", "endless_levelprofile.h"))
 
 ANCHOR = 1.0     # difficulty01 of an ordinary campaign level maps to zero
 

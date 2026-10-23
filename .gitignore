@@ -12,7 +12,7 @@ tyrian.sav
 
 # Make build output
 /obj/
-/src/*.gch
+/src/**/*.gch
 /opentyrian
 /opentyrian2000
 
@@ -75,7 +75,6 @@ tyrian.sav
 /testing/*.log
 /testing/log/
 /testing/*.sav
-!/testing/fixtures/legacy/*.sav
 /rollback_selftest.log
 /endless.sav
 /testing/guest

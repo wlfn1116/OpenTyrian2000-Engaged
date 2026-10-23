@@ -65,7 +65,8 @@ Text fields open the Switch software keyboard. MIDI is disabled.
 Open **Online Multiplayer** from the main menu. LAN discovery and direct address
 joining are available on UDP port 1333.
 
-Switch can play with Windows, Linux, and Vita builds of the same game version.
+Switch can play with the Windows, macOS, Linux, Android, iOS, and Vita builds of
+the same game version.
 
 ## Troubleshooting
 
@@ -73,5 +74,5 @@ Switch can play with Windows, Linux, and Vita builds of the same game version.
 | --- | --- |
 | `Please set DEVKITPRO` | Use the devkitPro shell or source `/etc/profile.d/devkit-env.sh`. |
 | `pkg-config` missing | Check `$DEVKITPRO/portlibs/switch/bin/aarch64-none-elf-pkg-config`. |
-| `SDL_net.h` missing | Install `switch-sdl2_net`. Remove `-DWITH_NETWORK` from `CFLAGS` only for an offline build. |
+| `SDL_net.h` missing | Install `switch-sdl2_net`. |
 | Game data missing | Check both supported locations and filename case. |

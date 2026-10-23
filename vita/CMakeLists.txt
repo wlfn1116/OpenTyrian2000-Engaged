@@ -38,13 +38,20 @@ endif()
 add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-aliasing
                     -ffp-contract=off)
 
-# Platform-specific sources self-guard; the flat glob excludes the midiproc directory.
+# Platform-specific sources self-guard; the folder list leaves out the midiproc directory.
+set(OT_SRC_DIRS audio core destruct endless game input level menus net platform qa video)
 file(GLOB OT_SOURCES "${CMAKE_SOURCE_DIR}/../src/*.c")
+set(OT_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/../src")
+foreach(dir IN LISTS OT_SRC_DIRS)
+  file(GLOB OT_DIR_SOURCES "${CMAKE_SOURCE_DIR}/../src/${dir}/*.c")
+  list(APPEND OT_SOURCES ${OT_DIR_SOURCES})
+  list(APPEND OT_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/../src/${dir}")
+endforeach()
 
 add_executable(${PROJECT_NAME} ${OT_SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-  "${CMAKE_SOURCE_DIR}/../src"
+  ${OT_INCLUDE_DIRS}
   "$ENV{VITASDK}/arm-vita-eabi/include/SDL2"   # the engine includes "SDL.h" unqualified
 )
 
@@ -53,7 +60,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE
   NDEBUG
   TARGET_UNIX
-  WITH_NETWORK
   TYRIAN_DIR="app0:data"
 )
 

@@ -1,0 +1,81 @@
+/*
+ * OpenTyrian: A modern cross-platform port of Tyrian
+ * Copyright (C) 2007-2009  The OpenTyrian Development Team
+ *
+ * This program is free software: you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+#ifndef FONT_H
+#define FONT_H
+
+#include "opentyr.h"
+
+#include "SDL.h"
+
+#include <stdbool.h>
+
+typedef enum
+{
+	large_font = 0,
+	normal_font = 1,
+	small_font = 2
+}
+Font;
+
+typedef enum
+{
+	left_aligned,
+	centered,
+	right_aligned
+}
+FontAlignment;
+
+void draw_font_hv_shadow(SDL_Surface *, int x, int y, const char *text, Font, FontAlignment, Uint8 hue, Sint8 value, bool black, int shadow_dist);
+void draw_font_hv_full_shadow(SDL_Surface *, int x, int y, const char *text, Font, FontAlignment, Uint8 hue, Sint8 value, bool black, int shadow_dist);
+
+void draw_font_hv(SDL_Surface *, int x, int y, const char *text, Font, FontAlignment, Uint8 hue, Sint8 value);
+
+#define PART_SHADE 0
+#define FULL_SHADE 1
+#define DARKEN     2
+#define TRICK      3
+
+extern const int font_ascii[256];
+
+extern JE_byte textGlowFont, textGlowBrightness;
+
+void JE_dString(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);
+// JE_dString plus a black cardinal-direction outline, for shape-font text drawn over artwork.
+void JE_dStringOutlined(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);
+// Dim an already-drawn shape-font string in place (halves each glyph's shade), following the
+// same glyph advance as JE_dString.
+void JE_dStringDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int font);
+
+int JE_fontCenter(const char *s, unsigned int font);
+int JE_textWidth(const char *s, unsigned int font);
+void JE_textShade(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int shadetype);
+// FULL_SHADE only, for text drawn straight onto a supersampled present frame. x and y are 1x.
+void JE_textShadeScaled(SDL_Surface *screen, int x, int y, const char *s, unsigned int colorbank, int brightness, int scale);
+void JE_outText(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness);
+// JE_outText plus a black cardinal-direction outline, for small text drawn over artwork.
+void JE_outTextOutlined(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness);
+void JE_outTextAdjust(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, int brightness, unsigned int font, bool shadow);
+void JE_outTextAndDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int font);
+
+void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s);
+void JE_outTextGlowMulti(SDL_Surface * screen, const int *x, int y, const char *const *s, int count);
+
+extern JE_boolean useLastBank;
+void JE_outCharGlow(JE_word x, JE_word y, const char *s);
+
+#endif // FONT_H

@@ -8,8 +8,6 @@ else
     TYRIAN_DIR = $(gamesdir)/opentyrian2000
 endif
 
-WITH_NETWORK := true
-
 # GNU Make conventions: https://www.gnu.org/prep/standards/html_node/Makefile-Conventions.html
 
 SHELL = /bin/sh
@@ -43,7 +41,9 @@ gamesdir ?= $(datadir)/games
 TARGET := opentyrian2000
 SAN_TARGET := opentyrian2000-sanitize
 
-SRCS := $(wildcard src/*.c)
+SRC_DIRS := src src/audio src/core src/destruct src/endless src/game src/input src/level \
+            src/menus src/net src/platform src/qa src/video
+SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
 OBJS := $(SRCS:src/%.c=obj/%.o)
 DEPS := $(SRCS:src/%.c=obj/%.d)
 SAN_OBJS := $(SRCS:src/%.c=obj/sanitize/%.o)
@@ -51,13 +51,9 @@ SAN_DEPS := $(SRCS:src/%.c=obj/sanitize/%.d)
 
 PYTHON ?= python3
 TEST_DATA ?= data
-TEST_FIXTURES ?= testing/fixtures/endless
+TEST_FIXTURES ?= testing/fixtures
 SANITIZER_FLAGS := -O1 -g3 -fno-omit-frame-pointer -fno-sanitize-recover=all \
                    -fsanitize=address,undefined
-
-ifeq ($(WITH_NETWORK), true)
-    EXTRA_CPPFLAGS += -DWITH_NETWORK
-endif
 
 # Rebuild opentyr.o so the title screen always gets the current short commit id.
 OPENTYRIAN_COMMIT := $(shell $(VCS_IDREV) 2>/dev/null && \
@@ -77,22 +73,17 @@ CFLAGS ?= -pedantic \
 LDFLAGS ?=
 LDLIBS ?=
 
-ifeq ($(WITH_NETWORK), true)
-    SDL_CPPFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --cflags)
-    SDL_LDFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-L --libs-only-other)
-    SDL_LDLIBS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-l)
-    # network.c calls getsockopt/getsockname/WSAIoctl directly to turn off SIO_UDP_CONNRESET.
-    ifeq ($(PLATFORM), WIN32)
-        SDL_LDLIBS += -lws2_32
-    endif
-else
-    SDL_CPPFLAGS := $(shell $(PKG_CONFIG) sdl2 --cflags)
-    SDL_LDFLAGS := $(shell $(PKG_CONFIG) sdl2 --libs-only-L --libs-only-other)
-    SDL_LDLIBS := $(shell $(PKG_CONFIG) sdl2 --libs-only-l)
+SDL_CPPFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --cflags)
+SDL_LDFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-L --libs-only-other)
+SDL_LDLIBS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-l)
+# network.c calls getsockopt/getsockname/WSAIoctl directly to turn off SIO_UDP_CONNRESET.
+ifeq ($(PLATFORM), WIN32)
+    SDL_LDLIBS += -lws2_32
 endif
 
 ALL_CPPFLAGS = -DTARGET_$(PLATFORM) \
                -DTYRIAN_DIR='"$(TYRIAN_DIR)"' \
+               $(SRC_DIRS:%=-I%) \
                $(EXTRA_CPPFLAGS) \
                $(SDL_CPPFLAGS) \
                $(CPPFLAGS)
@@ -157,7 +148,7 @@ installdirs :
 .PHONY : install
 install : $(TARGET) installdirs
 	$(INSTALL_PROGRAM) $(TARGET) $(DESTDIR)$(bindir)/
-	$(INSTALL_DATA) NEWS README $(DESTDIR)$(docdir)/
+	$(INSTALL_DATA) README.md $(DESTDIR)$(docdir)/
 	$(INSTALL_DATA) linux/man/opentyrian2000.6 $(DESTDIR)$(man6dir)/opentyrian2000$(man6ext)
 	$(INSTALL_DATA) linux/opentyrian2000.desktop $(DESTDIR)$(desktopdir)/
 	$(INSTALL_DATA) linux/icons/tyrian2000-22.png $(DESTDIR)$(icondir)/hicolor/22x22/apps/opentyrian2000.png
@@ -169,7 +160,7 @@ install : $(TARGET) installdirs
 .PHONY : uninstall
 uninstall :
 	rm -f $(DESTDIR)$(bindir)/$(TARGET)
-	rm -f $(DESTDIR)$(docdir)/NEWS $(DESTDIR)$(docdir)/README
+	rm -f $(DESTDIR)$(docdir)/README.md
 	rm -f $(DESTDIR)$(man6dir)/opentyrian2000$(man6ext)
 	rm -f $(DESTDIR)$(desktopdir)/opentyrian2000.desktop
 	rm -f $(DESTDIR)$(icondir)/hicolor/22x22/apps/opentyrian2000.png

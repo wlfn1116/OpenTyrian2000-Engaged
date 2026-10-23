@@ -41,6 +41,28 @@ MSBuild visualc\opentyrian.vcxproj /t:Rebuild /p:Configuration=Release /p:Platfo
 Check range warnings instead of hiding them. `OT_ASSUME` belongs after a real
 bounds check.
 
+### Source layout
+
+`src/` groups the game by topic: `audio`, `core`, `destruct`, `endless`,
+`game`, `input`, `level`, `menus`, `net`, `platform`, `qa`, and `video`.
+`opentyr.c` (`main`) stays at the root, and `src/midiproc` is vendored.
+
+- Each build lists the source folders itself: `SRC_DIRS` in the root
+  `Makefile`, `SRCDIRS` in `switch/Makefile`, and `OT_SRC_DIRS` in
+  `android/app/src/main/jni/src/Android.mk` and the Vita, iOS, and macOS
+  `CMakeLists.txt`. A new folder goes into all six. The Visual Studio project
+  and its filters list every file.
+- Every folder is on the include path, so an include names only the header.
+- `endless_internal.h`, `net_internal.h`, and `qa_internal.h` are private to
+  their folders. Each stops the build unless the including file first defines
+  `ENDLESS_INTERNAL_ACCESS`, `NET_INTERNAL_ACCESS`, or `QA_INTERNAL_ACCESS`.
+  The QA suite may also use the Endless header.
+- `game_state.c` holds only state that several subsystems share: enemy pools,
+  level flow, and scratch values. New state belongs with the module that owns
+  its behaviour.
+- Rollback item names keep their old `t2.` and `vz.` prefixes. The layout
+  fingerprint hashes the names, so renaming one is a wire change.
+
 ## Rendering
 
 The simulation runs at 35 Hz. `render_list.c` records one tick and replays it at
@@ -77,12 +99,13 @@ For low-resolution feedback with a supersampled foreground:
 3. Draw the background tail at the foreground factor.
 4. Draw foreground commands over both.
 
-Vita keeps the 1x endpoint in `smoothie_frame` and composites display-rate
-foreground into `smoothie_present_frame`.
+At 1x with Smooth FX off, the Vita keeps the tick's endpoint in
+`smoothie_frame` and composites display-rate foreground into
+`smoothie_present_frame`.
 
 ### Display-rate ship movement
 
-The real-time ship integrator affects simulation.
+The real-time ship integrator (`vt_ship.c`) affects simulation.
 
 - Disable it for demo recording and playback.
 - Advance it on every presentation loop, including loops that also run a tick.
@@ -107,6 +130,14 @@ Supersparks share one ring. `JE_beginSPPass` and `JE_discardSPPass` undo a
 presented pass that gets replaced. Seeded presentation effects must not draw from
 the simulation RNG.
 
+The ring has 101 classic slots and an upper window that Extra Sparks sweeps.
+`JE_drawSP` steps the live range of the upper window (`sp_live_lo` to
+`sp_live_hi`) and then the classic slots, both from the top down, which is the
+order of a full scan. Every spawn must take its slot from `next_superpixel`,
+which widens that range; a spark written any other way would never be drawn.
+`qa_test_spark_ring_bounds` compares bounded passes with a full-ring scan
+through cursor wraps and rewinds.
+
 ### Coordinates
 
 The frame is 356x200. The playfield is 299x184 and the HUD is 57 pixels wide.
@@ -129,6 +160,235 @@ Destruct leaves open sky between its HUD boxes. Terrain, wall generation,
 collision ceilings, and shot trails must respect that gap. Clamp wall writes to
 `baseMap`; the next struct field is a pointer.
 
+### Frame-row threads
+
+`video_rows` in `video.c` splits a job's rows between the main thread and a
+pool of helper threads. Seven sites use it:
+
+| Site | Overlay | Work |
+| --- | --- | --- |
+| `VIDEO_ROWS_HI` | `HI` | `present_hi` palette conversion of hi-res frames |
+| `VIDEO_ROWS_FIT` | `NATIVE` | The Native scaler `nn_fit_32/16` |
+| `VIDEO_ROWS_REPLAY` | `REPLAY` | The normal-level playfield replay, at any scale |
+| `VIDEO_ROWS_COMPOSE` | `COMPOSE` | Playfield composite and HUD expansion at hi-res |
+| `VIDEO_ROWS_SMOOTHIE` | `SMOOTHIE` | Every smoothie pass in the present loop |
+| `VIDEO_ROWS_TICK` | `TICK` | Replays run once per tick |
+| `VIDEO_ROWS_FLAT` | `PLAIN` | `nn_32`, the None and 2x to 5x scalers |
+
+`SMOOTHIE` covers the feedback replays, the background pass and its filters,
+the expand, the background tail and the foreground. `TICK` covers the residual
+reference replay, feedback trim and commit, and `rl_replay_bg_tick`, which
+builds the Vita's cached plasma. `PLAIN` converts each source row once and
+copies it into the other output rows of its scale, so a band covers whole
+source rows. Unless the Native scaler is selected, menus and gameplay with
+Sub-pixel Off or Smooth Motion Off present through it.
+
+Output is the same on any number of threads. Every platform sends tick replays
+through `TICK`. On the Switch, Smooth Motion with the default 4x scaler also
+uses `HI`, `COMPOSE`, and `REPLAY` or `SMOOTHIE`. By default the Vita renders
+at 1x: normal levels replay through `REPLAY` at 1x, smoothie levels draw their
+foreground through `SMOOTHIE` at 1x, and every frame converts through `PLAIN`.
+A Vita player who raises Sub-pixel above 1x, directly or through Auto and a
+larger Scaler, gets the same hi-res sites as the Switch.
+
+- `init_video` starts the pool unless Render Threads is 1, so creating the
+  threads and running the self-test below happen at startup, outside any frame.
+  A pool that is not running yet, as after Render Threads changes from 1,
+  starts with the next job of at least 64K pixels (a 1x frame has 71,200). Jobs
+  under 64K pixels or with one row always run on the main thread.
+- `video_rows_max_threads()` sizes the pool to the CPU count, at most 16 threads
+  (15 helpers). Switch and Vita give games three cores, so they count exactly
+  three CPUs and run two helpers.
+- A startup self-test runs a small job through the helpers, which must each
+  finish within two seconds and match a single-threaded result. If the test
+  fails, or not even one helper and its semaphores can be created, every job
+  stays on one thread for the rest of the run. A pool that created only some
+  helpers runs with those.
+- When a helper misses the deadline, all helpers are detached and the
+  semaphores and test buffers stay allocated, so a late helper never touches
+  freed memory.
+- On Auto, each site tunes its own thread count. It times 1, 2, 4, 8 and 16
+  threads up to the pool size, plus the pool size itself, for 20 frames each,
+  taking turns. Each sample is the site's own cost in one frame: the rows plus
+  `SDL_UnlockTexture`, where OpenGL drivers copy the texture on the CPU.
+  Whole-frame times would mix in logic ticks, vsync and frame-cap waits, and
+  the other sites' tuning runs.
+- The pick uses each count's median and 95th percentile (nearest rank, the 19th
+  of 20 frames). A larger count wins only when its median is under 90% of the
+  current pick's and its 95th percentile is no higher than the pick's. A count
+  with two of its twenty frames above the pick's 95th percentile loses whatever
+  its median, and one fast frame cannot win.
+- `HI`, `NATIVE`, `COMPOSE` and `PLAIN` run once per frame and time each call. A
+  new pixel count starts a new tuning run.
+- The chosen count stays timed after the pick, in 120-frame windows. A window
+  moves when more than half of its frames cost over twice the median the count
+  had in its tuning run, or more than half cost under half of it. Two moved
+  windows in a row start a new tuning run, which compares every count again,
+  one thread included. This follows cost changes the pixel count does not
+  show, such as sprite load, filters and smoothies on the round sites.
+- `REPLAY`, `SMOOTHIE` and `TICK` can run several times per frame with jobs of
+  different sizes, so they tune on rounds. Every call in a round uses the
+  round's thread count, the round's time is the sum of its calls, and
+  `video_rows_end_frame` closes the round after each present in
+  `scale_and_flip` and `present_hi`. Tick replays get their own rounds because
+  they use their own site. A round whose largest job differs from the previous
+  round's restarts the tuning run. A round that never reaches a present, as in
+  a fast-forwarded test replay, stays open on its first thread count.
+- `video_rows` never runs more threads than the job has rows.
+- Render Threads is `render_threads` in `video.c`, saved as
+  `[video] render_threads`, with 0 for Auto. A number skips tuning and uses
+  that many threads, capped at the pool size; 1 never starts the pool. The
+  config loader lowers a value above `video_rows_max_threads()`.
+- A job finishes before `video_rows` returns, and `deinit_video` joins the
+  helpers. A band function may write only its own rows and must treat
+  everything else as read-only.
+- The scalers and `present_hi` return without drawing when `SDL_LockTexture`
+  fails, so no band writes through an unset pointer and the texture keeps the
+  previous frame.
+
+Band replay lives in `rl_replay_common` (`render_list.c`). Every replay draws in
+bands, in every phase and at every scale, unless `rl_band_reserve` cannot size
+the item list. The usual loop still computes each command's position, then
+collects it with its target surface, the playfield or the feedback scratch.
+`rl_band_draw` sends the pending items through `video_rows`, and `rl_band_rows`
+draws them into copies of the surfaces that start at the band's first row.
+
+- Smoothie filters and darken are barriers: the pending items are drawn first,
+  then the barrier runs on the whole surface. Darken stays on one thread
+  because it reads the row above in the same pass.
+- The playfield clear and the lazy scratch clear run inside the next batch of
+  bands.
+- At 1x, sprites, background rows and health bars use the same drawers as a
+  sequential replay, on the band copy with the row shifted by the band's first
+  row. Table sprites, background rows and the unclipped sprite2 filter clip by
+  address range, so a sprite that wraps across a band edge lands in the band
+  that owns the address. The sprite2 clip variants clip whole rows against the
+  surface height.
+- Above 1x, background rows go through `blit_background_row_scaled_batch`, so
+  each band has its own scratch buffer.
+- Stars, sparks and the grade use band versions at every scale
+  (`draw_starfield_star_band`, `rl_draw_superpixel_band`,
+  `filter_screen_apply_scaled_band`). Their visibility tests use absolute rows.
+- A drawer may run in bands only if it writes only its own rows, reads only the
+  pixels it writes, keeps no state between calls, and tests visibility in
+  absolute rows.
+
+The scaled smoothie filters split by sub-row set.
+`*_filter_scaled_subrows(dst, src, scale, sub_first, sub_last)` processes the
+rows whose index modulo `scale` lies in `[sub_first, sub_last)`. Each filter
+row reads only its own row and the rows `scale` above and below it, so the sets
+are independent. `rl_replay_common` dispatches `rl_filter_rows` with one row
+per set, so a 4x filter uses at most four threads. 1x filters stay on one
+thread; lava and water chain every row there.
+
+`compose_hi_frame` (`game_loop.c`) runs the playfield composite and the HUD
+expansion as one job over the 200 1x rows; the two write separate parts of
+`vga_hi`. The spotlight anchor is computed once before the dispatch. The
+smoothie expand into the hi-res buffer runs through
+`expand_frame_to_hi_threaded` on `SMOOTHIE`; menus keep the one-thread
+`expand_frame_to_hi`.
+
+Each tuning run ends with one line on stderr per site:
+
+```text
+video: tick replay rows on 2 threads (median/p95 0.040/0.041 ms on 1, 0.019/0.023 ms on 2, 0.022/0.062 ms on 4, 0.028/0.031 ms on 8, 0.035/0.038 ms on 16)
+```
+
+The line names the count each site settled on, then the median and 95th
+percentile for every count it tried. For `REPLAY`, `SMOOTHIE` and `TICK` the
+times are round totals. `rows on one thread` means no larger count had a median
+under 90% of one thread's without a higher 95th percentile. A fixed Render
+Threads value prints nothing, since nothing is tuned.
+
+`video: <site> rows moved from <ms> ms per frame; tuning again` means two
+windows in a row moved, so the site starts a new tuning run.
+`video: frame rows stay on one thread` means the pool did not start.
+
+Linux and macOS show these lines in the terminal that started the game. The
+Windows build has no console; start it from Command Prompt with `2> video.log`
+to keep them. The Switch and Vita builds do not save stderr, so read the
+decision from the debug perf overlay there.
+
+To show the overlay, turn on Debug Mode in Setup > Diagnostics, then pick
+Debug Menu > Perf Overlay from the in-game menu during a level. Two lines under
+`FPS` break the frame time down, averaged over one-second windows:
+
+| Value | Meaning |
+| --- | --- |
+| `TICK` | Game logic and tick drawing, between `JE_starShowVGA` calls |
+| `DRAW` | Frame start to the present call: replay, compositing, HUD |
+| `PRES` | The present call: conversion, upload, SDL present, vsync wait |
+| `MAX` | Longest gap between two presents in the window |
+
+`TICK` is per simulation tick; the others are per presented frame. Gaps of a
+second or more, such as menus and pauses, are left out. `frame_times` in
+`game_loop.c` collects the values, and `frame_times_get` returns the last window.
+
+Under `ALPHA`, one `ROWS` line appears for each site used since the previous
+overlay draw, read from `video_rows_stats`. The labels follow the site table
+above. The two times are medians from the last tuning run; for the round sites
+they are round totals.
+
+| Line | Meaning |
+| --- | --- |
+| `ROWS HI 8T 0.16/0.03ms` | 8 threads; one- and 8-thread medians |
+| `ROWS REPLAY 1T 0.36/0.40ms` | One thread; lowest larger-count median second |
+| `ROWS HI TUNING` | A tuning run is in progress, the first one or a re-run |
+| `ROWS HI 8T SET` | Render Threads fixed at 8, so nothing is timed |
+| `ROWS NATIVE 1T SMALL` | One thread; under 64K pixels or one row |
+| `ROWS HI OFF` | The pool did not start |
+| `ROWS UNUSED` | No site ran since the previous overlay draw |
+
+Each site keeps a call count, and its line appears when the count has moved
+since the previous overlay draw. That relies on every overlay draw being
+followed by exactly one present.
+
+`qa_test_present_paths` checks the present and Native paths pixel by pixel
+against a direct lookup and against one thread, compares every pool size from
+two threads up with one thread, and fails if the pool does not start on a
+multi-core machine. It also converts frames through `nn_32` at 1x to 5x, on one
+thread and on the whole pool. `video_test_rows_stats` drives `video_rows`
+through an Auto tuning run and both fixed settings, and checks the per-site
+counts and modes. `video_test_rows_rounds` checks that the calls of a round
+share a thread count, that a tuning run ends after its rounds, and that a round
+with a different largest job restarts it.
+
+`video_test_rows_pick` feeds the pick synthetic frame times. A steady 20% gain
+must win. A count that spikes on two frames in twenty, a count that is faster on
+only one frame, and a gain under 10% must lose. One slow frame must not outweigh
+a steady gain. `video_test_rows_watch` checks that two slower or two faster
+windows start a new tuning run, and that a single moved window or windows with
+exactly half their frames slow do not. `video_scale_test_lock_failure` hands
+every scaler a static texture, which `SDL_LockTexture` refuses. A scaler that
+writes anyway goes through an unset pointer and crashes the suite.
+
+`qa_test_background_bands` draws random background rows in thread bands and
+compares them with one full-surface pass. `qa_test_filter_subrows` runs each
+scaled filter one sub-row set at a time in a rotated order, and across threads,
+against the scalar loops. `qa_test_flat_bands` draws every 1x replay drawer
+over random band cuts, edges and wraps included, against one full-surface pass,
+and `rl_test_superpixel_bands` does the same for sparks at 1x to 4x.
+
+### Pixel loops
+
+`swar.h` holds two layers for 8-bit pixel loops:
+
+- `Swar8` packs eight lanes into a `uint64_t`, or four into a `uint32_t` on
+  32-bit targets such as the Vita.
+- `Vec8` is a 16-lane SSE2 or NEON vector. `VEC8_BYTES` is 16 when the compiler
+  targets SSE2 (`__SSE2__` or x64 MSVC) or NEON (`__ARM_NEON`), and 0 otherwise.
+
+Loops run 16-byte vectors first, then SWAR words, then single pixels. Vectors
+cover the 1x tile rows, the expanded hi-res rows, the screen grade, iced blur
+and blur, the scaled lava and water spans, and the spotlight's dark spans. The
+1x lava and water loops stay SWAR because their waver changes every 8 pixels.
+In-place lava and darken stay scalar because each pixel reads neighbours the
+same pass already rewrote.
+
+Every path must reproduce the frozen scalar copies in `qa_test_swar_pixel_loops`
+byte for byte. Windows x64 tests the SSE2 path; the Linux aarch64 suite in CI
+tests the NEON path.
+
 ## Endless
 
 ### Module ownership
@@ -145,7 +405,7 @@ collision ceilings, and shot trails must respect that gap. Clamp wall writes to
 | `endless_course.c` | Course generation and selection |
 | `endless_save.c` | Saves and sortie snapshots |
 | `endless.h` | Public interface |
-| `endless_internal.h` | Private interface and shared tuning |
+| `endless_internal.h` | Private interface and shared tuning, for `src/endless` and the QA suite |
 
 Keep tuning with its owner.
 
@@ -350,8 +610,11 @@ Current saves use the named-key format in `opentyrian.sav`:
 Missing or invalid keys use defaults. Unknown keys are ignored. Add a new
 Endless field to both section codecs and the online run codec.
 
-Legacy import runs only when `opentyrian.sav` is absent. It reads `tyrian.sav`,
-binary `endless.sav` versions 3 through 27, and the 28-byte `tyrian.cfg`.
+Import runs only when `opentyrian.sav` is absent. It reads the 2398-byte slot
+block that OpenTyrian, OpenTyrian2000, and DOS Tyrian write, then the Tyrian
+2000 high-score boards when they follow. A `tyrian.sav` from a build of this
+port before `opentyrian.sav` fails the checksums and is skipped. Binary
+`endless.sav` and `tyrian.cfg` are never read.
 
 Persistent tables are append-only. This includes run mode, difficulty, crew
 size, Base Level rule, cash categories, and record marks.
@@ -392,8 +655,7 @@ Seven rows fit above a classic help line. Debug headings are not selectable.
 Boss and enemy bars use playfield coordinates.
 
 Press edges (`newkey`, `newmouse`) survive until `service_SDL_events(true)` or
-an explicit clear. Keyboard repeat can re-arm `newkey`; `JE_wipeKey` does
-nothing.
+an explicit clear. Keyboard repeat can re-arm `newkey`.
 
 Screens that require a fresh press must call `wait_noinput(true, true, true)`,
 then clear both edges. This applies to the credits, episode banner, high-score
@@ -430,6 +692,22 @@ either peer resumes. Rendering, audio, and local controls stay local.
 
 `network_is_host` identifies the settings authority.
 `networkHostPlayerNum` identifies the ship flown by the host machine.
+
+### Modules
+
+| File | Owns |
+| --- | --- |
+| `network.c` | Reliable UDP, discovery, connection, settings, shop and run sync, barriers, diagnostics |
+| `net_transfer.c` | Chunked content: custom weapons, extra ships, custom levels and episodes |
+| `net_internal.h` | The `NCW_*` chunk header and the hooks those two files share |
+| `net_start.c` | Session start: game-type setup, ship picks, resume |
+| `net_lobby.c` | Host and join screens |
+| `net_rollback.c` | Rollback driver |
+| `rollback.c`, `rollback_state.c` | State registry and snapshot ring |
+| `net_savexfer.c` | Save and custom-data transfer screens |
+| `net_style.c` | Per-seat ship appearance |
+
+The Endless run transfer in `network.c` uses the same chunk header.
 
 ### Wire compatibility
 
@@ -535,9 +813,11 @@ new epoch each round.
 ### Online saves
 
 Online saves use slots 12 through 22. Slot 22 is the read-only `LAST LEVEL`
-backup. `save_record_pack` and `save_record_unpack` define the 161-byte wire
+backup. `save_record_pack` and `save_record_unpack` define the 162-byte wire
 record. It was 97 bytes through `NET_VERSION` 86; version 87 appended the
-64-byte custom-episode file name.
+64-byte custom-episode file name, and version 94 replaced the packed 32-bit
+dual-ship tag with five bytes: the session kind, two weapon powers, and two
+weapon modes.
 
 A save writes only to the local machine. The peer acknowledgement supplies the
 other outpost half. Preserve player numbers on resume and restore both co-op mode
@@ -577,10 +857,10 @@ time. Later episodes, repeats, and deaths do not replace it.
   container additions.
 - Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
 
-The single-save `OTSV` payload uses version 3. After its fixed header and
-161-byte save record come the Endless bytes, a 16-bit dependency length, and
-the colon-separated dependency string. Version 2 ended after the Endless
-bytes.
+The single-save `OTSV` payload uses version 4. After its fixed header and
+162-byte save record come the Endless bytes, a 16-bit dependency length, and
+the colon-separated dependency string. Version 3 carried a 161-byte record;
+version 2 ended after the Endless bytes.
 
 Custom-level transfer negotiates transfer-kind version 7 and uses `OTCL`
 version 2. Multi-byte envelope fields use network byte order:
@@ -721,9 +1001,14 @@ Logs are created lazily under `log/`. Network reports keep unsymbolized RVAs to
 avoid blocking the game loop; crash and hang reports may symbolize. Console log
 cleanup removes only recognized OpenTyrian names.
 
+A fresh profile has no user directory. Code that writes a file opens it under
+`make_user_directory()`, which creates the directory. Readers and scans use
+`get_user_directory()` and must not create it.
+
 Switch must keep its SDL window resizable for dock changes and save controller
-changes immediately. Vita presents at native size, forces 1x supersampling,
-keeps presenting during IME use, and uses front touch only.
+changes immediately. Vita boots with the None scaler, resolves Sub-pixel Auto to
+the scaler factor without the desktop's 2x minimum, keeps presenting during IME
+use, and uses front touch only.
 
 ## Level and data formats
 
@@ -817,8 +1102,8 @@ identity is the file name, size, and FNV-1a hash.
 
 #### Network sync
 
-`PACKET_CUSTOM_LEVEL` uses the common chunk header. Count values have these
-meanings:
+`PACKET_CUSTOM_LEVEL` uses the common chunk header (`NCW_*` in
+`net_internal.h`). Count values have these meanings:
 
 | Count | Meaning |
 | ---: | --- |

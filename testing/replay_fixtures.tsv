@@ -83,6 +83,12 @@
 # the demos. None of them can: the stretch is Endless-only, the gate needs a recharge drained
 # faster than the blast runs, which only an Endless perk does, and the width helper reproduces
 # vanilla's own curve tick for tick at the stock 50-tick blast.
-1 180 732e4ddb
-2 180 62523b72
-3 180 c7264c7f
+# Regenerated 2026-10-22, for a hash change with no simulation change behind it: the
+# single-player hash no longer skips the co-op registry entries or hashes Player in its pre-co-op
+# layout, so it covers the whole registered state as the co-op hash already did. Verified by
+# building with only the old projection restored, every other edit in the change kept: all three
+# hashes came back at the previous line's values. The three hashes below come back identically
+# from a working directory with no opentyrian.cfg in it.
+1 180 a3403644
+2 180 0e16e59f
+3 180 7f79716c
