@@ -330,7 +330,7 @@ def _demos(data_dir, dump_dir):
 
 
 def _blit_sprite_reference(width, height, data):
-    """src/sprite.c blit_sprite(), on a surface whose pitch equals the sprite width."""
+    """src/video/sprite.c blit_sprite(), on a surface whose pitch equals the sprite width."""
     buf = [None] * (width * height)
     limit = width * height
     pos = x_offset = i = 0

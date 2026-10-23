@@ -22,8 +22,9 @@ endif
 # Output name, object directory, source/include roots, and read-only romfs root.
 TARGET   := opentyrian2000
 BUILD    := build
-SOURCES  := ../src
-INCLUDES := ../src
+SRCDIRS  := audio core destruct endless game input level menus net platform qa video
+SOURCES  := ../src $(addprefix ../src/,$(SRCDIRS))
+INCLUDES := $(SOURCES)
 ROMFS    := romfs
 
 # Code generation
@@ -37,9 +38,9 @@ PKGCONF := $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsigned-char \
           -ffp-contract=off $(ARCH)
 
-# TYRIAN_DIR is a fallback behind the sdmc:/ and romfs: paths. WITH_NETWORK uses
+# TYRIAN_DIR is a fallback behind the sdmc:/ and romfs: paths. Networking uses
 # switch-sdl2_net and the socket initialization in switch_platform.c.
-CFLAGS += $(INCLUDE) -D__SWITCH__ -DWITH_NETWORK -DTYRIAN_DIR='"."' $(shell $(PKGCONF) sdl2 SDL2_net --cflags)
+CFLAGS += $(INCLUDE) -D__SWITCH__ -DTYRIAN_DIR='"."' $(shell $(PKGCONF) sdl2 SDL2_net --cflags)
 
 # CI supplies the title-screen commit id; local builds ask git.
 OPENTYRIAN_COMMIT ?= $(shell git -C $(TOPDIR)/.. rev-parse --short HEAD 2>/dev/null)

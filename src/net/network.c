@@ -1,0 +1,5997 @@
+/*
+ * OpenTyrian: A modern cross-platform port of Tyrian
+ * Copyright (C) 2007-2009  The OpenTyrian Development Team
+ *
+ * This program is free software: you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// Ahead of network.h, which pulls in SDL_net.h: SDL_net only defines INADDR_* when the platform
+// headers have not, so winsock2.h has to win the race or every one of them warns C4005.
+#ifdef _WIN32
+#include <winsock2.h>
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
+// Working-set probe for the wire tests' soak check (net_test_rss_kb).
+#include <psapi.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "psapi.lib")
+#endif
+#endif
+
+#include "network.h"
+
+#include "config.h"
+#include "console_platform.h"
+#include "crashlog.h"
+#include "custom_episode.h"
+#include "custom_weapon.h"
+#include "debug_levels.h"
+#include "debug_menu.h"
+#include "editship.h"
+#include "destruct_rollback.h"
+#include "endless.h"
+#include "fnv1a.h"
+#include "game_menu.h"
+#include "episodes.h"
+#include "file.h"
+#include "font.h"
+#include "fonthand.h"
+#include "helptext.h"
+#include "ingame_menu.h"
+#include "joystick.h"
+#include "keyboard.h"
+#include "loudness.h"
+#include "mainint.h"
+#include "menus.h"
+#include "mouse.h"
+#include "mtrand.h"
+#include "net_rollback.h"
+#include "net_style.h"
+#include "nortsong.h"
+#include "nortvars.h"
+#include "opentyr.h"
+#include "params.h"
+#include "picload.h"
+#include "player.h"
+#include "qa.h"
+#include "rollback.h"
+#include "save_menu.h"
+#include "shots.h"
+#include "sprite.h"
+#include "touch_ui.h"
+#include "tyrian2.h"
+#include "varz.h"
+#include "video.h"
+
+#include <assert.h>
+#include <stdlib.h>
+
+// SDL_net may omit the LAN interface; use the platform list where available.
+#if (defined(__APPLE__) || defined(__linux__)) \
+    && !defined(__SWITCH__) && !defined(__vita__)
+#define NET_HAVE_IFADDRS 1
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#endif
+
+/* Strict C99 hides IFF_* on some targets. These BSD values are checked below when the platform
+ * macros are visible. */
+#define NET_IFF_UP          0x0001u
+#define NET_IFF_BROADCAST   0x0002u
+#define NET_IFF_LOOPBACK    0x0008u
+#define NET_IFF_POINTOPOINT 0x0010u
+#define NET_IFF_RUNNING     0x0040u
+
+#ifdef IFF_UP
+SDL_COMPILE_TIME_ASSERT(net_iff_up, NET_IFF_UP == IFF_UP);
+SDL_COMPILE_TIME_ASSERT(net_iff_broadcast, NET_IFF_BROADCAST == IFF_BROADCAST);
+SDL_COMPILE_TIME_ASSERT(net_iff_loopback, NET_IFF_LOOPBACK == IFF_LOOPBACK);
+SDL_COMPILE_TIME_ASSERT(net_iff_pointopoint, NET_IFF_POINTOPOINT == IFF_POINTOPOINT);
+SDL_COMPILE_TIME_ASSERT(net_iff_running, NET_IFF_RUNNING == IFF_RUNNING);
+#endif
+
+bool network_interface_carries_lan(unsigned int flags)
+{
+	const unsigned int needed = NET_IFF_UP | NET_IFF_RUNNING | NET_IFF_BROADCAST;
+
+	if ((flags & needed) != needed)
+		return false;
+
+	return (flags & (NET_IFF_LOOPBACK | NET_IFF_POINTOPOINT)) == 0;
+}
+
+/* UDP session transport, handshake, discovery, and deterministic state exchange. */
+
+#define NET_VERSION       94           /* The save record carries the dual-ship fields unpacked. */
+#define NET_PORT          1333         // UDP
+
+// PACKET_CONNECT offsets after its four-byte packet header.
+#define NET_CONNECT_GAME_TYPE 12
+#define NET_CONNECT_EPISODE   14
+#define NET_CONNECT_DIFFICULTY 16
+#define NET_CONNECT_SETTINGS  18
+#define NET_CONNECT_ENDLESS   (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
+// run mode, chooser, combo feed, base level, seed
+#define NET_CONNECT_ENDLESS_SIZE (4 + NET_ENDLESS_SEED_MAX)
+#define NET_CONNECT_DESTRUCT  (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
+#define NET_CONNECT_DESTRUCT_SIZE 5   // battle mode, Uint32 terrain seed
+// Padded *.clv name, u32 size, and u32 hash; zeroed for stock episodes.
+#define NET_CONNECT_CUSTOM    (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
+// Name[64], u32 size, u32 hash, mode byte, and three reserved bytes.
+#define NET_CONNECT_CUSTOM_SIZE (CUSTOM_EPISODE_FILE_LEN + 12)
+#define NET_CONNECT_NAME      (NET_CONNECT_CUSTOM + NET_CONNECT_CUSTOM_SIZE)
+
+#define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
+#define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
+#define NET_KEEP_ALIVE    1600         // ticks to wait between keep-alive packets
+#define NET_TIME_OUT      16000        // ticks to wait before considering connection dead
+#define NET_DEPART_GRACE  4000         // ticks of end-screen silence that read as the peer having left
+#define NET_PING_MAX      5000         // round trips longer than this are treated as garbage, not latency
+#define NET_DRAIN_MAX     32           // datagrams network_check() reads per call at most
+
+bool isNetworkGame = false;
+
+// Input-delay ticks also bound how far either peer may run ahead. Values above 1 enable
+// single-packet XOR recovery. Default 3 supports roughly 85ms RTT at 35Hz.
+int network_delay = 3;
+
+char *network_opponent_host = NULL;
+
+Uint16 network_player_port = NET_PORT,
+       network_opponent_port = NET_PORT;
+
+Uint16 network_listen_port = NET_PORT;
+
+int network_host_player = 1;
+
+// Session game speed, a host option (1..5, 4 = Normal); the joiner adopts it from the
+// settings block like every other sim-binding choice.
+int network_host_game_speed = 4;
+NetworkGameType network_game_type = NETWORK_GAME_ARCADE;
+int network_host_episode = 1;
+int network_host_difficulty = DIFFICULTY_NORMAL;
+
+// Arcade's Timed Battle shape and which of the three levels it races (see network.h).
+bool network_host_timed_battle = false;
+int  network_host_battle_level = 1;
+
+// Endless lobby block. Blank seed means "roll one when the run starts".
+char network_host_endless_seed[NET_ENDLESS_SEED_MAX] = "";
+char network_endless_session_seed[NET_ENDLESS_SEED_MAX] = "";
+int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
+int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
+bool network_host_endless_combo_shared = false;
+int  network_host_endless_base_rule = 0;  // ENDLESS_BASE_VARIED: a level per charted route
+
+// Destruct lobby block. The seed is per session; every round hashes it with the round number.
+int    network_host_destruct_mode = 0;    // MODE_5CARDWAR
+Uint32 network_destruct_session_seed = 0;
+
+static char empty_string[] = "";
+char *network_player_name = empty_string,
+     *network_opponent_name = empty_string;
+
+bool network_is_host = false;
+
+bool network_session_saveable = false;
+bool network_from_lobby = false;
+
+// network_player_name starts out pointing at a static empty string and is otherwise owned heap
+// memory, so changing it has to know which it currently is.
+void network_set_player_name(const char *name)
+{
+	if (network_player_name != empty_string)
+		free(network_player_name);
+
+	if (name == NULL || name[0] == '\0')
+	{
+		network_player_name = empty_string;
+		return;
+	}
+
+	size_t len = strlen(name);
+	if (len > NET_NAME_MAX)
+		len = NET_NAME_MAX;
+
+	network_player_name = malloc_die(len + 1);
+	memcpy(network_player_name, name, len);
+	network_player_name[len] = '\0';
+}
+
+// Not `socket`: <winsock2.h> (included below for the WSAECONNRESET fix) declares a function of
+// that name, and a file-scope object would collide with it.
+static UDPsocket net_socket;
+static IPaddress ip;
+
+/* Optional discovery socket for hosts using a non-default game port. */
+static UDPsocket discover_socket;
+
+UDPpacket *packet_out_temp;
+static UDPpacket *packet_temp;
+
+UDPpacket *packet_in[NET_PACKET_QUEUE] = { NULL },
+          *packet_out[NET_PACKET_QUEUE] = { NULL };
+
+static Uint16 last_out_sync = 0, queue_in_sync = 0, queue_out_sync = 0, last_ack_sync = 0;
+static Uint32 last_in_tick = 0, last_out_tick = 0;
+
+// Wire tests start the sequence space here instead of zero, so every scenario crosses the
+// Uint16 wraparound as part of its normal run. Zero outside the tests.
+static Uint16 qa_seq_base = 0;
+
+UDPpacket *packet_state_in[NET_PACKET_QUEUE] = { NULL };
+static UDPpacket *packet_state_in_xor[NET_PACKET_QUEUE] = { NULL };
+UDPpacket *packet_state_out[NET_PACKET_QUEUE] = { NULL };
+
+static Uint16 last_state_in_sync = 0, last_state_out_sync = 0;
+static Uint32 last_state_in_tick = 0;
+
+static bool net_initialized = false;
+static bool connected = false, quit = false;
+
+// The first valid connect packet binds an unpaired lobby host's channel.
+static bool host_awaiting_peer = false;
+
+// Whether `ip` names a peer yet.  It is only assigned, never cleared, so a session that never
+// reached a peer would otherwise still be comparing against the one before it.
+static bool peer_addr_known = false;
+
+// Keep-alives echo the sender's tick count, so RTT does not compare peer clocks.
+static float ping_ema = 0.0f;
+static bool ping_valid = false;
+
+// Session traffic/health counters for the crash log's Network section (network_write_diagnostics).
+// Cheap enough to maintain on every packet; reset when the session tears down.
+static struct
+{
+	Uint32 dg_in, dg_out;                       // datagrams consumed / put on the wire
+	Uint32 recv_errors, send_errors;            // socket-level failures (ICMP resets etc.)
+	Uint32 bad_packets;                         // unknown type on the game channel
+	Uint32 retries;                             // reliable-channel retransmits
+	Uint32 window_overflow;                     // reliable packets that arrived past the receive window
+	Uint32 state_in, state_out, state_late;     // state stream; late = outside the queue window
+	Uint32 xor_rebuilds;                        // lost state packets reconstructed from parity
+	Uint32 resend_req_sent, resend_req_served;  // state resend requests
+	Uint32 stalls;                              // state waits that earned a >3 s crashlog note
+	Uint32 desync_levels;                       // levels that reported a desync (either mode)
+	Uint32 connect_tick, first_desync_tick;
+	int    first_desync_level;
+} net_diag;
+
+jmp_buf network_bailout_env;
+bool network_bailout_armed = false;
+
+uint thisPlayerNum = 0;  /* Player number on this PC (1 or 2) */
+uint networkHostPlayerNum = 1;  /* Player number the host is flying */
+
+JE_boolean haltGame = false;
+
+JE_boolean moveOk;
+
+/* Special Requests */
+JE_boolean skipLevelRequest, helpRequest, nortShipRequest;
+JE_boolean yourInGameMenuRequest, inGameMenuRequest;
+
+static void packet_copy(UDPpacket *dst, UDPpacket *src)
+{
+	void *temp = dst->data;
+	memcpy(dst, src, sizeof(*dst));
+	dst->data = temp;
+	memcpy(dst->data, src->data, src->len);
+}
+
+/* Reuse queue packets to avoid per-tick SDL_net allocations. */
+#define NET_PACKET_POOL_MAX (NET_PACKET_QUEUE * 5)
+static UDPpacket *packet_pool[NET_PACKET_POOL_MAX];
+static int packet_pool_count;
+
+static UDPpacket *packet_acquire(void)
+{
+	if (packet_pool_count > 0)
+		return packet_pool[--packet_pool_count];
+	return SDLNet_AllocPacket(NET_PACKET_SIZE);
+}
+
+static UDPpacket *packet_acquire_or_halt(void)
+{
+	UDPpacket *packet = packet_acquire();
+	if (packet == NULL)
+	{
+		fprintf(stderr, "error: SDLNet_AllocPacket: %s\n", SDLNet_GetError());
+		network_tyrian_halt(2, false);
+	}
+	return packet;
+}
+
+static void packet_release(UDPpacket *packet)
+{
+	if (packet == NULL)
+		return;
+	if (packet_pool_count < NET_PACKET_POOL_MAX)
+		packet_pool[packet_pool_count++] = packet;
+	else
+		SDLNet_FreePacket(packet);
+}
+
+static void packet_destroy(UDPpacket **packet)
+{
+	if (*packet == NULL)
+		return;
+	SDLNet_FreePacket(*packet);
+	*packet = NULL;
+}
+
+static void packets_shift_up(UDPpacket **packet, int max_packets)
+{
+	packet_release(packet[0]);
+	memmove(packet, packet + 1, (size_t)(max_packets - 1) * sizeof(*packet));
+	packet[max_packets - 1] = NULL;
+}
+
+static void packets_shift_down(UDPpacket **packet, int max_packets)
+{
+	packet_release(packet[max_packets - 1]);
+	memmove(packet + 1, packet, (size_t)(max_packets - 1) * sizeof(*packet));
+	packet[0] = NULL;
+}
+
+// prepare new packet for sending
+void network_prepare(Uint16 type)
+{
+	SDLNet_Write16(type,          &packet_out_temp->data[0]);
+	SDLNet_Write16(last_out_sync, &packet_out_temp->data[2]);
+}
+
+// send packet but don't expect acknowledgment of delivery
+static bool network_send_no_ack(int len)
+{
+	packet_out_temp->len = len;
+
+	if (!SDLNet_UDP_Send(net_socket, 0, packet_out_temp))
+	{
+		printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+		++net_diag.send_errors;
+		return false;
+	}
+
+	++net_diag.dg_out;
+	return true;
+}
+
+bool network_send_unacked(int len)
+{
+	return network_send_no_ack(len);
+}
+
+// send packet and place it in queue to be acknowledged
+bool network_send(int len)
+{
+	// Reserve queue space before sending so every datagram receives a unique sequence number.
+	Uint16 i = last_out_sync - queue_out_sync;
+	if (i >= NET_PACKET_QUEUE)
+	{
+		/* A full window is backpressure. Service the socket until a slot opens,
+		 * preserving this packet because service calls reuse packet_out_temp. */
+		Uint8 pending[NET_PACKET_SIZE];
+		memcpy(pending, packet_out_temp->data, (size_t)len);
+
+		const Uint32 wait_start = SDL_GetTicks();
+		while ((i = (Uint16)(last_out_sync - queue_out_sync)) >= NET_PACKET_QUEUE
+		       && SDL_GetTicks() - wait_start < NET_TIME_OUT && !quit)
+		{
+			watchdog_heartbeat();
+			network_check();
+			SDL_Delay(1);
+		}
+
+		memcpy(packet_out_temp->data, pending, (size_t)len);
+
+		if (i >= NET_PACKET_QUEUE)
+		{
+			fprintf(stderr, "error: outbound packet queue overflow\n");
+
+			crashlog_note_net("NETWORK QUEUE OVERFLOW",
+			              "no acknowledgement for a full outbound queue; treating the link as lost");
+
+			if (!quit)
+				network_tyrian_halt(2, false);
+
+			return false;
+		}
+	}
+
+	bool temp = network_send_no_ack(len);
+
+	packet_out[i] = packet_acquire_or_halt();
+	packet_copy(packet_out[i], packet_out_temp);
+
+	last_out_sync++;
+
+	// The retry timer belongs to the queue head. Starting it on any later send instead pushes
+	// the head's retransmission into the future for as long as new sends keep coming.
+	if (i == 0)
+		last_out_tick = SDL_GetTicks();
+
+	return temp;
+}
+
+// send acknowledgment packet
+static int network_acknowledge(Uint16 sync)
+{
+	SDLNet_Write16(PACKET_ACKNOWLEDGE, &packet_out_temp->data[0]);
+	SDLNet_Write16(sync,               &packet_out_temp->data[2]);
+	network_send_no_ack(4);
+
+	return 0;
+}
+
+// activity lately?
+static bool network_is_alive(void)
+{
+	return (SDL_GetTicks() - last_in_tick < NET_TIME_OUT || SDL_GetTicks() - last_state_in_tick < NET_TIME_OUT);
+}
+
+/* Adapt retries to RTT, with a floor above ordinary jitter. */
+static Uint32 net_retry_interval(void)
+{
+	if (!ping_valid)
+		return NET_RETRY;
+
+	Uint32 interval = (Uint32)(ping_ema + 0.5f) * 2 + 60;
+	if (interval < 120)
+		interval = 120;
+	if (interval > NET_RETRY)
+		interval = NET_RETRY;
+	return interval;
+}
+
+// Exported liveness for the rollback stall logic: a peer sitting in menus for
+// minutes keeps sending keep-alives, and that must read as "slow, not dead".
+bool network_peer_alive(void)
+{
+	return network_is_alive();
+}
+
+// -1 means no RTT sample; callers display it as "--".
+int network_ping_ms(void)
+{
+	if (!connected || !ping_valid)
+		return -1;
+
+	return (int)(ping_ema + 0.5f);
+}
+
+// Answer a discovery probe with the version, the real game port, and this player's name.
+static void network_discover_answer(UDPsocket sock, const IPaddress *to)
+{
+	// network_set_player_name already clamps the stored name; the re-clamp keeps the
+	// fixed-size packet fill safe on its own terms.
+	size_t name_len = strlen(network_player_name);
+	if (name_len > NET_NAME_MAX)
+		name_len = NET_NAME_MAX;
+
+	SDLNet_Write16(PACKET_DISCOVER_REPLY, &packet_out_temp->data[0]);
+	SDLNet_Write16(NET_VERSION,           &packet_out_temp->data[2]);
+	SDLNet_Write16(network_player_port,   &packet_out_temp->data[4]);
+	memcpy(&packet_out_temp->data[6], network_player_name, name_len);
+	packet_out_temp->data[6 + name_len] = '\0';
+
+	packet_out_temp->len = (int)(6 + name_len + 1);
+	packet_out_temp->address = *to;
+
+	// Channel -1 sends to the packet's own address, which is what we want: replying must
+	// not disturb the channel binding the game protocol uses.
+	SDLNet_UDP_Send(sock, -1, packet_out_temp);
+}
+
+// Consume at most one datagram. A receive error is transient: Windows reports ICMP unreachable as
+// WSAECONNRESET on the next receive without disturbing queued datagrams.
+static int network_recv_one(void)
+{
+	switch (SDLNet_UDP_Recv(net_socket, packet_temp))
+	{
+		case -1:
+			++net_diag.recv_errors;
+			return -1;
+		case 0:
+			return 0;
+		default:
+			++net_diag.dg_in;
+			// LAN discovery probes come from machines we have never spoken to, so they arrive on no
+			// channel (-1) and have to be answered before the channel check below.
+			if (packet_temp->len >= 4 &&
+			    SDLNet_Read16(&packet_temp->data[0]) == PACKET_DISCOVER)
+			{
+				if (host_awaiting_peer)
+					network_discover_answer(net_socket, &packet_temp->address);
+
+				return 1;
+			}
+
+			// Only the first connect packet may bind an unpaired host.
+			if (host_awaiting_peer && packet_temp->len >= 4 &&
+			    SDLNet_Read16(&packet_temp->data[0]) == PACKET_CONNECT)
+			{
+				if (SDLNet_UDP_Bind(net_socket, 0, &packet_temp->address) == -1)
+				{
+					fprintf(stderr, "error: SDLNet_UDP_Bind: %s\n", SDLNet_GetError());
+					return -1;
+				}
+				ip = packet_temp->address;
+				peer_addr_known = true;
+				host_awaiting_peer = false;
+				packet_temp->channel = 0;
+
+				// The lobby is full; stop advertising on the well-known port.
+				if (discover_socket)
+				{
+					SDLNet_UDP_Close(discover_socket);
+					discover_socket = NULL;
+				}
+			}
+
+			// Accept the known peer by host address even if NAT rewrites its outbound source port.
+			const bool from_peer = packet_temp->channel == 0 ||
+			                       (peer_addr_known && packet_temp->address.host == ip.host);
+
+			if (from_peer && packet_temp->len >= 4)
+			{
+				switch (SDLNet_Read16(&packet_temp->data[0]))
+				{
+					case PACKET_ACKNOWLEDGE:
+					{
+						const Uint16 ack = SDLNet_Read16(&packet_temp->data[2]);
+						const Uint16 i = ack - queue_out_sync;
+
+						// Only outstanding packets may advance acknowledgement state.
+						if (i >= (Uint16)(last_out_sync - queue_out_sync))
+						{
+							last_in_tick = SDL_GetTicks();
+							break;
+						}
+
+						if ((Uint16)(ack - last_ack_sync) < NET_PACKET_QUEUE)
+							last_ack_sync = ack;
+
+						if (packet_out[i])
+						{
+							packet_release(packet_out[i]);
+							packet_out[i] = NULL;
+						}
+
+						// remove acknowledged packets from queue
+						while (packet_out[0] == NULL && (Uint16)(last_ack_sync - queue_out_sync) < NET_PACKET_QUEUE)
+						{
+							packets_shift_up(packet_out, NET_PACKET_QUEUE);
+
+							queue_out_sync++;
+						}
+
+						last_in_tick = SDL_GetTicks();
+						break;
+					}
+
+					case PACKET_CONNECT:
+						/* Late handshake duplicates must not reset the live receive window. */
+						if (connected)
+						{
+							const Uint16 connect_sync = SDLNet_Read16(&packet_temp->data[2]);
+							const Sint16 slot = (Sint16)(connect_sync - queue_in_sync);
+							if (slot == 0)
+							{
+								// At the head: discard it by advancing the window past it.
+								packets_shift_up(packet_in, NET_PACKET_QUEUE);
+								++queue_in_sync;
+							}
+							else if (slot > 0 && slot < NET_PACKET_QUEUE)
+							{
+								/* Queue reordered handshake packets in their sequence slot. An
+								 * acknowledged gap would stall the receive window permanently. */
+							if (packet_in[slot] == NULL)
+								packet_in[slot] = packet_acquire_or_halt();
+							packet_copy(packet_in[slot], packet_temp);
+							}
+							else if (slot >= NET_PACKET_QUEUE)
+							{
+								// Withhold the ack until the receive window has room.
+								++net_diag.window_overflow;
+								last_in_tick = SDL_GetTicks();
+								break;
+							}
+							// Behind the window: consumed already; just re-acknowledge.
+							network_acknowledge(connect_sync);
+							last_in_tick = SDL_GetTicks();
+							break;
+						}
+						queue_in_sync = SDLNet_Read16(&packet_temp->data[2]);
+
+						for (int i = 0; i < NET_PACKET_QUEUE; i++)
+						{
+							if (packet_in[i])
+							{
+								packet_release(packet_in[i]);
+								packet_in[i] = NULL;
+							}
+						}
+						// fall through
+
+					case PACKET_DETAILS:
+					case PACKET_WAITING:
+					case PACKET_BUSY:
+					case PACKET_LEVEL_READY:
+					// The departure gate. A reliable type missing from this list is queued
+					// nowhere and never acknowledged, so both ends would sit at the gate.
+					case PACKET_DEPART_GATE:
+					case PACKET_GAME_QUIT:
+					case PACKET_GAME_PAUSE:
+					case PACKET_GAME_MENU:
+					case PACKET_DEBUG_SYNC:
+					case PACKET_SHOP_SYNC:
+					case PACKET_CUSTOM_WEAPON:
+					case PACKET_EXTRA_SHIPS:
+					case PACKET_CUSTOM_LEVEL:
+					// Every packet the Endless co-op channel carries: the run transfer on resume, the
+					// death-prompt choice, and the "I have left the level" notice.
+					case PACKET_ENDLESS_RUN:
+					// Queue reliable ship announcements for their owning state machine.
+					case PACKET_SA_SHIP:
+					// The Endless zone jump, settled before the course is folded. Same rule again.
+					case PACKET_ENDLESS_JUMP:
+					case PACKET_RESYNC:
+					// Destruct's own recovery stream, on the same terms as PACKET_RESYNC.
+					case PACKET_DESTRUCT_RESYNC:
+						{
+							const Uint16 sync = SDLNet_Read16(&packet_temp->data[2]);
+							/* Signed so the comparison is wraparound-safe: behind the window is a
+							 * packet already consumed, ahead of it is one there is no room for. */
+							const Sint16 slot = (Sint16)(sync - queue_in_sync);
+							if (slot >= 0 && slot < NET_PACKET_QUEUE)
+							{
+								if (packet_in[slot] == NULL)
+									packet_in[slot] = packet_acquire_or_halt();
+								packet_copy(packet_in[slot], packet_temp);
+							}
+							else if (slot >= NET_PACKET_QUEUE)
+							{
+								/* Do not acknowledge packets beyond the receive window. The sender
+								 * must retain and retry them after this side drains enough space. */
+								++net_diag.window_overflow;
+								last_in_tick = SDL_GetTicks();
+								break;
+							}
+							// Behind the window: consumed already, and the sender is repeating it
+							// because our acknowledgement was lost. Acknowledge it again below.
+						}
+
+						network_acknowledge(SDLNet_Read16(&packet_temp->data[2]));
+						// fall through
+
+					case PACKET_KEEP_ALIVE:
+						// Echo ping stamps immediately. Re-check the type because reliable packets fall through.
+						if (SDLNet_Read16(&packet_temp->data[0]) == PACKET_KEEP_ALIVE &&
+						    packet_temp->len >= 8)
+						{
+							SDLNet_Write16(PACKET_PING_REPLY, &packet_out_temp->data[0]);
+							SDLNet_Write16(last_out_sync,     &packet_out_temp->data[2]);
+							memcpy(&packet_out_temp->data[4], &packet_temp->data[4], 4);
+							network_send_no_ack(8);
+						}
+
+						last_in_tick = SDL_GetTicks();
+						break;
+
+					case PACKET_PLAYER_LOOK:
+						// Repeated keep-alive announcements repair packet loss.
+						if (packet_temp->len >= 9 && packet_temp->data[4] >= 1 && packet_temp->data[4] <= 2
+						    && packet_temp->data[4] != (Uint8)thisPlayerNum)
+						{
+							const uint seat = packet_temp->data[4] - 1u;
+							netStyleSetSeatColor(seat, packet_temp->data[5]);
+
+							// Cache the sender's view for future saves; it does not affect this machine.
+							NetShipView view;
+							view.opacity = packet_temp->data[6];
+							view.shipOpacity = packet_temp->data[7] != 0;
+							view.hpBars = packet_temp->data[8];
+							netStyleSetView(seat, view);
+						}
+
+						last_in_tick = SDL_GetTicks();
+						break;
+
+					case PACKET_PING_REPLY:
+						if (packet_temp->len >= 8)
+						{
+							// Ignore corrupt or stale RTT samples.
+							const Uint32 rtt = SDL_GetTicks() - SDLNet_Read32(&packet_temp->data[4]);
+							if (rtt <= NET_PING_MAX)
+							{
+								ping_ema = ping_valid ? ping_ema * 0.7f + rtt * 0.3f
+								                      : (float)rtt;
+								ping_valid = true;
+							}
+						}
+
+						last_in_tick = SDL_GetTicks();
+						break;
+
+					case PACKET_QUIT:
+						if (!quit)
+						{
+							network_prepare(PACKET_QUIT);
+							network_send(4);  // PACKET_QUIT
+						}
+
+						network_acknowledge(SDLNet_Read16(&packet_temp->data[2]));
+
+						if (!quit)
+							network_tyrian_halt(1, true);
+						break;
+
+					case PACKET_STATE:
+						// place packet in queue if within limits
+						{
+							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - last_state_in_sync + 1;
+							if (i < NET_PACKET_QUEUE)
+							{
+								++net_diag.state_in;
+								if (packet_state_in[i] == NULL)
+									packet_state_in[i] = packet_acquire_or_halt();
+								packet_copy(packet_state_in[i], packet_temp);
+							}
+							else
+							{
+								++net_diag.state_late;
+							}
+						}
+						break;
+
+					case PACKET_STATE_XOR:
+						// place packet in queue if within limits
+						{
+							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - last_state_in_sync + 1;
+							if (i < NET_PACKET_QUEUE)
+							{
+								if (packet_state_in_xor[i] == NULL)
+								{
+									packet_state_in_xor[i] = packet_acquire_or_halt();
+									packet_copy(packet_state_in_xor[i], packet_temp);
+								}
+								else if (SDLNet_Read16(&packet_state_in_xor[i]->data[0]) != PACKET_STATE_XOR)
+								{
+									for (int j = 4; j < packet_state_in_xor[i]->len; j++)
+										packet_state_in_xor[i]->data[j] ^= packet_temp->data[j];
+									SDLNet_Write16(PACKET_STATE_XOR, &packet_state_in_xor[i]->data[0]);
+								}
+							}
+						}
+						break;
+
+					case PACKET_INPUT:
+						// Rollback input stream: redundant, unacknowledged, consumed
+						// directly into the input history.
+						nrb_handle_packet(packet_temp->data, packet_temp->len);
+						last_in_tick = SDL_GetTicks();
+						break;
+
+					case PACKET_DESTRUCT_INPUT:
+						// The minigame's own rollback stream, on the same terms.
+						drb_handle_packet(packet_temp->data, packet_temp->len);
+						last_in_tick = SDL_GetTicks();
+						break;
+
+					case PACKET_STATE_RESEND:
+						// resend requested state packet if still available
+						{
+							Uint16 i = last_state_out_sync - SDLNet_Read16(&packet_temp->data[2]);
+							if (i > 0 && i < NET_PACKET_QUEUE)
+							{
+								if (packet_state_out[i])
+								{
+									// A failed resend is not a receive error: log it and carry on, or
+									// the drain would stop on a datagram it had already consumed.
+									if (!SDLNet_UDP_Send(net_socket, 0, packet_state_out[i]))
+									{
+										printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+										++net_diag.send_errors;
+									}
+									else
+									{
+										++net_diag.dg_out;
+										++net_diag.resend_req_served;
+									}
+								}
+							}
+						}
+						break;
+
+					default:
+						++net_diag.bad_packets;
+						fprintf(stderr, "warning: bad packet %d received\n", SDLNet_Read16(&packet_temp->data[0]));
+						break;
+				}
+
+				return 1;
+			}
+			break;
+	}
+
+	// A datagram we had no use for is still a datagram consumed, so the drain below keeps going.
+	return 1;
+}
+
+// poll for new packets received, check that connection is alive, resend queued packets if necessary
+int network_check(void)
+{
+	if (!net_initialized)
+		return -1;
+
+	// Probes land on the well-known port while the game itself listens elsewhere. The socket
+	// exists only while this machine hosts an empty lobby, and answers nothing else.
+	while (discover_socket && SDLNet_UDP_Recv(discover_socket, packet_temp) > 0)
+	{
+		if (host_awaiting_peer && packet_temp->len >= 4 &&
+		    SDLNet_Read16(&packet_temp->data[0]) == PACKET_DISCOVER)
+			network_discover_answer(discover_socket, &packet_temp->address);
+	}
+
+	if (connected)
+	{
+		// timeout.  Every wait loop services the socket through here, so this halt reaches a dead
+		// link before their own deadlines do and has to name the silence itself.
+		if (!network_is_alive())
+		{
+			if (!quit)
+			{
+				const Uint32 quiet = SDL_GetTicks() - last_in_tick;
+				const Uint32 quiet_state = SDL_GetTicks() - last_state_in_tick;
+
+				fprintf(stderr, "error: nothing received from the other player for %u ms\n",
+				        (unsigned)(quiet < quiet_state ? quiet : quiet_state));
+				network_tyrian_halt(2, false);
+			}
+		}
+
+		// Keep-alives double as ping probes while gameplay is idle.
+		static Uint32 keep_alive_tick = 0;
+		if (SDL_GetTicks() - keep_alive_tick > NET_KEEP_ALIVE)
+		{
+			network_prepare(PACKET_KEEP_ALIVE);
+			SDLNet_Write32(SDL_GetTicks(), &packet_out_temp->data[4]);
+			network_send_no_ack(8);
+
+			network_player_look_publish();  // repeat cosmetic state on the keep-alive beat
+
+			keep_alive_tick = SDL_GetTicks();
+		}
+
+		nrb_menu_keepalive();
+	}
+
+	// Retry everything still unacknowledged, oldest first. Resending only the head would drain
+	// a backlog at one packet per retry interval when the acks for the rest were lost with it.
+	if (packet_out[0] && SDL_GetTicks() - last_out_tick > net_retry_interval())
+	{
+		for (int i = 0; i < NET_PACKET_QUEUE; i++)
+		{
+			if (packet_out[i] == NULL)
+				continue;
+
+			if (!SDLNet_UDP_Send(net_socket, 0, packet_out[i]))
+			{
+				printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+				++net_diag.send_errors;
+				return -1;
+			}
+
+			++net_diag.dg_out;
+			++net_diag.retries;
+		}
+
+		last_out_tick = SDL_GetTicks();
+	}
+
+	// Drain a bounded batch. Taking one packet per frame cannot clear bursts and
+	// turns their backlog into permanent latency.
+	int handled = 0;
+	for (int i = 0; i < NET_DRAIN_MAX; ++i)
+	{
+		const int got = network_recv_one();
+		if (got <= 0)
+			return handled > 0 ? handled : got;
+
+		++handled;
+	}
+
+	return handled;
+}
+
+// discard working packet, now processing next packet in queue
+bool network_update(void)
+{
+	if (packet_in[0])
+	{
+		packets_shift_up(packet_in, NET_PACKET_QUEUE);
+
+		queue_in_sync++;
+
+		return true;
+	}
+
+	return false;
+}
+
+/* True when the reliable outbound queue is empty. */
+bool network_is_sync(void)
+{
+	return network_ack_backlog() == 0;
+}
+
+int network_ack_backlog(void)
+{
+	return (Uint16)(last_out_sync - queue_out_sync);
+}
+
+// Reliable packets waiting to be consumed, head included.  Diagnostic: a wait that stalls with a
+// non-empty queue is stalled on a head nobody claims, which names the bug on sight.
+int network_inbound_depth(void)
+{
+	int depth = 0;
+	for (int i = 0; i < NET_PACKET_QUEUE; ++i)
+	{
+		if (packet_in[i] != NULL)
+			++depth;
+	}
+	return depth;
+}
+
+// Type of the packet at the head of the reliable queue, or 0 when it is empty.
+Uint16 network_inbound_head(void)
+{
+	return packet_in[0] != NULL ? SDLNet_Read16(&packet_in[0]->data[0]) : 0;
+}
+
+/* Count reliable packets lost beyond the receive window. */
+Uint32 network_window_overflow(void)
+{
+	return net_diag.window_overflow;
+}
+
+// prepare new state for sending
+void network_state_prepare(void)
+{
+	if (packet_state_out[0])
+	{
+		fprintf(stderr, "warning: state packet overwritten (previous packet remains unsent)\n");
+	}
+	else
+	{
+		packet_state_out[0] = packet_acquire_or_halt();
+	}
+	// Set unconditionally: a reused packet would otherwise keep whatever length it had.
+	packet_state_out[0]->len = NET_STATE_SIZE;
+
+	SDLNet_Write16(PACKET_STATE, &packet_state_out[0]->data[0]);
+	SDLNet_Write16(last_state_out_sync, &packet_state_out[0]->data[2]);
+	memset(&packet_state_out[0]->data[4], 0, NET_STATE_SIZE - 4);
+}
+
+// send state packet, xor packet if applicable
+int network_state_send(void)
+{
+	if (!SDLNet_UDP_Send(net_socket, 0, packet_state_out[0]))
+	{
+		printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+		++net_diag.send_errors;
+		return -1;
+	}
+
+	++net_diag.dg_out;
+	++net_diag.state_out;
+
+	// send xor of last network_delay packets
+	if (network_delay > 1 && (last_state_out_sync + 1) % network_delay == 0 && packet_state_out[network_delay - 1] != NULL)
+	{
+		packet_copy(packet_temp, packet_state_out[0]);
+		SDLNet_Write16(PACKET_STATE_XOR, &packet_temp->data[0]);
+		for (int i = 1; i < network_delay; i++)
+			for (int j = 4; j < packet_temp->len; j++)
+				packet_temp->data[j] ^= packet_state_out[i]->data[j];
+
+		if (!SDLNet_UDP_Send(net_socket, 0, packet_temp))
+		{
+			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+			++net_diag.send_errors;
+			return -1;
+		}
+
+		++net_diag.dg_out;
+	}
+
+	packets_shift_down(packet_state_out, NET_PACKET_QUEUE);
+
+	last_state_out_sync++;
+
+	return 0;
+}
+
+// receive state packet, wait until received
+bool network_state_update(void)
+{
+	if (network_state_is_reset())
+	{
+		return 0;
+	}
+	else
+	{
+		packets_shift_up(packet_state_in, NET_PACKET_QUEUE);
+
+		packets_shift_up(packet_state_in_xor, NET_PACKET_QUEUE);
+
+		last_state_in_sync++;
+
+		// current xor packet index
+		int x = network_delay - (last_state_in_sync - 1) % network_delay - 1;
+
+		// loop until needed packet is available
+		const Uint32 wait_start = SDL_GetTicks();
+		bool stall_reported = false;
+
+		while (!packet_state_in[0])
+		{
+			// xor the packet from thin air, if possible
+			if (packet_state_in_xor[x] && SDLNet_Read16(&packet_state_in_xor[x]->data[0]) == PACKET_STATE_XOR)
+			{
+				// check for all other required packets
+				bool okay = true;
+				for (int i = 1; i <= x; i++)
+				{
+					if (packet_state_in[i] == NULL)
+					{
+						okay = false;
+						break;
+					}
+				}
+				if (okay)
+				{
+					++net_diag.xor_rebuilds;
+					packet_state_in[0] = packet_acquire_or_halt();
+					packet_copy(packet_state_in[0], packet_state_in_xor[x]);
+					for (int i = 1; i <= x; i++)
+						for (int j = 4; j < packet_state_in[0]->len; j++)
+							packet_state_in[0]->data[j] ^= packet_state_in[i]->data[j];
+					/* XOR parity covers payload bytes only. Restore the reconstructed packet's
+					 * type and tick before consumers key local replay history from its header. */
+					SDLNet_Write16(PACKET_STATE, &packet_state_in[0]->data[0]);
+					SDLNet_Write16((Uint16)(last_state_in_sync - 1),
+					               &packet_state_in[0]->data[2]);
+					break;
+				}
+			}
+
+			static Uint32 resend_tick = 0;
+			if (SDL_GetTicks() - last_state_in_tick > NET_RESEND && SDL_GetTicks() - resend_tick > NET_RESEND)
+			{
+				SDLNet_Write16(PACKET_STATE_RESEND,    &packet_out_temp->data[0]);
+				SDLNet_Write16(last_state_in_sync - 1, &packet_out_temp->data[2]);
+				network_send_no_ack(4);  // PACKET_RESEND
+				++net_diag.resend_req_sent;
+
+				resend_tick = SDL_GetTicks();
+			}
+
+			// Keep the window responsive while waiting for the peer.
+			service_SDL_events(false);
+
+			const Uint32 waited = SDL_GetTicks() - wait_start;
+
+			// Keep-alives refresh liveness even when state packets stop. Log that stall once
+			// with enough context to distinguish a slow peer from a dead one.
+			if (!stall_reported && waited > 3000)
+			{
+				stall_reported = true;
+				++net_diag.stalls;
+
+				char detail[256];
+				snprintf(detail, sizeof(detail),
+				         "waiting for peer state packet\n"
+				         "  player      : %u\n"
+				         "  in_sync     : %u   out_sync: %u   delay: %d\n"
+				         "  since state : %u ms   since any packet: %u ms",
+				         thisPlayerNum,
+				         (unsigned)last_state_in_sync, (unsigned)last_state_out_sync, network_delay,
+				         (unsigned)(SDL_GetTicks() - last_state_in_tick),
+				         (unsigned)(SDL_GetTicks() - last_in_tick));
+				crashlog_note_net("NETWORK STALL", detail);
+			}
+
+			// Bound the state-stream wait even while keep-alives arrive.
+			if (waited > NET_TIME_OUT)
+			{
+				fprintf(stderr, "error: no state packets from the other player for %u ms\n",
+				        (unsigned)waited);
+				network_tyrian_halt(2, false);
+			}
+
+			// <= 0, not == 0: a receive error reads nothing, so skipping the sleep on it
+			// would spin this loop on a core for as long as the peer takes.
+			if (network_check() <= 0)
+				SDL_Delay(1);
+		}
+
+		/* The wait completes only after the requested state is installed. */
+		UDPpacket *const current_state = packet_state_in[0];
+		if (current_state == NULL)
+			return false;
+
+		if (network_delay > 1)
+		{
+			// process the current in packet against the xor queue
+			if (packet_state_in_xor[x] == NULL)
+			{
+				packet_state_in_xor[x] = packet_acquire_or_halt();
+				packet_copy(packet_state_in_xor[x], current_state);
+				packet_state_in_xor[x]->status = 0;
+			}
+			else
+			{
+				for (int j = 4; j < packet_state_in_xor[x]->len; j++)
+					packet_state_in_xor[x]->data[j] ^= current_state->data[j];
+			}
+		}
+
+		last_state_in_tick = SDL_GetTicks();
+	}
+
+	return 1;
+}
+
+// ignore first network_delay states of level
+bool network_state_is_reset(void)
+{
+	return (last_state_out_sync < network_delay);
+}
+
+// reset queues for new level
+void network_state_reset(void)
+{
+	last_state_in_sync = last_state_out_sync = 0;
+
+	for (int i = 0; i < NET_PACKET_QUEUE; i++)
+	{
+		if (packet_state_in[i])
+		{
+			packet_release(packet_state_in[i]);
+			packet_state_in[i] = NULL;
+		}
+	}
+	for (int i = 0; i < NET_PACKET_QUEUE; i++)
+	{
+		if (packet_state_in_xor[i])
+		{
+			packet_release(packet_state_in_xor[i]);
+			packet_state_in_xor[i] = NULL;
+		}
+	}
+	for (int i = 0; i < NET_PACKET_QUEUE; i++)
+	{
+		if (packet_state_out[i])
+		{
+			packet_release(packet_state_out[i]);
+			packet_state_out[i] = NULL;
+		}
+	}
+
+	last_state_in_tick = SDL_GetTicks();
+}
+
+// Build and send PACKET_CONNECT.  Sent more than once during the handshake (retry, and again
+// after sync), so it lives here rather than being spelled out at each site.
+static void send_connect_packet(Uint16 episodes_local)
+{
+	size_t name_len = strlen(network_player_name);
+	if (name_len > NET_NAME_MAX)
+		name_len = NET_NAME_MAX;
+
+	network_prepare(PACKET_CONNECT);
+	// qa_net_version_skew is zero outside the wire tests; the mismatch scenario offsets it.
+	SDLNet_Write16((Uint16)(NET_VERSION + qa_net_version_skew), &packet_out_temp->data[4]);
+	SDLNet_Write16(network_delay,  &packet_out_temp->data[6]);
+	SDLNet_Write16(episodes_local, &packet_out_temp->data[8]);
+	SDLNet_Write16(thisPlayerNum,  &packet_out_temp->data[10]);
+	SDLNet_Write16(network_game_type, &packet_out_temp->data[NET_CONNECT_GAME_TYPE]);
+	SDLNet_Write16(network_host_episode, &packet_out_temp->data[NET_CONNECT_EPISODE]);
+	SDLNet_Write16(network_host_difficulty, &packet_out_temp->data[NET_CONNECT_DIFFICULTY]);
+	network_settings_pack(&packet_out_temp->data[NET_CONNECT_SETTINGS]);
+	packet_out_temp->data[NET_CONNECT_ENDLESS] = (Uint8)network_host_endless_run_mode;
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 1] = (Uint8)network_host_endless_chooser;
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 2] = network_host_endless_combo_shared ? 1 : 0;
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 3] = (Uint8)network_host_endless_base_rule;
+	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 4], network_endless_session_seed,
+	       NET_ENDLESS_SEED_MAX);
+	packet_out_temp->data[NET_CONNECT_DESTRUCT] = (Uint8)network_host_destruct_mode;
+	SDLNet_Write32(network_destruct_session_seed, &packet_out_temp->data[NET_CONNECT_DESTRUCT + 1]);
+	// Only the lobby host authors the Custom Endless field.
+	if (network_from_lobby && network_is_host)
+		network_host_custom_endless =
+			(customEpisodeCount() > 0 &&
+			 (customEndlessMode == CUSTOM_ENDLESS_MIXED || customEndlessMode == CUSTOM_ENDLESS_ONLY))
+			? customEndlessMode : CUSTOM_ENDLESS_OFF;
+	memset(&packet_out_temp->data[NET_CONNECT_CUSTOM], 0, NET_CONNECT_CUSTOM_SIZE);
+	if (network_host_custom_file[0] != '\0')
+	{
+		memcpy(&packet_out_temp->data[NET_CONNECT_CUSTOM], network_host_custom_file,
+		       strlen(network_host_custom_file));
+		SDLNet_Write32(network_host_custom_size,
+		               &packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN]);
+		SDLNet_Write32(network_host_custom_hash,
+		               &packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 4]);
+	}
+	packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 8] =
+		(Uint8)network_host_custom_endless;
+	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
+	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
+	network_send(NET_CONNECT_NAME + name_len + 1);
+}
+
+// attempt to punch through firewall by firing off UDP packets at the opponent
+// exchange game information
+int network_connect(void)
+{
+	network_settings_apply_session_speed();
+	netStyleSessionReset();
+	network_custom_level_session_reset();
+
+	const bool listening = network_from_lobby && network_is_host;
+
+	if (listening)
+	{
+		// Nothing to resolve: whoever sends the first connect packet becomes the peer, and
+		// network_check() binds channel 0 to them at that point.
+		host_awaiting_peer = true;
+		peer_addr_known = false;
+
+		// Hosts on another port try to keep discovery listening on the default port.
+		if (network_listen_port != NET_PORT && discover_socket == NULL)
+			discover_socket = SDLNet_UDP_Open(NET_PORT);
+	}
+	else
+	{
+		if (SDLNet_ResolveHost(&ip, network_opponent_host, network_opponent_port) == -1)
+		{
+			fprintf(stderr, "error: could not resolve '%s'\n",
+			        network_opponent_host ? network_opponent_host : "(null)");
+			return -2;
+		}
+
+		if (SDLNet_UDP_Bind(net_socket, 0, &ip) == -1)
+		{
+			fprintf(stderr, "error: SDLNet_UDP_Bind: %s\n", SDLNet_GetError());
+			return -2;
+		}
+
+		peer_addr_known = true;
+	}
+
+	Uint16 episodes = 0, episodes_local = 0;
+	assert(EPISODE_MAX <= 16);
+	for (int i = EPISODE_MAX - 1; i >= 0; i--)
+	{
+		episodes <<= 1;
+		episodes |= (episodeAvail[i] != 0);
+	}
+	episodes_local = episodes;
+
+	assert(NET_PACKET_SIZE - NET_CONNECT_NAME >= NET_NAME_MAX + 1);
+
+	// The lobby decides the roles, so derive the player number from them; a command-line game
+	// keeps whatever --net-player-number set and is checked for conflicts below.
+	if (network_from_lobby)
+		thisPlayerNum = network_is_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
+
+	// A lobby joiner adopts the host's session flags. Command-line peers receive no settings
+	// block and must start with matching configuration.
+	network_arm_local_session();
+
+connect_reset:
+	// A listening host has no address to send to yet, so it stays quiet until the joiner
+	// turns up; the send happens once the channel is bound, just below the wait loop.
+	if (!host_awaiting_peer)
+		send_connect_packet(episodes_local);
+
+	// until opponent sends connect packet
+	while (true)
+	{
+		push_joysticks_as_keyboard();
+		service_SDL_events(false);
+
+		// Re-present the lobby frame so the cursor remains responsive.
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+
+		if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+		{
+			// From the lobby, backing out of "waiting for player" has to return to the menu.
+			// Only a command-line game (which has no menu to return to) still exits here.
+			if (network_from_lobby)
+			{
+				/* Repeat the cancellation because no later state retries it. */
+				if (peer_addr_known)
+				{
+					network_prepare(PACKET_QUIT);
+					for (int i = 0; i < 3; ++i)
+						network_send_no_ack(4);
+				}
+				return -1;
+			}
+			network_tyrian_halt(0, false);
+		}
+
+		// never timeout
+		last_in_tick = SDL_GetTicks();
+
+		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+			break;
+
+		network_update();
+		network_check();
+	}
+
+	// The joiner is known now, so a listening host can finally introduce itself.  last_out_sync
+	// only advances on a send, so sitting at its starting value means the connect is still owed.
+	if (listening && last_out_sync == qa_seq_base)
+		send_connect_packet(episodes_local);
+
+connect_again:
+	// packet_copy leaves bytes past `len` untouched. Reject short packets before stale bytes can
+	// masquerade as the version, delay, or settings block.
+	if (packet_in[0]->len < NET_CONNECT_NAME)
+	{
+		fprintf(stderr, "error: malformed connect packet from opponent (%d bytes)\n", packet_in[0]->len);
+		network_tyrian_halt(4, true);
+	}
+	// Compared against the same skewed value the connect packet advertises, so the mismatch
+	// wire scenario models a peer whose build constant genuinely differs.
+	if (SDLNet_Read16(&packet_in[0]->data[4]) != (Uint16)(NET_VERSION + qa_net_version_skew))
+	{
+		fprintf(stderr, "error: network version did not match opponent's\n");
+		network_tyrian_halt(4, true);
+	}
+	if (network_from_lobby)
+	{
+		// Adopt the host's simulation settings for the session.
+		if (!network_is_host)
+		{
+			const int host_delay = SDLNet_Read16(&packet_in[0]->data[6]);
+
+			// Reject settings that would change packet layout after clamping.
+			if (host_delay < 1 || host_delay * 2 > NET_PACKET_QUEUE - 2)
+			{
+				fprintf(stderr, "error: host asked for an unusable network delay (%d)\n", host_delay);
+				network_tyrian_halt(5, true);
+			}
+			network_delay = host_delay;
+
+			const int host_game_type = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_GAME_TYPE]);
+			const int host_episode = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_EPISODE]);
+			const int host_difficulty = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_DIFFICULTY]);
+			if (host_game_type < 0 || host_game_type >= NETWORK_GAME_TYPE_COUNT ||
+			    host_episode < 1 || host_episode > EPISODE_MAX ||
+			    host_difficulty < DIFFICULTY_EASY || host_difficulty > DIFFICULTY_LORD_OF_GAME)
+			{
+				fprintf(stderr, "error: host sent unusable lobby settings (%d/%d/%d)\n",
+				        host_game_type, host_episode, host_difficulty);
+				network_tyrian_halt(5, true);
+			}
+			network_game_type = (NetworkGameType)host_game_type;
+			network_host_episode = host_episode;
+			network_host_difficulty = host_difficulty;
+
+			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
+			network_endless_adopt(&packet_in[0]->data[NET_CONNECT_ENDLESS]);
+
+			// Reject path-like names before storing the host's selection.
+			{
+				char customFile[CUSTOM_EPISODE_FILE_LEN];
+				memcpy(customFile, &packet_in[0]->data[NET_CONNECT_CUSTOM], CUSTOM_EPISODE_FILE_LEN);
+				customFile[CUSTOM_EPISODE_FILE_LEN - 1] = '\0';
+				if (customFile[0] != '\0' && !customEpisodeFileNameValid(customFile))
+				{
+					fprintf(stderr, "error: host sent an unusable custom episode name\n");
+					network_tyrian_halt(5, true);
+				}
+				memcpy(network_host_custom_file, customFile, sizeof(network_host_custom_file));
+				network_host_custom_size = SDLNet_Read32(
+					&packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN]);
+				network_host_custom_hash = SDLNet_Read32(
+					&packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 4]);
+				// Invalid modes read as Off.
+				const int customEndless =
+					packet_in[0]->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 8];
+				network_host_custom_endless =
+					(customEndless == CUSTOM_ENDLESS_MIXED || customEndless == CUSTOM_ENDLESS_ONLY)
+					? customEndless : CUSTOM_ENDLESS_OFF;
+			}
+
+			// The Destruct block. The mode indexes battle-mode tables on both machines, so a
+			// corrupt byte is clamped rather than trusted; any seed value is a playable seed.
+			network_host_destruct_mode = packet_in[0]->data[NET_CONNECT_DESTRUCT];
+			if (network_host_destruct_mode < 0 || network_host_destruct_mode >= DESTRUCT_MODES)
+				network_host_destruct_mode = 0;
+			network_destruct_session_seed = SDLNet_Read32(&packet_in[0]->data[NET_CONNECT_DESTRUCT + 1]);
+
+			// The adopted gameSpeed only sets the global; push it through to the
+			// tick-rate machinery so the joiner runs at the host's chosen speed.
+			JE_initProcessorType();
+			JE_setNewGameSpeed();
+
+			// The host names its own slot too, and the joiner takes the other one: a host
+			// that picked player 2 to fly the Dragonwing leaves player 1 here.
+			const int host_slot = SDLNet_Read16(&packet_in[0]->data[10]);
+			if (host_slot != 1 && host_slot != 2)
+			{
+				fprintf(stderr, "error: host asked for an unusable player number (%d)\n", host_slot);
+				network_tyrian_halt(6, true);
+			}
+			networkHostPlayerNum = (uint)host_slot;
+			thisPlayerNum = 3 - networkHostPlayerNum;
+		}
+	}
+	else
+	{
+		// Command-line peers must already agree on simulation settings.
+		if (SDLNet_Read16(&packet_in[0]->data[6]) != network_delay)
+		{
+			fprintf(stderr, "error: network delay did not match opponent's\n");
+			network_tyrian_halt(5, true);
+		}
+	}
+	// Snapshot layout compatibility is mutual, so both peers check it.
+	network_settings_check_layout(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
+
+	// Only command-line netplay can conflict: both sides were numbered by hand, and nothing else
+	// stops them flying the same ship.
+	if (!network_from_lobby && SDLNet_Read16(&packet_in[0]->data[10]) == thisPlayerNum)
+	{
+		fprintf(stderr, "error: player number conflicts with opponent's\n");
+		network_tyrian_halt(6, true);
+	}
+
+	episodes = SDLNet_Read16(&packet_in[0]->data[8]);
+	for (int i = 0; i < EPISODE_MAX; i++) {
+		episodeAvail[i] &= (episodes & 1);
+		episodes >>= 1;
+	}
+
+	// The name is whatever trails the settings block.
+	{
+		int name_len = packet_in[0]->len - NET_CONNECT_NAME;
+		if (name_len > NET_NAME_MAX)
+			name_len = NET_NAME_MAX;
+
+		if (network_opponent_name != empty_string)
+			free(network_opponent_name);
+
+		if (name_len > 0)
+		{
+			network_opponent_name = malloc_die(name_len + 1);
+			memcpy(network_opponent_name, &packet_in[0]->data[NET_CONNECT_NAME], name_len);
+			network_opponent_name[name_len] = '\0';
+		}
+		else
+		{
+			network_opponent_name = empty_string;
+		}
+	}
+
+	network_update();
+
+	// until opponent has acknowledged
+	while (!network_is_sync())
+	{
+		service_SDL_events(false);
+
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+
+		// got a duplicate packet; process it again (but why?)
+		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+			goto connect_again;
+
+		network_check();
+
+		// maybe opponent didn't get our packet
+		if (SDL_GetTicks() - last_out_tick > NET_RETRY)
+			goto connect_reset;
+	}
+
+	// send another packet since sometimes the network syncs without both connect packets exchanged
+	// there should be a better way to handle this
+	send_connect_packet(episodes_local);
+
+	connected = true;
+	net_diag.connect_tick = SDL_GetTicks();
+
+	// Session banner: every online session leaves a mark in the net log, so an entry-free
+	// log means "no trouble detected" instead of "logging never ran".
+	{
+		// Log the state layout at connect so peer reports can be compared.
+		char detail[192];
+		snprintf(detail, sizeof(detail),
+		         "player %u (%s), netcode %s, desync recovery %s, delay %d\n"
+		         "state layout: %lu bytes, fingerprint %08x",
+		         (unsigned)thisPlayerNum, network_is_host ? "host" : "joiner",
+		         nrb_session_mode() ? "rollback" : "delay-based",
+		         nrb_session_recovery() ? "on" : "off",
+		         network_delay,
+		         (unsigned long)rollback_state_size(),
+		         (unsigned)rollback_layout_fingerprint());
+		crashlog_netlog_line("NETWORK SESSION START", detail);
+	}
+
+	return 0;
+}
+
+static const char *const err_msg[] = {
+	"Quitting...",
+	"Other player quit the game.",
+	"Network connection was lost.",
+	"Network connection failed.",
+	"Network version mismatch.",
+	"Network delay mismatch.",
+	"Network player number conflict.",
+	"Players desynced - game stopped.",
+	"Unable to synchronize custom levels.",
+};
+
+const char *network_halt_message(unsigned int err)
+{
+	return err < COUNTOF(err_msg) ? err_msg[err] : NULL;
+}
+
+// Terminate the network session after a local or peer error.
+OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
+{
+	quit = true;
+
+	// The desync halt can arrive from inside a re-simulation pass, whose silent flag
+	// suppresses every sprite draw; including this screen's text and menus.
+	rollback_resim = false;
+	rollback_resim_silent = false;
+
+	/* Disarm outpost waits immediately when tearing down the session. */
+	network_shop_end();
+
+	if (err >= COUNTOF(err_msg))
+		err = 0;
+
+	// Exercise the disconnect-save prompt when requested.
+	const bool qa_takes_the_offer = qa_net_disconnect_save > 0 && err != 0 &&
+	                                network_session_saveable && network_bailout_armed;
+
+	// Test peers report the halt and exit nonzero because no player can dismiss this screen.
+	if ((qa_net_rounds > 0 || qa_net_gameplay_ticks > 0) && !qa_takes_the_offer)
+	{
+		fprintf(stderr, "network test: session halt: %s\n", err_msg[err]);
+		fflush(stderr);
+		/* Give a queued QUIT time to retransmit. */
+		if (attempt_sync)
+		{
+			const Uint32 flushUntil = SDL_GetTicks() + 1500;
+			while (!network_is_sync() && SDL_GetTicks() < flushUntil)
+			{
+				SDL_Delay(4);
+				network_check();
+			}
+		}
+		exit(1);
+	}
+
+	// The session is over; take the music with it rather than leaving the level's track playing
+	// under a dead-link screen.
+	{
+		MusicFadeOut songFade;
+		music_fade_out_init(&songFade);
+		while (!songFade.done)
+		{
+			music_fade_out_tick(&songFade);
+			service_SDL_events(false);
+			JE_showVGA();
+			SDL_Delay(4);
+		}
+	}
+
+	fade_black(10);
+
+	VGAScreen = VGAScreenSeg;
+
+	// Center the legacy 320-pixel screen when reached from gameplay.
+	set_menu_centered(true);
+
+	// Reached mid-game the mouse is still captured for ship control; release it,
+	// or the cursor below can never move off wherever the ship left it.
+	mouseSetRelative(false);
+
+	// Offer a coherent LAST LEVEL backup after an involuntary mid-game disconnect.
+	if (err != 0 && network_session_saveable && network_bailout_armed)
+	{
+		if (networkDisconnectSavePrompt(err_msg[err]))
+		{
+			// Preserve the Endless half before loading the pre-level checkpoint.
+			const bool was_endless = endlessMode;
+			// The checkpoint load derives co-op flags; preserve the live session modes.
+			const JE_boolean was_coop_campaign = coopCampaignMode;
+			const JE_boolean was_coop_endless = coopEndlessMode;
+			JE_loadGameRecord(&saveFiles[22 - 1], true);
+			coopCampaignMode = was_coop_campaign;
+			coopEndlessMode = was_coop_endless;
+			if (was_endless)
+				endlessLoadSlot(22);
+			JE_loadScreen(true, true);
+		}
+
+		if (qa_takes_the_offer)
+		{
+			fprintf(stderr, "net gameplay: host kept the session in slot %d\n",
+			        qa_net_disconnect_save);
+			fflush(stderr);
+			exit(0);
+		}
+	}
+	else
+	{
+		JE_loadPic(VGAScreen, 2, false);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
+		JE_dString(VGAScreen, JE_fontCenter(err_msg[err], SMALL_FONT_SHAPES), 140, err_msg[err], SMALL_FONT_SHAPES);
+
+		JE_showVGA();
+		fade_palette(colors, 10, 0, 255);
+
+		if (attempt_sync)
+		{
+			while (!network_is_sync() && network_is_alive())
+			{
+				service_SDL_events(false);
+
+				mouseCursor = MOUSE_POINTER_NORMAL;
+				JE_mouseStart();
+				JE_showVGA();
+				JE_mouseReplace();
+				if (!output_vsync)
+					limit_render_fps();
+
+				network_check();
+			}
+		}
+
+		if (err)
+		{
+			wait_noinput(true, true, true);
+			newkey = newmouse = false;
+
+			// Re-present each frame so the cursor and touch layout stay live.
+			while (!JE_anyButton())
+			{
+				touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+				touch_ui_idle_repaint();
+				mouseCursor = MOUSE_POINTER_NORMAL;
+				JE_mouseStart();
+				JE_showVGA();
+				JE_mouseReplace();
+				if (!output_vsync)
+					limit_render_fps();
+			}
+		}
+	}
+
+	fade_black(10);
+
+	// Tear down the session and unwind to the title-screen landing point.
+	if (network_bailout_armed)
+	{
+		network_shutdown();
+
+		customEpisodeSessionEnd();   // an offline game must read the local collection again
+		isNetworkGame = false;
+		network_from_lobby = false;
+		network_is_host = false;
+		twoPlayerMode = false;
+		coopCampaignMode = false;
+		coopEndlessMode = false;
+		arcadeSeparateMode = false;
+		timedBattleMode = false;
+		superTyrian = false;
+		superArcadeMode = SA_NONE;
+		network_sa_ship_reset();
+		haltGame = false;
+		/* Teardown may bypass the normal point that clears Destruct dispatch. */
+		loadDestruct = false;
+		JE_clearSpecialRequests();
+
+		longjmp(network_bailout_env, 1);
+	}
+
+	// Not armed (very early startup failure): the original hard exit.  JE_tyrianHalt saves
+	// the config, so put the stashed local settings (forced-Normal gameSpeed) back first.
+	network_settings_restore();
+	SDLNet_Quit();
+
+	JE_tyrianHalt(5);
+}
+
+/* The settings block's tail, added when the flags word at byte 4 filled up. Bytes 0..23 keep the
+ * layout they always had, so only what is below moved onto new ground. */
+#define NET_SET_FLAGS2   24   /* Uint16: expert, item differences, centered hitboxes, Guided Aim */
+#define NET_SET_EXPERT   26   /* NETWORK_EXPERT_SLOTS x Uint16                                    */
+#define NET_SET_DEBUG_FLAGS 42 /* Uint16: simulation-affecting Debug Mode toggles                  */
+#define NET_SET_NOCLIP      44 /* Uint8: noclipMode                                                 */
+#define NET_SET_CHARGE_AF   45 /* Uint8: chargeSidekickAutofire                                    */
+#define NET_SET_TWIDDLE     46 /* Uint8: debugTwiddleSpecial; byte 47 reserved                      */
+COMPILE_TIME_ASSERT(net_settings_block_fits,
+                    NET_SET_TWIDDLE + 2 == NETWORK_SETTINGS_SIZE);
+
+// The epdiff word holds eight two-bit entries. Later entries use flags2; keep
+// the split in sync when extending the table.
+#define NET_SET_EPDIFF_PACKED   8  /* entries 0..7 pack into the byte-2 word, two bits each */
+#define NET_SET_EPDIFF_TAIL_BIT 4  /* entries 9 up run from this flags2 bit, two bits each  */
+#define NET_SET_GUIDED_AIM_BIT 15  /* guidedShotScreenAim; the epdiff tail grows up to it   */
+COMPILE_TIME_ASSERT(net_settings_epdiff_fits,
+                    NET_SET_EPDIFF_TAIL_BIT + 2 * (EDW_COUNT - NET_SET_EPDIFF_PACKED - 1)
+                    <= NET_SET_GUIDED_AIM_BIT);
+
+/* Where epdiff entry i (i >= NET_SET_EPDIFF_PACKED) sits in flags2. Entry 8 keeps its original
+ * bits 1-2, below the shot-hitbox flag; the rest run from NET_SET_EPDIFF_TAIL_BIT up. */
+static int network_epdiff_tail_shift(int i)
+{
+	return (i == NET_SET_EPDIFF_PACKED)
+	       ? 1
+	       : NET_SET_EPDIFF_TAIL_BIT + 2 * (i - NET_SET_EPDIFF_PACKED - 1);
+}
+
+static Uint16 network_debug_flags_pack(void)
+{
+	Uint16 flags = 0;
+	flags |= cheatInfiniteShields      ? 1 << 0 : 0;
+	flags |= cheatInfiniteArmor        ? 1 << 1 : 0;
+	flags |= cheatInfiniteGenerator    ? 1 << 2 : 0;
+	flags |= cheatNoEnemyFire          ? 1 << 3 : 0;
+	flags |= cheatInstantCharge        ? 1 << 4 : 0;
+	flags |= cheatInfiniteSidekickAmmo ? 1 << 5 : 0;
+	flags |= autoFireSpecial           ? 1 << 6 : 0;
+	flags |= debugAutofireTwiddle      ? 1 << 7 : 0;
+	flags |= debugToggleFire           ? 1 << 8 : 0;
+	flags |= expertMode                ? 1 << 9 : 0;
+	flags |= difficultyAdjust          ? 1 << 10 : 0;
+	flags |= debugTwiddleTrigger       ? 1 << 11 : 0;
+	flags |= constantPlay              ? 1 << 12 : 0;
+	flags |= constantDie               ? 1 << 13 : 0;
+	flags |= endlessCampaignMods       ? 1 << 14 : 0;
+	return flags;
+}
+
+/* A menu update preserves a one-shot already pending locally. Initial session adoption replaces
+ * the joiner's stale state completely. */
+static void network_debug_flags_adopt(Uint16 flags, bool preserve_pending_trigger)
+{
+	cheatInfiniteShields      = (flags & (1 << 0)) != 0;
+	cheatInfiniteArmor        = (flags & (1 << 1)) != 0;
+	cheatInfiniteGenerator    = (flags & (1 << 2)) != 0;
+	cheatNoEnemyFire          = (flags & (1 << 3)) != 0;
+	cheatInstantCharge        = (flags & (1 << 4)) != 0;
+	cheatInfiniteSidekickAmmo = (flags & (1 << 5)) != 0;
+	autoFireSpecial           = (flags & (1 << 6)) != 0;
+	debugAutofireTwiddle      = (flags & (1 << 7)) != 0;
+	debugToggleFire           = (flags & (1 << 8)) != 0;
+	expertMode               = (flags & (1 << 9)) != 0;
+	difficultyAdjust          = (flags & (1 << 10)) != 0;
+	debugTwiddleTrigger       = (flags & (1 << 11)) != 0
+	                         || (preserve_pending_trigger && debugTwiddleTrigger);
+	constantPlay              = (flags & (1 << 12)) != 0;
+	constantDie               = (flags & (1 << 13)) != 0;
+
+	/* Endless debug effects affect simulation and must match on both peers. */
+	if (!endlessMode)
+	{
+		const bool campaignMods = (flags & (1 << 14)) != 0;
+		if (campaignMods && !endlessCampaignMods)
+			endlessCampaignModsArm();
+		endlessCampaignMods = campaignMods;
+	}
+}
+
+/* Host-authoritative settings that affect simulation or deterministic input. Rendering and
+ * audio settings remain local. */
+static bool settings_stashed = false;
+static struct
+{
+	int  superSparkMode[SSW_COUNT];
+	int  epDiffMode[EDW_COUNT];
+	int  zicaLaserBase, zicaLaserLength;
+	bool zicaLaserLock, zicaLaserBuff;
+	int  wallopSecondBolt;
+	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
+	bool arcadeRearGunScale, centeredShotHitboxes, guidedShotScreenAim;
+	int  xmasMode;
+	JE_byte gameSpeed;
+	JE_boolean arcadeSeparateMode;
+	bool timedBattle;
+	int  battleLevel;
+	JE_boolean expertMode;
+	int  expert[NETWORK_EXPERT_SLOTS];
+	bool cheatInfiniteShields;
+	bool cheatInfiniteArmor;
+	bool cheatInfiniteGenerator;
+	bool cheatNoEnemyFire;
+	bool cheatInstantCharge;
+	bool cheatInfiniteSidekickAmmo;
+	bool autoFireSpecial;
+	bool debugAutofireTwiddle;
+	bool debugToggleFire;
+	bool difficultyAdjust;
+	bool debugTwiddleTrigger;
+	bool constantPlay;
+	bool constantDie;
+	JE_byte noclipMode;
+	JE_byte chargeSidekickAutofire;
+	JE_byte debugTwiddleSpecial;
+}
+settings_local;
+
+int network_settings_pack(Uint8 *buf)
+{
+	Uint16 spark = 0;  // SSW_COUNT(4) x 2 bits
+	for (int i = SSW_COUNT - 1; i >= 0; --i)
+		spark = (spark << 2) | (superSparkMode[i] & 3);
+
+	Uint16 epdiff = 0;  // the first NET_SET_EPDIFF_PACKED(8) entries x 2 bits; the rest ride flags2
+	for (int i = NET_SET_EPDIFF_PACKED - 1; i >= 0; --i)
+		epdiff = (epdiff << 2) | (epDiffMode[i] & 3);
+
+	// Destruct brings its own rollback and its own recovery (destruct_rollback.c), so both rows
+	// mean the same thing for every game type.
+	const bool rollback_applies = net_rollback;
+	const bool recovery_applies = net_desync_recovery && rollback_applies;
+
+	Uint16 flags = 0;
+	flags |= zicaLaserLock         ? 1 << 0 : 0;
+	flags |= zicaLaserBuff         ? 1 << 1 : 0;
+	flags |= chargeLaserCannon     ? 1 << 2 : 0;
+	flags |= restoreBaseDispensers ? 1 << 3 : 0;
+	flags |= rollback_applies      ? 1 << 4 : 0;  // rollback vs lockstep; host decides
+	// The ship-physics tail is sim code (see JE_playerMovement's vt_sim gate),
+	// so the host's smooth-motion choice binds the session.
+	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
+	flags |= recovery_applies      ? 1 << 6 : 0;  // desync recovery; host decides
+	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
+	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
+	flags |= coopSharedCredit      ? 1 << 9 : 0;  // co-op credit sharing; host decides
+	flags |= coopDoubleEarnings     ? 1 << 10 : 0; // ...and whether Individual pays combat cash twice
+	flags |= arcadeSeparateShips    ? 1 << 11 : 0; // Arcade: two Separate personal ships; host decides
+	flags |= arcadeRearGunScale     ? 1 << 12 : 0; // ...and whether lives raise the rear gun
+	// Arcade's Timed Battle: the shape, and which of the three levels, in the last three bits.
+	flags |= network_timed_battle() ? 1 << 13 : 0;
+	flags |= (Uint16)((network_host_battle_level - 1) & 3) << 14;
+
+	SDLNet_Write16(spark,                    &buf[0]);
+	SDLNet_Write16(epdiff,                   &buf[2]);
+	SDLNet_Write16(flags,                    &buf[4]);
+	SDLNet_Write16(zicaLaserBase,            &buf[6]);
+	SDLNet_Write16(zicaLaserLength,          &buf[8]);
+	SDLNet_Write16(wallopSecondBolt,         &buf[10]);
+	SDLNet_Write16((Uint16)(xmasMode + 1),   &buf[12]);  // xmasMode is -1..1; bias to 0..2
+	SDLNet_Write16(gameSpeed,                &buf[14]);
+
+	// Not a setting: our snapshot layout, for the peer to compare against its own.
+	SDLNet_Write32(rollback_layout_fingerprint(),   &buf[16]);
+	SDLNet_Write32((Uint32)rollback_state_size(),   &buf[20]);
+
+	/* Expert Mode and its tunables. */
+	Uint16 flags2 = expertMode ? 1 << 0 : 0;
+	for (int i = NET_SET_EPDIFF_PACKED; i < EDW_COUNT; ++i)
+		flags2 |= (Uint16)(epDiffMode[i] & 3) << network_epdiff_tail_shift(i);
+	flags2 |= centeredShotHitboxes ? 1 << 3 : 0;  // where both shot loops take a hit from
+	flags2 |= guidedShotScreenAim ? 1 << NET_SET_GUIDED_AIM_BIT : 0;  // which x a guided shot chases
+	SDLNet_Write16(flags2, &buf[NET_SET_FLAGS2]);
+	for (int i = 0; i < NETWORK_EXPERT_SLOTS; ++i)
+		SDLNet_Write16((Uint16)(i < expertSettingsCount ? *expertSettings[i].value : 0),
+		               &buf[NET_SET_EXPERT + i * 2]);
+
+	/* Publish initial debug and autofire state before the first simulation tick. */
+	SDLNet_Write16(network_debug_flags_pack(), &buf[NET_SET_DEBUG_FLAGS]);
+	buf[NET_SET_NOCLIP]    = noclipMode;
+	buf[NET_SET_CHARGE_AF] = chargeSidekickAutofire;
+	buf[NET_SET_TWIDDLE]   = debugTwiddleSpecial;
+	buf[NET_SET_TWIDDLE + 1] = 0;
+
+	return NETWORK_SETTINGS_SIZE;
+}
+
+/* Both peers compare layouts because the host streams state and the joiner adopts it. A mismatch
+ * disables recovery but retains desync detection. */
+void network_settings_check_layout(const Uint8 *buf)
+{
+	const Uint32 their_fp   = SDLNet_Read32(&buf[16]);
+	const Uint32 their_size = SDLNet_Read32(&buf[20]);
+	const Uint32 our_fp     = rollback_layout_fingerprint();
+	const Uint32 our_size   = (Uint32)rollback_state_size();
+
+	if (their_fp == our_fp && their_size == our_size)
+		return;
+
+	nrb_set_session_recovery(false);
+
+	char line[256];
+	snprintf(line, sizeof(line),
+	         "desync recovery unavailable this session: peer state %lu bytes / layout %08x, "
+	         "ours %lu / %08x (different build, or PC<->console).  A desync will be reported "
+	         "and played through rather than repaired.",
+	         (unsigned long)their_size, (unsigned)their_fp,
+	         (unsigned long)our_size, (unsigned)our_fp);
+	crashlog_netlog_line("NETWORK LAYOUT MISMATCH", line);
+}
+
+static void network_settings_stash(void)
+{
+	if (settings_stashed)
+		return;
+
+	memcpy(settings_local.superSparkMode, superSparkMode, sizeof(superSparkMode));
+	memcpy(settings_local.epDiffMode, epDiffMode, sizeof(epDiffMode));
+	settings_local.zicaLaserBase        = zicaLaserBase;
+	settings_local.zicaLaserLength      = zicaLaserLength;
+	settings_local.zicaLaserLock        = zicaLaserLock;
+	settings_local.zicaLaserBuff        = zicaLaserBuff;
+	settings_local.wallopSecondBolt     = wallopSecondBolt;
+	settings_local.chargeLaserCannon    = chargeLaserCannon;
+	settings_local.restoreBaseDispensers = restoreBaseDispensers;
+	settings_local.arcadeLifeBoost      = arcadeLifeBoost;
+	settings_local.arcadeRandomBalls    = arcadeRandomBalls;
+	settings_local.arcadeRearGunScale   = arcadeRearGunScale;
+	settings_local.centeredShotHitboxes = centeredShotHitboxes;
+	settings_local.guidedShotScreenAim  = guidedShotScreenAim;
+	settings_local.xmasMode             = xmasMode;
+	settings_local.gameSpeed            = gameSpeed;
+	// Session-scoped, so leaving a session has to put it back: a leftover Separate flag would
+	// otherwise reshape the next LOCAL two-player arcade, which never armed it.
+	settings_local.arcadeSeparateMode   = arcadeSeparateMode;
+	// The joiner adopts the host's Timed Battle pick into these, so its own lobby choice -- which
+	// is what the config file keeps -- has to survive a session spent racing somebody else's.
+	settings_local.timedBattle          = network_host_timed_battle;
+	settings_local.battleLevel          = network_host_battle_level;
+	// The joiner adopts the host's Expert Mode and every multiplier behind it; those are this
+	// machine's own config (and its own save's flag), so they go back when the session does.
+	settings_local.expertMode           = expertMode;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		settings_local.expert[i] = *expertSettings[i].value;
+	settings_local.cheatInfiniteShields      = cheatInfiniteShields;
+	settings_local.cheatInfiniteArmor        = cheatInfiniteArmor;
+	settings_local.cheatInfiniteGenerator    = cheatInfiniteGenerator;
+	settings_local.cheatNoEnemyFire          = cheatNoEnemyFire;
+	settings_local.cheatInstantCharge        = cheatInstantCharge;
+	settings_local.cheatInfiniteSidekickAmmo = cheatInfiniteSidekickAmmo;
+	settings_local.autoFireSpecial           = autoFireSpecial;
+	settings_local.debugAutofireTwiddle      = debugAutofireTwiddle;
+	settings_local.debugToggleFire           = debugToggleFire;
+	settings_local.difficultyAdjust          = difficultyAdjust;
+	settings_local.debugTwiddleTrigger       = debugTwiddleTrigger;
+	settings_local.constantPlay              = constantPlay;
+	settings_local.constantDie               = constantDie;
+	settings_local.noclipMode                = noclipMode;
+	settings_local.chargeSidekickAutofire    = chargeSidekickAutofire;
+	settings_local.debugTwiddleSpecial       = debugTwiddleSpecial;
+	settings_stashed = true;
+}
+
+/* Every session flag the settings block carries, armed from this machine's own config. */
+void network_arm_local_session(void)
+{
+	// Arming writes session state the local preferences have to survive, so take the same
+	// snapshot the joiner's adopt path takes. Both are undone by network_settings_restore.
+	network_settings_stash();
+
+	// Same rule the settings block packs: every game type honours both netcode rows.
+	const bool rollback_applies = net_rollback;
+
+	nrb_set_session_mode(rollback_applies);
+	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
+	nrb_set_session_recovery(net_desync_recovery && rollback_applies);
+	coop_set_session_shared_credit(coopSharedCredit);
+	coop_set_session_double_earnings(coopDoubleEarnings);
+	arcadeSeparateMode = arcadeSeparateShips;
+}
+
+// Apply the host's lobby speed for ordinary sessions and restore the local preference afterward.
+// Command-line and Destruct sessions use Normal so both peers advance at the same rate.
+void network_settings_apply_session_speed(void)
+{
+	const bool host_picks_speed = network_from_lobby && network_is_host
+	                           && network_game_type != NETWORK_GAME_DESTRUCT;
+
+	network_settings_stash();
+	gameSpeed = host_picks_speed ? (JE_byte)network_host_game_speed : 4;
+	JE_initProcessorType();
+	JE_setNewGameSpeed();
+}
+
+int network_settings_adopt(const Uint8 *buf)
+{
+	network_settings_stash();
+
+	Uint16 spark  = SDLNet_Read16(&buf[0]);
+	Uint16 epdiff = SDLNet_Read16(&buf[2]);
+	Uint16 flags  = SDLNet_Read16(&buf[4]);
+
+	for (int i = 0; i < SSW_COUNT; ++i, spark >>= 2)
+	{
+		superSparkMode[i] = spark & 3;
+		if (superSparkMode[i] >= SUPER_SPARKS_COUNT)
+			superSparkMode[i] = SUPER_SPARKS_AUTO;
+	}
+	for (int i = 0; i < NET_SET_EPDIFF_PACKED; ++i, epdiff >>= 2)
+	{
+		epDiffMode[i] = epdiff & 3;
+		if (epDiffMode[i] >= EPDIFF_MODE_COUNT)
+			epDiffMode[i] = EPDIFF_AUTO;
+	}
+
+	zicaLaserLock         = (flags & (1 << 0)) != 0;
+	zicaLaserBuff         = (flags & (1 << 1)) != 0;
+	chargeLaserCannon     = (flags & (1 << 2)) != 0;
+	restoreBaseDispensers = (flags & (1 << 3)) != 0;
+	arcadeLifeBoost       = (flags & (1 << 7)) != 0;
+	arcadeRandomBalls     = (flags & (1 << 8)) != 0;
+
+	// Netcode mode is a session property, not a config setting: the joiner's own
+	// net_rollback preference is left untouched and restored semantics don't apply.
+	nrb_set_session_mode((flags & (1 << 4)) != 0);
+	nrb_set_session_vt((flags & (1 << 5)) != 0);
+	nrb_set_session_recovery((flags & (1 << 6)) != 0);
+	coop_set_session_shared_credit((flags & (1 << 9)) != 0);
+	coop_set_session_double_earnings((flags & (1 << 10)) != 0);
+	arcadeSeparateMode = (flags & (1 << 11)) != 0;
+	arcadeRearGunScale = (flags & (1 << 12)) != 0;
+
+	// A hostile packet could name a battle that does not exist, and the level number indexes
+	// both the name table and the episode script's jump list, so clamp it into range.
+	network_host_timed_battle = (flags & (1 << 13)) != 0;
+	network_host_battle_level = (int)((flags >> 14) & 3) + 1;
+	if (network_host_battle_level > NET_TIMED_BATTLE_LEVELS)
+		network_host_battle_level = 1;
+
+	zicaLaserBase    = SDLNet_Read16(&buf[6]);
+	zicaLaserLength  = SDLNet_Read16(&buf[8]);
+	wallopSecondBolt = SDLNet_Read16(&buf[10]);
+	xmasMode         = (int)SDLNet_Read16(&buf[12]) - 1;
+	gameSpeed        = (JE_byte)SDLNet_Read16(&buf[14]);
+
+	// Clamp everything: a malformed or hostile packet must not index past an array.
+	if (zicaLaserBase < 0 || zicaLaserBase >= ZICA_BASE_COUNT)
+		zicaLaserBase = ZICA_BASE_AUTO;
+	if (zicaLaserLength < 0 || zicaLaserLength >= ZICA_LEN_COUNT)
+		zicaLaserLength = ZICA_LEN_SHORT;
+	if (wallopSecondBolt < 0 || wallopSecondBolt >= SUPER_SPARKS_COUNT)
+		wallopSecondBolt = SUPER_SPARKS_AUTO;
+	if (xmasMode < -1 || xmasMode > 1)
+		xmasMode = -1;
+	if (gameSpeed < 1 || gameSpeed > 5)
+		gameSpeed = 4;
+
+	// Clamp Expert Mode values with the same rules as local debug edits.
+	const Uint16 flags2 = SDLNet_Read16(&buf[NET_SET_FLAGS2]);
+	expertMode = (flags2 & 1) != 0;
+	for (int i = NET_SET_EPDIFF_PACKED; i < EDW_COUNT; ++i)
+	{
+		epDiffMode[i] = (flags2 >> network_epdiff_tail_shift(i)) & 3;
+		if (epDiffMode[i] >= EPDIFF_MODE_COUNT)
+			epDiffMode[i] = EPDIFF_AUTO;
+	}
+	centeredShotHitboxes = (flags2 & (1 << 3)) != 0;
+	guidedShotScreenAim = (flags2 & (1 << NET_SET_GUIDED_AIM_BIT)) != 0;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NET_SET_EXPERT + i * 2]);
+	clamp_expert_settings();
+
+	network_debug_flags_adopt(SDLNet_Read16(&buf[NET_SET_DEBUG_FLAGS]), false);
+	noclipMode = buf[NET_SET_NOCLIP] % NOCLIP_NUM;
+	chargeSidekickAutofire = buf[NET_SET_CHARGE_AF] % CHARGE_AUTOFIRE_NUM;
+	debugTwiddleSpecial = (buf[NET_SET_TWIDDLE] <= SPECIAL_NUM) ? buf[NET_SET_TWIDDLE] : 0;
+
+	return NETWORK_SETTINGS_SIZE;
+}
+
+// The Endless lobby block travels beside the settings block and binds the run the same way.
+COMPILE_TIME_ASSERT(net_endless_seed_fits, NET_ENDLESS_SEED_MAX == ENDLESS_SEED_MAXLEN);
+
+void network_endless_adopt(const Uint8 *buf)
+{
+	network_host_endless_run_mode = buf[0];
+	network_host_endless_chooser = buf[1];
+	network_host_endless_combo_shared = buf[2] != 0;
+	network_host_endless_base_rule = buf[3];
+	memcpy(network_endless_session_seed, &buf[4], NET_ENDLESS_SEED_MAX);
+	network_endless_session_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
+
+	if (network_host_endless_run_mode < 0 || network_host_endless_run_mode >= ENDLESS_RUNMODE_COUNT)
+		network_host_endless_run_mode = ENDLESS_RUNMODE_STANDARD;
+	if (network_host_endless_chooser < 0 || network_host_endless_chooser >= ENDLESS_PICK_COUNT)
+		network_host_endless_chooser = ENDLESS_PICK_HOST;
+	if (network_host_endless_base_rule < 0
+	    || network_host_endless_base_rule >= ENDLESS_BASE_RULE_COUNT)
+	{
+		network_host_endless_base_rule = ENDLESS_BASE_VARIED;
+	}
+
+	// Only printable ASCII reaches the seed hash, so a hostile packet cannot smuggle control
+	// characters onto the seed-name line the run-over screen prints.
+	for (int i = 0; i < NET_ENDLESS_SEED_MAX; ++i)
+	{
+		const unsigned char c = (unsigned char)network_endless_session_seed[i];
+		if (c != '\0' && (c < 32 || c >= 127))
+			network_endless_session_seed[i] = '?';
+	}
+}
+
+/* Resolve a random Endless seed before the host sends it. Keep the lobby field
+ * blank so the next session rolls again. */
+void network_endless_session_begin(void)
+{
+	SDL_strlcpy(network_endless_session_seed, network_host_endless_seed,
+	            sizeof(network_endless_session_seed));
+
+	if (network_endless_session_seed[0] == '\0')
+		snprintf(network_endless_session_seed, sizeof(network_endless_session_seed), "%lu",
+		         (unsigned long)(1u + mt_rand() % 999999999u));
+}
+
+/* Roll the Destruct terrain seed, host side, before the connect packet carries it. Per session,
+ * so two matches hosted back to back fight different maps. */
+void network_destruct_session_begin(void)
+{
+	network_destruct_session_seed = (Uint32)mt_rand();
+}
+
+static Uint16 network_shop_sequence;
+static Uint16 network_shop_peer_sequence;
+static Uint16 network_shop_save_request;
+static bool network_shop_peer_ready;
+static bool network_shop_peer_lock;
+static bool network_shop_local_ready;
+static bool network_shop_local_locked;
+static bool network_shop_save_ready;
+static bool network_shop_active;
+static Uint32 network_shop_beat_at;
+#define NET_SHOP_BEAT 400   // ms between re-announcements while waiting on the peer
+
+// Hold the host's level choice until the joiner also leaves the outpost.
+static bool network_shop_host_committed;
+static JE_byte network_shop_host_level;
+
+// Endless: the sector index the peer published, or -1 while it has committed to none.
+static int network_shop_peer_pick = -1;
+
+/* DONE and LOCK describe the sender's state at send time rather than an event, so every shop
+ * packet carries both and the receiver assigns them. That is what lets a commit be withdrawn. */
+enum
+{
+	SHOP_SYNC_DONE = 1 << 0,
+	SHOP_SYNC_SAVE_REQUEST = 1 << 1,
+	SHOP_SYNC_SAVE_ACK = 1 << 2,
+	SHOP_SYNC_TRANSACTION = 1 << 3,
+	SHOP_SYNC_LOCK = 1 << 4,
+	SHOP_SYNC_HELLO = 1 << 5,   // "I just opened an outpost; tell me where you are"
+};
+
+static int network_shop_pack_items(Uint8 *buf, const PlayerItems *items)
+{
+	int n = 0;
+	buf[n++] = items->ship;
+	buf[n++] = items->generator;
+	buf[n++] = items->shield;
+	for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+	{
+		buf[n++] = items->weapon[i].id;
+		buf[n++] = items->weapon[i].power;
+	}
+	buf[n++] = items->sidekick[0];
+	buf[n++] = items->sidekick[1];
+	buf[n++] = items->special;
+	buf[n++] = items->sidekick_series;
+	buf[n++] = items->sidekick_level;
+	buf[n++] = items->super_arcade_mode;
+	return n;
+}
+
+static int network_shop_unpack_items(PlayerItems *items, const Uint8 *buf)
+{
+	int n = 0;
+	items->ship = buf[n++];
+	items->generator = buf[n++];
+	items->shield = buf[n++];
+	for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+	{
+		items->weapon[i].id = buf[n++];
+		items->weapon[i].power = buf[n++];
+	}
+	items->sidekick[0] = buf[n++];
+	items->sidekick[1] = buf[n++];
+	items->special = buf[n++];
+	items->sidekick_series = buf[n++];
+	items->sidekick_level = buf[n++];
+	items->super_arcade_mode = buf[n++];
+	return n;
+}
+
+static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return 0;
+
+	const Player *const this_player = &player[thisPlayerNum - 1];
+	const Uint16 sequence = ++network_shop_sequence;
+
+	// Ride our current rendezvous state on every packet, whatever it was sent for.
+	if (network_shop_local_ready)
+		flags |= SHOP_SYNC_DONE;
+	if (network_shop_local_locked)
+		flags |= SHOP_SYNC_LOCK;
+
+	network_prepare(PACKET_SHOP_SYNC);
+	SDLNet_Write16(thisPlayerNum, &packet_out_temp->data[4]);
+	SDLNet_Write16(sequence, &packet_out_temp->data[6]);
+	SDLNet_Write16(flags, &packet_out_temp->data[8]);
+	// Endless publishes the chosen sector index here; Campaign publishes the level it jumped to.
+	SDLNet_Write16(coopEndlessMode ? (Uint16)(endlessCoopCourse + 1) : mainLevel,
+	               &packet_out_temp->data[10]);
+	SDLNet_Write16(jumpSection ? 1 : 0, &packet_out_temp->data[12]);
+	net_bytes_write64((Uint64)this_player->cash, &packet_out_temp->data[14]);
+	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[22]);
+	SDLNet_Write16(acknowledge, &packet_out_temp->data[24]);
+	int len = 26 + network_shop_pack_items(&packet_out_temp->data[26], &this_player->items);
+	if (coopEndlessMode)
+		len += endlessPackPlayerBlock(&packet_out_temp->data[len], thisPlayerNum - 1);
+	// Send personal outpost state with the save acknowledgement.
+	if ((flags & SHOP_SYNC_SAVE_ACK) && coopEndlessMode)
+		len += endlessPackOwnOutpost(&packet_out_temp->data[len]);
+	network_send(len);
+	return sequence;
+}
+
+void network_shop_begin(void)
+{
+	/* A level that ended on the peer's quit leaves the notice at the reliable head for its handler
+	 * (nrb_peer_left_level). */
+	network_quit_notice_retire();
+
+	network_shop_save_request = 0;
+	network_shop_peer_ready = false;
+	network_shop_peer_lock = false;
+	network_shop_local_ready = false;
+	network_shop_local_locked = false;
+	network_shop_save_ready = false;
+	network_shop_host_committed = false;
+	network_shop_peer_pick = -1;
+	network_shop_beat_at = SDL_GetTicks();
+	network_shop_active = isNetworkGame && coop_mode_active();
+	if (isNetworkGame && coop_mode_active())
+	{
+		// Ask the peer to republish state after resetting a visit.
+		network_shop_local_ready = false;
+		network_shop_local_locked = false;
+		network_shop_send_packet(SHOP_SYNC_HELLO, 0);
+	}
+}
+
+/* Re-announce DONE, LOCK, and the route while waiting. These are state fields, and a peer clears
+ * its view when opening an outpost; rate limiting keeps only one restatement in flight. */
+void network_shop_keepalive(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	// Keep only one publication in flight to protect the 16-packet reliable queue.
+	if (!network_is_sync())
+		return;
+
+	const Uint32 now = SDL_GetTicks();
+	if (now - network_shop_beat_at < NET_SHOP_BEAT)
+		return;
+
+	network_shop_beat_at = now;
+	network_shop_send_packet(0, 0);
+}
+
+void network_shop_send_state(bool done)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_local_ready = done;
+	if (!done)
+		network_shop_local_locked = false;
+	network_shop_send_packet(0, 0);
+}
+
+// Step two of the outpost rendezvous, which is what keeps a withdrawal from racing a departure.
+// See doc/notes.md#session-and-outpost.
+void network_shop_set_locked(bool locked)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_local_locked = locked;
+	network_shop_send_packet(0, 0);
+}
+
+bool network_shop_peer_locked(void)
+{
+	return network_shop_peer_lock;
+}
+
+void network_shop_send_transaction(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_send_packet(SHOP_SYNC_TRANSACTION, 0);
+}
+
+/* Custom weapon design exchange. The receiver acknowledges a completed generation separately
+ * from transport delivery; see doc/notes.md#custom-weapons. */
+#define NCW_OWNER      4    /* Uint8:  publishing player number, 1 or 2      */
+#define NCW_GEN        6    /* Uint16: publication, so a stale stream is dropped */
+#define NCW_CHUNK      8    /* Uint16: chunk index                           */
+#define NCW_COUNT     10    /* Uint16: chunk total, or 0 for an acknowledgement */
+#define NCW_LEN       12    /* Uint16: payload bytes in this chunk            */
+#define NCW_HDR       14
+#define NCW_PAYLOAD   (NET_PACKET_SIZE - NCW_HDR)
+#define NCW_ATTEMPTS   3    /* whole-stream retries before giving up          */
+#define NCW_ATTEMPT_MS 6000 /* ms to get one attempt acknowledged             */
+
+static void network_chunk_prepare(Uint16 type, Uint8 kind, Uint16 gen, Uint16 chunk, Uint16 count,
+                                  Uint16 len)
+{
+	network_prepare(type);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = kind;
+	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(chunk, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(count, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(len, &packet_out_temp->data[NCW_LEN]);
+}
+
+// Consume an early PACKET_WAITING so transfer acknowledgements behind it remain reachable.
+static bool network_waiting_pending;
+
+static bool network_waiting_pump(void)
+{
+	if (network_inbound_head() != PACKET_WAITING)
+		return false;
+
+	network_update();
+	network_waiting_pending = true;
+	return true;
+}
+
+static Uint16 network_custom_gen;
+static Uint32 network_custom_out_hash;  // last design the peer took; 0 = nothing published yet
+static bool   network_custom_acked;
+static Uint16 network_custom_in_gen;
+static Uint32 network_custom_in_have;
+static Uint32 network_custom_in_count;
+static int    network_custom_in_owner = -1;
+static size_t network_custom_in_len;
+static Uint8 *network_custom_in_buf;
+static Uint8 *network_custom_in_seen;
+
+static void network_custom_in_reset(void)
+{
+	network_custom_in_owner = -1;
+	network_custom_in_count = 0;
+	network_custom_in_have = 0;
+	network_custom_in_len = 0;
+	free(network_custom_in_buf);
+	free(network_custom_in_seen);
+	network_custom_in_buf = NULL;
+	network_custom_in_seen = NULL;
+}
+
+void network_custom_weapon_reset(void)
+{
+	network_custom_in_reset();
+	network_custom_out_hash = 0;
+	network_custom_acked = false;
+	network_waiting_pending = false;
+}
+
+static void network_custom_send_ack(Uint16 gen)
+{
+	network_chunk_prepare(PACKET_CUSTOM_WEAPON, 0, gen, 0, 0, 0);
+	network_send(NCW_HDR);
+}
+
+static bool network_custom_weapon_receive(void)
+{
+	const int len = packet_in[0]->len;
+	if (len < NCW_HDR)
+	{
+		network_update();
+		return true;
+	}
+
+	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+	if (sender < 1 || sender > 2 || sender == thisPlayerNum)
+	{
+		network_update();
+		return true;
+	}
+
+	if (count == 0)  // the peer took the generation we are publishing
+	{
+		if (gen == network_custom_gen)
+			network_custom_acked = true;
+		network_update();
+		return true;
+	}
+
+	if (chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
+	    (size_t)count * NCW_PAYLOAD > CUSTOM_WEAPON_WIRE_MAX)
+	{
+		network_update();
+		return true;
+	}
+
+	if (network_custom_in_buf == NULL || network_custom_in_gen != gen ||
+	    network_custom_in_count != count || network_custom_in_owner != (int)sender - 1)
+	{
+		network_custom_in_reset();
+		network_custom_in_buf = calloc((size_t)count, NCW_PAYLOAD);
+		network_custom_in_seen = calloc((size_t)count, 1);
+		if (network_custom_in_buf == NULL || network_custom_in_seen == NULL)
+		{
+			network_custom_in_reset();
+			network_update();
+			return true;
+		}
+		network_custom_in_gen = gen;
+		network_custom_in_count = count;
+		network_custom_in_owner = (int)sender - 1;
+	}
+
+	memcpy(network_custom_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	if (chunk == count - 1)
+		network_custom_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
+	if (!network_custom_in_seen[chunk])
+	{
+		network_custom_in_seen[chunk] = 1;
+		++network_custom_in_have;
+	}
+
+	if (network_custom_in_have >= count && network_custom_in_len > 0)
+	{
+		const int owner = network_custom_in_owner;
+		const size_t total = network_custom_in_len;
+		Uint8 *const stream = network_custom_in_buf;
+
+		network_custom_in_buf = NULL;  // the adopt call owns the bytes
+		if (!customWeaponAdoptDesign(owner, stream, total))
+		{
+			crashlog_netlog_line("CUSTOM WEAPON REFUSED",
+			                     "the peer's design did not decode; its ship keeps the "
+			                     "placeholder weapon and the two machines would disagree.");
+		}
+		free(stream);
+		network_custom_in_reset();
+
+		// Answer whether or not the design decoded: resending would produce the same bytes.
+		network_custom_send_ack(gen);
+	}
+
+	network_update();
+	return true;
+}
+
+/* Publish while both peers pump incoming packets. `force` includes a referenced design when
+ * Custom Weapons is disabled. */
+static void network_custom_weapon_publish_internal(bool force)
+{
+	if (!isNetworkGame || !custom_ships_multiplayer_mode() || (!customWeaponEnabled && !force) ||
+	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
+		return;
+
+	Uint8 *const stream = malloc(CUSTOM_WEAPON_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = customWeaponSerializeDesign(stream, CUSTOM_WEAPON_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	// FNV-1a over the encoded design: this runs on the way out of every outpost visit, and
+	// most of those fly the same weapon as the last one.
+	Uint32 hash = fnv1a32(stream, total);
+	if (hash == 0)
+		hash = 1;  // 0 means "nothing published yet"
+	if (hash == network_custom_out_hash)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_custom_gen;
+	network_custom_acked = false;
+	bool peer_left = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_custom_acked && !peer_left; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_custom_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			// Keep half the reliable queue free: transport acknowledgements arrive ahead of
+			// consumption, and the shop's own traffic still has to fit alongside this.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_chunk_prepare(PACKET_CUSTOM_WEAPON, 0, gen, (Uint16)sent, (Uint16)chunks,
+				                      (Uint16)plen);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			// Drain our own inbound: the peer publishes from the same rendezvous, and its
+			// acknowledgement is behind whatever it has already sent us.
+			while (network_shop_pump() || network_debug_sync_pump(false) || network_waiting_pump())
+				;
+
+			/* Retire stale handshakes, but leave quit packets for the quit handler. */
+			if (network_inbound_head() == PACKET_CONNECT)
+				network_update();
+			else if (network_inbound_head() == PACKET_GAME_QUIT)
+			{
+				peer_left = true;
+				break;
+			}
+
+			if (!network_peer_alive())
+				break;
+
+			SDL_Delay(4);
+		}
+
+		if (!network_peer_alive())
+			break;
+	}
+
+	if (!network_custom_acked)
+	{
+		crashlog_netlog_line("CUSTOM WEAPON NOT DELIVERED",
+		                     "the peer never acknowledged the design; its copy of this ship "
+		                     "keeps the placeholder weapon, which the canary reports as a desync.");
+		network_custom_out_hash = 0;  // start over at the next publish window
+	}
+	else
+	{
+		network_custom_out_hash = hash;
+	}
+
+	free(stream);
+}
+
+void network_custom_weapon_publish(void)
+{
+	network_custom_weapon_publish_internal(false);
+}
+
+void network_custom_weapon_publish_resume(void)
+{
+	network_custom_weapon_publish_internal(true);
+}
+
+/* Chunked per-seat extra-ship file exchange. See doc/notes.md#extra-ships. */
+
+static Uint16 network_ships_gen;
+static Uint32 network_ships_out_hash;
+static bool   network_ships_acked;
+
+static int    network_ships_in_owner = -1;
+static Uint16 network_ships_in_gen;
+static Uint32 network_ships_in_count;
+static Uint32 network_ships_in_have;
+static size_t network_ships_in_len;
+static Uint8 *network_ships_in_buf;
+static Uint8 *network_ships_in_seen;
+
+static void network_ships_in_reset(void)
+{
+	network_ships_in_owner = -1;
+	network_ships_in_count = 0;
+	network_ships_in_have = 0;
+	network_ships_in_len = 0;
+	free(network_ships_in_buf);
+	free(network_ships_in_seen);
+	network_ships_in_buf = NULL;
+	network_ships_in_seen = NULL;
+}
+
+void network_extra_ships_reset(void)
+{
+	network_ships_in_reset();
+	network_ships_out_hash = 0;
+	network_ships_acked = false;
+	extraShipsNetReset();
+}
+
+static void network_ships_send_ack(Uint16 gen)
+{
+	network_chunk_prepare(PACKET_EXTRA_SHIPS, 0, gen, 0, 0, 0);
+	network_send(NCW_HDR);
+}
+
+static bool network_extra_ships_receive(void)
+{
+	const int len = packet_in[0]->len;
+	if (len < NCW_HDR)
+	{
+		network_update();
+		return true;
+	}
+
+	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+	if (sender < 1 || sender > 2 || sender == thisPlayerNum)
+	{
+		network_update();
+		return true;
+	}
+
+	if (count == 0)  // the peer took the generation we are publishing
+	{
+		if (gen == network_ships_gen)
+			network_ships_acked = true;
+		network_update();
+		return true;
+	}
+
+	if (chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
+	    (size_t)count * NCW_PAYLOAD > EXTRA_SHIPS_WIRE_MAX)
+	{
+		network_update();
+		return true;
+	}
+
+	if (network_ships_in_buf == NULL || network_ships_in_gen != gen ||
+	    network_ships_in_count != count || network_ships_in_owner != (int)sender - 1)
+	{
+		network_ships_in_reset();
+		network_ships_in_buf = calloc((size_t)count, NCW_PAYLOAD);
+		network_ships_in_seen = calloc((size_t)count, 1);
+		if (network_ships_in_buf == NULL || network_ships_in_seen == NULL)
+		{
+			network_ships_in_reset();
+			network_update();
+			return true;
+		}
+		network_ships_in_gen = gen;
+		network_ships_in_count = count;
+		network_ships_in_owner = (int)sender - 1;
+	}
+
+	memcpy(network_ships_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	if (chunk == count - 1)
+		network_ships_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
+	if (!network_ships_in_seen[chunk])
+	{
+		network_ships_in_seen[chunk] = 1;
+		++network_ships_in_have;
+	}
+
+	if (network_ships_in_have >= count && network_ships_in_len > 0)
+	{
+		if (!extraShipsAdopt((uint)network_ships_in_owner, network_ships_in_buf, network_ships_in_len))
+		{
+			crashlog_netlog_line("EXTRA SHIPS REFUSED",
+			                     "the peer's ship file did not decode; its extra ships stay "
+			                     "unavailable and neither Edit Player list offers them.");
+		}
+		network_ships_in_reset();
+
+		// A decode failure will not improve by resending identical bytes.
+		network_ships_send_ack(gen);
+	}
+
+	network_update();
+	return true;
+}
+
+// The session hash gate suppresses unchanged files.
+void network_extra_ships_publish(void)
+{
+	if (!isNetworkGame || !custom_ships_multiplayer_mode() ||
+	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
+		return;
+
+	extraShipsNetInstallLocal((uint)(thisPlayerNum - 1));
+
+	Uint8 *const stream = malloc(EXTRA_SHIPS_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = extraShipsSerialize(stream, EXTRA_SHIPS_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	Uint32 hash = fnv1a32(stream, total);
+	if (hash == 0)
+		hash = 1;  // 0 means "nothing published yet"
+	if (hash == network_ships_out_hash)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_ships_gen;
+	network_ships_acked = false;
+	bool peer_left = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_ships_acked && !peer_left; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_ships_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			// Reserve half the reliable queue for other traffic.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_chunk_prepare(PACKET_EXTRA_SHIPS, 0, gen, (Uint16)sent, (Uint16)chunks,
+				                      (Uint16)plen);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			while (network_shop_pump() || network_debug_sync_pump(false) || network_waiting_pump())
+				;
+
+			if (network_inbound_head() == PACKET_CONNECT)
+				network_update();
+			else if (network_inbound_head() == PACKET_GAME_QUIT)
+			{
+				peer_left = true;
+				break;
+			}
+
+			if (!network_peer_alive())
+			{
+				peer_left = true;
+				break;
+			}
+
+			SDL_Delay(1);
+		}
+	}
+
+	if (network_ships_acked)
+		network_ships_out_hash = hash;
+
+	free(stream);
+}
+
+/* Container and manifest sync; see doc/notes.md#custom-episode-containers. */
+
+char   network_host_custom_file[64] = "";   /* CUSTOM_EPISODE_FILE_LEN; empty = stock */
+Uint32 network_host_custom_size = 0;
+Uint32 network_host_custom_hash = 0;
+int    network_host_custom_endless = 0;     /* CUSTOM_ENDLESS_*, host-dictated */
+
+#define NCL_REQUEST       0xFFFF
+#define NCL_OFFER         0xFFFE
+#define NCL_GEN_FAILED    0xFFFE
+#define NCL_CONTAINER_MAX CUSTOM_EPISODE_BYTES_MAX
+#define NCL_GEN_ALL_DONE  0xFFFF
+#define NCL_TRANSFER_MS   90000   /* per-stream deadline; a slow link, not a hang */
+#define NCL_RESEND_MS     15000   /* restream when a full pass went unacknowledged */
+
+/* Stream counts must remain below NCL_OFFER. */
+SDL_COMPILE_TIME_ASSERT(ncl_container_fits,
+                        NCL_CONTAINER_MAX <= (Uint32)(NCL_OFFER - 1) * NCW_PAYLOAD);
+
+#define NCL_KIND_CONTAINER 0
+#define NCL_KIND_MANIFEST  1
+
+#define NCL_MANIFEST_RECORD (CUSTOM_EPISODE_FILE_LEN + 8)
+#define NCL_MANIFEST_MAX    (2 + CUSTOM_EPISODE_MAX * NCL_MANIFEST_RECORD)
+
+static Uint16 network_clv_gen;
+static bool   network_clv_syncing;
+static bool   network_clv_offer_seen;
+static char   network_clv_offer_name[CUSTOM_EPISODE_FILE_LEN];
+static Uint32 network_clv_offer_size;
+static Uint32 network_clv_offer_hash;
+static bool   network_clv_failed;
+static bool   network_clv_request_seen;        // A peer requested a container.
+static char   network_clv_wanted[CUSTOM_EPISODE_FILE_LEN];  // Empty means the advertised file.
+static bool   network_clv_manifest_requested;
+static bool   network_clv_peer_done;           // The peer confirmed the running stream.
+static bool   network_clv_all_done;             // The peer settled the required set.
+static bool   network_clv_seat_noted;
+
+// Expected identity for the current download.
+static char   network_clv_expect_name[CUSTOM_EPISODE_FILE_LEN];
+static Uint32 network_clv_expect_size;
+static Uint32 network_clv_expect_hash;
+
+static Uint8  network_clv_in_kind;
+static Uint16 network_clv_in_gen;
+static Uint32 network_clv_in_count;
+static Uint32 network_clv_in_have;
+static Uint32 network_clv_in_arrived;   // Last chunk time; retry only after silence.
+static size_t network_clv_in_len;
+static Uint8 *network_clv_in_buf;
+static Uint8 *network_clv_in_seen;
+static bool   network_clv_in_done;             // The expected container is stored.
+
+static Uint8  network_clv_manifest[NCL_MANIFEST_MAX];
+static size_t network_clv_manifest_len;        // 0 = none received yet
+
+static void network_clv_in_reset(void)
+{
+	network_clv_in_count = 0;
+	network_clv_in_have = 0;
+	network_clv_in_len = 0;
+	free(network_clv_in_buf);
+	free(network_clv_in_seen);
+	network_clv_in_buf = NULL;
+	network_clv_in_seen = NULL;
+}
+
+void network_custom_level_session_reset(void)
+{
+	network_clv_request_seen = false;
+	network_clv_manifest_requested = false;
+	network_clv_peer_done = false;
+	network_clv_all_done = false;
+	network_clv_in_done = false;
+	network_clv_wanted[0] = '\0';
+	network_clv_expect_name[0] = '\0';
+	network_clv_expect_size = 0;
+	network_clv_expect_hash = 0;
+	network_clv_manifest_len = 0;
+	network_clv_offer_seen = false;
+	network_clv_offer_name[0] = '\0';
+	network_clv_offer_size = 0;
+	network_clv_offer_hash = 0;
+	network_clv_failed = false;
+	network_clv_seat_noted = false;
+	network_clv_in_reset();
+	customEpisodeSessionEnd();
+}
+
+static void network_clv_send_ack(Uint16 gen)
+{
+	network_chunk_prepare(PACKET_CUSTOM_LEVEL, NCL_KIND_CONTAINER, gen, 0, 0, 0);
+	network_send(NCW_HDR);
+}
+
+/* Requests a manifest or a named container; NULL means the advertised one. */
+static void network_clv_send_request(Uint8 kind, const char *name)
+{
+	size_t plen = (name != NULL) ? strlen(name) : 0;
+	if (plen >= CUSTOM_EPISODE_FILE_LEN)
+		plen = CUSTOM_EPISODE_FILE_LEN - 1;
+
+	network_chunk_prepare(PACKET_CUSTOM_LEVEL, kind, 0, 0, NCL_REQUEST, (Uint16)plen);
+	if (plen > 0)
+		memcpy(&packet_out_temp->data[NCW_HDR], name, plen);
+	network_send(NCW_HDR + (int)plen);
+}
+
+static void network_clv_send_offer(const char *name, Uint32 size, Uint32 hash)
+{
+	network_chunk_prepare(PACKET_CUSTOM_LEVEL, NCL_KIND_CONTAINER, 0, 0, NCL_OFFER,
+	                      (Uint16)(CUSTOM_EPISODE_FILE_LEN + 8));
+	memset(&packet_out_temp->data[NCW_HDR], 0, CUSTOM_EPISODE_FILE_LEN);
+	memcpy(&packet_out_temp->data[NCW_HDR], name, strlen(name));
+	SDLNet_Write32(size, &packet_out_temp->data[NCW_HDR + CUSTOM_EPISODE_FILE_LEN]);
+	SDLNet_Write32(hash, &packet_out_temp->data[NCW_HDR + CUSTOM_EPISODE_FILE_LEN + 4]);
+	network_send(NCW_HDR + CUSTOM_EPISODE_FILE_LEN + 8);
+}
+
+static Uint32 network_clv_hash(const Uint8 *data, size_t len)
+{
+	const Uint32 hash = fnv1a32(data, len);
+	return hash != 0 ? hash : 1;
+}
+
+static void network_clv_consume(void)
+{
+	const int len = packet_in[0]->len;
+	if (len < NCW_HDR)
+	{
+		network_update();
+		return;
+	}
+
+	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint8  kind   = packet_in[0]->data[NCW_OWNER + 1];
+	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+	if (sender < 1 || sender > 2 ||
+	    (kind != NCL_KIND_CONTAINER && kind != NCL_KIND_MANIFEST))
+	{
+		network_update();
+		return;
+	}
+
+	if (sender == thisPlayerNum && !network_clv_seat_noted)
+	{
+		network_clv_seat_noted = true;
+		crashlog_netlog_line("CUSTOM LEVEL",
+		                     "the peer's transfer arrived under this machine's seat");
+	}
+
+	if (count == NCL_REQUEST)
+	{
+		if (kind == NCL_KIND_MANIFEST)
+			network_clv_manifest_requested = true;
+		else
+		{
+			char name[CUSTOM_EPISODE_FILE_LEN];
+			const size_t n = MIN((size_t)plen, sizeof(name) - 1);
+			if ((Uint32)len >= NCW_HDR + n)
+			{
+				memcpy(name, &packet_in[0]->data[NCW_HDR], n);
+				name[n] = '\0';
+				if (name[0] == '\0' || customEpisodeFileNameValid(name))
+				{
+					SDL_strlcpy(network_clv_wanted, name, sizeof(network_clv_wanted));
+					network_clv_request_seen = true;
+				}
+			}
+		}
+		network_update();
+		return;
+	}
+
+	if (count == NCL_OFFER)
+	{
+		if (kind == NCL_KIND_CONTAINER && plen == CUSTOM_EPISODE_FILE_LEN + 8 &&
+		    (Uint32)len >= NCW_HDR + plen)
+		{
+			char name[CUSTOM_EPISODE_FILE_LEN];
+			memcpy(name, &packet_in[0]->data[NCW_HDR], CUSTOM_EPISODE_FILE_LEN);
+			name[CUSTOM_EPISODE_FILE_LEN - 1] = '\0';
+			if (customEpisodeFileNameValid(name))
+			{
+				SDL_strlcpy(network_clv_offer_name, name, sizeof(network_clv_offer_name));
+				network_clv_offer_size = SDLNet_Read32(
+					&packet_in[0]->data[NCW_HDR + CUSTOM_EPISODE_FILE_LEN]);
+				network_clv_offer_hash = SDLNet_Read32(
+					&packet_in[0]->data[NCW_HDR + CUSTOM_EPISODE_FILE_LEN + 4]);
+				network_clv_offer_seen = true;
+			}
+		}
+		network_update();
+		return;
+	}
+
+	if (count == 0)
+	{
+		if (gen == NCL_GEN_ALL_DONE)
+			network_clv_all_done = true;
+		else if (gen == NCL_GEN_FAILED)
+			network_clv_failed = true;
+		else
+			network_clv_peer_done = true;
+		network_update();
+		return;
+	}
+
+	// Bound streams by the advertised identity or manifest limit.
+	const Uint64 bound = kind == NCL_KIND_MANIFEST
+	                   ? (Uint64)NCL_MANIFEST_MAX
+	                   : (Uint64)network_clv_expect_size;
+	if (bound == 0 ||
+	    chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
+	    (Uint64)count * NCW_PAYLOAD > bound + NCW_PAYLOAD)
+	{
+		network_update();
+		return;
+	}
+
+	if (network_clv_in_buf == NULL || network_clv_in_gen != gen ||
+	    network_clv_in_count != count || network_clv_in_kind != kind)
+	{
+		network_clv_in_reset();
+		network_clv_in_buf = calloc((size_t)count, NCW_PAYLOAD);
+		network_clv_in_seen = calloc((size_t)count, 1);
+		if (network_clv_in_buf == NULL || network_clv_in_seen == NULL)
+		{
+			network_clv_in_reset();
+			network_update();
+			return;
+		}
+		network_clv_in_kind = kind;
+		network_clv_in_gen = gen;
+		network_clv_in_count = count;
+	}
+
+	memcpy(network_clv_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	network_clv_in_arrived = SDL_GetTicks();
+	if (chunk == count - 1)
+		network_clv_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
+	if (!network_clv_in_seen[chunk])
+	{
+		network_clv_in_seen[chunk] = 1;
+		++network_clv_in_have;
+	}
+
+	if (network_clv_in_have >= count && network_clv_in_len > 0)
+	{
+		if (kind == NCL_KIND_MANIFEST)
+		{
+			const size_t mlen = network_clv_in_len;
+			const Uint32 mcount = mlen >= 2 ? SDLNet_Read16(&network_clv_in_buf[0]) : 0xffffu;
+			if (mcount <= CUSTOM_EPISODE_MAX && mlen == 2 + (size_t)mcount * NCL_MANIFEST_RECORD)
+			{
+				memcpy(network_clv_manifest, network_clv_in_buf, mlen);
+				network_clv_manifest_len = mlen;
+				network_clv_send_ack(gen);
+			}
+			else
+				crashlog_netlog_line("CUSTOM LEVEL REFUSED", "the collection manifest did not parse");
+		}
+		else if (network_clv_in_len == network_clv_expect_size &&
+		         network_clv_hash(network_clv_in_buf, network_clv_in_len) == network_clv_expect_hash &&
+		         customEpisodeSaveDownloaded(network_clv_expect_name,
+		                                     network_clv_in_buf, (Uint32)network_clv_in_len) >= 0)
+		{
+			network_clv_in_done = true;
+			network_clv_send_ack(gen);
+		}
+		else
+		{
+			// Wait for the host's next generation after rejecting this one.
+			crashlog_netlog_line("CUSTOM LEVEL REFUSED",
+			                     "the downloaded container did not match the host's advertisement");
+		}
+		network_clv_in_reset();
+	}
+
+	network_update();
+}
+
+static bool network_clv_pump(void)
+{
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_LEVEL)
+		network_clv_consume();
+	while (network_shop_pump() || network_debug_sync_pump(false) || network_waiting_pump())
+		;
+	const int head = network_inbound_head();
+	if (head == PACKET_CONNECT)
+		network_update();
+	else if (head == PACKET_QUIT || head == PACKET_GAME_QUIT)
+		return false;
+	return true;
+}
+
+/* Streams one generation until acknowledged. */
+static bool network_clv_stream_until_acked(Uint8 kind, const Uint8 *stream, Uint32 total)
+{
+	const Uint32 chunks = (total + NCW_PAYLOAD - 1) / NCW_PAYLOAD;
+	Uint16 gen = ++network_clv_gen;
+	while (gen == NCL_GEN_ALL_DONE || gen == NCL_GEN_FAILED)
+		gen = ++network_clv_gen;
+	Uint32 sent = 0;
+	Uint32 progressAt = SDL_GetTicks();
+	Uint32 passDoneAt = 0;
+	int passes = 0;
+
+	network_clv_peer_done = false;
+
+	while (!network_clv_peer_done)
+	{
+		// Completion supersedes a late stream request.
+		if (network_clv_all_done)
+			return true;
+		if (network_clv_failed || SDL_GetTicks() - progressAt >= NCL_TRANSFER_MS ||
+		    !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (!network_clv_pump())
+			return false;
+
+		if (sent < chunks)
+		{
+			// Leave half the reliable queue available while streaming.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN((size_t)total - from, (size_t)NCW_PAYLOAD);
+
+				network_chunk_prepare(PACKET_CUSTOM_LEVEL, kind, gen, (Uint16)sent, (Uint16)chunks,
+				                      (Uint16)plen);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				progressAt = SDL_GetTicks();
+				if (++sent >= chunks)
+					passDoneAt = progressAt;
+			}
+		}
+		else if (passDoneAt != 0 && SDL_GetTicks() - passDoneAt >= NCL_RESEND_MS)
+		{
+			// Retry an unconfirmed stream with a new generation.
+			if (++passes >= NCW_ATTEMPTS)
+				return false;
+			gen = ++network_clv_gen;
+			while (gen == NCL_GEN_ALL_DONE || gen == NCL_GEN_FAILED)
+				gen = ++network_clv_gen;
+			sent = 0;
+			passDoneAt = 0;
+			progressAt = SDL_GetTicks();
+		}
+
+		SDL_Delay(1);
+	}
+
+	return true;
+}
+
+/* Serves the advertised container until the joiner confirms it. */
+static bool network_custom_level_serve_locked(void)
+{
+	if (network_host_custom_file[0] == '\0')
+		return true;
+
+	customEpisodeScan();
+	const int idx = customEpisodeFindByFile(network_host_custom_file);
+	Uint32 total = 0;
+	Uint8 *const stream = idx >= 0 ? customEpisodeReadWhole(idx, &total) : NULL;
+	if (stream == NULL || total == 0)
+	{
+		free(stream);
+		return false;
+	}
+
+	const Uint32 started = SDL_GetTicks();
+	bool ok = true;
+
+	// Wait for the joiner to confirm or request the container.
+	while (!network_clv_peer_done)
+	{
+		if (SDL_GetTicks() - started >= NCL_TRANSFER_MS || !network_peer_alive())
+		{
+			ok = false;
+			break;
+		}
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (!network_clv_pump())
+		{
+			ok = false;
+			break;
+		}
+
+		if (network_clv_request_seen)
+		{
+			network_clv_request_seen = false;
+			ok = network_clv_stream_until_acked(NCL_KIND_CONTAINER, stream, total);
+			break;
+		}
+
+		SDL_Delay(1);
+	}
+
+	free(stream);
+	return ok;
+}
+
+bool network_custom_level_serve(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_custom_level_serve_locked();
+	network_clv_syncing = false;
+	return ok;
+}
+
+/* Fetches the advertised container unless a matching local copy exists. */
+static bool network_custom_level_fetch_locked(void)
+{
+	if (network_host_custom_file[0] == '\0')
+		return true;
+
+	customEpisodeScan();
+	const int idx = customEpisodeFindByFile(network_host_custom_file);
+	if (idx >= 0)
+	{
+		Uint32 size, hash;
+		if (customEpisodeIdentity(idx, &size, &hash) &&
+		    size == network_host_custom_size && hash == network_host_custom_hash)
+		{
+			network_clv_send_ack(0);
+			return true;
+		}
+	}
+
+	SDL_strlcpy(network_clv_expect_name, network_host_custom_file,
+	            sizeof(network_clv_expect_name));
+	network_clv_expect_size = network_host_custom_size;
+	network_clv_expect_hash = network_host_custom_hash;
+	network_clv_in_done = false;
+
+	network_clv_in_arrived = 0;
+	Uint32 notedArrival = 0;
+	Uint32 progressAt = SDL_GetTicks();
+	Uint32 askedAt = 0;
+	bool asked = false;
+
+	while (!network_clv_in_done)
+	{
+		if (network_clv_in_arrived != notedArrival)
+		{
+			notedArrival = network_clv_in_arrived;
+			progressAt = notedArrival;
+			askedAt = notedArrival;
+		}
+
+		if (SDL_GetTicks() - progressAt >= NCL_TRANSFER_MS || !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		// Repeat in case the host reset its transfer state.
+		if (!asked || SDL_GetTicks() - askedAt >= 3000)
+		{
+			network_clv_send_request(NCL_KIND_CONTAINER, NULL);
+			askedAt = SDL_GetTicks();
+			asked = true;
+		}
+
+		if (!network_clv_pump())
+			return false;
+
+		SDL_Delay(1);
+	}
+
+	return true;
+}
+
+bool network_custom_level_fetch(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_custom_level_fetch_locked();
+	network_clv_syncing = false;
+	return ok;
+}
+
+/* Reconciles an ordered dependency manifest with the peer. */
+static bool network_clv_serve_required(char names[][CUSTOM_EPISODE_FILE_LEN], int count)
+{
+	Uint8 manifest[NCL_MANIFEST_MAX];
+	SDLNet_Write16((Uint16)count, &manifest[0]);
+	size_t mlen = 2;
+	for (int i = 0; i < count; ++i)
+	{
+		Uint32 size = 0, hash = 0;
+		const int local = customEpisodeFindByFile(names[i]);
+		if (local >= 0 && !customEpisodeIdentity(local, &size, &hash))
+		{
+			size = 0;
+			hash = 0;
+		}
+		memset(&manifest[mlen], 0, CUSTOM_EPISODE_FILE_LEN);
+		memcpy(&manifest[mlen], names[i], strlen(names[i]));
+		SDLNet_Write32(size, &manifest[mlen + CUSTOM_EPISODE_FILE_LEN]);
+		SDLNet_Write32(hash, &manifest[mlen + CUSTOM_EPISODE_FILE_LEN + 4]);
+		mlen += NCL_MANIFEST_RECORD;
+	}
+
+	const Uint32 started = SDL_GetTicks();
+
+	while (!network_clv_all_done)
+	{
+		if (network_clv_failed || SDL_GetTicks() - started >= NCL_TRANSFER_MS * 8u ||
+		    !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (!network_clv_pump())
+			return false;
+
+		// Ignore requests queued before completion.
+		if (network_clv_all_done)
+			break;
+
+		if (network_clv_manifest_requested)
+		{
+			network_clv_manifest_requested = false;
+			if (!network_clv_stream_until_acked(NCL_KIND_MANIFEST, manifest, (Uint32)mlen))
+				return false;
+		}
+
+		if (network_clv_all_done)
+			break;
+
+		if (network_clv_request_seen)
+		{
+			network_clv_request_seen = false;
+			const char *const want = network_clv_wanted[0] != '\0'
+			                       ? network_clv_wanted : network_host_custom_file;
+			const int idx = customEpisodeFindByFile(want);
+			Uint32 total = 0;
+			Uint8 *const bytes = idx >= 0 ? customEpisodeReadWhole(idx, &total) : NULL;
+			if (bytes == NULL || total == 0)
+			{
+				free(bytes);
+				return false;
+			}
+			const bool sentOk = network_clv_stream_until_acked(NCL_KIND_CONTAINER, bytes, total);
+			free(bytes);
+			if (!sentOk)
+				return false;
+		}
+
+		if (network_clv_offer_seen)
+		{
+			network_clv_offer_seen = false;
+			bool wantedHere = false;
+			for (int i = 0; i < count && !wantedHere; ++i)
+				wantedHere = SDL_strcasecmp(names[i], network_clv_offer_name) == 0;
+			if (wantedHere && customEpisodeFindByFile(network_clv_offer_name) < 0 &&
+			    network_clv_offer_size > 0 && network_clv_offer_size <= NCL_CONTAINER_MAX)
+			{
+				SDL_strlcpy(network_clv_expect_name, network_clv_offer_name,
+				            sizeof(network_clv_expect_name));
+				network_clv_expect_size = network_clv_offer_size;
+				network_clv_expect_hash = network_clv_offer_hash;
+				network_clv_in_done = false;
+				network_clv_in_reset();
+				network_clv_in_arrived = 0;
+				network_clv_send_request(NCL_KIND_CONTAINER, network_clv_offer_name);
+				Uint32 pullNoted = 0;
+				Uint32 pullProgressAt = SDL_GetTicks();
+				Uint32 pullAskedAt = SDL_GetTicks();
+				while (!network_clv_in_done)
+				{
+					if (network_clv_in_arrived != pullNoted)
+					{
+						pullNoted = network_clv_in_arrived;
+						pullProgressAt = pullNoted;
+						pullAskedAt = pullNoted;
+					}
+					if (network_clv_failed ||
+					    SDL_GetTicks() - pullProgressAt >= NCL_TRANSFER_MS ||
+					    !network_peer_alive())
+						return false;
+					watchdog_heartbeat();
+					service_SDL_events(false);
+					network_check();
+					if (!network_clv_pump())
+						return false;
+					if (SDL_GetTicks() - pullAskedAt >= 3000)
+					{
+						network_clv_send_request(NCL_KIND_CONTAINER, network_clv_offer_name);
+						pullAskedAt = SDL_GetTicks();
+					}
+					SDL_Delay(1);
+				}
+			}
+		}
+
+		SDL_Delay(1);
+	}
+
+	return true;
+}
+
+static bool network_clv_fetch_required(int sessionMode)
+{
+	customEpisodeScan();
+
+	network_clv_manifest_len = 0;
+	Uint32 started = SDL_GetTicks();
+	Uint32 askedAt = 0;
+	bool asked = false;
+	while (network_clv_manifest_len == 0)
+	{
+		if (network_clv_failed || SDL_GetTicks() - started >= NCL_TRANSFER_MS ||
+		    !network_peer_alive())
+			return false;
+
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		network_check();
+
+		if (!asked || SDL_GetTicks() - askedAt >= 3000)
+		{
+			network_clv_send_request(NCL_KIND_MANIFEST, NULL);
+			askedAt = SDL_GetTicks();
+			asked = true;
+		}
+
+		if (!network_clv_pump())
+			return false;
+
+		SDL_Delay(1);
+	}
+
+	const int count = (int)SDLNet_Read16(&network_clv_manifest[0]);
+	static char names[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+	for (int i = 0; i < count; ++i)
+	{
+		const Uint8 *const rec = &network_clv_manifest[2 + (size_t)i * NCL_MANIFEST_RECORD];
+		memcpy(names[i], rec, CUSTOM_EPISODE_FILE_LEN);
+		names[i][CUSTOM_EPISODE_FILE_LEN - 1] = '\0';
+		if (!customEpisodeFileNameValid(names[i]))
+			return false;
+		const Uint32 wantSize = SDLNet_Read32(&rec[CUSTOM_EPISODE_FILE_LEN]);
+		const Uint32 wantHash = SDLNet_Read32(&rec[CUSTOM_EPISODE_FILE_LEN + 4]);
+		const int local = customEpisodeFindByFile(names[i]);
+
+		if (wantSize == 0)
+		{
+			Uint32 mySize = 0, myHash = 0;
+			if (local < 0 || !customEpisodeIdentity(local, &mySize, &myHash) || mySize == 0)
+			{
+				network_clv_send_ack(NCL_GEN_FAILED);
+				return false;
+			}
+			Uint32 total = 0;
+			Uint8 *const bytes = customEpisodeReadWhole(local, &total);
+			if (bytes == NULL || total == 0)
+			{
+				free(bytes);
+				network_clv_send_ack(NCL_GEN_FAILED);
+				return false;
+			}
+			network_clv_request_seen = false;
+			network_clv_send_offer(names[i], mySize, myHash);
+			started = SDL_GetTicks();
+			askedAt = SDL_GetTicks();
+			bool sentOk = false;
+			while (!sentOk)
+			{
+				if (network_clv_failed || SDL_GetTicks() - started >= NCL_TRANSFER_MS ||
+				    !network_peer_alive())
+				{
+					free(bytes);
+					return false;
+				}
+				watchdog_heartbeat();
+				service_SDL_events(false);
+				network_check();
+				if (!network_clv_pump())
+				{
+					free(bytes);
+					return false;
+				}
+				if (network_clv_request_seen &&
+				    SDL_strcasecmp(network_clv_wanted, names[i]) == 0)
+				{
+					network_clv_request_seen = false;
+					if (!network_clv_stream_until_acked(NCL_KIND_CONTAINER, bytes, total))
+					{
+						free(bytes);
+						return false;
+					}
+					sentOk = true;
+				}
+				else if (SDL_GetTicks() - askedAt >= 3000)
+				{
+					network_clv_send_offer(names[i], mySize, myHash);
+					askedAt = SDL_GetTicks();
+				}
+				SDL_Delay(1);
+			}
+			free(bytes);
+			continue;
+		}
+
+		{
+			Uint32 mySize = 0, myHash = 0;
+			if (local >= 0 && customEpisodeIdentity(local, &mySize, &myHash) &&
+			    mySize == wantSize && myHash == wantHash)
+				continue;
+		}
+
+		SDL_strlcpy(network_clv_expect_name, names[i], sizeof(network_clv_expect_name));
+		network_clv_expect_size = wantSize;
+		network_clv_expect_hash = wantHash;
+		network_clv_in_done = false;
+		network_clv_in_reset();
+		network_clv_in_arrived = 0;
+		Uint32 notedArrival = 0;
+		Uint32 progressAt = SDL_GetTicks();
+		askedAt = 0;
+		asked = false;
+		while (!network_clv_in_done)
+		{
+			if (network_clv_in_arrived != notedArrival)
+			{
+				notedArrival = network_clv_in_arrived;
+				progressAt = notedArrival;
+				askedAt = notedArrival;
+			}
+
+			if (network_clv_failed || SDL_GetTicks() - progressAt >= NCL_TRANSFER_MS ||
+			    !network_peer_alive())
+				return false;
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			// Retry only after the stream goes quiet.
+			if (!asked || SDL_GetTicks() - askedAt >= 3000)
+			{
+				network_clv_send_request(NCL_KIND_CONTAINER, names[i]);
+				askedAt = SDL_GetTicks();
+				asked = true;
+			}
+
+			if (!network_clv_pump())
+				return false;
+
+			SDL_Delay(1);
+		}
+	}
+
+	if (sessionMode >= 0)
+		customEpisodeSessionBegin(names, count, sessionMode);
+	network_clv_send_ack(NCL_GEN_ALL_DONE);
+	return true;
+}
+
+static bool network_custom_endless_serve_locked(void)
+{
+	customEpisodeScan();
+	const int count = customEpisodeCount();
+	static char names[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
+	for (int i = 0; i < count; ++i)
+		SDL_strlcpy(names[i], customEpisodeFile(i), sizeof(names[i]));
+
+	if (!network_clv_serve_required(names, count))
+		return false;
+
+	customEpisodeSessionBegin(names, count, network_host_custom_endless);
+	return true;
+}
+
+bool network_custom_endless_serve(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_custom_endless_serve_locked();
+	network_clv_syncing = false;
+	return ok;
+}
+
+bool network_custom_endless_fetch(void)
+{
+	network_clv_syncing = true;
+	const bool ok = network_clv_fetch_required(
+		(network_host_custom_endless == CUSTOM_ENDLESS_MIXED ||
+		 network_host_custom_endless == CUSTOM_ENDLESS_ONLY)
+		? network_host_custom_endless : CUSTOM_ENDLESS_OFF);
+	network_clv_syncing = false;
+	return ok;
+}
+
+bool network_custom_required_serve(char names[][CUSTOM_EPISODE_FILE_LEN], int count, int sessionMode)
+{
+	network_clv_syncing = true;
+	const bool ok = network_clv_serve_required(names, count);
+	if (ok && sessionMode >= 0)
+		customEpisodeSessionBegin(names, count, sessionMode);
+	else if (!ok && !network_clv_failed)
+		network_clv_send_ack(NCL_GEN_FAILED);
+	network_clv_syncing = false;
+	return ok;
+}
+
+bool network_custom_required_fetch(int sessionMode)
+{
+	network_clv_syncing = true;
+	const bool ok = network_clv_fetch_required(sessionMode);
+	if (!ok && !network_clv_failed)
+		network_clv_send_ack(NCL_GEN_FAILED);
+	network_clv_syncing = false;
+	return ok;
+}
+
+/* Activates the advertised container. */
+bool networkCustomEpisodeActivate(void)
+{
+	customEpisodeScan();
+	const int idx = customEpisodeFindByFile(network_host_custom_file);
+	return idx >= 0 && JE_initEpisodeCustom(idx);
+}
+
+/* Endless run transfer. Same chunked shape as the custom weapon exchange above, and for the same
+ * reason: transport delivery alone does not mean the peer has consumed the bytes. */
+static Uint16 network_endless_gen;
+static bool   network_endless_acked;
+
+static void network_endless_send_ack(Uint16 gen)
+{
+	network_chunk_prepare(PACKET_ENDLESS_RUN, 0, gen, 0, 0, 0);
+	network_send(NCW_HDR);
+}
+
+void network_endless_run_publish(void)
+{
+	if (!isNetworkGame || !coopEndlessMode || !network_peer_alive())
+		return;
+
+	Uint8 *const stream = malloc(ENDLESS_RUN_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = endlessRunSerialize(stream, ENDLESS_RUN_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_endless_gen;
+	network_endless_acked = false;
+
+	// This wait spans the joiner's whole save apply, and the host arrives with the load
+	// menu's fade-out still on the palette; without a redraw it reads as a hang.
+	const Uint32 publish_start = SDL_GetTicks();
+	bool overlay_drawn = false;
+	bool peer_left = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_endless_acked && !peer_left; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_endless_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_chunk_prepare(PACKET_ENDLESS_RUN, 0, gen, (Uint16)sent, (Uint16)chunks,
+				                      (Uint16)plen);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			/* Retire stale traffic ahead of the ordered acknowledgement. */
+			const Uint16 head = network_inbound_head();
+			if (head == PACKET_ENDLESS_RUN)
+			{
+				if (packet_in[0]->len >= NCW_HDR
+				    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == 0
+				    && SDLNet_Read16(&packet_in[0]->data[NCW_GEN]) == gen)
+					network_endless_acked = true;
+				network_update();  // the acknowledgement, or a stale generation's leftovers
+			}
+			else if (head == PACKET_GAME_QUIT)
+			{
+				/* The peer has left; nothing is coming. Leave the notice queued: it was
+				 * acknowledged on arrival, and the quit handler still has to see it. */
+				peer_left = true;
+				break;
+			}
+			else if (head == PACKET_CONNECT)
+			{
+				network_update();  // trailing handshake duplicate (see network_sa_ship_peer)
+			}
+			else if (head != 0 && !network_debug_sync_pump(false))
+			{
+				(void)network_shop_pump();  // an early outpost hello ahead of the acknowledgement
+			}
+
+			if (!overlay_drawn && SDL_GetTicks() - publish_start > 700)
+			{
+				overlay_drawn = true;
+				JE_clr256(VGAScreen);
+				JE_drawNetworkNotice("Waiting for other player.");
+				JE_showVGA();
+				fade_palette(colors, 10, 0, 255);  // the load menu faded to black on its way out
+			}
+
+			if (!network_peer_alive())
+				break;
+
+			SDL_Delay(4);
+		}
+
+		if (!network_peer_alive())
+			break;
+	}
+
+	if (!network_endless_acked)
+	{
+		crashlog_netlog_line("ENDLESS RUN NOT DELIVERED",
+		                     "the joiner never acknowledged the resumed run; the two machines would "
+		                     "start the session from different zones.");
+	}
+
+	free(stream);
+}
+
+/* The host publishes the shared outcome after both Endless ships go down. */
+#define NET_ENDLESS_DEATH_SENTINEL 0xffff
+#define NET_ENDLESS_LEFT_LEVEL     0xfffe   /* "I am out of the level"; frees a peer still in it */
+
+int network_endless_death_sync(int hostChoice)
+{
+	if (!isNetworkGame || !coopEndlessMode)
+		return hostChoice;
+
+	if (hostChoice >= 0)
+	{
+		network_chunk_prepare(PACKET_ENDLESS_RUN, 0, 0, (Uint16)hostChoice,
+		                      NET_ENDLESS_DEATH_SENTINEL, 0);
+		network_send(NCW_HDR);
+		return hostChoice;
+	}
+
+	const Uint32 started = SDL_GetTicks();
+	Uint32 announced = 0;
+	while (SDL_GetTicks() - started < 60000)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+		network_check();
+
+		// Tell a host still in the level that this peer left. Keep at most one reliable
+		// notice in flight so an unattended prompt cannot overflow the send queue.
+		if (announced == 0
+		    || (network_is_sync() && SDL_GetTicks() - announced > 5000))
+		{
+			announced = SDL_GetTicks();
+			network_chunk_prepare(PACKET_ENDLESS_RUN, 0, 0, 0, NET_ENDLESS_LEFT_LEVEL, 0);
+			network_send(NCW_HDR);
+		}
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
+		    && packet_in[0]->len >= NCW_HDR)
+		{
+			const Uint16 count = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+			if (count == NET_ENDLESS_DEATH_SENTINEL)
+			{
+				const int choice = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+				network_update();
+				return choice;
+			}
+			network_update();   // our own announcement echoed back, or a stale chunk
+			continue;
+		}
+
+		network_update();
+		if (!network_peer_alive())
+			break;
+	}
+
+	crashlog_netlog_line("ENDLESS DEATH CHOICE TIMEOUT",
+	                     "the host never published what to do after a shared death; this machine "
+	                     "ended the run rather than guessing.");
+	return -1;
+}
+
+/* Non-blocking Super Arcade pick state. The picker services the connection, and the reliable
+ * channel retransmits each player's independent choice. */
+static int  net_sa_ship_peer_pick = 0;
+static bool net_sa_ship_peer_saw_us = false;
+
+void network_sa_ship_reset(void)
+{
+	net_sa_ship_peer_pick = 0;
+	net_sa_ship_peer_saw_us = false;
+}
+
+void network_player_look_publish(void)
+{
+	if (!isNetworkGame || !connected)
+		return;
+
+	const NetShipView view = netStyleLocalView();
+
+	network_prepare(PACKET_PLAYER_LOOK);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = (Uint8)netStyleSeatColor(netStyleLocalSeat());
+	packet_out_temp->data[6] = view.opacity;
+	packet_out_temp->data[7] = view.shipOpacity ? 1 : 0;
+	packet_out_temp->data[8] = view.hpBars;
+	network_send_no_ack(9);
+}
+
+void network_sa_ship_publish(int ship, bool seen_peer)
+{
+	if (!isNetworkGame || ship < 0 || ship > SA)
+		return;
+
+	network_prepare(PACKET_SA_SHIP);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = (Uint8)ship;          // 0 = taken back
+	packet_out_temp->data[6] = seen_peer ? 1 : 0;
+	network_send(7);
+}
+
+bool network_sa_ship_peer_saw_us(void)
+{
+	return isNetworkGame && net_sa_ship_peer_saw_us;
+}
+
+/* Settle an Endless debug jump before folding the course, which would overwrite it. Both peers
+ * skip the fold when a jump exists; the host wins simultaneous jumps. */
+void network_endless_jump_publish(void)
+{
+	Uint8 block[ENDLESS_DEBUG_BLOCK_SIZE];
+	JE_byte ep = 0, sec = 0, file = 0;
+
+	const bool mine = endlessJumpPickGet(block);
+	const bool myLevel = debugLevelPickGet(&ep, &sec, &file);
+
+	// Publish immediately so a partner waiting for this player's course can leave that wait.
+	if (!isNetworkGame || !coopEndlessMode || !mine || !myLevel)
+		return;
+
+	network_prepare(PACKET_ENDLESS_JUMP);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = 1;   // a jump is only usable with its level, and both are here
+	packet_out_temp->data[6] = ep;
+	packet_out_temp->data[7] = sec;
+	packet_out_temp->data[8] = file;
+	packet_out_temp->data[9] = (Uint8)ENDLESS_DEBUG_BLOCK_SIZE;
+	memcpy(&packet_out_temp->data[10], block, ENDLESS_DEBUG_BLOCK_SIZE);
+	network_send(10 + ENDLESS_DEBUG_BLOCK_SIZE);
+}
+
+/* Adopt a queued jump without waiting. A true result tells both peers to skip course folding. */
+bool network_endless_jump_poll(void)
+{
+	Uint8 block[ENDLESS_DEBUG_BLOCK_SIZE];
+	const bool mine = endlessJumpPickGet(block);
+
+	if (!isNetworkGame || !coopEndlessMode)
+		return mine;
+
+	network_check();
+
+	// Only ever retire a jump announcement. Draining whatever else heads the queue is how the
+	// outpost eats the packet a later wait is blocking on (see network_sa_ship_peer).
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_JUMP)
+	{
+		const bool ours = packet_in[0]->data[4] == (Uint8)thisPlayerNum;
+		bool theirs = false;
+
+		if (!ours && packet_in[0]->len > 10 && packet_in[0]->data[5] != 0)
+		{
+			// The host's jump wins if both jumped, so the two can never resolve it opposite ways.
+			if (!mine || !network_is_host)
+			{
+				// Trust the length over the block's own length byte, so a truncated packet cannot
+				// walk us past the end of what actually arrived.
+				const size_t have = (size_t)packet_in[0]->len - 10;
+				const size_t said = packet_in[0]->data[9];
+				debugLevelPickApply(packet_in[0]->data[6], packet_in[0]->data[7],
+				                    packet_in[0]->data[8]);
+				endlessJumpPickApply(&packet_in[0]->data[10], said < have ? said : have);
+			}
+			theirs = true;
+		}
+
+		network_update();
+		return mine || theirs;
+	}
+
+	return mine;
+}
+
+int network_sa_ship_peer(void)
+{
+	if (!isNetworkGame)
+		return 0;
+
+	// The handshake's trailing connect can be placed in the window to keep it gap-free (see
+	// PACKET_CONNECT's connected path).
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+		network_update();
+
+	// This wait owns only ship announcements, including malformed ones.
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_SA_SHIP)
+	{
+		if (packet_in[0]->len >= 6)
+		{
+			const uint sender = packet_in[0]->data[4];
+			const int ship = packet_in[0]->data[5];
+			// This indexes SAShip[] and SAWeapon. Zero retracts a previous pick.
+			if (sender != thisPlayerNum && ship >= 0 && ship <= SA)
+			{
+				net_sa_ship_peer_pick = ship;
+				net_sa_ship_peer_saw_us = packet_in[0]->len >= 7 && packet_in[0]->data[6] != 0;
+			}
+		}
+		network_update();
+	}
+
+	return net_sa_ship_peer_pick;
+}
+
+bool network_endless_run_receive(Uint32 timeout_ms)
+{
+	if (!isNetworkGame || !coopEndlessMode)
+		return false;
+
+	Uint8 *buf = NULL;
+	Uint8 *seen = NULL;
+	Uint32 have = 0, count = 0;
+	Uint16 gen = 0;
+	size_t total = 0;
+	bool done = false;
+
+	const Uint32 started = SDL_GetTicks();
+	while (!done && SDL_GetTicks() - started < timeout_ms)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		network_check();
+
+		if (packet_in[0] == NULL || SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_ENDLESS_RUN
+		    || packet_in[0]->len < NCW_HDR)
+		{
+			network_update();
+			SDL_Delay(8);
+			continue;
+		}
+
+		const Uint16 pgen  = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+		const Uint32 chunk = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+		const Uint32 total_chunks = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+		const Uint32 plen  = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+		if (total_chunks == 0 || chunk >= total_chunks || plen > NCW_PAYLOAD
+		    || (Uint32)packet_in[0]->len < NCW_HDR + plen
+		    || (size_t)total_chunks * NCW_PAYLOAD > ENDLESS_RUN_WIRE_MAX)
+		{
+			network_update();
+			continue;
+		}
+
+		if (buf == NULL || gen != pgen || count != total_chunks)
+		{
+			free(buf);
+			free(seen);
+			buf = calloc((size_t)total_chunks, NCW_PAYLOAD);
+			seen = calloc((size_t)total_chunks, 1);
+			if (buf == NULL || seen == NULL)
+			{
+				free(buf);
+				free(seen);
+				return false;
+			}
+			gen = pgen;
+			count = total_chunks;
+			have = 0;
+			total = 0;
+		}
+
+		memcpy(buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+		if (chunk == count - 1)
+			total = (size_t)chunk * NCW_PAYLOAD + plen;
+		if (!seen[chunk])
+		{
+			seen[chunk] = 1;
+			++have;
+		}
+		network_update();
+
+		if (have >= count && total > 0)
+		{
+			// The adopt settles this seat's own rows itself: the record's partner half when
+			// the save checkpointed one, a redeal from the restored stream otherwise.
+			done = endlessRunAdopt(buf, total);
+			network_endless_send_ack(gen);   // answer either way: a resend produces the same bytes
+			break;
+		}
+	}
+
+	free(buf);
+	free(seen);
+	return done;
+}
+
+/* Exchange one level-boundary marker and retire preceding control traffic. */
+static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
+{
+	network_prepare(packet_type);
+	network_send(4);
+
+	const Uint32 started = SDL_GetTicks();
+	bool peer_ready = packet_type == PACKET_WAITING && network_waiting_pending;
+	if (peer_ready)
+		network_waiting_pending = false;
+	bool overlay_drawn = false;
+	while (SDL_GetTicks() - started < NET_TIME_OUT && network_peer_alive())
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+
+		network_check();
+
+		// A debug-menu edit can arrive ahead of the level marker on the ordered channel.
+		// Apply it before advancing the queue to the marker behind it.
+		if (network_debug_sync_pump(false))
+			continue;
+
+		/* Apply a final queued outpost transaction before retiring the visit. */
+		if (network_shop_pump())
+			continue;
+
+		const Uint16 head = network_inbound_head();
+		if (head == packet_type)
+		{
+			// Once this boundary is ready, another marker of this type belongs to the next one.
+			if (!peer_ready)
+			{
+				peer_ready = true;
+				network_update();
+			}
+		}
+		else if (!(packet_type == PACKET_WAITING && head == PACKET_LEVEL_READY))
+		{
+			// Retire delayed control traffic so it cannot hide this boundary's marker.
+			network_update();
+		}
+
+		if (peer_ready && (!settle_outbound || network_is_sync()))
+			break;
+
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
+		if (!overlay_drawn && SDL_GetTicks() - started > 700)
+		{
+			overlay_drawn = true;
+			JE_drawNetworkNotice("Waiting for other player.");
+			JE_showVGA();
+		}
+
+		if (!output_vsync)
+			limit_render_fps();
+		else
+			SDL_Delay(1);
+	}
+
+	if (!peer_ready || (settle_outbound && !network_is_sync()))
+	{
+		fprintf(stderr, "error: level rendezvous timed out (peer=%d outbound=%s head=%04x depth=%d)\n",
+		        peer_ready ? 1 : 0, network_is_sync() ? "settled" : "pending",
+		        (unsigned)network_inbound_head(), network_inbound_depth());
+		network_tyrian_halt(2, false);
+	}
+}
+
+// Separate Arcade has no outpost. Settle both custom-content streams before its first level.
+void network_custom_content_rendezvous(void)
+{
+	if (!isNetworkGame || !custom_ships_multiplayer_mode())
+		return;
+
+	network_level_barrier(PACKET_WAITING, true);
+}
+
+/* Run the pre-load ready barrier and reset state queues. Paths that bypass
+ * JE_itemScreen, such as Restart Zone, must call this themselves. */
+void network_level_rendezvous(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_level_barrier(PACKET_WAITING, true);
+	network_state_reset();
+}
+
+/* Synchronize after both machines have loaded the map. This marker has its own type so a delayed
+ * outpost or ready-card packet cannot release one player into the level. */
+void network_level_loaded_rendezvous(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	/* Receiving the peer's marker proves that machine has loaded. Our reliable marker may remain
+	 * unacknowledged; gameplay network service keeps retrying it until the peer can leave too. */
+	network_level_barrier(PACKET_LEVEL_READY, false);
+}
+
+/* Nonblocking ready barrier for screens that keep drawing while they wait. */
+void network_ready_publish(bool ready)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_prepare(PACKET_WAITING);
+	packet_out_temp->data[4] = ready ? 1 : 0;
+	network_send(5);  // PACKET_WAITING + the answer it carries
+}
+
+/* The departure gate. Start Level announces it, Esc withdraws it, and commit waits for both
+ * players. See doc/notes.md#session-and-outpost. */
+void network_depart_gate_publish(bool at_gate)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_prepare(PACKET_DEPART_GATE);
+	packet_out_temp->data[4] = at_gate ? 1 : 0;
+	network_send(5);  // PACKET_DEPART_GATE + the answer it carries
+}
+
+int network_depart_gate_peer(void)
+{
+	if (!isNetworkGame || packet_in[0] == NULL
+	    || SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_DEPART_GATE)
+		return -1;
+
+	const int at_gate = (packet_in[0]->len >= 5) ? (packet_in[0]->data[4] != 0 ? 1 : 0) : 1;
+	network_update();   // consume it, or it heads the queue for the rest of the session
+	return at_gate;
+}
+
+DepartGateStep network_depart_gate_step(bool esc_pressed, int peer_gate, Uint16 head)
+{
+	// Esc is read first: while it is still offered it outranks anything inbound, so the answer
+	// does not depend on which arrived within the frame.
+	if (esc_pressed)
+		return DEPART_GATE_WITHDRAW;
+
+	if (peer_gate > 0)
+		return DEPART_GATE_GO;
+
+	// A commit at the head proves the peer is at the gate and already past it. Left queued for
+	// the commit wait, which is the phase that reads its payload.
+	if (peer_gate < 0 && head == PACKET_WAITING)
+		return DEPART_GATE_GO;
+
+	return DEPART_GATE_WAIT;
+}
+
+DepartWaitStep network_depart_wait_step(int peer_gate, Uint16 head)
+{
+	// A withdrawal outranks a commit queued behind it, so the gate reopens.
+	if (peer_gate == 0)
+		return DEPART_WAIT_REOPENED;
+
+	if (head == PACKET_WAITING)
+		return DEPART_WAIT_DONE;
+
+	return DEPART_WAIT_MORE;
+}
+
+int network_ready_peer(void)
+{
+	if (!isNetworkGame)
+		return -1;
+
+	network_check();
+
+	// Retire a trailing connect packet before waiting for the ready announcement.
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+		network_update();
+
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+	{
+		// Every other rendezvous sends a bare four-byte one, which can only mean "ready" here.
+		const int ready = (packet_in[0]->len >= 5) ? (packet_in[0]->data[4] != 0 ? 1 : 0) : 1;
+		network_update();   // consume it, or it heads the queue for the rest of the session
+		return ready;
+	}
+
+	return -1;
+}
+
+void network_ready_screen_begin(NetReadyScreen *s)
+{
+	s->localReady = false;
+	s->peerReady = false;
+
+	// Wait for release so the opening input cannot also confirm the barrier.
+	s->armed = false;
+	s->armDeadline = SDL_GetTicks() + 500;
+
+	// A headless wire peer has nobody to press anything; it is ready as soon as it arrives.
+	if (qa_net_gameplay_ticks > 0)
+	{
+		s->localReady = true;
+		network_ready_publish(true);
+	}
+}
+
+bool network_ready_screen_frame(NetReadyScreen *s)
+{
+	watchdog_heartbeat();
+	push_joysticks_as_keyboard();  // a controller confirms too (no keyboard on the consoles)
+	service_SDL_events(false);
+
+	if (!s->armed)
+	{
+		s->armed = (!newkey && !joydown)
+		        || (s->armDeadline != 0 && SDL_GetTicks() >= s->armDeadline);
+		newkey = false;
+	}
+	else if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+	{
+		newkey = false;
+
+		if (s->localReady)
+		{
+			// Step back rather than out.
+			s->localReady = false;
+			network_ready_publish(false);
+			s->armed = false;
+			s->armDeadline = 0;
+		}
+		else
+		{
+			// The way out, once nothing is standing behind it. The other player is sitting on
+			// this same screen and has to be told, or they wait out the dead-link timeout.
+			network_prepare(PACKET_QUIT);
+			network_send(4);  // PACKET_QUIT
+			network_tyrian_halt(0, true);   // does not return
+		}
+	}
+	else if (!s->localReady && newkey)
+	{
+		s->localReady = true;
+		newkey = false;
+		network_ready_publish(true);
+	}
+
+	const int peer = network_ready_peer();   // doubles as this frame's keep-alive
+	if (peer >= 0)
+		s->peerReady = (peer != 0);
+
+	// Not until our own announcement is acknowledged: leaving with it unretired puts a
+	// retransmit in front of the state stream on the very first tick.
+	return (s->localReady && s->peerReady && network_is_sync()) || !network_peer_alive();
+}
+
+void network_end_screen_rendezvous(bool local_dismissed)
+{
+	if (!isNetworkGame)
+		return;
+
+	/* Either player's first dismissal closes the shared results screen. */
+	bool local_initiated = local_dismissed;
+	if (local_dismissed)
+		network_ready_publish(true);
+	bool peer_ready = false;
+	bool complete = false;
+
+	while (network_peer_alive())
+	{
+		// Renew Select and synthesize its key inside this draw-once wait loop.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
+
+		watchdog_heartbeat();
+		push_joysticks_as_keyboard();
+		service_SDL_events(true);
+		poll_joysticks();
+
+		if (!local_dismissed && (newkey || newmouse || joydown))
+		{
+			local_dismissed = true;
+			local_initiated = true;
+			network_ready_publish(true);
+		}
+
+		const int peer = network_ready_peer();
+		if (peer >= 0)
+		{
+			peer_ready = peer != 0;
+			if (peer_ready && !local_dismissed)
+			{
+				local_dismissed = true;
+				network_ready_publish(true);
+			}
+		}
+
+		if (local_dismissed && peer_ready)
+		{
+			if (network_is_sync())
+			{
+				complete = true;
+				break;
+			}
+
+			/* Bound the final ack wait in case the peer already closed its socket. */
+			if (SDL_GetTicks() - last_in_tick > NET_DEPART_GRACE)
+			{
+				complete = true;
+				break;
+			}
+		}
+
+		if (!output_vsync)
+			limit_render_fps();
+		else
+			SDL_Delay(1);
+	}
+
+	if (qa_net_gameplay_ticks > 0 && complete)
+	{
+		fprintf(stderr, "net gameplay: terminal rendezvous complete, dismissal=%s\n",
+		        local_initiated ? "local" : "peer");
+		fflush(stderr);
+	}
+}
+
+bool network_shop_pump(void)
+{
+	if (!isNetworkGame || packet_in[0] == NULL)
+		return false;
+
+	const Uint16 packetType = SDLNet_Read16(&packet_in[0]->data[0]);
+	if (packetType == PACKET_CUSTOM_LEVEL && !network_clv_syncing)
+	{
+		network_update();
+		return true;
+	}
+	if (custom_ships_multiplayer_mode() && packetType == PACKET_CUSTOM_WEAPON)
+		return network_custom_weapon_receive();
+
+	if (custom_ships_multiplayer_mode() && packetType == PACKET_EXTRA_SHIPS)
+		return network_extra_ships_receive();
+
+	if (!coop_mode_active())
+		return false;
+
+	/* PACKET_ENDLESS_RUN also carries live death-menu choices. The death wait owns those;
+	 * only stale resume traffic may be consumed here. */
+	if (packetType == PACKET_ENDLESS_RUN)
+	{
+		if (packet_in[0]->len >= NCW_HDR
+		    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == NET_ENDLESS_DEATH_SENTINEL)
+			return false;
+
+		network_update();
+		return true;
+	}
+
+	if (packetType != PACKET_SHOP_SYNC)
+		return false;
+
+	if (packet_in[0]->len >= 39)
+	{
+		const uint sender = SDLNet_Read16(&packet_in[0]->data[4]);
+		const Uint16 sequence = SDLNet_Read16(&packet_in[0]->data[6]);
+		if (sender >= 1 && sender <= 2 && sender != thisPlayerNum && sequence > network_shop_peer_sequence)
+		{
+			Player *const peer = &player[sender - 1];
+			const Uint16 flags = SDLNet_Read16(&packet_in[0]->data[8]);
+			network_shop_peer_sequence = sequence;
+			player_set_cash(peer, (Sint64)net_bytes_read64(&packet_in[0]->data[14]));
+			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[22]);
+			const int item_size = network_shop_unpack_items(&peer->items, &packet_in[0]->data[26]);
+			peer->last_items = peer->items;
+			if (coopEndlessMode && packet_in[0]->len >= 26 + item_size + ENDLESS_PLAYER_BLOCK_SIZE)
+				endlessUnpackPlayerBlock(&packet_in[0]->data[26 + item_size], sender - 1);
+
+			network_shop_peer_ready = (flags & SHOP_SYNC_DONE) != 0;
+			network_shop_peer_lock  = (flags & SHOP_SYNC_LOCK) != 0;
+
+			// A withdrawn commit takes the route with it, or the host's abandoned planet would
+			// still drag the session there once both sides finally leave.
+			network_shop_host_committed = false;
+			if (network_shop_peer_ready && sender == networkHostPlayerNum &&
+			    SDLNet_Read16(&packet_in[0]->data[12]) != 0)
+			{
+				network_shop_host_committed = true;
+				network_shop_host_level = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
+			}
+
+			// Endless: any peer may be the one charting, and the index is good the moment it
+			// arrives (biased by one so zero still reads as "nothing committed").
+			if (coopEndlessMode)
+			{
+				const int course = (int)SDLNet_Read16(&packet_in[0]->data[10]) - 1;
+				network_shop_peer_pick = (course >= 0 && course < ENDLESS_MAX_COURSE_SLOTS)
+				                       ? course : -1;
+			}
+
+			// Answer a peer that has just opened its outpost with where we stand. Our reply carries
+			// no HELLO of its own, so this is one exchange and never a volley.
+			if (flags & SHOP_SYNC_HELLO)
+				network_shop_send_packet(0, 0);
+			if (flags & SHOP_SYNC_SAVE_REQUEST)
+				network_shop_send_packet(SHOP_SYNC_SAVE_ACK, sequence);
+			if ((flags & SHOP_SYNC_SAVE_ACK) &&
+			    SDLNet_Read16(&packet_in[0]->data[24]) == network_shop_save_request)
+			{
+				/* The peer's outpost trails the acknowledgement, so the save can capture both
+				 * halves. See doc/notes.md#online-saves. */
+				const int tail = 26 + item_size + (coopEndlessMode ? ENDLESS_PLAYER_BLOCK_SIZE : 0);
+				if (coopEndlessMode && packet_in[0]->len >= tail + ENDLESS_OUTPOST_BLOCK_SIZE)
+					endlessPartnerOutpostStash(sender - 1, &packet_in[0]->data[tail]);
+
+				network_shop_save_ready = true;
+			}
+		}
+	}
+
+	network_update();
+	return true;
+}
+
+/* Protect packets owned by the departure handshake from generic wait loops. */
+bool network_shop_departure_pending(void)
+{
+	if (packet_in[0] == NULL)
+		return false;
+
+	const Uint16 head = SDLNet_Read16(&packet_in[0]->data[0]);
+	return head == PACKET_WAITING || head == PACKET_DETAILS || head == PACKET_GAME_QUIT;
+}
+
+bool network_shop_peer_done(void)
+{
+	return network_shop_peer_ready;
+}
+
+// Wire-test diagnostic: this machine's own rendezvous announcement and the sequence guard.
+void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *peerSeq)
+{
+	*localDone = network_shop_local_ready ? 1 : 0;
+	*localLock = network_shop_local_locked ? 1 : 0;
+	*mySeq = (int)network_shop_sequence;
+	*peerSeq = (int)network_shop_peer_sequence;
+}
+
+int network_shop_peer_course(void)
+{
+	return network_shop_peer_pick;
+}
+
+void network_shop_adopt_host_level(void)
+{
+	// Both players choose freely, so the two picks can differ; the host's is the one the
+	// session loads.  A no-op on the host, and on a joiner the host never sent a level to.
+	if (!network_shop_host_committed)
+		return;
+
+	mainLevel = network_shop_host_level;
+	jumpSection = true;
+}
+
+void network_shop_end(void)
+{
+	network_shop_active = false;
+}
+
+/* Retire traffic behind a queued quit without consuming the quit notice itself. */
+bool network_quit_notice_retire(void)
+{
+	bool retired = false;
+	while (isNetworkGame && (network_inbound_head() == PACKET_GAME_QUIT
+	                         || network_inbound_head() == PACKET_GAME_MENU))
+	{
+		network_update();
+		retired = true;
+	}
+	return retired;
+}
+
+/* Bound the peer-save acknowledgement wait; a stale partner half is still usable. */
+#define NET_SHOP_SAVE_WAIT 6000
+
+void network_shop_sync_for_save(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || !network_shop_active || !network_peer_alive())
+		return;
+
+	network_shop_save_ready = false;
+	network_shop_save_request = network_shop_send_packet(SHOP_SYNC_SAVE_REQUEST, 0);
+
+	/* Wait briefly before drawing the notice; an outfitting peer usually answers at once. See
+	 * doc/notes.md#session-and-outpost. */
+	bool notice_drawn = false;
+
+	const Uint32 started = SDL_GetTicks();
+	while (!network_shop_save_ready)
+	{
+		watchdog_heartbeat();
+
+		if (!notice_drawn && SDL_GetTicks() - started > 400)
+		{
+			notice_drawn = true;
+			shopWaitNotice("Waiting for other player.", "They have not reached the outpost yet.",
+			               "Press Esc to save now.");
+		}
+
+		shopWaitFrame();
+
+		// Esc takes the same exit as the timeout below, on the same terms.
+		if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+		{
+			newkey = false;
+			JE_playSampleNum(S_SPRING);
+			break;
+		}
+		newkey = false;
+
+		if (network_shop_pump())
+			continue;
+
+		// Apply queued debug state before looking for the shop acknowledgement.
+		if (network_debug_sync_pump(false))
+			continue;
+
+		/* Leave a quit notice queued for the quit handler. */
+		if (network_inbound_head() == PACKET_GAME_QUIT)
+			break;
+
+		// Bound the wait. On timeout, write the save with stale peer state.
+		if (!network_peer_alive() || SDL_GetTicks() - started > NET_SHOP_SAVE_WAIT)
+			break;
+
+		/* Retire other rendezvous traffic ahead of the acknowledgement. */
+		network_update();
+		network_check();
+	}
+}
+
+void network_settings_restore(void)
+{
+	if (!settings_stashed)
+		return;
+
+	memcpy(superSparkMode, settings_local.superSparkMode, sizeof(superSparkMode));
+	memcpy(epDiffMode, settings_local.epDiffMode, sizeof(epDiffMode));
+	zicaLaserBase         = settings_local.zicaLaserBase;
+	zicaLaserLength       = settings_local.zicaLaserLength;
+	zicaLaserLock         = settings_local.zicaLaserLock;
+	zicaLaserBuff         = settings_local.zicaLaserBuff;
+	wallopSecondBolt      = settings_local.wallopSecondBolt;
+	chargeLaserCannon     = settings_local.chargeLaserCannon;
+	restoreBaseDispensers = settings_local.restoreBaseDispensers;
+	arcadeLifeBoost       = settings_local.arcadeLifeBoost;
+	arcadeRandomBalls     = settings_local.arcadeRandomBalls;
+	arcadeRearGunScale    = settings_local.arcadeRearGunScale;
+	centeredShotHitboxes  = settings_local.centeredShotHitboxes;
+	guidedShotScreenAim   = settings_local.guidedShotScreenAim;
+	xmasMode              = settings_local.xmasMode;
+	gameSpeed             = settings_local.gameSpeed;
+	arcadeSeparateMode    = settings_local.arcadeSeparateMode;
+	network_host_timed_battle = settings_local.timedBattle;
+	network_host_battle_level = settings_local.battleLevel;
+	expertMode                = settings_local.expertMode;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = settings_local.expert[i];
+	cheatInfiniteShields      = settings_local.cheatInfiniteShields;
+	cheatInfiniteArmor        = settings_local.cheatInfiniteArmor;
+	cheatInfiniteGenerator    = settings_local.cheatInfiniteGenerator;
+	cheatNoEnemyFire          = settings_local.cheatNoEnemyFire;
+	cheatInstantCharge        = settings_local.cheatInstantCharge;
+	cheatInfiniteSidekickAmmo = settings_local.cheatInfiniteSidekickAmmo;
+	autoFireSpecial           = settings_local.autoFireSpecial;
+	debugAutofireTwiddle      = settings_local.debugAutofireTwiddle;
+	debugToggleFire           = settings_local.debugToggleFire;
+	difficultyAdjust          = settings_local.difficultyAdjust;
+	debugTwiddleTrigger       = settings_local.debugTwiddleTrigger;
+	constantPlay              = settings_local.constantPlay;
+	constantDie               = settings_local.constantDie;
+	noclipMode                = settings_local.noclipMode;
+	chargeSidekickAutofire    = settings_local.chargeSidekickAutofire;
+	debugTwiddleSpecial       = settings_local.debugTwiddleSpecial;
+
+	settings_stashed = false;
+}
+
+/* Reliable debug state, including armour and shield after hull changes. */
+#define NDS_GEN        4    /* Uint32: generation of the block            */
+#define NDS_SENDER     8    /* Uint8:  publishing player number, 1 or 2   */
+#define NDS_DIFFICULTY 9    /* Uint8                                      */
+#define NDS_FLAGS     10    /* Uint16: the boolean cheats, + endlessCampaignMods at bit 14 */
+#define NDS_NOCLIP    12    /* Uint8                                      */
+#define NDS_CHARGEAF  13    /* Uint8:  chargeSidekickAutofire             */
+#define NDS_TWIDDLE   14    /* Uint8:  debugTwiddleSpecial                */
+#define NDS_ITEMS     16    /* 2 x PlayerItems                            */
+#define NDS_CASH      42    /* 2 x Sint64                                 */
+#define NDS_ARMOR     58    /* Uint16 armor, shield, per player           */
+#define NDS_EXPERT    66    /* NDS_EXPERT_SLOTS x Uint16                  */
+#define NDS_EXPERT_SLOTS NETWORK_EXPERT_SLOTS
+#define NDS_ENDLESS   (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)  /* ENDLESS_DEBUG_BLOCK_SIZE bytes */
+#define NDS_SIZE      (NDS_ENDLESS + ENDLESS_DEBUG_BLOCK_SIZE)
+
+// PlayerItems goes on the wire as flat bytes, enforced by this check. Growing it also
+// requires moving NDS_CASH and later offsets, then bumping NET_VERSION.
+COMPILE_TIME_ASSERT(nds_items_are_flat_bytes, sizeof(PlayerItems) == 13);
+COMPILE_TIME_ASSERT(nds_items_fit_the_slot, 2 * sizeof(PlayerItems) <= NDS_CASH - NDS_ITEMS);
+COMPILE_TIME_ASSERT(nds_block_fits_a_packet, NDS_SIZE <= NET_PACKET_SIZE);
+
+// Generation of the block this machine currently holds, whether it published it or adopted it.
+static Uint32 debug_sync_gen = 0;
+static Uint8 debug_sync_last[NDS_SIZE];   // what we last published or adopted, for the change test
+
+int network_debug_state_size(void)
+{
+	return NDS_SIZE;
+}
+
+/* Everything from NDS_DIFFICULTY on; the packet header, generation and sender are stamped by
+ * the send path, and left zero here so two packings of the same state compare equal. */
+void network_debug_state_pack(Uint8 *buf)
+{
+	memset(buf, 0, NDS_SIZE);
+
+	buf[NDS_DIFFICULTY] = (Uint8)difficultyLevel;
+	SDLNet_Write16(network_debug_flags_pack(), &buf[NDS_FLAGS]);
+	buf[NDS_NOCLIP]   = noclipMode;
+	buf[NDS_CHARGEAF] = chargeSidekickAutofire;
+	buf[NDS_TWIDDLE]  = debugTwiddleSpecial;
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		memcpy(&buf[NDS_ITEMS + i * sizeof(PlayerItems)], &player[i].items, sizeof(PlayerItems));
+		net_bytes_write64((Uint64)player[i].cash, &buf[NDS_CASH + i * 8]);
+		SDLNet_Write16((Uint16)player[i].armor,  &buf[NDS_ARMOR + i * 4]);
+		SDLNet_Write16((Uint16)player[i].shield, &buf[NDS_ARMOR + i * 4 + 2]);
+	}
+
+	for (int i = 0; i < expertSettingsCount && i < NDS_EXPERT_SLOTS; ++i)
+		SDLNet_Write16((Uint16)*expertSettings[i].value, &buf[NDS_EXPERT + i * 2]);
+
+	// The Endless panel's whole slate: depth, modifiers, both ships' perks and personal buffs.
+	// Carried here as well as on the zone jump, so any drift in it heals on the next debug edit.
+	endlessPackDebugBlock(&buf[NDS_ENDLESS]);
+}
+
+void network_debug_state_adopt(const Uint8 *buf, bool in_level)
+{
+	const Uint16 flags = SDLNet_Read16(&buf[NDS_FLAGS]);
+
+	// One-shot: both machines resume from the same confirmed frame, so both fire it on the same
+	// tick. A trigger already pending locally must still happen when the incoming block has none.
+	network_debug_flags_adopt(flags, true);
+
+	difficultyLevel = (JE_shortint)buf[NDS_DIFFICULTY];
+	if (difficultyLevel < DIFFICULTY_WIMP || difficultyLevel > DIFFICULTY_10)
+		difficultyLevel = DIFFICULTY_NORMAL;
+
+	noclipMode             = buf[NDS_NOCLIP] % NOCLIP_NUM;
+	chargeSidekickAutofire = buf[NDS_CHARGEAF] % CHARGE_AUTOFIRE_NUM;
+	debugTwiddleSpecial    = (buf[NDS_TWIDDLE] <= SPECIAL_NUM) ? buf[NDS_TWIDDLE] : 0;
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		memcpy(&player[i].items, &buf[NDS_ITEMS + i * sizeof(PlayerItems)], sizeof(PlayerItems));
+		player_set_cash(&player[i], (Sint64)net_bytes_read64(&buf[NDS_CASH + i * 8]));
+		player[i].armor  = SDLNet_Read16(&buf[NDS_ARMOR + i * 4]);
+		player[i].shield = SDLNet_Read16(&buf[NDS_ARMOR + i * 4 + 2]);
+	}
+
+	for (int i = 0; i < expertSettingsCount && i < NDS_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NDS_EXPERT + i * 2]);
+	clamp_expert_settings();
+
+	endlessUnpackDebugBlock(&buf[NDS_ENDLESS]);
+
+	// Ships, hit boxes, shield ceilings and the sidekick pods are all cached off items[];
+	// the same rebuild the editing machine ran, minus the hull re-armor it already applied.
+	debugLoadoutRefresh(in_level);
+
+	// Re-pack rather than keeping the received bytes: the clamps above may have landed
+	// somewhere else, and the baseline has to be the state we actually hold.
+	network_debug_state_pack(debug_sync_last);
+}
+
+void network_debug_sync_mark(void)
+{
+	network_debug_state_pack(debug_sync_last);
+}
+
+bool network_debug_sync_changed(void)
+{
+	Uint8 now[NDS_SIZE];
+	network_debug_state_pack(now);
+	return memcmp(now, debug_sync_last, NDS_SIZE) != 0;
+}
+
+void network_debug_sync_send(void)
+{
+	if (!isNetworkGame || !network_debug_sync_changed())
+		return;
+
+	network_debug_state_pack(debug_sync_last);
+	++debug_sync_gen;
+
+	network_prepare(PACKET_DEBUG_SYNC);
+	memcpy(&packet_out_temp->data[NDS_GEN], &debug_sync_last[NDS_GEN], NDS_SIZE - NDS_GEN);
+	SDLNet_Write32(debug_sync_gen, &packet_out_temp->data[NDS_GEN]);
+	packet_out_temp->data[NDS_SENDER] = (Uint8)thisPlayerNum;
+
+	network_send(NDS_SIZE);
+}
+
+bool network_debug_sync_pump(bool in_level)
+{
+	if (!packet_in[0] || packet_in[0]->len < NDS_SIZE ||
+	    SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_DEBUG_SYNC)
+	{
+		return false;
+	}
+
+	const Uint32 gen = SDLNet_Read32(&packet_in[0]->data[NDS_GEN]);
+	const bool from_host = packet_in[0]->data[NDS_SENDER] == networkHostPlayerNum;
+
+	// Older than what we hold means our own edit superseded it; a tie means both players
+	// edited during the same rendezvous, and the host's block is the one both sides take.
+	if (gen > debug_sync_gen || (gen == debug_sync_gen && from_host && thisPlayerNum != networkHostPlayerNum))
+	{
+		network_debug_state_adopt(packet_in[0]->data, in_level);
+		debug_sync_gen = gen;
+	}
+
+	network_update();
+	return true;
+}
+
+/* Desync detection.
+ * Compare RNG draw count plus player and enemy state. Network levels share a fixed RNG seed. */
+bool networkDesyncHalt = false;
+
+void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_hash)
+{
+	// FNV-1a, chosen for being short enough to read and good enough to spot a single bit.
+	Uint32 h = FNV1A32_INIT;
+
+	// Reported raw rather than hashed: seeing "1320 vs 1324" names the size of the divergence,
+	// which a hash would throw away.
+	*rand_draws = (Uint32)mt_rand_count;
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		h = fnv1a32_u32(h, player[i].x);
+		h = fnv1a32_u32(h, player[i].y);
+		h = fnv1a32_u32(h, player[i].armor);
+		h = fnv1a32_u32(h, player[i].shield);
+		h = fnv1a32_u32(h, player[i].is_alive ? 1 : 0);
+		h = fnv1a32_u32(h, (Uint32)player[i].cash);
+		h = fnv1a32_u32(h, (Uint32)((Uint64)player[i].cash >> 32));
+	}
+	/* Hash linked turret direction by its exact wire-quantized IEEE bytes. */
+	Uint32 link_direction_bits = 0;
+	memcpy(&link_direction_bits, &linkGunDirec,
+	       MIN(sizeof(link_direction_bits), sizeof(linkGunDirec)));
+	h = fnv1a32_u32(h, twoPlayerLinked ? 1 : 0);
+	h = fnv1a32_u32(h, twoPlayerLinked ? link_direction_bits : 0);
+	*player_hash = h;
+
+	// Enemies dominate the simulation, so sample the whole table; position and remaining armor are
+	// enough to catch a divergence without hashing every field.
+	h = FNV1A32_INIT;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		if (enemyAvail[i] == 1)
+			continue;
+		h = fnv1a32_u32(h, i);
+		h = fnv1a32_u32(h, enemyAvail[i]);
+		h = fnv1a32_u32(h, enemy[i].ex);
+		h = fnv1a32_u32(h, enemy[i].ey);
+		h = fnv1a32_u32(h, enemy[i].armorleft);
+	}
+	*enemy_hash = h;
+
+}
+
+Uint32 network_sim_pools(NetSimPools *detail)
+{
+	Uint32 h = FNV1A32_INIT;
+	#define POOL_DONE(field, count) do { \
+		if (detail) { detail->field = h; detail->count = (Uint16)live; } \
+		combined ^= h; combined *= 16777619u; \
+		h = FNV1A32_INIT; live = 0; \
+	} while (0)
+
+	Uint32 combined = FNV1A32_INIT;
+	Uint16 live = 0;
+
+	// Include slot indexes because pool order affects the next spawn.
+	for (uint i = 0; i < COUNTOF(explosions); ++i)
+	{
+		if (explosions[i].ttl == 0)
+			continue;
+		++live;
+		h = fnv1a32_u32(h, i);
+		h = fnv1a32_u32(h, explosions[i].ttl);
+		h = fnv1a32_u32(h, explosions[i].x);
+		h = fnv1a32_u32(h, explosions[i].y);
+		h = fnv1a32_u32(h, explosions[i].sprite);
+		h = fnv1a32_u32(h, explosions[i].deltaY);
+		h = fnv1a32_u32(h, (explosions[i].followPlayer ? 1u : 0u)
+		                   | (explosions[i].fixedPosition ? 2u : 0u));
+	}
+	POOL_DONE(explosions, n_expl);
+
+	for (uint i = 0; i < COUNTOF(rep_explosions); ++i)
+	{
+		if (rep_explosions[i].ttl == 0)
+			continue;
+		++live;
+		h = fnv1a32_u32(h, i);
+		h = fnv1a32_u32(h, rep_explosions[i].delay);
+		h = fnv1a32_u32(h, rep_explosions[i].ttl);
+		h = fnv1a32_u32(h, rep_explosions[i].x);
+		h = fnv1a32_u32(h, rep_explosions[i].y);
+		h = fnv1a32_u32(h, rep_explosions[i].big ? 1u : 0u);
+	}
+	POOL_DONE(rep_explosions, n_rep);
+
+	// enemyShotAvail is 1 for a FREE slot, like enemyAvail.
+	for (uint i = 0; i < COUNTOF(enemyShot); ++i)
+	{
+		if (enemyShotAvail[i] == 1)
+			continue;
+		++live;
+		h = fnv1a32_u32(h, i);
+		h = fnv1a32_u32(h, enemyShot[i].sx);
+		h = fnv1a32_u32(h, enemyShot[i].sy);
+		h = fnv1a32_u32(h, enemyShot[i].sxm);
+		h = fnv1a32_u32(h, enemyShot[i].sym);
+		h = fnv1a32_u32(h, enemyShot[i].sxc);
+		h = fnv1a32_u32(h, enemyShot[i].syc);
+		h = fnv1a32_u32(h, enemyShot[i].sdmg);
+		h = fnv1a32_u32(h, enemyShot[i].duration);
+		h = fnv1a32_u32(h, enemyShot[i].animate);
+	}
+	POOL_DONE(enemy_shots, n_eshot);
+
+	// shotAvail is a countdown, not a flag: nonzero means the slot is LIVE.
+	for (uint i = 0; i < COUNTOF(shotAvail); ++i)
+	{
+		if (shotAvail[i] == 0)
+			continue;
+		++live;
+		// Same fields, same order, same moment as the hash below: the rows must name
+		// exactly what the mismatching hash covered or a log diff would mislead.
+		if (detail && live <= NET_SIM_DETAIL_SHOTS)
+		{
+			NetSimShotRow *r = &detail->pshot[live - 1];
+			r->idx       = (Uint16)i;
+			r->avail     = shotAvail[i];
+			r->dmg       = playerShotData[i].shotDmg;
+			r->playernum = playerShotData[i].playerNumber;
+			r->pierce    = playerShotData[i].pierceLock;
+			r->x         = (Sint32)playerShotData[i].shotX;
+			r->y         = (Sint32)playerShotData[i].shotY;
+			r->xm        = (Sint32)playerShotData[i].shotXM;
+			r->ym        = (Sint32)playerShotData[i].shotYM;
+			r->xc        = (Sint32)playerShotData[i].shotXC;
+			r->yc        = (Sint32)playerShotData[i].shotYC;
+		}
+		h = fnv1a32_u32(h, i);
+		h = fnv1a32_u32(h, shotAvail[i]);
+		h = fnv1a32_u32(h, playerShotData[i].shotX);
+		h = fnv1a32_u32(h, playerShotData[i].shotY);
+		h = fnv1a32_u32(h, playerShotData[i].shotXM);
+		h = fnv1a32_u32(h, playerShotData[i].shotYM);
+		h = fnv1a32_u32(h, playerShotData[i].shotXC);
+		h = fnv1a32_u32(h, playerShotData[i].shotYC);
+		h = fnv1a32_u32(h, playerShotData[i].shotDmg);
+		h = fnv1a32_u32(h, playerShotData[i].playerNumber);
+		h = fnv1a32_u32(h, playerShotData[i].pierceLock);
+		h = fnv1a32_u32(h, playerShotData[i].pierceDmgCarry);
+	}
+	POOL_DONE(player_shots, n_pshot);
+
+	// The sound queue is simulation state, not presentation: its slot is drawn from the
+	// shared RNG, so a divergence here is an early tell that the streams have parted.
+	for (uint i = 0; i < COUNTOF(soundQueue); ++i)
+		h = fnv1a32_u32(h, soundQueue[i]);
+	if (detail)
+		detail->sound = h;
+	combined ^= h;
+	combined *= 16777619u;
+
+	#undef POOL_DONE
+	return combined;
+}
+
+// Must sample exactly what network_sim_state() hashes, at the same call site, or the
+// dumped rows and the mismatching hash could disagree about what diverged.
+void network_sim_detail(NetSimDetail *out)
+{
+	SDL_COMPILE_TIME_ASSERT(sim_detail_enemies, NET_SIM_DETAIL_ENEMIES == COUNTOF(enemy));
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		out->p[i].x      = (Sint32)player[i].x;
+		out->p[i].y      = (Sint32)player[i].y;
+		out->p[i].armor  = (Sint32)player[i].armor;
+		out->p[i].shield = (Sint32)player[i].shield;
+		out->p[i].alive  = player[i].is_alive ? 1 : 0;
+		out->p[i].cash   = player[i].cash;
+	}
+
+	out->enemy_count = 0;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		if (enemyAvail[i] == 1)
+			continue;
+		NetSimEnemyRow *r = &out->e[out->enemy_count++];
+		r->idx       = (Uint8)i;
+		r->avail     = enemyAvail[i];
+		r->type      = (Uint16)enemy[i].enemytype;
+		r->ex        = (Sint32)enemy[i].ex;
+		r->ey        = (Sint32)enemy[i].ey;
+		r->armorleft = (Sint32)enemy[i].armorleft;
+	}
+}
+
+// Session-long desync memo for the crash log.  Both detection modes call this once per
+// desynced level, so a crash or hang long after the fact still names when trouble started.
+void network_diag_note_desync(int level)
+{
+	if (net_diag.desync_levels++ == 0)
+	{
+		net_diag.first_desync_tick = SDL_GetTicks();
+		net_diag.first_desync_level = level;
+	}
+}
+
+Uint32 network_desync_count(void)
+{
+	return net_diag.desync_levels;
+}
+
+/* Crash-log network section.
+ * Reads only static diagnostics and is safe from fault handlers. */
+void network_write_diagnostics(FILE *f)
+{
+	if (f == NULL)
+		return;
+
+	fprintf(f, "\nNetwork:\n");
+
+	if (!net_initialized)
+	{
+		fprintf(f, "  (not initialized)\n");
+		return;
+	}
+
+	const Uint32 now = SDL_GetTicks();
+
+	fprintf(f, "  Role:         %s, we fly P%u (host flies P%u)%s%s\n",
+	        network_is_host ? "host" : network_from_lobby ? "joiner" : "command-line peer",
+	        thisPlayerNum, networkHostPlayerNum,
+	        connected ? "" : "  NOT CONNECTED",
+	        quit ? "  [halting]" : "");
+	fprintf(f, "  Names:        '%.20s' vs '%.20s'\n", network_player_name, network_opponent_name);
+	fprintf(f, "  Session:      %s  vt=%s  recovery=%s  delay=%d  wire v%d",
+	        nrb_session_mode() ? "rollback" : "lockstep",
+	        nrb_session_vt() ? "on" : "off",
+	        nrb_session_recovery() ? "on" : "off",
+	        network_delay, NET_VERSION);
+	if (net_diag.connect_tick != 0)
+		fprintf(f, "   connected %lu s ago", (unsigned long)((now - net_diag.connect_tick) / 1000));
+	fprintf(f, "\n");
+
+	if (ping_valid)
+		fprintf(f, "  Ping:         %d ms (smoothed)\n", (int)(ping_ema + 0.5f));
+	else
+		fprintf(f, "  Ping:         --\n");
+
+	fprintf(f, "  Last traffic: any in %lu ms ago   state in %lu ms ago   reliable out %lu ms ago\n",
+	        (unsigned long)(now - last_in_tick), (unsigned long)(now - last_state_in_tick),
+	        (unsigned long)(now - last_out_tick));
+
+	{
+		int in_held = 0, out_held = 0;
+		for (int i = 0; i < NET_PACKET_QUEUE; i++)
+		{
+			if (packet_in[i] != NULL)  ++in_held;
+			if (packet_out[i] != NULL) ++out_held;
+		}
+		fprintf(f, "  Reliable ch:  out=%u acked=%u backlog=%d (%d held)   in=%u (%d held)   retries=%lu   acked-dropped=%lu\n",
+		        last_out_sync, last_ack_sync, network_ack_backlog(), out_held,
+		        queue_in_sync, in_held, (unsigned long)net_diag.retries,
+		        (unsigned long)net_diag.window_overflow);
+	}
+
+	fprintf(f, "  State ch:     in_sync=%u out_sync=%u   sent=%lu recv=%lu late-dropped=%lu\n",
+	        last_state_in_sync, last_state_out_sync,
+	        (unsigned long)net_diag.state_out, (unsigned long)net_diag.state_in,
+	        (unsigned long)net_diag.state_late);
+	fprintf(f, "  Loss repair:  xor rebuilds=%lu   resends asked=%lu answered=%lu\n",
+	        (unsigned long)net_diag.xor_rebuilds,
+	        (unsigned long)net_diag.resend_req_sent, (unsigned long)net_diag.resend_req_served);
+	fprintf(f, "  Datagrams:    in=%lu out=%lu   recv errors=%lu send errors=%lu bad type=%lu   state stalls=%lu\n",
+	        (unsigned long)net_diag.dg_in, (unsigned long)net_diag.dg_out,
+	        (unsigned long)net_diag.recv_errors, (unsigned long)net_diag.send_errors,
+	        (unsigned long)net_diag.bad_packets, (unsigned long)net_diag.stalls);
+
+	if (net_diag.desync_levels != 0)
+		fprintf(f, "  Desyncs:      %lu level(s); first on level %d, %lu s after connect\n",
+		        (unsigned long)net_diag.desync_levels, net_diag.first_desync_level,
+		        (unsigned long)((net_diag.first_desync_tick - net_diag.connect_tick) / 1000));
+	else
+		fprintf(f, "  Desyncs:      none detected\n");
+
+	// The two rollbacks are separate modules with separate timelines.
+	if (nrb_session_mode() && network_game_type != NETWORK_GAME_DESTRUCT)
+		nrb_write_diagnostics(f);
+	drb_write_diagnostics(f);   // only writes while a Destruct rollback session is armed
+}
+
+// Tear down far enough that another network_init() can succeed.  Called when the lobby
+// backs out, when a connection attempt fails, and when a network game ends.
+void network_shutdown(void)
+{
+	if (!net_initialized)
+		return;
+
+	for (int i = 0; i < NET_PACKET_QUEUE; i++)
+	{
+		packet_destroy(&packet_in[i]);
+		packet_destroy(&packet_out[i]);
+		packet_destroy(&packet_state_in[i]);
+		packet_destroy(&packet_state_in_xor[i]);
+		packet_destroy(&packet_state_out[i]);
+	}
+
+	packet_destroy(&packet_temp);
+	packet_destroy(&packet_out_temp);
+	while (packet_pool_count > 0)
+		packet_destroy(&packet_pool[--packet_pool_count]);
+
+	if (net_socket)
+	{
+		SDLNet_UDP_Close(net_socket);
+		net_socket = NULL;
+	}
+
+	if (discover_socket)
+	{
+		SDLNet_UDP_Close(discover_socket);
+		discover_socket = NULL;
+	}
+
+	SDLNet_Quit();
+
+	// Reset every sync counter, or a second session would start mid-sequence.
+	debug_sync_gen = 0;
+	memset(debug_sync_last, 0, sizeof(debug_sync_last));
+	network_custom_weapon_reset();
+	network_extra_ships_reset();
+	netStyleSessionReset();
+	network_shop_sequence = network_shop_peer_sequence = 0;
+	last_out_sync = queue_in_sync = queue_out_sync = last_ack_sync = 0;
+	last_in_tick = last_out_tick = 0;
+	last_state_in_sync = last_state_out_sync = 0;
+	last_state_in_tick = 0;
+
+	ping_ema = 0.0f;
+	ping_valid = false;
+
+	// Close the session's net-log bracket while the counters still exist.
+	if (net_diag.connect_tick != 0)
+	{
+		char detail[128];
+		snprintf(detail, sizeof(detail),
+		         "connected %lu s, desynced levels %lu, stalls %lu",
+		         (unsigned long)((SDL_GetTicks() - net_diag.connect_tick) / 1000),
+		         (unsigned long)net_diag.desync_levels,
+		         (unsigned long)net_diag.stalls);
+		crashlog_netlog_line("NETWORK SESSION END", detail);
+	}
+
+	memset(&net_diag, 0, sizeof(net_diag));
+
+	net_initialized = false;
+	connected = false;
+	quit = false;
+	host_awaiting_peer = false;
+	peer_addr_known = false;
+	network_session_saveable = false;
+	network_shop_active = false;
+	network_shop_sequence = 0;
+	network_shop_peer_sequence = 0;
+	network_shop_save_request = 0;
+	network_shop_peer_ready = false;
+	network_shop_save_ready = false;
+
+	nrb_set_session_mode(false);
+	nrb_set_session_recovery(false);
+
+	network_settings_restore();
+}
+
+void network_deinit(void)
+{
+	network_shutdown();
+
+	network_set_player_name(NULL);
+	if (network_opponent_name != empty_string)
+		free(network_opponent_name);
+	network_opponent_name = empty_string;
+	free(network_opponent_host);
+	network_opponent_host = NULL;
+}
+
+/* LAN discovery.
+ * Use a short-lived socket and probe both interface and global broadcast addresses. */
+int network_local_addresses(IPaddress *out, int max)
+{
+	if (out == NULL || max < 1)
+		return 0;
+
+#ifdef NET_HAVE_IFADDRS
+	// Keep only addresses another machine on the LAN can reach.
+	struct ifaddrs *interfaces = NULL;
+	int found = 0;
+
+	if (getifaddrs(&interfaces) == 0)
+	{
+		for (const struct ifaddrs *ifa = interfaces; ifa != NULL && found < max; ifa = ifa->ifa_next)
+		{
+			if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET)
+				continue;
+
+			if (!network_interface_carries_lan(ifa->ifa_flags))
+				continue;
+
+			const struct sockaddr_in *const address =
+				(const struct sockaddr_in *)(const void *)ifa->ifa_addr;
+			if (address->sin_addr.s_addr == 0)
+				continue;
+
+			out[found].host = address->sin_addr.s_addr;   // already network byte order
+			out[found].port = 0;
+			++found;
+		}
+
+		freeifaddrs(interfaces);
+	}
+
+	if (found > 0)
+		return found;
+#endif
+
+	const int count = SDLNet_GetLocalAddresses(out, max);
+	if (count > 0)
+		return count;
+
+#if defined(__SWITCH__) || defined(__vita__)
+	// SDL_net enumerates interfaces with a SIOCGIFCONF ioctl that libnx does not service, so
+	// on the consoles it finds nothing and the platform has to be asked for its own address.
+	uint32_t host = 0;
+	if (console_get_local_ip(&host))
+	{
+		out[0].host = host;
+		out[0].port = 0;
+		return 1;
+	}
+#endif
+
+	return 0;
+}
+
+static void discover_send_probe(UDPsocket sock, UDPpacket *probe, Uint32 host_be, Uint16 port)
+{
+	// IPaddress keeps both fields in network byte order.
+	probe->address.host = host_be;
+	probe->address.port = SDL_SwapBE16(port);
+
+	// Failure is expected and ignored: SO_BROADCAST may be refused, an interface may be down,
+	// or the address may be unroutable.  Discovery is best-effort by nature.
+	SDLNet_UDP_Send(sock, -1, probe);
+}
+
+// One round of probes: global broadcast plus each interface's directed /24, per port.
+static void discover_send_volley(UDPsocket sock, UDPpacket *probe, const Uint16 *ports,
+                                 int port_count, const IPaddress *local, int local_count)
+{
+	for (int p = 0; p < port_count; ++p)
+	{
+		discover_send_probe(sock, probe, 0xffffffffu, ports[p]);  // 255.255.255.255
+
+		for (int i = 0; i < local_count; ++i)
+		{
+			if (local[i].host == 0)
+				continue;
+
+			// Directed broadcast for this interface's /24.  Addresses are network byte order,
+			// so the host part is the top byte as stored.
+			const Uint32 subnet_bcast = local[i].host | SDL_SwapBE32(0x000000ffu);
+			discover_send_probe(sock, probe, subnet_bcast, ports[p]);
+		}
+	}
+}
+
+int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void))
+{
+	if (max <= 0)
+		return 0;
+
+	if (SDLNet_Init() == -1)
+		return 0;
+
+	UDPsocket sock = SDLNet_UDP_Open(0);  // any free port; we only need replies back to us
+	if (!sock)
+	{
+		SDLNet_Quit();
+		return 0;
+	}
+
+	UDPpacket *probe = SDLNet_AllocPacket(NET_PACKET_SIZE);
+	UDPpacket *reply = SDLNet_AllocPacket(NET_PACKET_SIZE);
+	if (!probe || !reply)
+	{
+		if (probe) SDLNet_FreePacket(probe);
+		if (reply) SDLNet_FreePacket(reply);
+		SDLNet_UDP_Close(sock);
+		SDLNet_Quit();
+		return 0;
+	}
+
+	SDLNet_Write16(PACKET_DISCOVER, &probe->data[0]);
+	SDLNet_Write16(NET_VERSION,     &probe->data[2]);
+	probe->len = 4;
+
+	/* Probe the default port and the last locally hosted port. */
+	Uint16 ports[2] = { NET_PORT, network_listen_port };
+	const int port_count = (ports[1] == ports[0]) ? 1 : 2;
+
+	IPaddress local[8];
+	const int local_count = network_local_addresses(local, (int)COUNTOF(local));
+
+	discover_send_volley(sock, probe, ports, port_count, local, local_count);
+
+	int found = 0;
+	const Uint32 start = SDL_GetTicks();
+	Uint32 volley_at = start;
+
+	while (SDL_GetTicks() - start < timeout_ms && found < max)
+	{
+		// A probe is one datagram; repeat the round so a single loss cannot empty the window.
+		if (SDL_GetTicks() - volley_at >= 400)
+		{
+			volley_at = SDL_GetTicks();
+			discover_send_volley(sock, probe, ports, port_count, local, local_count);
+		}
+
+		if (SDLNet_UDP_Recv(sock, reply) > 0)
+		{
+			if (reply->len >= 6 &&
+			    SDLNet_Read16(&reply->data[0]) == PACKET_DISCOVER_REPLY &&
+			    SDLNet_Read16(&reply->data[2]) == NET_VERSION)
+			{
+				const Uint32 host = SDL_SwapBE32(reply->address.host);
+
+				char addr[48];
+				snprintf(addr, sizeof(addr), "%u.%u.%u.%u",
+				         (host >> 24) & 0xff, (host >> 16) & 0xff, (host >> 8) & 0xff, host & 0xff);
+
+				const Uint16 port = SDLNet_Read16(&reply->data[4]);
+
+				// The same host answers once per probe we sent it, so drop repeats.
+				bool duplicate = false;
+				for (int i = 0; i < found; ++i)
+				{
+					if (out[i].port == port && strcmp(out[i].address, addr) == 0)
+					{
+						duplicate = true;
+						break;
+					}
+				}
+
+				if (!duplicate)
+				{
+					SDL_strlcpy(out[found].address, addr, sizeof(out[found].address));
+					out[found].port = port;
+
+					// Name is whatever trails the header; take the length from the packet
+					// rather than trusting it to be terminated.
+					const int name_len = reply->len - 6;
+					if (name_len > 0)
+					{
+						int n = name_len;
+						if (n > (int)sizeof(out[found].name) - 1)
+							n = (int)sizeof(out[found].name) - 1;
+						memcpy(out[found].name, &reply->data[6], n);
+						out[found].name[n] = '\0';
+					}
+					else
+					{
+						out[found].name[0] = '\0';
+					}
+
+					++found;
+				}
+			}
+			continue;  // drain anything else already queued before sleeping again
+		}
+
+		// Let the caller keep its screen alive (the lobby re-presents the
+		// "searching" frame with the mouse cursor) while we sit on the socket.
+		if (poll)
+			poll();
+
+		SDL_Delay(5);
+	}
+
+	SDLNet_FreePacket(probe);
+	SDLNet_FreePacket(reply);
+	SDLNet_UDP_Close(sock);
+	SDLNet_Quit();
+
+	return found;
+}
+
+// Verify SDL_net's private socket layout before disabling WSAECONNRESET.
+#ifdef _WIN32
+static void network_allow_conn_reset(void)
+{
+	// SDL2_net's struct _UDPsocket opens with these two members.
+	struct sdlnet_udpsocket_head
+	{
+		int    ready;
+		SOCKET channel;
+	};
+
+	const SOCKET fd = ((const struct sdlnet_udpsocket_head *)net_socket)->channel;
+
+	int type = 0, type_len = (int)sizeof(type);
+	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, (char *)&type, &type_len) != 0 || type != SOCK_DGRAM)
+	{
+		fprintf(stderr, "warning: could not reach the UDP socket; leaving WSAECONNRESET on\n");
+		return;
+	}
+
+	// Joiners open port 0, which SDL_net may report as unbound. The socket type
+	// check is sufficient in that case.
+	const IPaddress *const bound = SDLNet_UDP_GetPeerAddress(net_socket, -1);
+	if (bound != NULL && bound->port != 0)
+	{
+		struct sockaddr_in addr;
+		int addr_len = (int)sizeof(addr);
+
+		if (getsockname(fd, (struct sockaddr *)&addr, &addr_len) != 0 ||
+		    addr.sin_family != AF_INET || addr.sin_port != bound->port)
+		{
+			fprintf(stderr, "warning: UDP socket did not check out; leaving WSAECONNRESET on\n");
+			return;
+		}
+	}
+
+	DWORD off = 0, returned = 0;
+	if (WSAIoctl(fd, SIO_UDP_CONNRESET, &off, sizeof(off), NULL, 0, &returned, NULL, NULL) != 0)
+		fprintf(stderr, "warning: WSAIoctl(SIO_UDP_CONNRESET): %d\n", WSAGetLastError());
+}
+#else
+static void network_allow_conn_reset(void) { }
+#endif
+
+int network_init(void)
+{
+	printf("Initializing network...\n");
+
+	if (network_delay * 2 > NET_PACKET_QUEUE - 2)
+	{
+		fprintf(stderr, "error: network delay would overflow packet queue\n");
+		return -4;
+	}
+
+	if (SDLNet_Init() == -1)
+	{
+		fprintf(stderr, "error: SDLNet_Init: %s\n", SDLNet_GetError());
+		return -1;
+	}
+
+	net_socket = SDLNet_UDP_Open(network_player_port);
+	if (!net_socket)
+	{
+		fprintf(stderr, "error: SDLNet_UDP_Open: %s\n", SDLNet_GetError());
+		SDLNet_Quit();
+		return -2;
+	}
+
+	network_allow_conn_reset();
+
+	packet_temp = SDLNet_AllocPacket(NET_PACKET_SIZE);
+	packet_out_temp = SDLNet_AllocPacket(NET_PACKET_SIZE);
+
+	if (!packet_temp || !packet_out_temp)
+	{
+		printf("SDLNet_AllocPacket: %s\n", SDLNet_GetError());
+		packet_destroy(&packet_temp);
+		packet_destroy(&packet_out_temp);
+		SDLNet_UDP_Close(net_socket);
+		net_socket = NULL;
+		SDLNet_Quit();
+		return -3;
+	}
+
+	net_initialized = true;
+
+	return 0;
+}
+
+/* Windows working-set sample for the network soak test. */
+static unsigned long net_test_rss_kb(void)
+{
+#ifdef _WIN32
+	PROCESS_MEMORY_COUNTERS pmc;
+	if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+		return (unsigned long)(pmc.WorkingSetSize / 1024);
+#endif
+	return 0;
+}
+
+/* Test-peer deadline, kept below the harness deadline so a wedged peer can print
+ * its own diagnostic before the harness kills it. */
+#define NET_TEST_CEILING 70000
+
+static Uint32 net_test_started;
+static unsigned long net_test_rss_start_kb;
+
+bool network_test_expired(void)
+{
+	return SDL_GetTicks() - net_test_started > NET_TEST_CEILING;
+}
+
+/* The gameplay wire runs print the same working-set pair as the base scenario, so the harness
+ * can apply its soak check to a long flight too. Mark once when the session is up. */
+void network_test_mem_mark(void)
+{
+	net_test_rss_start_kb = net_test_rss_kb();
+}
+
+unsigned long network_test_mem_start_kb(void)
+{
+	return net_test_rss_start_kb;
+}
+
+unsigned long network_test_mem_now_kb(void)
+{
+	return net_test_rss_kb();
+}
+
+/* Shared close for every scenario: settle the reliable channel, then hold the socket open long
+ * enough that a dropped ACK for the last payload can still be re-earned before we exit. */
+static int net_test_finish(int rounds)
+{
+	const Uint32 sync_start = SDL_GetTicks();
+	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+	if (!network_is_sync())
+	{
+		fprintf(stderr, "network test: the reliable channel never settled\n");
+		return 1;
+	}
+
+	/* Drain acknowledgements until the peer goes quiet, with a hard bound. */
+	const Uint32 drain_start = SDL_GetTicks();
+	Uint32 last_traffic = drain_start;
+	while (SDL_GetTicks() - drain_start < 8000
+	       && (SDL_GetTicks() - last_traffic < 1500 || SDL_GetTicks() - drain_start < NET_RETRY))
+	{
+		watchdog_heartbeat();
+		if (network_check() > 0)
+			last_traffic = SDL_GetTicks();
+		SDL_Delay(1);
+	}
+
+	printf("NETWORK TEST PASS player=%u rounds=%d scenario=%d ping=%dms\n",
+	       thisPlayerNum, rounds, qa_net_scenario, network_ping_ms());
+	printf("NETWORK TEST MEM player=%u start=%lu end=%lu kb\n",
+	       thisPlayerNum, net_test_rss_start_kb, net_test_rss_kb());
+	return 0;
+}
+
+int network_test_peer(int rounds, int scenario)
+{
+	net_test_started = SDL_GetTicks();
+
+	if (rounds < 1 || rounds > 1000)
+		return 2;
+
+	/* Start near Uint16 wrap so every network scenario crosses it. */
+	qa_seq_base = 0xFFD0;
+	last_out_sync = queue_out_sync = last_ack_sync = qa_seq_base;
+
+	if (network_connect() != 0)
+		return 1;
+
+	/* Retried connect packets may still be queued behind the handshake. */
+	for (int guard = 0; guard < 100 && packet_in[0] != NULL; ++guard)
+	{
+		if (SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_CONNECT)
+			break;
+		network_update();
+		network_check();
+	}
+
+	net_test_rss_start_kb = net_test_rss_kb();
+
+	for (int round = 0; round < rounds; ++round)
+	{
+		if (network_test_expired())
+		{
+			fprintf(stderr, "network test: wall-clock ceiling reached in round %d of %d "
+			                "(queue depth %d, head type %04x, outbound %s)\n",
+			        round, rounds, network_inbound_depth(), (unsigned)network_inbound_head(),
+			        network_is_sync() ? "acknowledged" : "UNACKNOWLEDGED");
+			return 1;
+		}
+
+		const Uint32 payload = 0x51410000u ^ ((Uint32)thisPlayerNum << 12) ^ (Uint32)round;
+		network_prepare(PACKET_WAITING);
+		SDLNet_Write32(payload, &packet_out_temp->data[4]);
+		if (!network_send(8))
+			return 1;
+
+		const Uint32 started = SDL_GetTicks();
+		bool received = false;
+		while (SDL_GetTicks() - started < 12000)
+		{
+			watchdog_heartbeat();
+			network_check();
+			if (packet_in[0] != NULL)
+			{
+				const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
+				if (type == PACKET_WAITING && packet_in[0]->len >= 8)
+				{
+					const Uint32 expect = 0x51410000u ^ ((Uint32)(3 - thisPlayerNum) << 12) ^ (Uint32)round;
+					const Uint32 got = SDLNet_Read32(&packet_in[0]->data[4]);
+					network_update();
+					if (got != expect)
+					{
+						fprintf(stderr, "network test: round %d payload %08x != %08x\n",
+						        round, (unsigned)got, (unsigned)expect);
+						return 1;
+					}
+					received = true;
+					break;
+				}
+				network_update();
+			}
+			SDL_Delay(1);
+		}
+		if (!received)
+		{
+			fprintf(stderr, "network test: timed out in round %d (ack backlog %d, next type %04x)\n",
+			        round, network_ack_backlog(),
+			        packet_in[0] != NULL ? SDLNet_Read16(&packet_in[0]->data[0]) : 0);
+			return 1;
+		}
+
+		/* Keep test traffic within the gameplay lead window so a lost ACK is
+		 * recovered before the next round is queued. */
+		const Uint32 ack_start = SDL_GetTicks();
+		while (!network_is_sync() && SDL_GetTicks() - ack_start < 12000)
+		{
+			watchdog_heartbeat();
+			network_check();
+			SDL_Delay(1);
+		}
+		if (!network_is_sync())
+		{
+			fprintf(stderr, "network test: acknowledgement timed out in round %d\n", round);
+			return 1;
+		}
+	}
+
+	/* The rounds above establish a live, synchronized session; each scenario then drives one
+	 * mode's own protocol over it. */
+	if (scenario != 0)
+	{
+		int rc;
+		switch (scenario)
+		{
+		case 1:
+			rc = qa_net_campaign_phases();
+			break;
+		case 2:
+			rc = qa_net_endless_phases();
+			break;
+		default:
+			rc = qa_net_barrier_phases();
+			break;
+		}
+		if (rc != 0)
+			return rc;
+		return net_test_finish(rounds);
+	}
+
+	/* Exercise the Relaxed death decision on the Endless co-op channel. */
+	twoPlayerMode = true;
+	coopEndlessMode = true;
+	if (thisPlayerNum == networkHostPlayerNum)
+	{
+		const Uint32 reading = SDL_GetTicks();
+		while (SDL_GetTicks() - reading < 5000)
+		{
+			watchdog_heartbeat();
+			network_check();               /* exactly what JE_endlessDeathMenu's frame does */
+			while (network_shop_pump())
+				;
+			SDL_Delay(16);
+		}
+		network_endless_death_sync((int)ENDLESS_DEATH_OUTPOST);
+	}
+	else
+	{
+		const int adopted = network_endless_death_sync(-1);
+		if (adopted != (int)ENDLESS_DEATH_OUTPOST)
+		{
+			fprintf(stderr, "network test: death choice came back as %d, not Return to Outpost\n",
+			        adopted);
+			return 1;
+		}
+	}
+	coopEndlessMode = false;
+
+	/* Exercise the campaign shop protocol through the same hostile proxy. Both peers publish
+	 * independent loadouts, then request a simultaneous save checkpoint and rendezvous. */
+	twoPlayerMode = true;
+	coopCampaignMode = true;
+	Player *const local = &player[thisPlayerNum - 1];
+	Player *const peer = &player[2 - thisPlayerNum];
+	memset(&local->items, 0, sizeof(local->items));
+	local->items.ship = (Uint8)thisPlayerNum;
+	local->items.generator = 2;
+	local->items.shield = 4;
+	local->items.weapon[FRONT_WEAPON].id = (Uint8)(1 + thisPlayerNum);
+	local->items.weapon[FRONT_WEAPON].power = (Uint8)(2 + thisPlayerNum);
+	local->items.weapon[REAR_WEAPON].id = (Uint8)(10 + thisPlayerNum);
+	local->items.weapon[REAR_WEAPON].power = (Uint8)(3 + thisPlayerNum);
+	local->cash = 50000u + thisPlayerNum * 100u;
+	local->weapon_mode = thisPlayerNum;
+	network_shop_begin();
+
+	const Uint32 peer_cash = 50000u + (3u - thisPlayerNum) * 100u;
+	const Uint32 shop_start = SDL_GetTicks();
+	while (peer->cash != peer_cash && SDL_GetTicks() - shop_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (peer->cash != peer_cash || peer->items.ship != 3u - thisPlayerNum ||
+	    peer->items.weapon[REAR_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign shop baseline did not converge\n");
+		return 1;
+	}
+
+	network_prepare(PACKET_WAITING);
+	SDLNet_Write32(0x53484f50u, &packet_out_temp->data[4]);
+	if (!network_send(8))
+		return 1;
+	const Uint32 shop_ready_start = SDL_GetTicks();
+	bool shop_ready = false;
+	while (!shop_ready && SDL_GetTicks() - shop_ready_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		if (packet_in[0] != NULL)
+		{
+			const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
+			if (type == PACKET_WAITING && packet_in[0]->len >= 8 &&
+			    SDLNet_Read32(&packet_in[0]->data[4]) == 0x53484f50u)
+				shop_ready = true;
+			network_update();
+		}
+		SDL_Delay(1);
+	}
+	if (!shop_ready)
+	{
+		fprintf(stderr, "network test: campaign shop checkpoint setup timed out\n");
+		return 1;
+	}
+
+	local->cash += 77;
+	local->items.weapon[FRONT_WEAPON].power++;
+	network_shop_send_transaction();
+	const Uint32 transaction_start = SDL_GetTicks();
+	while ((peer->cash != peer_cash + 77 ||
+	        peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum)) &&
+	       SDL_GetTicks() - transaction_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (peer->cash != peer_cash + 77 ||
+	    peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign shop transaction did not converge\n");
+		return 1;
+	}
+
+	network_shop_sync_for_save();
+	if (peer->cash != peer_cash + 77 ||
+	    peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign save checkpoint did not converge\n");
+		return 1;
+	}
+
+	network_shop_send_state(true);
+	const Uint32 done_start = SDL_GetTicks();
+	while (!network_shop_peer_done() && SDL_GetTicks() - done_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: campaign shop rendezvous timed out\n");
+		return 1;
+	}
+	network_shop_end();
+
+	/* Endless outpost: one machine charts the sector and the other has to come out of the same
+	 * rendezvous already holding that index, because nothing publishes it afterwards. */
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	network_shop_begin();
+
+	const bool charting = (thisPlayerNum == networkHostPlayerNum);
+	const int test_course = 3;
+	endlessCoopCourse = -1;
+	jumpSection = true;
+
+	if (!charting)
+		network_shop_send_state(true);
+
+	if (charting)
+	{
+		/* Still shopping: these carry no course, and the waiter must not be left holding one. */
+		for (int i = 0; i < 3; ++i)
+		{
+			network_shop_send_transaction();
+			const Uint32 tick = SDL_GetTicks();
+			while (SDL_GetTicks() - tick < 60)
+			{
+				watchdog_heartbeat();
+				network_check();
+				while (network_shop_pump())
+					;
+				SDL_Delay(1);
+			}
+		}
+		endlessCoopCourse = test_course;
+		network_shop_send_state(true);
+	}
+
+	const Uint32 endless_done_start = SDL_GetTicks();
+	while (!network_shop_peer_done() && SDL_GetTicks() - endless_done_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: endless outpost rendezvous timed out\n");
+		return 1;
+	}
+
+	network_shop_set_locked(true);
+	const Uint32 endless_lock_start = SDL_GetTicks();
+	while (!network_shop_peer_locked() && SDL_GetTicks() - endless_lock_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_locked())
+	{
+		fprintf(stderr, "network test: endless outpost lock timed out\n");
+		return 1;
+	}
+
+	if (!charting && network_shop_peer_course() != test_course)
+	{
+		fprintf(stderr, "network test: endless course index did not survive the rendezvous (%d)\n",
+		        network_shop_peer_course());
+		return 1;
+	}
+
+	/* Delay the non-charting peer to cover its longer departure path. */
+	if (!charting)
+	{
+		const Uint32 linger_start = SDL_GetTicks();
+		while (SDL_GetTicks() - linger_start < 700)
+		{
+			watchdog_heartbeat();
+			if (network_shop_pump())
+				continue;
+			if (network_shop_departure_pending())
+				break;
+			network_update();
+			network_check();
+			SDL_Delay(1);
+		}
+	}
+
+	network_shop_end();
+	endlessCoopCourse = -1;
+	jumpSection = false;
+
+	/* The level-start handshake exactly as shopLeaveOutpost runs it. */
+	network_prepare(PACKET_WAITING);
+	network_send(4);
+	const Uint32 depart_start = SDL_GetTicks();
+	bool departed = false;
+	while (!departed && SDL_GetTicks() - depart_start < 12000)
+	{
+		watchdog_heartbeat();
+		if (network_shop_pump())
+			continue;
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			network_update();
+			departed = true;
+			break;
+		}
+		network_update();
+		network_check();
+		SDL_Delay(1);
+	}
+	if (!departed)
+	{
+		fprintf(stderr, "network test: endless outpost departure handshake timed out\n");
+		return 1;
+	}
+	network_state_reset();
+
+	/* Barrier before resetting outpost state. Without it, a fast peer's commit can
+	 * be drained and discarded before the slower peer opens the outpost. */
+	network_shop_begin();
+	if (charting)
+	{
+		const Uint32 slow_start = SDL_GetTicks();
+		while (SDL_GetTicks() - slow_start < 800)
+		{
+			watchdog_heartbeat();
+			network_update();
+			network_check();
+			SDL_Delay(1);
+		}
+		network_shop_begin();     /* ...and only now opens its own outpost */
+	}
+	network_shop_send_state(true);
+
+	/* Both peers keep pumping until the outpost is left, exactly as the shop loop does, so the
+	 * later arrival's HELLO is answered whether or not the other is still inside a wait. */
+	const Uint32 late_start = SDL_GetTicks();
+	while (SDL_GetTicks() - late_start < 4000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		network_shop_keepalive();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: a commit made before the peer opened its outpost was lost\n");
+		return 1;
+	}
+	network_shop_end();
+
+	coopEndlessMode = false;
+	coopCampaignMode = true;
+
+	return net_test_finish(rounds);
+}
+
+void JE_clearSpecialRequests(void)
+{
+	inGameMenuRequest = false;
+	skipLevelRequest = false;
+	helpRequest = false;
+	nortShipRequest = false;
+}

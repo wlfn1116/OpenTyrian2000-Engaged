@@ -67,8 +67,7 @@
       <!-- Precise disables reassociation and contraction to match console netplay builds. -->
       <FloatingPointModel>Precise</FloatingPointModel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(SDL2BaseDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalIncludeDirectories Condition="'$(WITH_NETWORK)'=='true'">D:\opentyrian2000\stuff\SDL2_net-2.2.0\include;D:\opentyrian2000\stuff\SDL2-2.26.2\include;$(SDL2netBaseDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SDL2netBaseDir)\include;$(SDL2BaseDir)\include;$(ProjectDir)..\src;$(ProjectDir)..\src\audio;$(ProjectDir)..\src\core;$(ProjectDir)..\src\destruct;$(ProjectDir)..\src\endless;$(ProjectDir)..\src\game;$(ProjectDir)..\src\input;$(ProjectDir)..\src\level;$(ProjectDir)..\src\menus;$(ProjectDir)..\src\net;$(ProjectDir)..\src\platform;$(ProjectDir)..\src\qa;$(ProjectDir)..\src\video;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64'">$(FluidSynthBaseDir)\include;$(SolutionDir)..\src\midiproc\src;$(SolutionDir)..\src\midiproc\compat;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>EnableAllWarnings</WarningLevel>
       <!-- Read BOM-less sources as UTF-8 while leaving the execution charset unchanged. -->
@@ -77,15 +76,13 @@
       <PreprocessorDefinitions>TARGET_WIN32;_CRT_SECURE_NO_WARNINGS;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(OPENTYRIAN_VERSION)'!=''">OPENTYRIAN_VERSION="$(OPENTYRIAN_VERSION)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(OPENTYRIAN_COMMIT)'!=''">OPENTYRIAN_COMMIT="$(OPENTYRIAN_COMMIT)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="'$(WITH_NETWORK)'=='true'">WITH_NETWORK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64'">WITH_MIDI;MIDIPROC_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(TYRIAN_DIR)'!=''">TYRIAN_DIR=$(TYRIAN_DIR);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4018;4061;4204;4210;4242;4244;4245;4267;4305;4456;4457;4459;4668;4710;4711;4738;4820;5045;26451</DisableSpecificWarnings>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <!-- network.c uses ws2_32 directly to disable SIO_UDP_CONNRESET. -->
-      <AdditionalDependencies Condition="'$(WITH_NETWORK)'=='true'">SDL2_net.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SDL2_net.lib;ws2_32.lib;SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64'">libfluidsynth-3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -116,16 +113,14 @@
     <ClCompile>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>$(SDL2BaseDir)\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalLibraryDirectories Condition="'$(WITH_NETWORK)'=='true'">$(SDL2netBaseDir)\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SDL2netBaseDir)\lib\x86;$(SDL2BaseDir)\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
     <ClCompile>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>$(SDL2BaseDir)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalLibraryDirectories Condition="'$(WITH_NETWORK)'=='true'">$(SDL2netBaseDir)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SDL2netBaseDir)\lib\x64;$(SDL2BaseDir)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalLibraryDirectories Condition="'$(WITH_MIDI)'=='true'">$(FluidSynthBaseDir)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -134,89 +129,109 @@
     <ClCompile>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>$(SDL2BaseDir)\lib\arm64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalLibraryDirectories Condition="'$(WITH_NETWORK)'=='true'">$(SDL2netBaseDir)\lib\arm64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SDL2netBaseDir)\lib\arm64;$(SDL2BaseDir)\lib\arm64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\animlib.c" />
-    <ClCompile Include="..\src\arg_parse.c" />
-    <ClCompile Include="..\src\backgrnd.c" />
-    <ClCompile Include="..\src\config.c" />
-    <ClCompile Include="..\src\config_file.c" />
-    <ClCompile Include="..\src\crashlog.c" />
-    <ClCompile Include="..\src\crashlog_state.c" />
-    <ClCompile Include="..\src\custom_episode.c" />
-    <ClCompile Include="..\src\custom_weapon.c" />
-    <ClCompile Include="..\src\destruct.c" />
-    <ClCompile Include="..\src\destruct_rollback.c" />
-    <ClCompile Include="..\src\editship.c" />
-    <ClCompile Include="..\src\endless.c" />
-    <ClCompile Include="..\src\endless_combat.c" />
-    <ClCompile Include="..\src\endless_course.c" />
-    <ClCompile Include="..\src\endless_level.c" />
-    <ClCompile Include="..\src\endless_mods.c" />
-    <ClCompile Include="..\src\endless_perks.c" />
-    <ClCompile Include="..\src\endless_rng.c" />
-    <ClCompile Include="..\src\endless_save.c" />
-    <ClCompile Include="..\src\endless_shop.c" />
-    <ClCompile Include="..\src\episodes.c" />
-    <ClCompile Include="..\src\file.c" />
-    <ClCompile Include="..\src\font.c" />
-    <ClCompile Include="..\src\fonthand.c" />
-    <ClCompile Include="..\src\game_menu.c" />
-    <ClCompile Include="..\src\helptext.c" />
-    <ClCompile Include="..\src\joystick.c" />
-    <ClCompile Include="..\src\jukebox.c" />
-    <ClCompile Include="..\src\keyboard.c" />
-    <ClCompile Include="..\src\lds_play.c" />
-    <ClCompile Include="..\src\loudness.c" />
-    <ClCompile Include="..\src\lvllib.c" />
-    <ClCompile Include="..\src\lvlmast.c" />
-    <ClCompile Include="..\src\mainint.c" />
-    <ClCompile Include="..\src\menus.c" />
-    <ClCompile Include="..\src\mouse.c" />
-    <ClCompile Include="..\src\mtrand.c" />
-    <ClCompile Include="..\src\musmast.c" />
-    <ClCompile Include="..\src\net_lobby.c" />
-    <ClCompile Include="..\src\net_savexfer.c" />
-    <ClCompile Include="..\src\net_style.c" />
-    <ClCompile Include="..\src\net_rollback.c" />
-    <ClCompile Include="..\src\network.c" />
-    <ClCompile Include="..\src\nortsong.c" />
-    <ClCompile Include="..\src\nortvars.c" />
     <ClCompile Include="..\src\opentyr.c" />
-    <ClCompile Include="..\src\opl.c" />
-    <ClCompile Include="..\src\palette.c" />
-    <ClCompile Include="..\src\params.c" />
-    <ClCompile Include="..\src\pcxload.c" />
-    <ClCompile Include="..\src\pcxmast.c" />
-    <ClCompile Include="..\src\picload.c" />
-    <ClCompile Include="..\src\player.c" />
-    <ClCompile Include="..\src\qa.c" />
-    <ClCompile Include="..\src\qa_endless.c" />
-    <ClCompile Include="..\src\qa_net.c" />
-    <ClCompile Include="..\src\qa_online.c" />
-    <ClCompile Include="..\src\render_list.c" />
-    <ClCompile Include="..\src\rollback.c" />
-    <ClCompile Include="..\src\rollback_state.c" />
-    <ClCompile Include="..\src\shots.c" />
-    <ClCompile Include="..\src\sim_math.c" />
-    <ClCompile Include="..\src\sizebuf.c" />
-    <ClCompile Include="..\src\sndmast.c" />
-    <ClCompile Include="..\src\sprite.c" />
-    <ClCompile Include="..\src\starlib.c" />
-    <ClCompile Include="..\src\touch_ui.c" />
-    <ClCompile Include="..\src\tyrian2.c" />
-    <ClCompile Include="..\src\varz.c" />
-    <ClCompile Include="..\src\vga256d.c" />
-    <ClCompile Include="..\src\vga_palette.c" />
-    <ClCompile Include="..\src\video.c" />
-    <ClCompile Include="..\src\video_scale.c" />
-    <ClCompile Include="..\src\video_scale_hqNx.c" />
-    <ClCompile Include="..\src\fluid_music.c" />
-    <ClCompile Include="..\src\win_native_midi.c" />
-    <ClCompile Include="..\src\xmas.c" />
+    <ClCompile Include="..\src\audio\fluid_music.c" />
+    <ClCompile Include="..\src\audio\lds_play.c" />
+    <ClCompile Include="..\src\audio\loudness.c" />
+    <ClCompile Include="..\src\audio\midi_smf.c" />
+    <ClCompile Include="..\src\audio\musmast.c" />
+    <ClCompile Include="..\src\audio\nortsong.c" />
+    <ClCompile Include="..\src\audio\opl.c" />
+    <ClCompile Include="..\src\audio\sndmast.c" />
+    <ClCompile Include="..\src\audio\win_native_midi.c" />
+    <ClCompile Include="..\src\core\arg_parse.c" />
+    <ClCompile Include="..\src\core\config.c" />
+    <ClCompile Include="..\src\core\config_file.c" />
+    <ClCompile Include="..\src\core\crashlog.c" />
+    <ClCompile Include="..\src\core\crashlog_state.c" />
+    <ClCompile Include="..\src\core\file.c" />
+    <ClCompile Include="..\src\core\mtrand.c" />
+    <ClCompile Include="..\src\core\params.c" />
+    <ClCompile Include="..\src\core\sim_math.c" />
+    <ClCompile Include="..\src\core\sizebuf.c" />
+    <ClCompile Include="..\src\core\xmas.c" />
+    <ClCompile Include="..\src\destruct\destruct.c" />
+    <ClCompile Include="..\src\destruct\destruct_rollback.c" />
+    <ClCompile Include="..\src\endless\endless.c" />
+    <ClCompile Include="..\src\endless\endless_combat.c" />
+    <ClCompile Include="..\src\endless\endless_course.c" />
+    <ClCompile Include="..\src\endless\endless_level.c" />
+    <ClCompile Include="..\src\endless\endless_mods.c" />
+    <ClCompile Include="..\src\endless\endless_perks.c" />
+    <ClCompile Include="..\src\endless\endless_rng.c" />
+    <ClCompile Include="..\src\endless\endless_save.c" />
+    <ClCompile Include="..\src\endless\endless_shop.c" />
+    <ClCompile Include="..\src\game\backgrnd.c" />
+    <ClCompile Include="..\src\game\custom_weapon.c" />
+    <ClCompile Include="..\src\game\editship.c" />
+    <ClCompile Include="..\src\game\enemy_death.c" />
+    <ClCompile Include="..\src\game\health_bars.c" />
+    <ClCompile Include="..\src\game\helptext.c" />
+    <ClCompile Include="..\src\game\hud.c" />
+    <ClCompile Include="..\src\game\mainint.c" />
+    <ClCompile Include="..\src\game\player.c" />
+    <ClCompile Include="..\src\game\player_ship.c" />
+    <ClCompile Include="..\src\game\shots.c" />
+    <ClCompile Include="..\src\game\sparks.c" />
+    <ClCompile Include="..\src\game\specials.c" />
+    <ClCompile Include="..\src\game\tyrian2.c" />
+    <ClCompile Include="..\src\game\varz.c" />
+    <ClCompile Include="..\src\input\joystick.c" />
+    <ClCompile Include="..\src\input\keyboard.c" />
+    <ClCompile Include="..\src\input\mouse.c" />
+    <ClCompile Include="..\src\input\touch_ui.c" />
+    <ClCompile Include="..\src\level\custom_episode.c" />
+    <ClCompile Include="..\src\level\episodes.c" />
+    <ClCompile Include="..\src\level\level_events.c" />
+    <ClCompile Include="..\src\level\level_load.c" />
+    <ClCompile Include="..\src\level\lvllib.c" />
+    <ClCompile Include="..\src\level\lvlmast.c" />
+    <ClCompile Include="..\src\menus\credits.c" />
+    <ClCompile Include="..\src\menus\debug_levels.c" />
+    <ClCompile Include="..\src\menus\debug_menu.c" />
+    <ClCompile Include="..\src\menus\game_menu.c" />
+    <ClCompile Include="..\src\menus\help.c" />
+    <ClCompile Include="..\src\menus\high_scores.c" />
+    <ClCompile Include="..\src\menus\ingame_menu.c" />
+    <ClCompile Include="..\src\menus\jukebox.c" />
+    <ClCompile Include="..\src\menus\menus.c" />
+    <ClCompile Include="..\src\menus\save_menu.c" />
+    <ClCompile Include="..\src\menus\setup_menu.c" />
+    <ClCompile Include="..\src\menus\sprite_viewer.c" />
+    <ClCompile Include="..\src\menus\title.c" />
+    <ClCompile Include="..\src\menus\weapon_creator.c" />
+    <ClCompile Include="..\src\net\net_lobby.c" />
+    <ClCompile Include="..\src\net\net_rollback.c" />
+    <ClCompile Include="..\src\net\net_savexfer.c" />
+    <ClCompile Include="..\src\net\net_start.c" />
+    <ClCompile Include="..\src\net\net_style.c" />
+    <ClCompile Include="..\src\net\network.c" />
+    <ClCompile Include="..\src\net\rollback.c" />
+    <ClCompile Include="..\src\net\rollback_state.c" />
+    <ClCompile Include="..\src\qa\qa.c" />
+    <ClCompile Include="..\src\qa\qa_endless.c" />
+    <ClCompile Include="..\src\qa\qa_net.c" />
+    <ClCompile Include="..\src\qa\qa_online.c" />
+    <ClCompile Include="..\src\video\animlib.c" />
+    <ClCompile Include="..\src\video\font.c" />
+    <ClCompile Include="..\src\video\fonthand.c" />
+    <ClCompile Include="..\src\video\nortvars.c" />
+    <ClCompile Include="..\src\video\palette.c" />
+    <ClCompile Include="..\src\video\pcxload.c" />
+    <ClCompile Include="..\src\video\pcxmast.c" />
+    <ClCompile Include="..\src\video\picload.c" />
+    <ClCompile Include="..\src\video\render_list.c" />
+    <ClCompile Include="..\src\video\sprite.c" />
+    <ClCompile Include="..\src\video\starlib.c" />
+    <ClCompile Include="..\src\video\vga256d.c" />
+    <ClCompile Include="..\src\video\vga_palette.c" />
+    <ClCompile Include="..\src\video\video.c" />
+    <ClCompile Include="..\src\video\video_scale.c" />
+    <ClCompile Include="..\src\video\video_scale_hqNx.c" />
   </ItemGroup>
   <!-- Vendored LDS-to-MIDI C++ code for WITH_MIDI x64 builds. See src\midiproc\VENDORED.md. -->
   <ItemGroup>
@@ -326,73 +341,97 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\animlib.h" />
-    <ClInclude Include="..\src\arg_parse.h" />
-    <ClInclude Include="..\src\backgrnd.h" />
-    <ClInclude Include="..\src\config.h" />
-    <ClInclude Include="..\src\config_file.h" />
-    <ClInclude Include="..\src\crashlog.h" />
-    <ClInclude Include="..\src\custom_episode.h" />
-    <ClInclude Include="..\src\custom_weapon.h" />
-    <ClInclude Include="..\src\destruct.h" />
-    <ClInclude Include="..\src\destruct_rollback.h" />
-    <ClInclude Include="..\src\editship.h" />
-    <ClInclude Include="..\src\endless.h" />
-    <ClInclude Include="..\src\endless_internal.h" />
-    <ClInclude Include="..\src\episodes.h" />
-    <ClInclude Include="..\src\file.h" />
-    <ClInclude Include="..\src\font.h" />
-    <ClInclude Include="..\src\fonthand.h" />
-    <ClInclude Include="..\src\game_menu.h" />
-    <ClInclude Include="..\src\helptext.h" />
-    <ClInclude Include="..\src\joystick.h" />
-    <ClInclude Include="..\src\jukebox.h" />
-    <ClInclude Include="..\src\keyboard.h" />
-    <ClInclude Include="..\src\lds_play.h" />
-    <ClInclude Include="..\src\loudness.h" />
-    <ClInclude Include="..\src\lvllib.h" />
-    <ClInclude Include="..\src\lvlmast.h" />
-    <ClInclude Include="..\src\mainint.h" />
-    <ClInclude Include="..\src\menus.h" />
-    <ClInclude Include="..\src\mouse.h" />
-    <ClInclude Include="..\src\mtrand.h" />
-    <ClInclude Include="..\src\musmast.h" />
-    <ClInclude Include="..\src\net_lobby.h" />
-    <ClInclude Include="..\src\net_savexfer.h" />
-    <ClInclude Include="..\src\net_style.h" />
-    <ClInclude Include="..\src\net_rollback.h" />
-    <ClInclude Include="..\src\network.h" />
-    <ClInclude Include="..\src\nortsong.h" />
-    <ClInclude Include="..\src\nortvars.h" />
     <ClInclude Include="..\src\opentyr.h" />
     <ClInclude Include="..\src\opentyrian_version.h" />
-    <ClInclude Include="..\src\opl.h" />
-    <ClInclude Include="..\src\palette.h" />
-    <ClInclude Include="..\src\params.h" />
-    <ClInclude Include="..\src\pcxload.h" />
-    <ClInclude Include="..\src\pcxmast.h" />
-    <ClInclude Include="..\src\picload.h" />
-    <ClInclude Include="..\src\player.h" />
-    <ClInclude Include="..\src\qa.h" />
-    <ClInclude Include="..\src\render_list.h" />
-    <ClInclude Include="..\src\rollback.h" />
-    <ClInclude Include="..\src\shots.h" />
-    <ClInclude Include="..\src\sim_math.h" />
-    <ClInclude Include="..\src\sizebuf.h" />
-    <ClInclude Include="..\src\sndmast.h" />
-    <ClInclude Include="..\src\sprite.h" />
-    <ClInclude Include="..\src\starlib.h" />
-    <ClInclude Include="..\src\swar.h" />
-    <ClInclude Include="..\src\touch_ui.h" />
-    <ClInclude Include="..\src\tyrian2.h" />
-    <ClInclude Include="..\src\varz.h" />
-    <ClInclude Include="..\src\vga256d.h" />
-    <ClInclude Include="..\src\vga_palette.h" />
-    <ClInclude Include="..\src\video.h" />
-    <ClInclude Include="..\src\video_scale.h" />
-    <ClInclude Include="..\src\fluid_music.h" />
-    <ClInclude Include="..\src\win_native_midi.h" />
-    <ClInclude Include="..\src\xmas.h" />
+    <ClInclude Include="..\src\audio\fluid_music.h" />
+    <ClInclude Include="..\src\audio\lds_play.h" />
+    <ClInclude Include="..\src\audio\loudness.h" />
+    <ClInclude Include="..\src\audio\midi_smf.h" />
+    <ClInclude Include="..\src\audio\musmast.h" />
+    <ClInclude Include="..\src\audio\nortsong.h" />
+    <ClInclude Include="..\src\audio\opl.h" />
+    <ClInclude Include="..\src\audio\sndmast.h" />
+    <ClInclude Include="..\src\audio\win_native_midi.h" />
+    <ClInclude Include="..\src\core\arg_parse.h" />
+    <ClInclude Include="..\src\core\config.h" />
+    <ClInclude Include="..\src\core\config_file.h" />
+    <ClInclude Include="..\src\core\crashlog.h" />
+    <ClInclude Include="..\src\core\file.h" />
+    <ClInclude Include="..\src\core\fnv1a.h" />
+    <ClInclude Include="..\src\core\mtrand.h" />
+    <ClInclude Include="..\src\core\params.h" />
+    <ClInclude Include="..\src\core\sim_math.h" />
+    <ClInclude Include="..\src\core\sizebuf.h" />
+    <ClInclude Include="..\src\core\xmas.h" />
+    <ClInclude Include="..\src\destruct\destruct.h" />
+    <ClInclude Include="..\src\destruct\destruct_rollback.h" />
+    <ClInclude Include="..\src\endless\endless.h" />
+    <ClInclude Include="..\src\endless\endless_internal.h" />
+    <ClInclude Include="..\src\endless\endless_levelprofile.h" />
+    <ClInclude Include="..\src\game\backgrnd.h" />
+    <ClInclude Include="..\src\game\custom_weapon.h" />
+    <ClInclude Include="..\src\game\editship.h" />
+    <ClInclude Include="..\src\game\enemy_death.h" />
+    <ClInclude Include="..\src\game\health_bars.h" />
+    <ClInclude Include="..\src\game\helptext.h" />
+    <ClInclude Include="..\src\game\hud.h" />
+    <ClInclude Include="..\src\game\mainint.h" />
+    <ClInclude Include="..\src\game\player.h" />
+    <ClInclude Include="..\src\game\player_ship.h" />
+    <ClInclude Include="..\src\game\shots.h" />
+    <ClInclude Include="..\src\game\sparks.h" />
+    <ClInclude Include="..\src\game\specials.h" />
+    <ClInclude Include="..\src\game\tyrian2.h" />
+    <ClInclude Include="..\src\game\varz.h" />
+    <ClInclude Include="..\src\input\joystick.h" />
+    <ClInclude Include="..\src\input\keyboard.h" />
+    <ClInclude Include="..\src\input\mouse.h" />
+    <ClInclude Include="..\src\input\touch_ui.h" />
+    <ClInclude Include="..\src\level\custom_episode.h" />
+    <ClInclude Include="..\src\level\episodes.h" />
+    <ClInclude Include="..\src\level\level_events.h" />
+    <ClInclude Include="..\src\level\level_load.h" />
+    <ClInclude Include="..\src\level\lvllib.h" />
+    <ClInclude Include="..\src\level\lvlmast.h" />
+    <ClInclude Include="..\src\menus\credits.h" />
+    <ClInclude Include="..\src\menus\debug_levels.h" />
+    <ClInclude Include="..\src\menus\debug_menu.h" />
+    <ClInclude Include="..\src\menus\game_menu.h" />
+    <ClInclude Include="..\src\menus\help.h" />
+    <ClInclude Include="..\src\menus\high_scores.h" />
+    <ClInclude Include="..\src\menus\ingame_menu.h" />
+    <ClInclude Include="..\src\menus\jukebox.h" />
+    <ClInclude Include="..\src\menus\menus.h" />
+    <ClInclude Include="..\src\menus\save_menu.h" />
+    <ClInclude Include="..\src\menus\setup_menu.h" />
+    <ClInclude Include="..\src\menus\sprite_viewer.h" />
+    <ClInclude Include="..\src\menus\title.h" />
+    <ClInclude Include="..\src\menus\weapon_creator.h" />
+    <ClInclude Include="..\src\net\net_lobby.h" />
+    <ClInclude Include="..\src\net\net_rollback.h" />
+    <ClInclude Include="..\src\net\net_savexfer.h" />
+    <ClInclude Include="..\src\net\net_start.h" />
+    <ClInclude Include="..\src\net\net_style.h" />
+    <ClInclude Include="..\src\net\network.h" />
+    <ClInclude Include="..\src\net\rollback.h" />
+    <ClInclude Include="..\src\platform\console_platform.h" />
+    <ClInclude Include="..\src\qa\qa.h" />
+    <ClInclude Include="..\src\video\animlib.h" />
+    <ClInclude Include="..\src\video\font.h" />
+    <ClInclude Include="..\src\video\fonthand.h" />
+    <ClInclude Include="..\src\video\nortvars.h" />
+    <ClInclude Include="..\src\video\palette.h" />
+    <ClInclude Include="..\src\video\pcxload.h" />
+    <ClInclude Include="..\src\video\pcxmast.h" />
+    <ClInclude Include="..\src\video\picload.h" />
+    <ClInclude Include="..\src\video\render_list.h" />
+    <ClInclude Include="..\src\video\sprite.h" />
+    <ClInclude Include="..\src\video\starlib.h" />
+    <ClInclude Include="..\src\video\swar.h" />
+    <ClInclude Include="..\src\video\vga256d.h" />
+    <ClInclude Include="..\src\video\vga_palette.h" />
+    <ClInclude Include="..\src\video\video.h" />
+    <ClInclude Include="..\src\video\video_scale.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resources.rc" />
@@ -400,17 +439,17 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ItemGroup Condition="'$(Platform)'=='Win32'">
     <Dependency Include="$(SDL2BaseDir)\lib\x86\*.dll" />
-    <Dependency Condition="$(WITH_NETWORK)=='true'" Include="$(SDL2netBaseDir)\lib\x86\*.dll" />
+    <Dependency Include="$(SDL2netBaseDir)\lib\x86\*.dll" />
   </ItemGroup>
   <ItemGroup Condition="'$(Platform)'=='x64'">
     <Dependency Condition="'$(WITH_MIDI)'!='true'" Include="$(SDL2BaseDir)\lib\x64\*.dll" />
     <!-- WITH_MIDI stages its ABI-compatible SDL2 and FluidSynth DLLs together. -->
     <Dependency Condition="'$(WITH_MIDI)'=='true'" Include="$(FluidSynthBaseDir)\lib\x64\*.dll" />
-    <Dependency Condition="$(WITH_NETWORK)=='true'" Include="$(SDL2netBaseDir)\lib\x64\*.dll" />
+    <Dependency Include="$(SDL2netBaseDir)\lib\x64\*.dll" />
   </ItemGroup>
   <ItemGroup Condition="'$(Platform)'=='ARM64'">
     <Dependency Include="$(SDL2BaseDir)\lib\arm64\*.dll" />
-    <Dependency Condition="$(WITH_NETWORK)=='true'" Include="$(SDL2netBaseDir)\lib\arm64\*.dll" />
+    <Dependency Include="$(SDL2netBaseDir)\lib\arm64\*.dll" />
   </ItemGroup>
   <PropertyGroup>
     <BuildDependsOn>CopyPropsTemplates;EnsureSDLExists;$(BuildDependsOn)</BuildDependsOn>
@@ -421,11 +460,11 @@
   </Target>
   <Target Name="EnsureSDLExists">
     <Error Condition="!Exists($(SDL2BaseDir))" Text="Set 'SDL2BaseDir' in 'sdl_paths.props' to the directory where SDL2 is located." />
-    <Error Condition="'$(WITH_NETWORK)'=='true' AND !Exists($(SDL2netBaseDir))" Text="Set 'SDL2netBaseDir' in 'sdl_paths.props' to the directory where SDL2_net is located." />
+    <Error Condition="!Exists($(SDL2netBaseDir))" Text="Set 'SDL2netBaseDir' in 'sdl_paths.props' to the directory where SDL2_net is located." />
     <Error Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64' AND !Exists($(FluidSynthBaseDir))" Text="Set 'FluidSynthBaseDir' in 'sdl_paths.props' to a FluidSynth SDK (the repo ships one in stuff\fluidsynth), or set WITH_MIDI=false in 'opentyrian.props'." />
     <!-- The official SDL VC packages ship x86 and x64 only, so ARM64 needs SDKs built from source. -->
     <Error Condition="'$(Platform)'=='ARM64' AND !Exists('$(SDL2BaseDir)\lib\arm64')" Text="'$(SDL2BaseDir)\lib\arm64' is missing. Point 'SDL2BaseDir' at an SDL2 built for ARM64; see README.md." />
-    <Error Condition="'$(Platform)'=='ARM64' AND '$(WITH_NETWORK)'=='true' AND !Exists('$(SDL2netBaseDir)\lib\arm64')" Text="'$(SDL2netBaseDir)\lib\arm64' is missing. Point 'SDL2netBaseDir' at an SDL2_net built for ARM64; see README.md." />
+    <Error Condition="'$(Platform)'=='ARM64' AND !Exists('$(SDL2netBaseDir)\lib\arm64')" Text="'$(SDL2netBaseDir)\lib\arm64' is missing. Point 'SDL2netBaseDir' at an SDL2_net built for ARM64; see README.md." />
   </Target>
   <Target Name="CopyDependencies" AfterTargets="Build">
     <Copy SourceFiles="@(Dependency)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />

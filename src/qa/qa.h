@@ -1,0 +1,132 @@
+/* Automated correctness harness entry points. */
+#ifndef QA_H
+#define QA_H
+
+#include "opentyr.h"
+
+#include <stdbool.h>
+
+extern bool qa_test_suite;
+extern const char *qa_fixture_dir;
+extern int qa_replay_demo;
+extern unsigned long qa_replay_ticks;
+/* Ticks of headless Destruct to run with every frame replayed from its own snapshot; zero is off.
+ * Proves the rollback snapshot covers the whole battle. */
+extern unsigned long qa_destruct_selftest_ticks;
+extern bool qa_replay_expect_set;
+extern Uint32 qa_replay_expect;
+/* Endless replay mode: 1 grants full Chain Reaction; 2 is the no-perk control. The failure count
+ * is authoritative; its state hash is not a fixture. */
+extern int qa_replay_chain;
+extern int qa_net_rounds;
+// Which two-peer wire scenario to run: 0 base, 1 online campaign, 2 online Endless,
+// 3 barrier storm.
+extern int qa_net_scenario;
+// Offset added to the wire version this test peer reports, to drive the mismatch rejection.
+extern int qa_net_version_skew;
+/* Run scripted two-peer play; corrupt_frame injects one recoverable epoch-zero divergence. */
+extern unsigned long qa_net_gameplay_ticks;
+// Presented Delay-Based frames, used by scenario 19's bounded non-rollback verdict.
+extern unsigned long qa_net_delay_frames;
+extern unsigned long qa_net_special_flashes;
+extern unsigned long qa_net_corrupt_frame;
+/* Save/resume across the wire: save_exit writes the LAST LEVEL slot as a passing gameplay run
+ * exits; resume_slot makes the host auto-load that slot, so the joiner adopts the resume form. */
+extern bool qa_net_save_exit;
+extern int qa_net_resume_slot;
+// Sidekick mount profile for the gameplay wire tests; 0 keeps the stock loadout.
+extern int qa_net_loadout;
+void qa_net_apply_loadout(int profile);
+void qa_net_apply_linked_special(void);
+
+/* Simultaneous in-game-menu race: both peers raise the request on this frame (0 = off), which
+ * is the documented both-players-press-Esc case host-wins arbitration has to settle. */
+extern unsigned long qa_net_menu_frame;
+// Game type for a command-line gameplay run: -1 keeps Arcade, else a NetworkGameType value.
+extern int qa_net_game_type;
+/* Stop after this many cleared levels; zero keeps the bounded single-flight run. */
+/* Headless device-transfer controls. */
+extern const char *qa_xfer_send;   /* kind name, NULL unless sending */
+extern const char *qa_xfer_recv;   /* kind name, NULL unless receiving */
+extern bool qa_xfer_auto;          /* take the first offer instead of picking from the list */
+extern const char *qa_xfer_host;   /* ask this address directly instead of broadcasting */
+extern bool qa_xfer_push;          /* sender pushes to that address; receiver waits for it */
+int qa_run_xfer(void);
+
+/* Headless outpost-disconnect controls. */
+extern bool qa_net_outpost_quit;
+extern int qa_net_disconnect_save;   /* destination slot, 0 to leave the dialog alone */
+
+/* Lobby custom-content values used by wire tests. */
+extern int qa_net_custom_endless;          /* CUSTOM_ENDLESS_*, -1 to leave alone */
+extern const char *qa_net_custom_episode;  /* container file name, NULL for stock */
+extern int qa_net_zones;
+extern int qa_net_zones_cleared;
+#define QA_NET_ZONE_END_FRAME 500
+/* Exercise host-to-joiner lobby settings with Individual credit and Double Earnings. */
+extern bool qa_net_lobby_settings;
+/* Exercise two fully independent arcade ships across the wire. */
+extern bool qa_net_arcade_separate;
+/* SuperTyrian wire runs: fly the Scrollock variant rather than the standard one. Both peers must
+ * be given it, since a test peer has no lobby to publish it from. */
+extern bool qa_net_scrollock;
+// Makes the joiner leave its wait screen in network scenario 22.
+extern bool qa_net_guest_esc;
+/* True while a lobby-settings wire run keeps command-line peers under the lobby roles: the
+ * main loop must still treat them as command-line (no title screen, no lobby teardown). */
+static inline bool qa_net_lobby_run(void)
+{
+	return qa_net_gameplay_ticks > 0 && qa_net_lobby_settings;
+}
+// Forced modifier slate for the Endless zone at this depth (identical on both machines).
+Uint64 qa_net_zone_mods(int depth);
+// Zones target reached: print the session verdict (net_rollback.c) and exit the peer.
+void qa_net_zone_verdict(void);
+extern bool qa_fast_forward;
+
+int qa_run_unit_suite(void);
+int qa_run_replay_fixture(void);
+int qa_run_destruct_selftest(void);
+
+// Shared check primitive, so a suite can live in its own translation unit.
+void qa_check(bool okay, const char *what);
+// Online Endless co-op: outpost, E-shop, perks, drives, downed/revive, restart (qa_endless.c).
+void qa_test_endless_suite(void);
+// Online Arcade and Campaign: the mode-flag split, two-wallet economy, records (qa_online.c).
+void qa_test_online_suite(void);
+// Lobby row, value, help and action strings against their width budgets (net_lobby.c).
+void qa_test_net_lobby_strings(void);
+
+void qa_test_save_transfer(void);
+void qa_test_save_transfer_preinit(void);
+void qa_test_custom_episode(void);
+
+void qa_test_load_screen_help(void);
+void qa_test_endless_shop_stock(void);
+// Custom-ship return-point and gauge-scaling checks (ingame_menu.c).
+void qa_test_extra_ship_return(void);
+// The Relaxed death prompt's rows and widths against the choice enum (ingame_menu.c).
+void qa_test_endless_death_menu(void);
+// The special-meter fired/ready edges across the linked pair's two movement passes (hud.c).
+void qa_test_special_light_events(void);
+// The Chain Reaction pulse queue: reach, the cascade, and what stops it (enemy_death.c).
+void qa_test_chain_cascade(void);
+// A wave lands on a hull once, across its overlapping pulses and its hops; the next kill's wave
+// lands again (enemy_death.c).
+void qa_test_chain_wave_latch(void);
+/* Run a Chain Reaction wave through the production queue. `linknum` 0 creates separate enemies;
+ * other values create one linked hull. Returns payout, kills, and drop state, and clears enemy[]. */
+void qa_chain_kill_row(int owner, int evalue, int count, JE_byte linknum, int eliteState,
+                       long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped);
+/* Return one tagged pulse's armor damage for owner, then clear the enemy table. */
+int qa_chain_pulse_damage(int owner, bool salvo);
+/* Verify a first-pulse Salvo tag survives every hop, then clear the enemy table. */
+bool qa_chain_salvo_latch_holds(int owner);
+
+/* Two-peer wire scenarios (qa_net.c), run by network_test_peer under the hostile proxy in
+ * testing/network_fault_test.py. Zero on success; both peers assert what they see of the other. */
+int qa_net_campaign_phases(void);
+int qa_net_endless_phases(void);
+int qa_net_barrier_phases(void);
+
+#endif /* QA_H */

@@ -12,7 +12,7 @@ tyrian.sav
 
 # Make build output
 /obj/
-/src/*.gch
+/src/**/*.gch
 /opentyrian
 /opentyrian2000
 

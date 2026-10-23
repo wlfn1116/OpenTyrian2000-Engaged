@@ -1,0 +1,483 @@
+/*
+ * OpenTyrian: A modern cross-platform port of Tyrian
+ * Copyright (C) 2007-2009  The OpenTyrian Development Team
+ *
+ * This program is free software: you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+#include "helptext.h"
+
+#include "config.h"
+#include "episodes.h"
+#include "file.h"
+#include "fonthand.h"
+#include "menus.h"
+#include "opentyr.h"
+#include "video.h"
+
+#include <assert.h>
+#include <string.h>
+
+const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
+{
+	{  1, 34,  2,  3,  4,  5,                  0, 0, 0, 0, 0 },
+	{  6,  7,  8,  9, 10, 11, 11, 12,                0, 0, 0 },
+	// Zero rows use local help text.
+	{ 13, 14, 15, 15,  0, 16, 17, 35, 12,          0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{  4, 30, 30,  3,  5,                   0, 0, 0, 0, 0, 0 },
+	{  4, 37, 12,                     0, 0, 0, 0, 0, 0, 0, 0 },
+	// Online Options: the page above without its Load Game row.
+	{ 14, 15, 15,  0, 16, 17, 35, 12,              0, 0, 0 },
+	{ 31, 31, 31, 31, 32, 12,                  0, 0, 0, 0, 0 },
+	{  4, 34,  3,  5,                    0, 0, 0, 0, 0, 0, 0 },
+	{ 35, 35, 35, 36, 12,                   0, 0, 0, 0, 0, 0 },
+	// Debug Play Level, E-Shop and Perks draw custom help.
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+};
+
+JE_byte verticalHeight = 7;
+JE_byte helpBoxColor = 12;
+JE_byte helpBoxBrightness = 1;
+JE_byte helpBoxShadeType = FULL_SHADE;
+
+char helpTxt[39][231];                                                   /* [1..39] of string [230] */
+char pName[21][16];                                                      /* [1..21] of string [15] */
+char miscText[HELPTEXT_MISCTEXT_COUNT][42];                              /* [1..68] of string [41] */
+char miscTextB[HELPTEXT_MISCTEXTB_COUNT][HELPTEXT_MISCTEXTB_SIZE];       /* [1..5] of string [10] */
+char menuText[7][HELPTEXT_MENUTEXT_SIZE];                                /* [1..7] of string [20] */
+char outputs[9][31];                                                     /* [1..9] of string [30] */
+char topicName[6][21];                                                   /* [1..6] of string [20] */
+char mainMenuHelp[HELPTEXT_MAINMENUHELP_COUNT][66];                      /* [1..34] of string [65] */
+char inGameText[6][21];                                                  /* [1..6] of string [20] */
+char detailLevel[6][13];                                                 /* [1..6] of string [12] */
+char gameSpeedText[5][13];                                               /* [1..5] of string [12] */
+char inputDevices[3][13];                                                /* [1..3] of string [12] */
+char networkText[HELPTEXT_NETWORKTEXT_COUNT][HELPTEXT_NETWORKTEXT_SIZE]; /* [1..4] of string [20] */
+char difficultyNameB[11][21];                                            /* [0..9] of string [20] */
+char joyButtonNames[5][21];                                              /* [1..5] of string [20] */
+char superShips[HELPTEXT_SUPERSHIPS_COUNT][26];                          /* [0..10] of string [25] */
+char specialName[HELPTEXT_SPECIALNAME_COUNT][10];                        /* [1..9] of string [9] */
+char destructHelp[25][22];                                               /* [1..25] of string [21] */
+char weaponNames[17][17];                                                /* [1..17] of string [16] */
+char destructModeName[DESTRUCT_MODES][13];                               /* [1..destructmodes] of string [12] */
+char shipInfo[HELPTEXT_SHIPINFO_COUNT][2][256];                          /* [1..13, 1..2] of string */
+char licensingInfo[3][46];                                               /* [1..3] of string */
+char orderingInfo[6][32];                                                /* [1..6] of string */
+char superTyrianText[6][64];                                             /* [1..6] of string */
+char menuInt[MENU_MAX+1][14][24];
+
+static void decrypt_string(char *s, size_t len)
+{
+	static const unsigned char crypt_key[] = { 204, 129, 63, 255, 71, 19, 25, 62, 1, 99 };
+
+	if (len == 0)
+		return;
+
+	for (size_t i = len - 1; ; --i)
+	{
+		s[i] ^= crypt_key[i % sizeof(crypt_key)];
+		if (i == 0)
+			break;
+		s[i] ^= s[i - 1];
+	}
+}
+
+void read_encrypted_pascal_string(char *s, size_t size, FILE *f)
+{
+	Uint8 len;
+	char buffer[255];
+
+	fread_u8_die(&len, 1, f);
+	fread_die(buffer, 1, len, f);
+
+	if (size == 0)
+		return;
+
+	decrypt_string(buffer, len);
+
+	if (len >= size)
+		len = size - 1;
+
+	memcpy(s, buffer, len);
+	s[len] = '\0';
+}
+
+// Drop trailing blanks from a string read out of the data file.
+static void rtrim_string(char *s)
+{
+	size_t len = strlen(s);
+	while (len > 0 && s[len - 1] == ' ')
+		s[--len] = '\0';
+}
+
+void skip_pascal_string(FILE *f)
+{
+	Uint8 len;
+	char buffer[255];
+
+	fread_u8_die(&len, 1, f);
+	fread_die(buffer, 1, len, f);
+}
+
+void JE_helpBox(SDL_Surface *screen,  int x, int y, const char *message, unsigned int boxwidth)
+{
+	JE_byte startpos, endpos, pos;
+	JE_boolean endstring;
+
+	char substring[256];
+
+	if (strlen(message) == 0)
+	{
+		return;
+	}
+
+	pos = 1;
+	endpos = 0;
+	endstring = false;
+
+	do
+	{
+		startpos = endpos + 1;
+
+		do
+		{
+			endpos = pos;
+			do
+			{
+				pos++;
+				if (pos == strlen(message))
+				{
+					endstring = true;
+					if ((unsigned)(pos - startpos) < boxwidth)
+					{
+						endpos = pos + 1;
+					}
+				}
+
+			} while (!(message[pos-1] == ' ' || endstring));
+
+		} while (!((unsigned)(pos - startpos) > boxwidth || endstring));
+
+		SDL_strlcpy(substring, message + startpos - 1, MIN((size_t)(endpos - startpos + 1), sizeof(substring)));
+		JE_textShade(screen, x, y, substring, helpBoxColor, helpBoxBrightness, helpBoxShadeType);
+
+		y += verticalHeight;
+
+	} while (!endstring);
+
+	if (endpos != pos + 1)
+	{
+		JE_textShade(screen, x, y, message + endpos, helpBoxColor, helpBoxBrightness, helpBoxShadeType);
+	}
+
+	helpBoxColor = 12;
+	helpBoxShadeType = FULL_SHADE;
+}
+
+void JE_HBox(SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsigned int boxwidth)
+{
+	JE_helpBox(screen, x, y, helpTxt[messagenum-1], boxwidth);
+}
+
+void JE_loadHelpText(void)
+{
+	// E-Shop, Perks, and Online pages are populated at runtime.
+	const unsigned int menuInt_entries[MENU_MAX + 1] = { -1, 7, 9, 9, -1, -1, 11, -1, -1, -1, 6, 4, 7, 7, 5, 6, 0, 0, 0, 0, 0, 0, 0 };
+	const unsigned int setup_entries[10] = {10, 5, 4, 4, 5, 7, 7, 21, 3, 3};
+	
+	FILE *f = dir_fopen_die(data_dir(), "tyrian.hdt", "rb");
+	fread_s32_die(&episode1DataLoc, 1, f);
+
+	/*Online Help*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(helpTxt); ++i)
+		read_encrypted_pascal_string(helpTxt[i], sizeof(helpTxt[i]), f);
+	skip_pascal_string(f);
+
+	/*Planet names*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(pName); ++i)
+		read_encrypted_pascal_string(pName[i], sizeof(pName[i]), f);
+	skip_pascal_string(f);
+
+	/*Miscellaneous text*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(miscText); ++i)
+		read_encrypted_pascal_string(miscText[i], sizeof(miscText[i]), f);
+	skip_pascal_string(f);
+
+	/*Little Miscellaneous text*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(miscTextB); ++i)
+		read_encrypted_pascal_string(miscTextB[i], sizeof(miscTextB[i]), f);
+	skip_pascal_string(f);
+
+	/*Key names*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[6]; ++i)
+		read_encrypted_pascal_string(menuInt[6][i], sizeof(menuInt[6][i]), f);
+	skip_pascal_string(f);
+
+	/*Main Menu*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(menuText); ++i)
+		read_encrypted_pascal_string(menuText[i], sizeof(menuText[i]), f);
+	skip_pascal_string(f);
+
+	// OpenTyrian 2000 Engaged Override
+	strcpy(menuText[6], menuText[5]);
+	strcpy(menuText[5], menuText[4]);
+	strcpy(menuText[4], "Setup");
+	strcpy(menuText[0], "Start Game");
+
+	/*Event text*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(outputs); ++i)
+		read_encrypted_pascal_string(outputs[i], sizeof(outputs[i]), f);
+	skip_pascal_string(f);
+
+	/*Help topics*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(topicName); ++i)
+		read_encrypted_pascal_string(topicName[i], sizeof(topicName[i]), f);
+	skip_pascal_string(f);
+
+	/*Main Menu Help*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(mainMenuHelp); ++i)
+		read_encrypted_pascal_string(mainMenuHelp[i], sizeof(mainMenuHelp[i]), f);
+	skip_pascal_string(f);
+
+	/*Menu 1 - Main*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[1]; ++i)
+		read_encrypted_pascal_string(menuInt[1][i], sizeof(menuInt[1][i]), f);
+	skip_pascal_string(f);
+
+	/*Menu 2 - Items*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[2]; ++i)
+		read_encrypted_pascal_string(menuInt[2][i], sizeof(menuInt[2][i]), f);
+	skip_pascal_string(f);
+
+	/*Menu 3 - Options*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[3]; ++i)
+		read_encrypted_pascal_string(menuInt[3][i], sizeof(menuInt[3][i]), f);
+	skip_pascal_string(f);
+
+	/*InGame Menu*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(inGameText); ++i)
+		read_encrypted_pascal_string(inGameText[i], sizeof(inGameText[i]), f);
+	skip_pascal_string(f);
+
+	/*Detail Level*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(detailLevel); ++i)
+		read_encrypted_pascal_string(detailLevel[i], sizeof(detailLevel[i]), f);
+	skip_pascal_string(f);
+
+	/*Game speed text*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(gameSpeedText); ++i)
+		read_encrypted_pascal_string(gameSpeedText[i], sizeof(gameSpeedText[i]), f);
+	skip_pascal_string(f);
+
+	// episode names.  The data file pads some of them out to a fixed width (episode 2 most
+	// visibly), which shifts every centred or right-aligned draw of the name by the padding.
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(episode_name); ++i)
+	{
+		read_encrypted_pascal_string(episode_name[i], sizeof(episode_name[i]), f);
+		rtrim_string(episode_name[i]);
+	}
+	skip_pascal_string(f);
+
+	// difficulty names
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(difficulty_name); ++i)
+		read_encrypted_pascal_string(difficulty_name[i], sizeof(difficulty_name[i]), f);
+	skip_pascal_string(f);
+
+	// gameplay mode names
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(gameplay_name); ++i)
+		read_encrypted_pascal_string(gameplay_name[i], sizeof(gameplay_name[i]), f);
+	skip_pascal_string(f);
+
+	/*Menu 10 - 2Player Main*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[10]; ++i)
+		read_encrypted_pascal_string(menuInt[10][i], sizeof(menuInt[10][i]), f);
+	skip_pascal_string(f);
+
+	/*Input Devices*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(inputDevices); ++i)
+		read_encrypted_pascal_string(inputDevices[i], sizeof(inputDevices[i]), f);
+	skip_pascal_string(f);
+
+	/*Network text*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(networkText); ++i)
+		read_encrypted_pascal_string(networkText[i], sizeof(networkText[i]), f);
+	skip_pascal_string(f);
+
+	/*Menu 11 - 2Player Network*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[11]; ++i)
+		read_encrypted_pascal_string(menuInt[11][i], sizeof(menuInt[11][i]), f);
+	skip_pascal_string(f);
+
+	/*HighScore Difficulty Names*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(difficultyNameB); ++i)
+		read_encrypted_pascal_string(difficultyNameB[i], sizeof(difficultyNameB[i]), f);
+	skip_pascal_string(f);
+
+	// Use the difficulty-select names in score and debug screens.
+	// Hidden ranks retain their separate names.
+	SDL_strlcpy(difficultyNameB[DIFFICULTY_EASY],         difficulty_name[1], sizeof(difficultyNameB[0]));
+	SDL_strlcpy(difficultyNameB[DIFFICULTY_NORMAL],       difficulty_name[2], sizeof(difficultyNameB[0]));
+	SDL_strlcpy(difficultyNameB[DIFFICULTY_HARD],         difficulty_name[3], sizeof(difficultyNameB[0]));
+	SDL_strlcpy(difficultyNameB[DIFFICULTY_IMPOSSIBLE],   difficulty_name[4], sizeof(difficultyNameB[0]));
+	SDL_strlcpy(difficultyNameB[DIFFICULTY_SUICIDE],      difficulty_name[5], sizeof(difficultyNameB[0]));
+	SDL_strlcpy(difficultyNameB[DIFFICULTY_LORD_OF_GAME], difficulty_name[6], sizeof(difficultyNameB[0]));
+
+	/*Menu 12 - Network Options*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[12]; ++i)
+		read_encrypted_pascal_string(menuInt[12][i], sizeof(menuInt[12][i]), f);
+	skip_pascal_string(f);
+
+	/*Menu 13 - Joystick*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[13]; ++i)
+		read_encrypted_pascal_string(menuInt[13][i], sizeof(menuInt[13][i]), f);
+	skip_pascal_string(f);
+
+	/*Joystick Button Assignments*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(joyButtonNames); ++i)
+		read_encrypted_pascal_string(joyButtonNames[i], sizeof(joyButtonNames[i]), f);
+	skip_pascal_string(f);
+
+	/*SuperShips - For Super Arcade Mode*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(superShips); ++i)
+		read_encrypted_pascal_string(superShips[i], sizeof(superShips[i]), f);
+	skip_pascal_string(f);
+
+	/*SuperShips - For Super Arcade Mode*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(specialName); ++i)
+		read_encrypted_pascal_string(specialName[i], sizeof(specialName[i]), f);
+	skip_pascal_string(f);
+
+	/*Secret DESTRUCT game*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(destructHelp); ++i)
+		read_encrypted_pascal_string(destructHelp[i], sizeof(destructHelp[i]), f);
+	skip_pascal_string(f);
+
+	/*Secret DESTRUCT weapons*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(weaponNames); ++i)
+		read_encrypted_pascal_string(weaponNames[i], sizeof(weaponNames[i]), f);
+	skip_pascal_string(f);
+
+	/*Secret DESTRUCT modes*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(destructModeName); ++i)
+		read_encrypted_pascal_string(destructModeName[i], sizeof(destructModeName[i]), f);
+	skip_pascal_string(f);
+
+	/*NEW: Ship Info*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(shipInfo); ++i)
+	{
+		read_encrypted_pascal_string(shipInfo[i][0], sizeof(shipInfo[i][0]), f);
+		read_encrypted_pascal_string(shipInfo[i][1], sizeof(shipInfo[i][1]), f);
+	}
+	skip_pascal_string(f);
+
+	/*Menu 14 - Super Tyrian*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[14]; ++i)
+		read_encrypted_pascal_string(menuInt[14][i], sizeof(menuInt[14][i]), f);
+	skip_pascal_string(f);
+
+	/*Timed Battle Planets*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(timed_battle_name); ++i)
+		read_encrypted_pascal_string(timed_battle_name[i], sizeof(timed_battle_name[i]), f);
+	skip_pascal_string(f);
+
+	/*Setup entries, skipped since we don't use them*/
+	for (unsigned int entry = 0; entry < COUNTOF(setup_entries); ++entry)
+	{
+		skip_pascal_string(f);
+		for (unsigned int i = 0; i < setup_entries[entry]; ++i)
+			skip_pascal_string(f);
+		skip_pascal_string(f);
+	}
+
+	/*Menu 15 - Mouse Settings*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < menuInt_entries[15]; ++i)
+		read_encrypted_pascal_string(menuInt[15][i], sizeof(menuInt[15][i]), f);
+	skip_pascal_string(f);
+
+	/*Tyrian Licensing Info*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(licensingInfo); ++i)
+		read_encrypted_pascal_string(licensingInfo[i], sizeof(licensingInfo[i]), f);
+	skip_pascal_string(f);
+
+	/*Default High Score Names*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(defaultHighScoreNames); ++i)
+		read_encrypted_pascal_string(defaultHighScoreNames[i], sizeof(defaultHighScoreNames[i]), f);
+	skip_pascal_string(f);
+
+	/*Default Team Names*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(defaultTeamNames); ++i)
+		read_encrypted_pascal_string(defaultTeamNames[i], sizeof(defaultTeamNames[i]), f);
+	skip_pascal_string(f);
+
+	/*Ordering Info?*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(orderingInfo); ++i)
+		read_encrypted_pascal_string(orderingInfo[i], sizeof(orderingInfo[i]), f);
+	skip_pascal_string(f);
+
+	/*Super Tyrian text*/
+	skip_pascal_string(f);
+	for (unsigned int i = 0; i < COUNTOF(superTyrianText); ++i)
+		read_encrypted_pascal_string(superTyrianText[i], sizeof(superTyrianText[i]), f);
+
+	fclose(f);
+}
