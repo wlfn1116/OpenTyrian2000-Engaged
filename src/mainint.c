@@ -170,6 +170,7 @@ bool hud_message_dirty = false;
 /* Always erase; silent replay may consume the countdown without drawing. */
 void JE_repaintTextWindow(void)
 {
+	rl_note_offscreen_draw();
 	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
 
 	// The tinted opening advances x exactly as JE_outText would have, so the words that follow

@@ -987,6 +987,14 @@ void lava_filter(SDL_Surface *dst, SDL_Surface *src)
 				const Uint8 *const s = srow + x + waver;
 				const Uint8 *const below = drow + dst_pitch + x + waver;
 				const Uint8 *const above = drow - dst_pitch + x + waver;
+#if VEC8X8_BYTES
+				const Vec8x8 low = vec8x8_splat(0x0F);
+				Vec8x8 v = vec8x8_shl1(vec8x8_and(vec8x8_read(s), low));
+				v = vec8x8_add(v, vec8x8_and(vec8x8_read(below), low));
+				v = vec8x8_add(v, vec8x8_and(vec8x8_read(above), low));
+				vec8x8_write(drow + x,
+				             vec8x8_or(vec8x8_and(vec8x8_shr2(v), low), vec8x8_splat(0x70)));
+#else
 				for (int i = 0; i < 8; i += SWAR8_BYTES)
 				{
 					Swar8 v = (swar8_read(s + i) & SWAR8(0x0F)) << 1;
@@ -994,6 +1002,7 @@ void lava_filter(SDL_Surface *dst, SDL_Surface *src)
 					v += swar8_read(above + i) & SWAR8(0x0F);
 					swar8_write(drow + x + i, ((v >> 2) & SWAR8(0x0F)) | SWAR8(0x70));
 				}
+#endif
 				continue;
 			}
 
@@ -1020,7 +1029,11 @@ void water_filter(SDL_Surface *dst, SDL_Surface *src)
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
 	Uint8 hue = smoothie_data[1] << 4;
+#if VEC8X8_BYTES
+	const Vec8x8 hues = vec8x8_splat(hue);
+#else
 	const Swar8 hues = SWAR8(hue);
+#endif
 
 	/* Reads stay within the top 186 scanlines and the playfield width. */
 
@@ -1048,6 +1061,12 @@ void water_filter(SDL_Surface *dst, SDL_Surface *src)
 			if (count == 8)
 			{
 				const Uint8 *const below = drow + dst_pitch + x + waver;
+#if VEC8X8_BYTES
+				const Vec8x8 s = vec8x8_read(srow + x);
+				const Vec8x8 water = vec8x8_or(hues, vec8x8_avg_low(s, vec8x8_read(below)));
+				const Vec8x8 blue = vec8x8_nonzero(vec8x8_and(s, vec8x8_splat(0x30)));
+				vec8x8_write(drow + x, vec8x8_select(s, water, blue));
+#else
 				for (int i = 0; i < 8; i += SWAR8_BYTES)
 				{
 					const Swar8 s = swar8_read(srow + x + i);
@@ -1055,6 +1074,7 @@ void water_filter(SDL_Surface *dst, SDL_Surface *src)
 					const Swar8 blue = swar8_nonzero(s & SWAR8(0x30));
 					swar8_write(drow + x + i, swar8_select(s, water, blue));
 				}
+#endif
 				continue;
 			}
 

@@ -6413,6 +6413,8 @@ draw_player_shot_loop_end:
 	// Capture smoothie residuals between recorded blits and non-blit overlays.
 	if (anySmoothies && !rollback_resim_silent)
 		memcpy(VGAScreen2->pixels, game_screen->pixels, (size_t)game_screen->h * game_screen->pitch);
+	if (!anySmoothies)
+		rl_mark_residual_base(game_screen);
 
 	/* Warning indicator. */
 	if ((player[0].is_alive && player[0].armor < 6) ||

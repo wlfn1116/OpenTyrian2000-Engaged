@@ -118,6 +118,15 @@ void rl_mark_overlay_rect(int x, int y, int w, int h)
 	++overlay_rect_count;
 }
 
+static Uint8 *res_base = NULL;
+static size_t res_base_cap = 0, res_base_bytes = 0, res_base_first = 0;
+static bool res_base_valid = false, res_base_blocked = false;
+
+void rl_note_offscreen_draw(void)
+{
+	res_base_blocked = true;
+}
+
 void rl_begin_record(void)
 {
 	cur_buf ^= 1;             // previous current becomes prev; record into the other
@@ -140,6 +149,8 @@ void rl_begin_record(void)
 	for (int layer = 1; layer <= 3; ++layer)
 		bg_layer_xofs_valid[layer] = false;
 	overlay_rect_count = 0;
+	res_base_valid = false;
+	res_base_blocked = false;
 	render_list_recording = true;
 }
 
@@ -183,6 +194,7 @@ void rl_abort_record(void)
 	if (!render_list_recording)
 		return;
 	render_list_recording = false;
+	res_base_valid = false;
 	counts[cur_buf] = 0;
 	cur_buf ^= 1;
 }
@@ -1453,6 +1465,16 @@ void rl_replay(SDL_Surface *dst)
 	                 1, 1, 0.0f, false, VIDEO_ROWS_TICK);  // exact positions (inv=0, alpha=0)
 }
 
+static void rl_replay_from(SDL_Surface *dst, size_t first)
+{
+	RlTickView v;
+	rl_current_view(&v);
+	v.cmds += first;
+	v.count -= first;
+	rl_replay_common(dst, &v, 0.0f, 0.0f, false, false, true, RL_PHASE_ALL,
+	                 1, 1, 0.0f, false, VIDEO_ROWS_TICK);
+}
+
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
 {
 	if (alpha < 0.0f)
@@ -1681,6 +1703,10 @@ void rl_deinit(void)
 	res_val = NULL;
 	res_count = 0;
 	res_cap = 0;
+	free(res_base);
+	res_base = NULL;
+	res_base_cap = 0;
+	res_base_valid = false;
 	free(rl_band_items);
 	rl_band_items = NULL;
 	rl_band_cap = 0;
@@ -1744,15 +1770,69 @@ static void rl_res_push_diff(const Uint8 *keep, const Uint8 *other, size_t n)
 			return;
 }
 
+static bool rl_cmd_may_wrap(const RenderCmd *c, int pitch)
+{
+	switch (c->kind)
+	{
+	case RC_SPRITE2:
+	case RC_SPRITE2_BLEND:
+	case RC_SPRITE2_DARKEN:
+	case RC_SPRITE2_SOLID:
+	case RC_SPRITE2_FILTER_BRIGHT:
+	case RC_SPRITE2_BLEND_FILTER:
+	case RC_SPRITE2_ALPHA:
+	case RC_SPRITE2_ALPHA_DYE:
+		return c->x < 0 || c->x > pitch - 12;
+	default:
+		return false;
+	}
+}
+
+void rl_mark_residual_base(const SDL_Surface *reference)
+{
+	res_base_valid = false;
+	if (!render_list_recording || rollback_resim_silent || res_base_blocked)
+		return;
+
+	const RenderCmd *const cur = bufs[cur_buf];
+	for (size_t i = 0; i < counts[cur_buf]; ++i)
+		if (rl_cmd_may_wrap(&cur[i], reference->pitch))
+			return;
+
+	const size_t n = (size_t)reference->h * reference->pitch;
+	if (n > res_base_cap)
+	{
+		Uint8 *const grown = realloc(res_base, n);
+		if (grown == NULL)
+			return;
+		res_base = grown;
+		res_base_cap = n;
+	}
+	memcpy(res_base, reference->pixels, n);
+	res_base_bytes = n;
+	res_base_first = counts[cur_buf];
+	res_base_valid = true;
+}
+
 void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch)
 {
-	JE_clr256(scratch);
-	rl_replay(scratch);  // blit-only reproduction at recorded positions
+	const size_t n = (size_t)reference->h * reference->pitch;
+	if (res_base_valid && res_base_bytes == n && res_base_first <= counts[cur_buf] &&
+	    scratch->h == reference->h && scratch->pitch == reference->pitch)
+	{
+		memcpy(scratch->pixels, res_base, n);
+		rl_replay_from(scratch, res_base_first);
+	}
+	else
+	{
+		JE_clr256(scratch);
+		rl_replay(scratch);  // blit-only reproduction at recorded positions
+	}
+	res_base_valid = false;
 
 	res_count = 0;
 	res_ref_pitch = reference->pitch;
 
-	const size_t n = (size_t)reference->h * reference->pitch;
 	rl_res_push_diff((const Uint8 *)reference->pixels, (const Uint8 *)scratch->pixels, n);
 
 	rl_capture_overlay_rects(reference);

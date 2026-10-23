@@ -263,8 +263,70 @@ static inline Vec8 vec8_reverse(Vec8 v)
 	return vextq_u8(halves, halves, 8);
 }
 
+typedef uint8x8_t Vec8x8;
+#define VEC8X8_BYTES 8
+
+static inline Vec8x8 vec8x8_read(const uint8_t *src)
+{
+	return vld1_u8(src);
+}
+
+static inline void vec8x8_write(uint8_t *dst, Vec8x8 v)
+{
+	vst1_u8(dst, v);
+}
+
+static inline Vec8x8 vec8x8_splat(uint8_t x)
+{
+	return vdup_n_u8(x);
+}
+
+static inline Vec8x8 vec8x8_and(Vec8x8 a, Vec8x8 b)
+{
+	return vand_u8(a, b);
+}
+
+static inline Vec8x8 vec8x8_or(Vec8x8 a, Vec8x8 b)
+{
+	return vorr_u8(a, b);
+}
+
+static inline Vec8x8 vec8x8_add(Vec8x8 a, Vec8x8 b)
+{
+	return vadd_u8(a, b);
+}
+
+static inline Vec8x8 vec8x8_shl1(Vec8x8 v)
+{
+	return vadd_u8(v, v);
+}
+
+static inline Vec8x8 vec8x8_shr1(Vec8x8 v)
+{
+	return vshr_n_u8(v, 1);
+}
+
+static inline Vec8x8 vec8x8_shr2(Vec8x8 v)
+{
+	return vshr_n_u8(v, 2);
+}
+
+static inline Vec8x8 vec8x8_nonzero(Vec8x8 v)
+{
+	return vtst_u8(v, v);
+}
+
+static inline Vec8x8 vec8x8_select(Vec8x8 a, Vec8x8 b, Vec8x8 mask)
+{
+	return vbsl_u8(mask, b, a);
+}
+
 #else
 #define VEC8_BYTES 0
+#endif
+
+#ifndef VEC8X8_BYTES
+#define VEC8X8_BYTES 0
 #endif
 
 #if VEC8_BYTES
@@ -272,6 +334,14 @@ static inline Vec8 vec8_avg_low(Vec8 a, Vec8 b)
 {
 	const Vec8 low = vec8_splat(0x0F);
 	return vec8_shr1(vec8_add(vec8_and(a, low), vec8_and(b, low)));
+}
+#endif
+
+#if VEC8X8_BYTES
+static inline Vec8x8 vec8x8_avg_low(Vec8x8 a, Vec8x8 b)
+{
+	const Vec8x8 low = vec8x8_splat(0x0F);
+	return vec8x8_shr1(vec8x8_add(vec8x8_and(a, low), vec8x8_and(b, low)));
 }
 #endif
 

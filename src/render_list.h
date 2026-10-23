@@ -227,6 +227,8 @@ void rl_mark_overlay_rect(int x, int y, int w, int h);
 
 // Capture non-blit pixels missing from a replay into a same-size 8-bit scratch surface.
 void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch);
+void rl_mark_residual_base(const SDL_Surface *reference);
+void rl_note_offscreen_draw(void);
 
 // Capture residual from a before/after diff of the authoritative frame.
 void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after);
