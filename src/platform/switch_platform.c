@@ -179,6 +179,35 @@ bool switch_slot_single_joycon(int slot)
 	return style == HidNpadStyleTag_NpadJoyLeft || style == HidNpadStyleTag_NpadJoyRight;
 }
 
+unsigned switch_slot_joycon_extra(int slot)
+{
+	const HidNpadIdType id = (HidNpadIdType)(HidNpadIdType_No1 + slot);
+	HidNpadCommonState state;
+	size_t got;
+	u64 lr, zlzr;
+
+	switch (switch_slot_style(slot))
+	{
+	case HidNpadStyleTag_NpadJoyLeft:
+		got = hidGetNpadStatesJoyLeft(id, &state, 1);
+		lr = HidNpadButton_L;
+		zlzr = HidNpadButton_ZL;
+		break;
+	case HidNpadStyleTag_NpadJoyRight:
+		got = hidGetNpadStatesJoyRight(id, &state, 1);
+		lr = HidNpadButton_R;
+		zlzr = HidNpadButton_ZR;
+		break;
+	default:
+		return 0;
+	}
+	if (got == 0)
+		return 0;
+
+	return ((state.buttons & lr) ? SWITCH_JOYCON_LR : 0)
+	     | ((state.buttons & zlzr) ? SWITCH_JOYCON_ZLZR : 0);
+}
+
 void switch_controller_setup(int players)
 {
 	HidLaControllerSupportArg arg;

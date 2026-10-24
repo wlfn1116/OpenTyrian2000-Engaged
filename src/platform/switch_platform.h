@@ -46,6 +46,17 @@ bool switch_slot_connected(int slot);
 // Whether that controller is a single Joy-Con, which is held sideways.
 bool switch_slot_single_joycon(int slot);
 
+// The buttons switch-sdl2 leaves out of a single Joy-Con, as bits of switch_slot_joycon_extra.
+// Both sides share them, the way switch-sdl2 numbers the rest of a single Joy-Con.
+enum
+{
+	SWITCH_JOYCON_LR   = 1 << 0,  // L on a left Joy-Con, R on a right one
+	SWITCH_JOYCON_ZLZR = 1 << 1,  // ZL on a left Joy-Con, ZR on a right one
+};
+// Those a single Joy-Con behind `slot` holds; 0 for every other controller, which reports these
+// buttons through SDL.
+unsigned switch_slot_joycon_extra(int slot);
+
 #endif // __SWITCH__
 
 #endif // SWITCH_PLATFORM_H

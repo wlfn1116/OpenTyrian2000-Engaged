@@ -489,15 +489,22 @@ Joy-Cons during play opens the system controller screen.
 | Stick | Steer |
 | Right face button | Fire |
 | Bottom face button | Change rear weapon mode |
+| ZL on the left Joy-Con, ZR on the right | Change rear weapon mode |
 | SL, SR | Left and right sidekick |
 | Stick press | Menu |
 | Minus on the left Joy-Con, Plus on the right | Menu |
+
+L on the left Joy-Con and R on the right are free to bind under **Options >
+Joystick Setup**.
 
 Starting a 2-player game opens the controller screen when a second controller
 is missing: hold a Joy-Con sideways and press SL and SR to register it. Each
 player then plays on their own controller. A loaded 2-player game seats them
 the same way. In a 2-player game Plus and Minus open the menu instead of
-pausing, on every controller.
+pausing, on every controller. In a local 2-player game a Pro Controller or
+Joy-Con pair uses the sideways Joy-Con layout: L and R fire the left and right
+sidekicks, and ZL and ZR change the rear weapon mode. X and Y fire the
+sidekicks too.
 
 ### Rumble
 

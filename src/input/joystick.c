@@ -37,7 +37,7 @@
 #include <string.h>
 
 static int joystick_axis_threshold(int j, int value);
-static int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignment assignment[2]);
+static int check_assigned(int j, const Joystick_assignment assignment[2]);
 
 static const char *assignment_to_code(const Joystick_assignment *assignment);
 static void code_to_assignment(Joystick_assignment *assignment, const char *buffer);
@@ -138,12 +138,47 @@ bool joystick_analog_angle(int j, float *angle)
 	return false;
 }
 
+#ifdef __SWITCH__
+// switch-sdl2 reports buttons 0 to 27 and leaves a single Joy-Con's L/R and ZL/ZR out, so the
+// game reads those through libnx as buttons 28 and 29.
+#define SWITCH_JOYCON_LR_BUTTON   28
+#define SWITCH_JOYCON_ZLZR_BUTTON 29
+
+// In a local 2-player game a Pro Controller or Joy-Con pair takes a sideways Joy-Con's layout:
+// L and R fire the sidekicks like its SL and SR, ZL and ZR change the rear weapon mode.
+static bool joystick_2p_joycon_layout(int j)
+{
+	return twoPlayerMode && !galagaMode && !isNetworkGame && !switch_slot_single_joycon(j);
+}
+#endif
+
+static bool joystick_button_held(int j, int num)
+{
+	SDL_Joystick *const handle = joystick[j].handle;
+#ifdef __SWITCH__
+	if (joystick_2p_joycon_layout(j))
+	{
+		// switch-sdl2's 8 and 9 are SL and SR on a single Joy-Con but ZL and ZR here.
+		if (num == 8 || num == 9)
+			return SDL_JoystickGetButton(handle, num == 8 ? 6 : 7) == 1;  // L, R
+		if (num == SWITCH_JOYCON_ZLZR_BUTTON)
+			return SDL_JoystickGetButton(handle, 8) == 1 || SDL_JoystickGetButton(handle, 9) == 1;
+	}
+	if (num == SWITCH_JOYCON_LR_BUTTON)
+		return (switch_slot_joycon_extra(j) & SWITCH_JOYCON_LR) != 0;
+	if (num == SWITCH_JOYCON_ZLZR_BUTTON)
+		return (switch_slot_joycon_extra(j) & SWITCH_JOYCON_ZLZR) != 0;
+#endif
+	return SDL_JoystickGetButton(handle, num) == 1;
+}
+
 /* gives back value 0..joystick_analog_max indicating that one of the assigned
  * buttons has been pressed or that one of the assigned axes/hats has been moved
  * in the assigned direction
  */
-static int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignment assignment[2])
+static int check_assigned(int j, const Joystick_assignment assignment[2])
 {
+	SDL_Joystick *const joystick_handle = joystick[j].handle;
 	int result = 0;
 	
 	for (int i = 0; i < 2; i++)
@@ -163,7 +198,7 @@ static int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignme
 			break;
 		
 		case BUTTON:
-			temp = SDL_JoystickGetButton(joystick_handle, assignment[i].num) == 1 ? joystick_analog_max : 0;
+			temp = joystick_button_held(j, assignment[i].num) ? joystick_analog_max : 0;
 			break;
 		
 		case HAT:
@@ -217,7 +252,7 @@ void poll_joystick(int j)
 	{
 		bool old = joystick[j].direction[d];
 
-		joystick[j].analog_direction[d] = check_assigned(joystick[j].handle, joystick[j].assignment[d]);
+		joystick[j].analog_direction[d] = check_assigned(j, joystick[j].assignment[d]);
 
 #if defined(__SWITCH__) || defined(__vita__)
 		if (switch_right_stick)
@@ -246,7 +281,7 @@ void poll_joystick(int j)
 	{
 		bool old = joystick[j].action[d];
 		
-		joystick[j].action[d] = check_assigned(joystick[j].handle, joystick[j].assignment[d + COUNTOF(joystick[j].direction)]) > (joystick_analog_max / 2);
+		joystick[j].action[d] = check_assigned(j, joystick[j].assignment[d + COUNTOF(joystick[j].direction)]) > (joystick_analog_max / 2);
 		joydown |= joystick[j].action[d];
 		
 		joystick[j].action_pressed[d] = joystick[j].action[d] && (!old || repeat);
@@ -948,6 +983,12 @@ void reset_joystick_assignments(int j)
 				joystick[j].assignment[a][1].type = BUTTON;
 				joystick[j].assignment[a][1].num = a == 6 ? 8 : 9;
 			}
+			// A single Joy-Con's own ZL or ZR changes the rear weapon mode.
+			if (a == 5)
+			{
+				joystick[j].assignment[a][1].type = BUTTON;
+				joystick[j].assignment[a][1].num = SWITCH_JOYCON_ZLZR_BUTTON;
+			}
 #endif
 		}
 	}
@@ -1050,6 +1091,12 @@ static bool load_joystick_assignments(Config *config, int j)
 			joystick[j].assignment[a][1].type = BUTTON;
 			joystick[j].assignment[a][1].num = a == 6 ? 8 : 9;
 		}
+	}
+	// Change fire's second slot likewise gets a single Joy-Con's own ZL or ZR.
+	if (joystick[j].assignment[5][1].type == NONE)  // assignment_names: 5 = "change fire"
+	{
+		joystick[j].assignment[5][1].type = BUTTON;
+		joystick[j].assignment[5][1].num = SWITCH_JOYCON_ZLZR_BUTTON;
 	}
 #endif
 
@@ -1196,6 +1243,10 @@ bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 	for (int i = 0; i < hats; i++)
 		hat[i] = SDL_JoystickGetHat(joystick[j].handle, i);
 	
+#ifdef __SWITCH__
+	unsigned joycon = switch_slot_joycon_extra(j);  // buttons 28 and 29, which SDL leaves out
+#endif
+
 	bool detected = false;
 
 	// The controller "confirm" that opened this prompt pushed a synthetic RETURN
@@ -1245,10 +1296,27 @@ bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 			{
 				assignment->type = BUTTON;
 				assignment->num = i;
+#ifdef __SWITCH__
+				if ((i == 8 || i == 9) && joystick_2p_joycon_layout(j))
+					assignment->num = SWITCH_JOYCON_ZLZR_BUTTON;
+#endif
 				detected = true;
 				break;
 			}
 		}
+
+#ifdef __SWITCH__
+		const unsigned joycon_now = switch_slot_joycon_extra(j);
+		const unsigned joycon_pressed = joycon_now & ~joycon;
+		joycon = joycon_now;
+		if (!detected && joycon_pressed != 0)
+		{
+			assignment->type = BUTTON;
+			assignment->num = (joycon_pressed & SWITCH_JOYCON_LR) ? SWITCH_JOYCON_LR_BUTTON
+			                                                    : SWITCH_JOYCON_ZLZR_BUTTON;
+			detected = true;
+		}
+#endif
 		
 		for (int i = 0; i < hats; ++i)
 		{

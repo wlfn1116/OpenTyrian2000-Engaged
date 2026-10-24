@@ -1086,10 +1086,19 @@ them all "Switch Controller". The game opens two, and slot 1 saves its bindings
 as "Switch Controller 2" so it cannot overwrite slot 0's. Its rumble drives one
 motor per controller, none in handheld mode and at a fixed strength, so
 `switch_rumble` drives the motors through libnx and `joystick_service` stops
-each pulse at its deadline. switch-sdl2 also opens its own controller screen
-when a controller's style changes, so after `switch_controller_setup` the game
-reopens its joysticks; the driver then reads the new styles as its starting
-state.
+each pulse at its deadline.
+
+switch-sdl2 reports nothing for a single Joy-Con's L/R or ZL/ZR, so
+`switch_slot_joycon_extra` reads them through libnx as buttons 28 and 29. Both
+sides share them, like the rest of switch-sdl2's single Joy-Con layout. Change
+fire binds 29 by default, and older configs get it in an empty second slot. In
+a local 2-player game a full controller takes that layout
+(`joystick_2p_joycon_layout`): 8 and 9, a single Joy-Con's SL and SR, read its L
+and R, and 29 reads its ZL and ZR. Joystick Setup records ZL or ZR there as 29.
+
+switch-sdl2 also opens its own controller screen when a controller's style
+changes, so after `switch_controller_setup` the game reopens its joysticks; the
+driver then reads the new styles as its starting state.
 
 ## Level and data formats
 
