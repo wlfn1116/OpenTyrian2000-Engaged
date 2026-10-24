@@ -761,13 +761,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Enhancements...", "Presets and every change this fork adds to the game.", MENU_ENHANCEMENTS },
 				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
-				{ MENU_ITEM_RUMBLE, "Rumble:",
-				  "Gamepad vibration for hits on your ship and explosions.",
-				  .getPickerItemsCount = rumbleCount, .getPickerItem = rumbleItem },
 #ifdef TOUCH_UI_BUTTONS
 				{ MENU_ITEM_TOUCH_OPACITY, "Button Opacity",
 				  "How visible the on-screen buttons are; empty hides them." },
 #endif
+				{ MENU_ITEM_RUMBLE, "Rumble:",
+				  "Gamepad vibration for hits on your ship and explosions.",
+				  .getPickerItemsCount = rumbleCount, .getPickerItem = rumbleItem },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},
