@@ -13,6 +13,8 @@ online play, editors, restored content, and smoother rendering.
 | Edit ships | Title screen > Extra > Ship Editor |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
 | Change graphics | Setup > Graphics |
+| Soften sound effects | Setup > Sound |
+| Turn on gamepad rumble | Setup > Rumble, with a rumble controller connected |
 | Choose restored content | Setup > Enhancements |
 | Configure network logs | Setup > Diagnostics |
 | Open Destruct or SuperTyrian | Title screen > Extra |
@@ -229,6 +231,12 @@ nickname. The default port is UDP 1333.
 LAN discovery works on the same subnet. Direct addresses are remembered.
 Players need the same game version.
 
+On Switch, **Local Wireless** connects two consoles without a router. **Host a
+Local Game** opens the usual host settings and then creates the network; **Find
+Local Games** lists nearby hosts by nickname. Both consoles must start the game
+the same way, through the same game or both from the Album, or they cannot see
+each other.
+
 ### Lobby
 
 | Setting | Meaning |
@@ -429,6 +437,55 @@ colour; on a controller, Tab moves focus to or from the canvas.
 
 Online Campaign, Endless, and Separate Arcade exchange each player's custom
 ships and any custom weapons they need.
+
+## Sound
+
+**Setup > Sound** has two sound-effect options, both off by default. Music is
+never filtered or limited.
+
+- **Sound Filter** softens the 8-bit effects with a low-pass filter. **Light**
+  rolls off above about 4 kHz and **Strong** above about 2.8 kHz.
+- **Same-Sound Limit** sets how many copies of one effect may play at once, from
+  1 to 3. In a busy fight the same enemy shot sound can otherwise stack several
+  times over; copies past the limit are skipped.
+
+## Controllers
+
+On PC, Mac, Linux, Android, and iOS a controller can connect at any time, over
+USB or Bluetooth, and is ready within a second. One that drops out and comes
+back takes its old bindings and player back.
+
+A controller the game has not seen before gets these bindings when SDL
+recognises it, which covers Xbox, PlayStation, Switch Pro, and most other
+gamepads. Others start on their first buttons. Change either under **Options >
+Joystick Setup**.
+
+| Control | Action |
+| --- | --- |
+| Left stick, d-pad | Steer |
+| A | Fire |
+| B | Change rear weapon mode |
+| X, left shoulder | Left sidekick |
+| Y, right shoulder | Right sidekick |
+| Start | Menu |
+| Back | Pause |
+
+### Rumble
+
+**Setup > Rumble** appears while a connected controller has a vibration motor.
+It vibrates the controller when your ship is hit: a short pulse on the shield, a
+stronger one when damage reaches the hull, and a long one when the ship is
+destroyed. Explosions rumble too, harder for larger blasts and when several go
+off at once. Choose **Light** or **Strong**; it is **Off** by default, and
+changing it plays a sample pulse.
+
+A hit rumbles the pad steering the ship that was hit, which online is only ever
+yours. Explosions rumble every local pad. The Vita handheld has no vibration
+motor.
+
+A Bluetooth DualShock 4 or DualSense only rumbles in an extended mode, which
+the game turns on. Until you switch the pad off, some older PC games that read
+it through DirectInput may not see it.
 
 ## Music
 

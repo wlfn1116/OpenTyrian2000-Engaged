@@ -187,6 +187,17 @@ static const char *const sparkModeNames[] = { "Auto", "On", "Off" };
 // Indexed by the CUSTOM_ENDLESS_* enum (custom_episode.h).
 static const char *const customEndlessNames[] = { "Off", "Mixed", "Custom Only" };
 
+// Indexed by SfxFilter (audio.h).
+static const char *const sfxFilterNames[] = { "Off", "Light", "Strong" };
+// Index 0 is no limit, then 1..SFX_COPY_LIMIT_MAX copies.
+static const char *const sfxCopyLimitNames[] = { "Off", "1", "2", "3" };
+// Indexed by RumbleStrength (joystick.h).
+static const char *const rumbleNames[] = { "Off", "Light", "Strong" };
+
+SDL_COMPILE_TIME_ASSERT(sfx_filter_names, COUNTOF(sfxFilterNames) == SFX_FILTER_COUNT);
+SDL_COMPILE_TIME_ASSERT(sfx_copy_names, COUNTOF(sfxCopyLimitNames) == SFX_COPY_LIMIT_MAX + 1);
+SDL_COMPILE_TIME_ASSERT(rumble_names, COUNTOF(rumbleNames) == RUMBLE_COUNT);
+
 NAME_PICKER(bossBarStyle, bossBarStyleNames)
 NAME_PICKER(bossBarLayout, bossBarLayoutNames)
 NAME_PICKER(bossBarTwo, bossBarTwoNames)
@@ -198,6 +209,9 @@ NAME_PICKER(episode, episodeNames)
 NAME_PICKER(zicaLength, zicaLengthNames)
 NAME_PICKER(sparkMode, sparkModeNames)
 NAME_PICKER(customEndless, customEndlessNames)
+NAME_PICKER(sfxFilter, sfxFilterNames)
+NAME_PICKER(sfxCopyLimit, sfxCopyLimitNames)
+NAME_PICKER(rumble, rumbleNames)
 
 /* The preset picker shows Custom but does not let the user apply it. */
 static size_t enhPresetCount(void)
@@ -302,7 +316,10 @@ typedef enum
 	MENU_ITEM_MUSIC_DEVICE,         // music synthesizer: OPL3 / FluidSynth / Native MIDI
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
+	MENU_ITEM_SFX_FILTER,           // low-pass on the mixed sound effects
+	MENU_ITEM_SFX_COPY_LIMIT,       // copies of one sound effect allowed at once
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
+	MENU_ITEM_RUMBLE,               // controller vibration strength
 	MENU_ITEM_TOUCH_OPACITY,        // on-screen button opacity, touch ports only
 
 	/* Enhancements. */
@@ -447,6 +464,8 @@ static bool isMenuItemVisible(const MenuItem *item)
 		return customEpisodeCount() > 0;
 	if (item->id == MENU_ITEM_CLEAR_CLV)
 		return customEpisodeAnyPresent();
+	if (item->id == MENU_ITEM_RUMBLE)
+		return joystick_can_rumble();
 	return true;
 }
 
@@ -489,6 +508,9 @@ static int *menuItemIntSetting(MenuItemId id)
 	case MENU_ITEM_ZICA_LENGTH:      return &zicaLaserLength;
 	case MENU_ITEM_WALLOP_BOLT:      return &wallopSecondBolt;
 	case MENU_ITEM_CUSTOM_ENDLESS:   return &customEndlessMode;
+	case MENU_ITEM_SFX_FILTER:       return &sfx_filter;
+	case MENU_ITEM_SFX_COPY_LIMIT:   return &sfx_copy_limit;
+	case MENU_ITEM_RUMBLE:           return &rumble_strength;
 	default:                         return NULL;
 	}
 }
@@ -541,11 +563,15 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	}
 }
 
-/* Firing Sounds previews the selected sound; other rows use the normal menu sound. */
+/* Firing Sounds previews the selected sound and Rumble a hull-hit pulse; other rows use the normal
+ * menu sound. */
 static void playMenuItemSample(MenuItemId id, JE_byte fallback)
 {
 	const int slot = menuItemRunSlot(id, MENU_ITEM_EPDIFF_BASE, EDW_COUNT);
 	const JE_byte sound = slot >= 0 ? JE_epDiffFiringSound(slot, epDiffMode[slot]) : 0;
+
+	if (id == MENU_ITEM_RUMBLE)
+		joystick_rumble(0, 0.55f, 0.35f, 220);
 
 	JE_playSampleNum(sound != 0 ? sound : fallback);
 }
@@ -727,6 +753,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Enhancements...", "Presets and every change this fork adds to the game.", MENU_ENHANCEMENTS },
 				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
+				{ MENU_ITEM_RUMBLE, "Rumble:",
+				  "Gamepad vibration for hits on your ship and explosions.",
+				  .getPickerItemsCount = rumbleCount, .getPickerItem = rumbleItem },
 #ifdef TOUCH_UI_BUTTONS
 				{ MENU_ITEM_TOUCH_OPACITY, "Button Opacity",
 				  "How visible the on-screen buttons are; empty hides them." },
@@ -773,6 +802,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				  .getPickerItemsCount = getMusicDeviceItemsCount, .getPickerItem = getMusicDeviceItem },
 				{ MENU_ITEM_ARMOR_ALARM, "Armor Alarm:", "Siren while your armor is critically low." },
 				{ MENU_ITEM_LINK_SOUNDS, "Link Sounds:", "Sound cue when two ships fuse or unfuse." },
+				{ MENU_ITEM_SFX_FILTER, "Sound Filter:",
+				  "Soften the 8-bit sound effects with a low-pass filter.",
+				  .getPickerItemsCount = sfxFilterCount, .getPickerItem = sfxFilterItem },
+				{ MENU_ITEM_SFX_COPY_LIMIT, "Same-Sound Limit:",
+				  "How many copies of one sound effect may play at once.",
+				  .getPickerItemsCount = sfxCopyLimitCount, .getPickerItem = sfxCopyLimitItem },
 				MENU_DONE_ROW
 			},
 		},

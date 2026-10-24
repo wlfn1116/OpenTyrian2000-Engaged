@@ -434,6 +434,7 @@ static void enemy_part_destroy(unsigned int slot, int payee, int killer, bool st
 	else
 	{
 		JE_setupExplosion(screenX, enemy[slot].ey, 0, 1, false, false);
+		explosion_rumble_add(EXPLOSION_RUMBLE_SMALL);
 		soundQueue[6] = S_EXPLOSION_8;
 	}
 	explosionFilter = 0;

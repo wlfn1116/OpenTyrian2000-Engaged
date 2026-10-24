@@ -3708,7 +3708,8 @@ static void DE_RunTickPlaySounds(void)
 			else
 				tempVolume = fxPlayVol / 2;
 
-			multiSamplePlay(soundSamples[tempSampleIndex - 1], soundSampleCount[tempSampleIndex - 1], i, tempVolume);
+			multiSamplePlayLimited(soundSamples[tempSampleIndex - 1],
+			                       soundSampleCount[tempSampleIndex - 1], i, tempVolume);
 			soundQueue[i] = S_NONE;
 		}
 	}

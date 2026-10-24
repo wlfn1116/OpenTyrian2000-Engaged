@@ -1390,3 +1390,42 @@ void qa_test_sidekick_rollback_state(void)
 	twoPlayerLinked = savedLinked;
 	linkGunDirec = savedDirec;
 }
+
+/* LAN discovery replies, which the Switch local wireless advertisement also carries. */
+void qa_test_discover_reply(void)
+{
+	char savedName[NET_NAME_MAX + 1];
+	SDL_strlcpy(savedName, network_player_name, sizeof(savedName));
+	network_set_player_name("Pilot");
+
+	Uint8 body[64];
+	NetworkHostInfo info;
+	memset(&info, 0, sizeof(info));
+	const int len = network_discover_reply_write(body, (int)sizeof(body), 1444);
+	qa_check(len > 0 && network_discover_reply_read(body, len, &info)
+	         && info.port == 1444 && strcmp(info.name, "Pilot") == 0,
+	         "a discovery reply carries the host's port and name");
+	qa_check(network_discover_reply_write(body, len - 1, 1444) == 0,
+	         "a discovery reply refuses a buffer too small for it");
+	qa_check(!network_discover_reply_read(body, 5, &info),
+	         "a truncated discovery reply is ignored");
+
+	Uint8 other[64];
+	memcpy(other, body, sizeof(other));
+	other[3] ^= 1;
+	qa_check(!network_discover_reply_read(other, len, &info),
+	         "a discovery reply from another NET_VERSION is ignored");
+	memcpy(other, body, sizeof(other));
+	other[1] ^= 1;
+	qa_check(!network_discover_reply_read(other, len, &info),
+	         "a packet of another type is ignored as a discovery reply");
+
+	// A crafted name longer than the field, with no terminator, still lands terminated.
+	memcpy(other, body, 6);
+	memset(&other[6], 'A', sizeof(other) - 6);
+	qa_check(network_discover_reply_read(other, (int)sizeof(other), &info)
+	         && strlen(info.name) == sizeof(info.name) - 1,
+	         "an overlong discovery reply name is cut to fit");
+
+	network_set_player_name(savedName);
+}

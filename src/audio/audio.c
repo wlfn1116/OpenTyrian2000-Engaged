@@ -117,9 +117,27 @@ static Uint16 song_count = 0;
 
 #define CHANNEL_COUNT 9  // 8 soundQueue slots + SFX_CUE_CHANNEL (audio.h)
 static const Sint16 *channelSamples[CHANNEL_COUNT];
+static const Sint16 *channelSampleStart[CHANNEL_COUNT];  // identifies the sound for the copy limit
 static size_t channelSampleCount[CHANNEL_COUNT] = { 0 };
 static Uint8 channelVolume[CHANNEL_COUNT];
 #define CHANNEL_VOLUME_LEVELS 8
+
+int sfx_filter = SFX_FILTER_OFF;
+int sfx_copy_limit = 0;
+
+// Second-order Butterworth low-pass, transposed direct form II.
+typedef struct
+{
+	float b0, b1, b2, a1, a2;  // normalized by a0
+	float z1, z2;
+} SfxBiquad;
+
+static const float sfxFilterCutoffHz[SFX_FILTER_COUNT] = { 0.0f, 4000.0f, 2800.0f };
+
+// Owned by the audio callback, which redesigns the filter when sfx_filter changes.
+static SfxBiquad sfxBiquad;
+static int sfxBiquadFilter = -1;  // preset sfxBiquad was designed for; -1 forces a redesign
+static bool sfxBiquadActive = false;
 
 static void audioCallback(void *userdata, Uint8 *stream, int size);
 
@@ -408,6 +426,7 @@ bool init_audio(void)
 #if SDL_VERSION_ATLEAST(2, 0, 9)
 	allowedChanges |= SDL_AUDIO_ALLOW_SAMPLES_CHANGE;
 #endif
+	sfxBiquadFilter = -1;  // the granted rate may differ from the last device's
 	audioDevice = SDL_OpenAudioDevice(/*device*/ NULL, /*iscapture*/ 0, &ask, &got, allowedChanges);
 
 	if (audioDevice == 0)
@@ -485,6 +504,55 @@ bool restart_audio(void)
 	return true;
 }
 
+// RBJ cookbook low-pass with Q = 1/sqrt(2). Returns false for Off or an unusable rate.
+static bool sfxBiquadDesign(SfxBiquad *f, int filter, int sample_rate)
+{
+	if (filter <= SFX_FILTER_OFF || filter >= SFX_FILTER_COUNT || sample_rate <= 0)
+		return false;
+
+	const float w0 = 2.0f * (float)M_PI * sfxFilterCutoffHz[filter] / (float)sample_rate;
+	if (w0 >= (float)M_PI)
+		return false;
+
+	const float cosw = cosf(w0);
+	const float alpha = sinf(w0) * 0.70710678f;  // sin(w0) / (2 * Q)
+	const float a0 = 1.0f + alpha;
+
+	f->b0 = (1.0f - cosw) * 0.5f / a0;
+	f->b1 = (1.0f - cosw) / a0;
+	f->b2 = f->b0;
+	f->a1 = -2.0f * cosw / a0;
+	f->a2 = (1.0f - alpha) / a0;
+	f->z1 = f->z2 = 0.0f;
+	return true;
+}
+
+static float sfxBiquadStep(SfxBiquad *f, float x)
+{
+	const float y = f->b0 * x + f->z1;
+	f->z1 = f->b1 * x - f->a1 * y + f->z2;
+	f->z2 = f->b2 * x - f->a2 * y;
+
+	// A silent tail below 1/4096 of a sample step is inaudible; zeroing it avoids denormals.
+	if (x == 0.0f && fabsf(f->z1) < 1.0f && fabsf(f->z2) < 1.0f)
+		f->z1 = f->z2 = 0.0f;
+	return y;
+}
+
+float sfx_filter_gain(int filter, int sample_rate, bool nyquist)
+{
+	SfxBiquad f;
+	if (!sfxBiquadDesign(&f, filter, sample_rate))
+		return 1.0f;
+
+	// Run long enough to settle, then report the last output's magnitude.
+	const float amplitude = (float)TO_FIXED(INT16_MAX);
+	float y = 0.0f;
+	for (int i = 0; i < 4096; ++i)
+		y = sfxBiquadStep(&f, (nyquist && (i & 1)) ? -amplitude : amplitude);
+	return fabsf(y) / amplitude;
+}
+
 // Renders OPL music (when OPL is selected) plus the sample channels. MIDI backends
 // play on their own thread, so music stays silent here and samples still mix.
 static void audioCallback(void *userdata, Uint8 *stream, int size)
@@ -556,25 +624,35 @@ static void audioCallback(void *userdata, Uint8 *stream, int size)
 		for (int i = 0; i < CHANNEL_VOLUME_LEVELS; ++i)
 			sampleVolumeFactors[i] = sampleVolumeFactor * (i + 1) / CHANNEL_VOLUME_LEVELS;
 
+		const int filter = sfx_filter;
+		if (filter != sfxBiquadFilter)
+		{
+			sfxBiquadFilter = filter;
+			sfxBiquadActive = sfxBiquadDesign(&sfxBiquad, filter, audioSampleRate);
+		}
+
 		// Mix music and channels
 		Sint16 *remaining = samples;
 		int remainingCount = samplesCount;
 		while (remainingCount > 0)
 		{
-			Sint32 sample = *remaining * musicVolumeFactor;
+			Sint32 effects = 0;
 
 			for (size_t i = 0; i < CHANNEL_COUNT; ++i)
 			{
 				if (channelSampleCount[i] > 0)
 				{
-					sample += *channelSamples[i] * sampleVolumeFactors[channelVolume[i]];
+					effects += *channelSamples[i] * sampleVolumeFactors[channelVolume[i]];
 
 					channelSamples[i] += 1;
 					channelSampleCount[i] -= 1;
 				}
 			}
 
-			sample = FIXED_TO_INT(sample);
+			if (sfxBiquadActive)
+				effects = (Sint32)lrintf(sfxBiquadStep(&sfxBiquad, (float)effects));
+
+			Sint32 sample = FIXED_TO_INT(*remaining * musicVolumeFactor + effects);
 			*remaining = MIN(MAX(INT16_MIN, sample), INT16_MAX);
 
 			remaining += 1;
@@ -866,6 +944,15 @@ void set_music_disabled(bool disabled)
 #endif
 }
 
+// Caller holds the audio device lock.
+static void startChannel(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol)
+{
+	channelSamples[chan] = samples;
+	channelSampleStart[chan] = samples;
+	channelSampleCount[chan] = sampleCount;
+	channelVolume[chan] = vol;
+}
+
 void multiSamplePlay(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol)  // FKA Player.multiSamplePlay
 {
 	assert(chan < CHANNEL_COUNT);
@@ -875,12 +962,35 @@ void multiSamplePlay(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint
 		return;
 
 	SDL_LockAudioDevice(audioDevice);
+	startChannel(samples, sampleCount, chan, vol);
+	SDL_UnlockAudioDevice(audioDevice);
+}
 
-	channelSamples[chan] = samples;
-	channelSampleCount[chan] = sampleCount;
-	channelVolume[chan] = vol;
+bool multiSamplePlayLimited(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol)
+{
+	assert(chan < CHANNEL_COUNT);
+	assert(vol < CHANNEL_VOLUME_LEVELS);
+
+	if (audio_disabled || samples_disabled)
+		return false;
+
+	SDL_LockAudioDevice(audioDevice);
+
+	// The target channel does not count: starting there replaces whatever it plays.
+	int copies = 0;
+	for (size_t i = 0; i < CHANNEL_COUNT; ++i)
+	{
+		if (i != chan && channelSampleCount[i] > 0 && channelSampleStart[i] == samples)
+			++copies;
+	}
+
+	const bool play = sfx_copy_limit <= 0 || copies < sfx_copy_limit;
+	if (play)
+		startChannel(samples, sampleCount, chan, vol);
 
 	SDL_UnlockAudioDevice(audioDevice);
+
+	return play;
 }
 
 // Stop channels before freeing or replacing sample buffers they may still reference.

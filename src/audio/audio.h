@@ -86,7 +86,28 @@ void music_fade_out_finish(MusicFadeOut *fade);
 // presentation-side cues so playing them can never cut a queued game sound.
 #define SFX_CUE_CHANNEL 8
 
+// Setup > Sound low-pass on the mixed sound effects. Music bypasses it.
+typedef enum
+{
+	SFX_FILTER_OFF = 0,
+	SFX_FILTER_LIGHT,
+	SFX_FILTER_STRONG,
+	SFX_FILTER_COUNT
+} SfxFilter;
+
+extern int sfx_filter;  // SfxFilter
+
+// Most channels one sound effect may play on at once; 0 means no limit.
+#define SFX_COPY_LIMIT_MAX 3
+extern int sfx_copy_limit;
+
 void multiSamplePlay(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol);
+// multiSamplePlay unless sfx_copy_limit other channels already play these samples.
+// Returns whether the sound started.
+bool multiSamplePlayLimited(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol);
 void stop_sample_channels(void);
+
+// Settled gain of a filter preset for a constant (nyquist false) or alternating input. QA only.
+float sfx_filter_gain(int filter, int sample_rate, bool nyquist);
 
 #endif /* AUDIO_H */

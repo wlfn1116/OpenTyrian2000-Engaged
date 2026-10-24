@@ -483,22 +483,52 @@ int network_ping_ms(void)
 	return (int)(ping_ema + 0.5f);
 }
 
-// Answer a discovery probe with the version, the real game port, and this player's name.
-static void network_discover_answer(UDPsocket sock, const IPaddress *to)
+int network_discover_reply_write(Uint8 *data, int cap, Uint16 port)
 {
 	// network_set_player_name already clamps the stored name; the re-clamp keeps the
-	// fixed-size packet fill safe on its own terms.
+	// fixed-size fill safe on its own terms.
 	size_t name_len = strlen(network_player_name);
 	if (name_len > NET_NAME_MAX)
 		name_len = NET_NAME_MAX;
 
-	SDLNet_Write16(PACKET_DISCOVER_REPLY, &packet_out_temp->data[0]);
-	SDLNet_Write16(NET_VERSION,           &packet_out_temp->data[2]);
-	SDLNet_Write16(network_player_port,   &packet_out_temp->data[4]);
-	memcpy(&packet_out_temp->data[6], network_player_name, name_len);
-	packet_out_temp->data[6 + name_len] = '\0';
+	const int len = (int)(6 + name_len + 1);
+	if (data == NULL || cap < len)
+		return 0;
 
-	packet_out_temp->len = (int)(6 + name_len + 1);
+	SDLNet_Write16(PACKET_DISCOVER_REPLY, &data[0]);
+	SDLNet_Write16(NET_VERSION,           &data[2]);
+	SDLNet_Write16(port,                  &data[4]);
+	memcpy(&data[6], network_player_name, name_len);
+	data[6 + name_len] = '\0';
+
+	return len;
+}
+
+bool network_discover_reply_read(const Uint8 *data, int len, NetworkHostInfo *out)
+{
+	if (data == NULL || len < 6 ||
+	    SDLNet_Read16(&data[0]) != PACKET_DISCOVER_REPLY ||
+	    SDLNet_Read16(&data[2]) != NET_VERSION)
+		return false;
+
+	out->port = SDLNet_Read16(&data[4]);
+
+	// The name is whatever trails the header and may lack a terminator, so its length comes
+	// from the body.
+	int n = len - 6;
+	if (n > (int)sizeof(out->name) - 1)
+		n = (int)sizeof(out->name) - 1;
+	memcpy(out->name, &data[6], (size_t)n);
+	out->name[n] = '\0';
+
+	return true;
+}
+
+// Answer a discovery probe with the version, the real game port, and this player's name.
+static void network_discover_answer(UDPsocket sock, const IPaddress *to)
+{
+	packet_out_temp->len = network_discover_reply_write(packet_out_temp->data, NET_PACKET_SIZE,
+	                                                    network_player_port);
 	packet_out_temp->address = *to;
 
 	// Channel -1 sends to the packet's own address, which is what we want: replying must
@@ -3802,6 +3832,11 @@ void network_write_diagnostics(FILE *f)
 // backs out, when a connection attempt fails, and when a network game ends.
 void network_shutdown(void)
 {
+#ifdef PLATFORM_LOCAL_WIRELESS
+	// A local wireless network lasts exactly as long as the session it was opened for.
+	console_wireless_leave();
+#endif
+
 	if (!net_initialized)
 		return;
 
@@ -4037,23 +4072,18 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*po
 
 		if (SDLNet_UDP_Recv(sock, reply) > 0)
 		{
-			if (reply->len >= 6 &&
-			    SDLNet_Read16(&reply->data[0]) == PACKET_DISCOVER_REPLY &&
-			    SDLNet_Read16(&reply->data[2]) == NET_VERSION)
+			NetworkHostInfo info;
+			if (network_discover_reply_read(reply->data, reply->len, &info))
 			{
 				const Uint32 host = SDL_SwapBE32(reply->address.host);
-
-				char addr[48];
-				snprintf(addr, sizeof(addr), "%u.%u.%u.%u",
+				snprintf(info.address, sizeof(info.address), "%u.%u.%u.%u",
 				         (host >> 24) & 0xff, (host >> 16) & 0xff, (host >> 8) & 0xff, host & 0xff);
-
-				const Uint16 port = SDLNet_Read16(&reply->data[4]);
 
 				// The same host answers once per probe we sent it, so drop repeats.
 				bool duplicate = false;
 				for (int i = 0; i < found; ++i)
 				{
-					if (out[i].port == port && strcmp(out[i].address, addr) == 0)
+					if (out[i].port == info.port && strcmp(out[i].address, info.address) == 0)
 					{
 						duplicate = true;
 						break;
@@ -4061,28 +4091,7 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*po
 				}
 
 				if (!duplicate)
-				{
-					SDL_strlcpy(out[found].address, addr, sizeof(out[found].address));
-					out[found].port = port;
-
-					// Name is whatever trails the header; take the length from the packet
-					// rather than trusting it to be terminated.
-					const int name_len = reply->len - 6;
-					if (name_len > 0)
-					{
-						int n = name_len;
-						if (n > (int)sizeof(out[found].name) - 1)
-							n = (int)sizeof(out[found].name) - 1;
-						memcpy(out[found].name, &reply->data[6], n);
-						out[found].name[n] = '\0';
-					}
-					else
-					{
-						out[found].name[0] = '\0';
-					}
-
-					++found;
-				}
+					out[found++] = info;
 			}
 			continue;  // drain anything else already queued before sleeping again
 		}

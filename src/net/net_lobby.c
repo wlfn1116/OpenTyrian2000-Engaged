@@ -52,6 +52,10 @@
 
 static char lobby_status[64];  // transient one-line feedback under the menu
 
+// The session being started runs on a console's local wireless network, which has no address
+// worth reading out.
+static bool lobby_wireless = false;
+
 static const int lobby_difficulties[] =
 {
 	DIFFICULTY_EASY,
@@ -698,28 +702,25 @@ static void lobbyDiscoverPoll(void)
 		limit_render_fps();
 }
 
-// Probe the LAN and let the player pick from what answered.  Returns the chosen host, or NULL
-// if nothing was found or the player backed out.  The returned pointer is into `hosts`.
-static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_count)
+// Show a "searching" frame over a fresh backdrop. The probe that follows blocks, so this frame
+// is what the player sees until it returns.
+static void lobbyShowSearching(const char *title, const char *text)
 {
-	// Draw the "searching" frame first: the probe blocks for its whole timeout,
-	// re-presented with a live cursor from lobbyDiscoverPoll.
-	lobbyPrepareBackdrop("Find LAN Games");
+	lobbyPrepareBackdrop(title);
 	lobbyRestoreBackdrop();
-	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 90, "Searching the local network...",
+	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 90, text,
 	                    normal_font, centered, 15, -2, false, 2);
 	mouseCursor = MOUSE_POINTER_NORMAL;
 	JE_mouseStart();
 	JE_showVGA();
 	JE_mouseReplace();
 	fade_palette(colors, 10, 0, 255);
+}
 
-	const int count = network_discover(hosts, LOBBY_MAX_FOUND, 1500, lobbyDiscoverPoll);
-	*out_count = count;
-
-	if (count == 0)
-		return NULL;
-
+// Let the player pick one of up to LOBBY_MAX_FOUND centred rows drawn over the current backdrop.
+// Returns the row's index, or -1 when the player backs out.
+static int lobbyPickRow(const char *const *rows, int count, const char *footer)
+{
 	size_t selectedIndex = 0;
 	int wItem[LOBBY_MAX_FOUND] = { 0 };
 
@@ -727,32 +728,29 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 	const int dyItems = 18;
 	const int hItem = 13;
 
+	if (count > LOBBY_MAX_FOUND)
+		count = LOBBY_MAX_FOUND;
+
 	for (;;)
 	{
 		lobbyRestoreBackdrop();
 
 		for (int i = 0; i < count; ++i)
 		{
-			char line[80];
-			if (hosts[i].name[0])
-				snprintf(line, sizeof(line), "%s  -  %s:%u", hosts[i].name, hosts[i].address, hosts[i].port);
-			else
-				snprintf(line, sizeof(line), "%s:%u", hosts[i].address, hosts[i].port);
-
-			wItem[i] = JE_textWidth(line, normal_font);
+			wItem[i] = JE_textWidth(rows[i], normal_font);
 			const int x = LOBBY_XCENTER - wItem[i] / 2;
 			const int y = yItems + dyItems * i;
 
-			draw_font_hv_shadow(VGAScreen, x, y, line, normal_font, left_aligned, 15,
+			draw_font_hv_shadow(VGAScreen, x, y, rows[i], normal_font, left_aligned, 15,
 			                    -4 + ((size_t)i == selectedIndex ? 2 : 0), false, 2);
 		}
 
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 180, "Enter to join, Esc to go back",
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 180, footer,
 		                    normal_font, centered, 15, -5, false, 2);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
-		// Do not let the press that started discovery select the first result.
+		// Do not let the press that opened the list select its first row.
 		service_SDL_events(true);
 
 		JE_mouseStart();
@@ -791,7 +789,7 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 			if (lastmouse_but == SDL_BUTTON_RIGHT)
 			{
 				JE_playSampleNum(S_SPRING);
-				return NULL;
+				return -1;
 			}
 		}
 		else if (newkey)
@@ -816,7 +814,7 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 
 			case SDL_SCANCODE_ESCAPE:
 				JE_playSampleNum(S_SPRING);
-				return NULL;
+				return -1;
 
 			default:
 				break;
@@ -827,9 +825,38 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 		{
 			JE_playSampleNum(S_SELECT);
 			newkey = newmouse = false;
-			return &hosts[selectedIndex];
+			return (int)selectedIndex;
 		}
 	}
+}
+
+// Probe the LAN and let the player pick from what answered.  Returns the chosen host, or NULL
+// if nothing was found or the player backed out.  The returned pointer is into `hosts`.
+static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_count)
+{
+	// The probe blocks for its whole timeout, re-presented with a live cursor by lobbyDiscoverPoll.
+	lobbyShowSearching("Find LAN Games", "Searching the local network...");
+
+	const int count = network_discover(hosts, LOBBY_MAX_FOUND, 1500, lobbyDiscoverPoll);
+	*out_count = count;
+
+	if (count == 0)
+		return NULL;
+
+	char lines[LOBBY_MAX_FOUND][80];
+	const char *rows[LOBBY_MAX_FOUND];
+	for (int i = 0; i < count; ++i)
+	{
+		if (hosts[i].name[0])
+			snprintf(lines[i], sizeof(lines[i]), "%s  -  %s:%u",
+			         hosts[i].name, hosts[i].address, hosts[i].port);
+		else
+			snprintf(lines[i], sizeof(lines[i]), "%s:%u", hosts[i].address, hosts[i].port);
+		rows[i] = lines[i];
+	}
+
+	const int pick = lobbyPickRow(rows, count, "Enter to join, Esc to go back");
+	return pick >= 0 ? &hosts[pick] : NULL;
 }
 
 // Collect host settings before listening. Returns true with the port and player slot applied, or
@@ -1332,7 +1359,7 @@ static bool lobbyStartSession(bool as_host)
 	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 70,
 	                    as_host ? "Waiting for a player to join..." : "Connecting...",
 	                    normal_font, centered, 15, -2, false, 2);
-	if (as_host)
+	if (as_host && !lobby_wireless)
 		lobbyDrawLocalAddresses(100);
 	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160, "Esc to cancel", normal_font, centered, 15, -5, false, 2);
 	JE_showVGA();
@@ -1347,6 +1374,107 @@ static bool lobbyStartSession(bool as_host)
 	return true;
 }
 
+#ifdef PLATFORM_LOCAL_WIRELESS
+// Open a local wireless network for the game the host menu set up, then wait on it as usual.
+// Every failure path ends in network_shutdown or an explicit leave, which closes the network.
+static bool lobbyHostWireless(char *port_buf, size_t port_buf_size)
+{
+	if (!lobbyHostMenu(port_buf, port_buf_size))
+		return false;
+
+	Uint8 advert[32];
+	const int len = network_discover_reply_write(advert, (int)sizeof(advert), network_player_port);
+	if (len <= 0 || !console_wireless_host(network_player_name, advert, (size_t)len))
+	{
+		console_wireless_leave();
+		SDL_strlcpy(lobby_status, "Local wireless is unavailable.", sizeof(lobby_status));
+		return false;
+	}
+
+	lobby_wireless = true;
+	const bool started = lobbyStartSession(true);
+	lobby_wireless = false;
+	return started;
+}
+
+// Scan for local wireless games, join the one the player picks, and connect to its host.
+static bool lobbyJoinWireless(void)
+{
+	lobbyShowSearching("Local Wireless", "Searching for local games...");
+
+	NetworkHostInfo hosts[LOBBY_MAX_FOUND];
+	const char *rows[LOBBY_MAX_FOUND];
+	int gameIndex[LOBBY_MAX_FOUND];
+	int count = 0;
+
+	const int found = console_wireless_scan();
+	for (int i = 0; i < found && count < LOBBY_MAX_FOUND; ++i)
+	{
+		// A host on another NET_VERSION does not parse; LAN discovery skips it the same way.
+		const uint8_t *advert;
+		size_t advert_len;
+		if (!console_wireless_game(i, &advert, &advert_len) ||
+		    !network_discover_reply_read(advert, (int)advert_len, &hosts[count]))
+			continue;
+
+		if (hosts[count].name[0] == '\0')
+			SDL_strlcpy(hosts[count].name, "Unnamed host", sizeof(hosts[count].name));
+		rows[count] = hosts[count].name;
+		gameIndex[count] = i;
+		++count;
+	}
+
+	if (count == 0)
+	{
+		console_wireless_leave();
+		SDL_strlcpy(lobby_status, "No local games found.", sizeof(lobby_status));
+		return false;
+	}
+
+	const int pick = lobbyPickRow(rows, count, "Enter to join, Esc to go back");
+	uint32_t host = 0;
+	if (pick < 0 || !console_wireless_join(gameIndex[pick], network_player_name, &host))
+	{
+		console_wireless_leave();
+		if (pick >= 0)
+			SDL_strlcpy(lobby_status, "Could not join that game.", sizeof(lobby_status));
+		return false;
+	}
+
+	char address[48];
+	snprintf(address, sizeof(address), "%u.%u.%u.%u",
+	         (unsigned)(host >> 24) & 0xff, (unsigned)(host >> 16) & 0xff,
+	         (unsigned)(host >> 8) & 0xff, (unsigned)host & 0xff);
+	free(network_opponent_host);
+	network_opponent_host = malloc_die(strlen(address) + 1);
+	strcpy(network_opponent_host, address);
+	network_opponent_port = hosts[pick].port;
+	network_player_port = 0;  // any free port, as for every joiner
+
+	lobby_wireless = true;
+	const bool started = lobbyStartSession(false);
+	lobby_wireless = false;
+	return started;
+}
+
+static bool lobbyWirelessMenu(char *port_buf, size_t port_buf_size)
+{
+	static const char *const rows[] = { "Host a Local Game", "Find Local Games" };
+
+	lobbyPrepareBackdrop("Local Wireless");
+
+	switch (lobbyPickRow(rows, (int)COUNTOF(rows), "Enter to choose, Esc to go back"))
+	{
+	case 0:
+		return lobbyHostWireless(port_buf, port_buf_size);
+	case 1:
+		return lobbyJoinWireless();
+	default:
+		return false;
+	}
+}
+#endif
+
 bool networkLobby(void)
 {
 	enum
@@ -1354,6 +1482,9 @@ bool networkLobby(void)
 		ITEM_HOST = 0,
 		ITEM_JOIN,
 		ITEM_FIND,
+#ifdef PLATFORM_LOCAL_WIRELESS
+		ITEM_WIRELESS,
+#endif
 		ITEM_NAME,
 		ITEM_BACK,
 		ITEM_COUNT,
@@ -1388,8 +1519,9 @@ bool networkLobby(void)
 	size_t selectedIndex = ITEM_HOST;
 	int wMenuItem[ITEM_COUNT] = { 0 };
 
-	const int yMenuItems = 60;
-	const int dyMenuItems = 24;
+	// A sixth row needs the tighter pitch to keep Back above the status line at y=183.
+	const int yMenuItems = ITEM_COUNT > 5 ? 56 : 60;
+	const int dyMenuItems = ITEM_COUNT > 5 ? 20 : 24;
 	const int hMenuItem = 13;
 	const int yGapAfterJoin = 12;  // visually separates the connect actions from the settings below
 
@@ -1411,6 +1543,9 @@ bool networkLobby(void)
 		items[ITEM_HOST] = "Host Game";
 		items[ITEM_FIND] = "Find LAN Games";
 		items[ITEM_JOIN] = "Join by IP Address";
+#ifdef PLATFORM_LOCAL_WIRELESS
+		items[ITEM_WIRELESS] = "Local Wireless";
+#endif
 		items[ITEM_NAME] = nameItem;
 		items[ITEM_BACK] = "Back";
 
@@ -1639,6 +1774,14 @@ bool networkLobby(void)
 				return true;
 			break;
 		}
+
+#ifdef PLATFORM_LOCAL_WIRELESS
+		case ITEM_WIRELESS:
+			JE_playSampleNum(S_SELECT);
+			if (lobbyWirelessMenu(port_buf, sizeof(port_buf)))
+				return true;
+			break;
+#endif
 
 		case ITEM_NAME:
 			JE_playSampleNum(S_SELECT);

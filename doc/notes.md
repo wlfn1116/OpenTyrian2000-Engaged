@@ -898,6 +898,16 @@ port 1332 is unavailable.
 On platforms with `getifaddrs`, advertise only active broadcast-capable IPv4
 interfaces that are neither loopback nor point-to-point.
 
+### Switch local wireless
+
+`switch_ldn.c` creates or joins an LDN network and the ordinary UDP session then
+runs over it. The network advertises a discovery reply body
+(`network_discover_reply_write`), so version filtering matches LAN discovery.
+`network_shutdown` leaves the network first, which ties its lifetime to the
+session on every exit path, including a failed `network_init`. LDN takes its
+network id from the launching title's NACP, so both consoles must launch the
+homebrew the same way. The network seats two nodes.
+
 ## Ships, weapons, and item data
 
 ### Extra ships
@@ -996,6 +1006,39 @@ wheel. Do not add `arp_tab[0]` on the MIDI path.
 
 Release active notes at song and loop boundaries. Events scheduled beyond the
 boundary never run on repeat.
+
+The Setup > Sound filter and same-sound limit act at playback, after the
+simulation has queued its sounds. Enemy fire picks its `soundQueue` slot with
+`mt_rand()`, so a limit applied at queue time would shift the RNG stream. The
+filter runs on the summed effects in the mixer's Q20.12 units, leaves the output
+bit-identical when Off, and is redesigned whenever the device rate changes.
+
+Rumble is presentation. `JE_playerDamage` pulses only when `!rollback_resim`,
+keys hull hits off `cmHullHit` so the infinite-armor cheat still rumbles, and
+routes through the ship's input device the way `JE_playerMovement` reads it.
+Demo playback and the remote seat of an online game never rumble.
+
+Explosions add `EXPLOSION_RUMBLE_*` energy as they spawn: every
+`JE_setupExplosionLarge`, plus the small enemy deaths and sequence pops that
+call `JE_setupExplosion` directly. The game loop spends the sum once per tick
+after the sound queue, with the same live-pass gate, and rumbles every local
+pad.
+
+Controllers stay on the raw joystick API with joystick events ignored, so
+nothing else runs SDL's device detection. `joystick_service` (from
+`service_SDL_events`) rescans once a second and keeps calling
+`SDL_JoystickUpdate` until the last rumble has ended, the only place SDL stops a
+timed one. Slots never move or shrink: an unplugged pad keeps its slot, index
+and bindings, its live input is cleared, and a device with the same GUID takes
+it back. Switch and Vita keep their startup list.
+
+`reset_joystick_assignments` takes defaults from SDL's controller database when
+it knows the pad; `SDL_INIT_GAMECONTROLLER` exists only for that. SDL2 binds
+give no axis half, so stick and d-pad directions read up and left as negative.
+The PS4/PS5 rumble hints are set before any pad opens because those drivers
+report rumble capability only in extended mode, and the Rumble row is shown by
+`joystick_can_rumble`. Android needs the `VIBRATE` permission for gamepad
+motors, and the mobile accelerometers are kept out of the joystick list.
 
 Logs are created lazily under `log/`. Network reports keep unsymbolized RVAs to
 avoid blocking the game loop; crash and hang reports may symbolize. Console log

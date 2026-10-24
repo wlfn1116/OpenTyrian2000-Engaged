@@ -4466,6 +4466,7 @@ draw_player_shot_loop_end:
 			else
 			{
 				JE_setupExplosion(tempX, tempY, 0, 1, false, false);
+				explosion_rumble_add(EXPLOSION_RUMBLE_POP);
 
 				soundQueue[5] = S_EXPLOSION_4;
 
@@ -4703,12 +4704,18 @@ draw_player_shot_loop_end:
 
 				// Silent replay mutates scratch state but does not replay sounds.
 				if (!rollback_resim)
-					multiSamplePlay(soundSamples[temp-1], soundSampleCount[temp-1], temp2, temp3);
+					multiSamplePlayLimited(soundSamples[temp-1], soundSampleCount[temp-1],
+					                       temp2, temp3);
 
 				soundQueue[temp2] = S_NONE;
 			}
 		}
 	}
+
+	// Every blast of the tick feeds one rumble pulse, so a busier tick rumbles harder.
+	const float blastEnergy = explosion_rumble_take();
+	if (blastEnergy > 0.0f && !rollback_resim && !play_demo)
+		joystick_rumble(0, MIN(blastEnergy, 1.0f), MIN(blastEnergy * 0.5f, 1.0f), 120);
 
 	if (returnActive && enemyOnScreen == 0)
 	{

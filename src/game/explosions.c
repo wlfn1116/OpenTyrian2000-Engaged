@@ -37,6 +37,20 @@ Uint8 explosion_opacity(uint slot)
 /*Repeating Explosions*/
 rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
 
+static float explosionRumble;
+
+void explosion_rumble_add(float energy)
+{
+	explosionRumble += energy;
+}
+
+float explosion_rumble_take(void)
+{
+	const float energy = explosionRumble;
+	explosionRumble = 0.0f;
+	return energy;
+}
+
 void JE_setupExplosion(
 	JE_integer x,
 	JE_integer y,
@@ -140,6 +154,8 @@ void JE_setupExplosionLarge(JE_boolean enemyGround, JE_byte exploNum, JE_integer
 {
 	if (y >= 0)
 	{
+		explosion_rumble_add(exploNum > 10 ? EXPLOSION_RUMBLE_BIG : EXPLOSION_RUMBLE_LARGE);
+
 		if (enemyGround)
 		{
 			JE_setupExplosion(x - 6, y - 14, 0,  2, false, false);

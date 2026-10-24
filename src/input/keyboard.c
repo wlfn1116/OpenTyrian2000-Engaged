@@ -260,6 +260,8 @@ void service_SDL_events(JE_boolean clear_new)
 	if (rollback_resim)
 		return;
 
+	joystick_service();
+
 	// Repaint input-wait screens after fullscreen, scaler, or dock changes. This is
 	// otherwise only a size query.
 	video_repaint_if_stale(false);

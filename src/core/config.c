@@ -27,6 +27,7 @@
 #include "file.h"
 #include "game_state.h"
 #include "helptext.h"      // DESTRUCT_MODES bounds the persisted battle mode
+#include "joystick.h"
 #include "keyboard.h"
 #include "net_rollback.h"
 #include "network.h"
@@ -769,6 +770,17 @@ static bool load_opentyrian_config(void)
 
 		load_int_flag(section, "armor_alarm", &armorAlarm);
 		load_int_flag(section, "link_sounds", &linkSounds);
+
+		config_get_int_option(section, "sfx_filter", &sfx_filter);
+		if (sfx_filter < SFX_FILTER_OFF || sfx_filter >= SFX_FILTER_COUNT)
+			sfx_filter = SFX_FILTER_OFF;
+		config_get_int_option(section, "sfx_copy_limit", &sfx_copy_limit);
+		if (sfx_copy_limit < 0 || sfx_copy_limit > SFX_COPY_LIMIT_MAX)
+			sfx_copy_limit = 0;
+		config_get_int_option(section, "rumble", &rumble_strength);
+		if (rumble_strength < RUMBLE_OFF || rumble_strength >= RUMBLE_COUNT)
+			rumble_strength = RUMBLE_OFF;
+
 		load_int_flag(section, "debug_mode", &debugMode);
 
 		int hang_timeout = crashlog_get_hang_timeout();
@@ -1116,6 +1128,9 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "boss_bar_two_mode", bossBarTwoMode);
 	config_set_int_option(section, "armor_alarm", armorAlarm ? 1 : 0);
 	config_set_int_option(section, "link_sounds", linkSounds ? 1 : 0);
+	config_set_int_option(section, "sfx_filter", sfx_filter);
+	config_set_int_option(section, "sfx_copy_limit", sfx_copy_limit);
+	config_set_int_option(section, "rumble", rumble_strength);
 	config_set_int_option(section, "debug_mode", debugMode ? 1 : 0);
 	config_set_int_option(section, "hang_timeout", crashlog_get_hang_timeout());
 	config_set_int_option(section, "net_log", crashlog_get_netlog_enabled() ? 1 : 0);

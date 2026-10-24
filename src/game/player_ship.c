@@ -3363,6 +3363,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 									else
 									{
 										JE_setupExplosion(enemy_screen_x, enemy[temp2].ey, 0, 1, false, false);
+										explosion_rumble_add(EXPLOSION_RUMBLE_SMALL);
 										soundQueue[5] = S_EXPLOSION_4;
 									}
 									explosionFilter = 0;
@@ -3523,6 +3524,18 @@ static void shield_hit_ring(const Player *this_player)
 	JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
 }
 
+// Rumble the controllers steering this ship, with the same device routing as JE_playerMovement.
+// Demos and the remote seat of an online game have no controller here.
+static void ship_rumble(const Player *this_player, float low, float high, Uint32 duration_ms)
+{
+	const uint seat = (uint)(this_player - &player[0]);
+	if (play_demo || (isNetworkGame && seat + 1 != thisPlayerNum))
+		return;
+
+	const bool ownDevice = twoPlayerMode && !isNetworkGame && !galagaMode;
+	joystick_rumble(ownDevice ? inputDevice[seat] : 0, low, high, duration_ms);
+}
+
 JE_byte JE_playerDamage(JE_byte temp,
                         Player *this_player)
 {
@@ -3534,6 +3547,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 	const int oldShield = this_player->shield;
 	const int oldArmor  = this_player->armor;
+	const bool wasAlive = this_player->is_alive;
 
 	if (cheatInfiniteShields)
 		return 0;
@@ -3639,6 +3653,17 @@ JE_byte JE_playerDamage(JE_byte temp,
 		shieldGaugeFlash[gi] = GAUGE_FLASH_START;
 	if (!rollback_resim && gaugeFlashArmor && this_player->armor < oldArmor)
 		armorGaugeFlash[gi] = GAUGE_FLASH_START;
+
+	// cmHullHit still marks a hull hit when the infinite-armor cheat keeps armor from dropping.
+	if (!rollback_resim)
+	{
+		if (wasAlive && !this_player->is_alive)
+			ship_rumble(this_player, 1.0f, 0.6f, 600);
+		else if (cmHullHit)
+			ship_rumble(this_player, 0.55f, 0.35f, 220);
+		else if (this_player->shield < oldShield)
+			ship_rumble(this_player, 0.25f, 0.15f, 120);
+	}
 
 	/* Kinetic Converter's generator share needs shield absorption; its other effects need any hit. */
 	if (endlessFxShip(this_player) && (this_player->shield < oldShield || cmHullHit))

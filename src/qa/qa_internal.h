@@ -70,6 +70,8 @@ void qa_test_knife_fight_blood(void);
 
 void qa_test_item_data_settings(void);
 void qa_test_firing_sound_levels(void);
+void qa_test_sfx_filter(void);
+void qa_test_controller_hotplug(void);
 #ifdef WITH_MIDI
 void qa_test_lds_midi_detune(void);
 #endif
@@ -80,6 +82,7 @@ void qa_test_online_ship_style(void);
 void qa_test_partner_hp_bars(void);
 void qa_test_network_settings(void);
 void qa_test_network_endless_lobby(void);
+void qa_test_discover_reply(void);
 void qa_test_endless_coop(void);
 void qa_test_coop_combo_and_pickups(void);
 void qa_test_peer_left_level(void);

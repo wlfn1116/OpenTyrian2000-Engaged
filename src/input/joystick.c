@@ -47,6 +47,19 @@ bool ignore_joystick = false;
 int joysticks = 0;
 Joystick *joystick = NULL;
 
+int rumble_strength = RUMBLE_OFF;
+
+// Desktop and mobile pads come and go. The consoles keep their startup list: switch-sdl2 always
+// lists eight slots with only the first one real.
+#if !defined(__SWITCH__) && !defined(__vita__)
+#define JOYSTICK_HOTPLUG 1
+#define JOYSTICK_SLOTS_MAX 16
+static bool pad_database = false;  // SDL_INIT_GAMECONTROLLER is up, for default bindings
+#endif
+
+static bool joysticks_ready = false;
+static Uint32 rumble_update_until = 0;  // SDL_GetTicks until which SDL_JoystickUpdate keeps running
+
 static const int joystick_analog_max = 32767;
 
 static bool load_joystick_assignments(Config *config, int j);
@@ -291,15 +304,60 @@ void push_joysticks_as_keyboard(void)
 	}
 }
 
+// Open SDL device `index` into slot j with its saved bindings, or defaults for a new device.
+static void joystick_open(int j, int index)
+{
+	memset(&joystick[j], 0, sizeof(*joystick));
+	joystick[j].guid = SDL_JoystickGetDeviceGUID(index);
+
+	joystick[j].handle = SDL_JoystickOpen(index);
+	if (joystick[j].handle == NULL)
+		return;
+
+	printf("joystick detected: %s ", SDL_JoystickName(joystick[j].handle));
+	printf("(%d axes, %d buttons, %d hats)\n",
+	       SDL_JoystickNumAxes(joystick[j].handle),
+	       SDL_JoystickNumButtons(joystick[j].handle),
+	       SDL_JoystickNumHats(joystick[j].handle));
+
+#if defined(__SWITCH__) || defined(__vita__)
+	// There is no visible stdout on the consoles; mirror the controller capabilities
+	// to a file in the user dir so mapping problems can be diagnosed. Harmless anywhere.
+	{
+		FILE *jl = dir_fopen(get_user_directory(), "joystick_info.txt", j == 0 ? "w" : "a");
+		if (jl)
+		{
+			fprintf(jl, "joystick %d: %s (%d axes, %d buttons, %d hats)\n",
+			        j, SDL_JoystickName(joystick[j].handle),
+			        SDL_JoystickNumAxes(joystick[j].handle),
+			        SDL_JoystickNumButtons(joystick[j].handle),
+			        SDL_JoystickNumHats(joystick[j].handle));
+			fclose(jl);
+		}
+	}
+#endif
+
+	if (!load_joystick_assignments(&opentyrian_config, j))
+		reset_joystick_assignments(j);
+}
+
 // initializes SDL joystick system and loads assignments for joysticks found
 void init_joysticks(void)
 {
 	if (ignore_joystick)
 		return;
-	
-#ifdef __ANDROID__
+
+#if defined(__ANDROID__) || defined(TARGET_IOS)
 	// Ignore mobile accelerometers so the default axis mapping does not steer menus by tilt.
 	SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+#endif
+	// Bluetooth PS4 and PS5 pads rumble, and report that they can, only in an extended report
+	// mode SDL leaves off by default. The pad keeps it until it is switched off.
+#ifdef SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE
+	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
+#endif
+#ifdef SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE
+	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
 #endif
 
 	if (SDL_InitSubSystem(SDL_INIT_JOYSTICK))
@@ -308,9 +366,16 @@ void init_joysticks(void)
 		ignore_joystick = true;
 		return;
 	}
-	
+
+#ifdef JOYSTICK_HOTPLUG
+	// The controller database only supplies default bindings; input stays on the joystick API.
+	pad_database = SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) == 0;
+	if (pad_database)
+		SDL_GameControllerEventState(SDL_IGNORE);
+#endif
+
 	SDL_JoystickEventState(SDL_IGNORE);
-	
+
 	joysticks = SDL_NumJoysticks();
 
 #ifdef __SWITCH__
@@ -323,42 +388,176 @@ void init_joysticks(void)
 	joystick = malloc_die(joysticks * sizeof(*joystick));
 
 	for (int j = 0; j < joysticks; j++)
-	{
-		memset(&joystick[j], 0, sizeof(*joystick));
-		
-		joystick[j].handle = SDL_JoystickOpen(j);
-		if (joystick[j].handle != NULL)
-		{
-			printf("joystick detected: %s ", SDL_JoystickName(joystick[j].handle));
-			printf("(%d axes, %d buttons, %d hats)\n",
-			       SDL_JoystickNumAxes(joystick[j].handle),
-			       SDL_JoystickNumButtons(joystick[j].handle),
-			       SDL_JoystickNumHats(joystick[j].handle));
+		joystick_open(j, j);
 
-#if defined(__SWITCH__) || defined(__vita__)
-			// There is no visible stdout on the consoles; mirror the controller capabilities
-			// to a file in the user dir so mapping problems can be diagnosed. Harmless anywhere.
-			{
-				FILE *jl = dir_fopen(get_user_directory(), "joystick_info.txt", j == 0 ? "w" : "a");
-				if (jl)
-				{
-					fprintf(jl, "joystick %d: %s (%d axes, %d buttons, %d hats)\n",
-					        j, SDL_JoystickName(joystick[j].handle),
-					        SDL_JoystickNumAxes(joystick[j].handle),
-					        SDL_JoystickNumButtons(joystick[j].handle),
-					        SDL_JoystickNumHats(joystick[j].handle));
-					fclose(jl);
-				}
-			}
-#endif
+	joysticks_ready = true;
 
-			if (!load_joystick_assignments(&opentyrian_config, j))
-				reset_joystick_assignments(j);
-		}
-	}
-	
 	if (joysticks == 0)
 		printf("no joysticks detected\n");
+}
+
+static Uint16 rumble_motor(float level, float scale)
+{
+	return (Uint16)(MIN(MAX(level * scale, 0.0f), 1.0f) * 0xFFFF);
+}
+
+void joystick_rumble(int device, float low, float high, Uint32 duration_ms)
+{
+#if SDL_VERSION_ATLEAST(2, 0, 9)
+	if (rumble_strength <= RUMBLE_OFF || rumble_strength >= RUMBLE_COUNT)
+		return;
+	if (device == 1 || device == 2)  // keyboard, mouse
+		return;
+
+	const float scale = rumble_strength == RUMBLE_LIGHT ? 0.5f : 1.0f;
+	const Uint16 lo = rumble_motor(low, scale);
+	const Uint16 hi = rumble_motor(high, scale);
+	const Uint16 level = MAX(lo, hi);
+	const Uint32 now = SDL_GetTicks();
+
+	const int first = device == 0 ? 0 : device - 3;
+	const int last = device == 0 ? joysticks : MIN(device - 2, joysticks);
+	for (int j = first; j < last; ++j)
+	{
+		Joystick *const js = &joystick[j];
+		if (js->handle == NULL)
+			continue;
+		if (!SDL_TICKS_PASSED(now, js->rumble_until) && level < js->rumble_level)
+			continue;
+
+		if (SDL_JoystickRumble(js->handle, lo, hi, duration_ms) == 0)
+		{
+			js->rumble_until = now + duration_ms;
+			js->rumble_level = level;
+
+			const Uint32 stop_by = js->rumble_until + 100;
+			if (rumble_update_until == 0 || SDL_TICKS_PASSED(stop_by, rumble_update_until))
+				rumble_update_until = stop_by;
+		}
+	}
+#else
+	(void)device; (void)low; (void)high; (void)duration_ms;
+#endif
+}
+
+bool joystick_can_rumble(void)
+{
+	for (int j = 0; j < joysticks; j++)
+	{
+		if (joystick[j].handle == NULL)
+			continue;
+#if defined(__SWITCH__)
+		return true;  // every controller the system hands the game has HD rumble
+#elif SDL_VERSION_ATLEAST(2, 0, 18)
+		if (SDL_JoystickHasRumble(joystick[j].handle))
+			return true;
+#else
+		return true;  // no capability query before SDL 2.0.18
+#endif
+	}
+	return false;
+}
+
+#ifdef JOYSTICK_HOTPLUG
+static bool joystick_instance_open(SDL_JoystickID id)
+{
+	for (int j = 0; j < joysticks; j++)
+		if (joystick[j].handle != NULL && SDL_JoystickInstanceID(joystick[j].handle) == id)
+			return true;
+	return false;
+}
+
+// A device takes back the closed slot it last had, so its player and bindings survive a
+// reconnect. Slots never move or shrink.
+static int joystick_slot_for(SDL_JoystickGUID guid)
+{
+	for (int j = 0; j < joysticks; j++)
+		if (joystick[j].handle == NULL && memcmp(&joystick[j].guid, &guid, sizeof(guid)) == 0)
+			return j;
+
+	if (joysticks >= JOYSTICK_SLOTS_MAX)
+		return -1;
+
+	Joystick *const grown = realloc(joystick, (size_t)(joysticks + 1) * sizeof(*joystick));
+	if (grown == NULL)
+		return -1;
+	joystick = grown;
+	memset(&joystick[joysticks], 0, sizeof(*joystick));
+	return joysticks++;
+}
+
+static void joystick_hotplug(void)
+{
+	for (int j = 0; j < joysticks; j++)
+	{
+		if (joystick[j].handle == NULL || SDL_JoystickGetAttached(joystick[j].handle))
+			continue;
+
+		// Keep the bindings for a reconnect, and drop live input so nothing stays held.
+		save_joystick_assignments(&opentyrian_config, j);
+		SDL_JoystickClose(joystick[j].handle);
+
+		Joystick *const js = &joystick[j];
+		js->handle = NULL;
+		js->x = js->y = 0;
+		memset(js->analog_direction, 0, sizeof(js->analog_direction));
+		memset(js->direction, 0, sizeof(js->direction));
+		memset(js->direction_pressed, 0, sizeof(js->direction_pressed));
+		memset(js->action, 0, sizeof(js->action));
+		memset(js->action_pressed, 0, sizeof(js->action_pressed));
+		js->confirm = js->cancel = js->input_pressed = false;
+		js->rumble_until = 0;
+		js->rumble_level = 0;
+	}
+
+	for (int index = 0; index < SDL_NumJoysticks(); index++)
+	{
+		const SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(index);
+		if (id < 0 || joystick_instance_open(id))
+			continue;
+
+		const int j = joystick_slot_for(SDL_JoystickGetDeviceGUID(index));
+		if (j < 0)
+			break;
+		joystick_open(j, index);
+	}
+}
+#endif
+
+void joystick_rescan(void)
+{
+#ifdef JOYSTICK_HOTPLUG
+	if (!joysticks_ready)
+		return;
+
+	// Joystick events are ignored, so nothing else runs SDL's device detection.
+	SDL_JoystickUpdate();
+	joystick_hotplug();
+#endif
+}
+
+void joystick_service(void)
+{
+	if (!joysticks_ready)
+		return;
+
+	const Uint32 now = SDL_GetTicks();
+
+	static Uint32 next_scan = 0;
+	if (SDL_TICKS_PASSED(now, next_scan))
+	{
+		next_scan = now + 1000;
+		joystick_rescan();
+	}
+
+	// SDL ends a timed rumble only inside SDL_JoystickUpdate, which screens without a
+	// controller poll never call.
+	if (rumble_update_until != 0)
+	{
+		SDL_JoystickUpdate();
+		if (SDL_TICKS_PASSED(now, rumble_update_until))
+			rumble_update_until = 0;
+	}
 }
 
 // deinitializes SDL joystick system and saves joystick assignments
@@ -366,7 +565,7 @@ void deinit_joysticks(void)
 {
 	if (ignore_joystick)
 		return;
-	
+
 	for (int j = 0; j < joysticks; j++)
 	{
 		if (joystick[j].handle != NULL)
@@ -375,18 +574,126 @@ void deinit_joysticks(void)
 			SDL_JoystickClose(joystick[j].handle);
 		}
 	}
-	
+
 	free(joystick);
 	joystick = NULL;
 	joysticks = 0;
+	joysticks_ready = false;
+	rumble_update_until = 0;
 
+#ifdef JOYSTICK_HOTPLUG
+	if (pad_database)
+		SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+	pad_database = false;
+#endif
 	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
 }
+
+#ifdef JOYSTICK_HOTPLUG
+// One controller-database binding as an assignment. SDL2 does not say which half of an axis a
+// binding uses, so directions read up and left as the negative half.
+static void pad_assignment(SDL_GameControllerButtonBind bind, bool negative,
+                           Joystick_assignment *out)
+{
+	switch (bind.bindType)
+	{
+	case SDL_CONTROLLER_BINDTYPE_BUTTON:
+		out->type = BUTTON;
+		out->num = bind.value.button;
+		break;
+	case SDL_CONTROLLER_BINDTYPE_AXIS:
+		out->type = AXIS;
+		out->num = bind.value.axis;
+		out->negative_axis = negative;
+		break;
+	case SDL_CONTROLLER_BINDTYPE_HAT:
+		out->type = HAT;
+		out->num = bind.value.hat.hat;
+		out->x_axis = (bind.value.hat.hat_mask & (SDL_HAT_LEFT | SDL_HAT_RIGHT)) != 0;
+		out->negative_axis = (bind.value.hat.hat_mask & (SDL_HAT_LEFT | SDL_HAT_UP)) != 0;
+		break;
+	default:
+		break;
+	}
+}
+
+// Bind a pad SDL's controller database knows by its button labels; the left stick and d-pad
+// steer. Returns false, changing nothing, for a pad the database does not know.
+static bool pad_default_assignments(int j)
+{
+	static const SDL_GameControllerButton dpad[4] = {
+		SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
+		SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+	};
+	static const SDL_GameControllerButton actions[6][2] = {
+		{ SDL_CONTROLLER_BUTTON_A,     SDL_CONTROLLER_BUTTON_INVALID },        // fire
+		{ SDL_CONTROLLER_BUTTON_B,     SDL_CONTROLLER_BUTTON_INVALID },        // change fire
+		{ SDL_CONTROLLER_BUTTON_X,     SDL_CONTROLLER_BUTTON_LEFTSHOULDER },   // left sidekick
+		{ SDL_CONTROLLER_BUTTON_Y,     SDL_CONTROLLER_BUTTON_RIGHTSHOULDER },  // right sidekick
+		{ SDL_CONTROLLER_BUTTON_START, SDL_CONTROLLER_BUTTON_INVALID },        // menu
+		{ SDL_CONTROLLER_BUTTON_BACK,  SDL_CONTROLLER_BUTTON_INVALID },        // pause
+	};
+
+	if (!pad_database)
+		return false;
+
+	int index = -1;
+	const SDL_JoystickID id = SDL_JoystickInstanceID(joystick[j].handle);
+	for (int d = 0; d < SDL_NumJoysticks() && index < 0; d++)
+		if (SDL_JoystickGetDeviceInstanceID(d) == id)
+			index = d;
+	if (index < 0 || !SDL_IsGameController(index))
+		return false;
+
+	SDL_GameController *const pad = SDL_GameControllerOpen(index);
+	if (pad == NULL)
+		return false;
+
+	Joystick_assignment (*const as)[2] = joystick[j].assignment;
+	memset(joystick[j].assignment, 0, sizeof(joystick[j].assignment));  // NONE everywhere
+
+	for (int d = 0; d < 4; d++)
+	{
+		const bool x_axis = d == 1 || d == 3;
+		const bool negative = d == 0 || d == 3;
+		const SDL_GameControllerAxis stick = x_axis ? SDL_CONTROLLER_AXIS_LEFTX
+		                                            : SDL_CONTROLLER_AXIS_LEFTY;
+		pad_assignment(SDL_GameControllerGetBindForAxis(pad, stick), negative, &as[d][0]);
+		pad_assignment(SDL_GameControllerGetBindForButton(pad, dpad[d]), negative, &as[d][1]);
+	}
+	for (int a = 0; a < 6; a++)
+	{
+		for (int s = 0; s < 2; s++)
+		{
+			if (actions[a][s] == SDL_CONTROLLER_BUTTON_INVALID)
+				continue;
+			const SDL_GameControllerButtonBind bind =
+				SDL_GameControllerGetBindForButton(pad, actions[a][s]);
+			pad_assignment(bind, false, &as[4 + a][s]);
+		}
+	}
+
+	SDL_GameControllerClose(pad);
+	return true;
+}
+#endif
 
 void reset_joystick_assignments(int j)
 {
 	assert(j < joysticks);
-	
+
+	if (joystick[j].handle == NULL)
+		return;  // a disconnected slot keeps its bindings for the reconnect
+
+	joystick[j].analog = false;
+	joystick[j].sensitivity = 5;
+	joystick[j].threshold = 5;
+
+#ifdef JOYSTICK_HOTPLUG
+	if (pad_default_assignments(j))
+		return;
+#endif
+
 	// defaults: first 2 axes, first hat, first 6 buttons
 	for (uint a = 0; a < COUNTOF(joystick[j].assignment); a++)
 	{
@@ -449,10 +756,6 @@ void reset_joystick_assignments(int j)
 			}
 		}
 	}
-	
-	joystick[j].analog = false;
-	joystick[j].sensitivity = 5;
-	joystick[j].threshold = 5;
 }
 
 static const char* const assignment_names[] =
@@ -546,6 +849,9 @@ static bool load_joystick_assignments(Config *config, int j)
 
 bool save_joystick_assignments(Config *config, int j)
 {
+	if (joystick[j].handle == NULL)
+		return false;  // disconnected; its bindings were saved when it went
+
 	ConfigSection *section = config_find_or_add_section(config, "joystick", SDL_JoystickName(joystick[j].handle));
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
@@ -660,6 +966,9 @@ static const char *assignment_to_code(const Joystick_assignment *assignment)
 /* Captures joystick j; input from other joysticks is ignored. */
 bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 {
+	if (joystick[j].handle == NULL)
+		return false;
+
 	/* Capture the initial state for edge detection. */
 	const int axes = SDL_JoystickNumAxes(joystick[j].handle);
 	Sint16 *axis = malloc_die(axes * sizeof(*axis));

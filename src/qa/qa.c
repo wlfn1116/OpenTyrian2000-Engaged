@@ -410,6 +410,7 @@ int qa_run_unit_suite(void)
 	qa_test_partner_hp_bars();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
+	qa_test_discover_reply();
 	qa_test_seeker_tiers();
 	qa_test_endless_coop();
 	qa_test_kill_fire_drives();
@@ -436,6 +437,8 @@ int qa_run_unit_suite(void)
 	qa_test_course_reroll_dodge();
 	qa_test_item_data_settings();
 	qa_test_firing_sound_levels();
+	qa_test_sfx_filter();
+	qa_test_controller_hotplug();
 	qa_test_swar_pixel_loops();
 	qa_test_background_bands();
 	qa_test_filter_subrows();

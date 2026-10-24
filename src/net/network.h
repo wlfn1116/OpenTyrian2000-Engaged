@@ -269,6 +269,12 @@ bool network_interface_carries_lan(unsigned int flags);
 // open. poll may be NULL and keeps the UI responsive during the blocking wait.
 int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void));
 
+// Discovery reply body: type, NET_VERSION, game port, then this player's name. The Switch local
+// wireless advertisement carries the same bytes. Returns the length, or 0 when cap is too small.
+int network_discover_reply_write(Uint8 *data, int cap, Uint16 port);
+// Fill out's port and name from a reply body. False for another type or NET_VERSION.
+bool network_discover_reply_read(const Uint8 *data, int len, NetworkHostInfo *out);
+
 extern UDPpacket *packet_out_temp;
 extern UDPpacket *packet_in[],
                  *packet_state_in[], *packet_state_out[];

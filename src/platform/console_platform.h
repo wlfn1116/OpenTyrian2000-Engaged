@@ -10,12 +10,21 @@
 
 #if defined(__SWITCH__)
 
+  #include "switch_ldn.h"
   #include "switch_platform.h"
 
   #define console_platform_init    switch_platform_init
   #define console_swkbd            switch_swkbd
   #define console_get_output_size  switch_get_output_size
   #define console_get_local_ip     switch_get_local_ip
+
+  // Console-to-console play without a router (see switch_ldn.h).
+  #define PLATFORM_LOCAL_WIRELESS  1
+  #define console_wireless_host    switch_ldn_host
+  #define console_wireless_scan    switch_ldn_scan
+  #define console_wireless_game    switch_ldn_game
+  #define console_wireless_join    switch_ldn_join
+  #define console_wireless_leave   switch_ldn_leave
 
 #elif defined(__vita__)
 
