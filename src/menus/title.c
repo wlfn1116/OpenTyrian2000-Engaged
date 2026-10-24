@@ -45,6 +45,7 @@
 #include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "switch_platform.h"
 #include "timing.h"
 #include "touch_ui.h"
 #include "video.h"
@@ -567,8 +568,17 @@ static bool newGame(void)
 
 				difficultyLevel++;
 
+#ifdef __SWITCH__
+				// Each player gets a controller, and the system screen lets a Joy-Con pair split
+				// into two sideways Joy-Cons first.
+				switch_controller_setup(2);
+				joystick_reopen_all();
+				inputDevice[0] = 3;
+				inputDevice[1] = 4;
+#else
 				inputDevice[0] = 1;
 				inputDevice[1] = 2;
+#endif
 			}
 			else if (richMode)
 			{

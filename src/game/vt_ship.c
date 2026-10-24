@@ -263,7 +263,13 @@ static void vt_ship_step_player(int p, float dt)
 
 			// Preserve edge-triggered actions consumed by the display-rate poll.
 			if (joystick[j].action_pressed[4]) ingamemenu_pressed = true;  // "menu"
-			if (joystick[j].action_pressed[5]) pause_pressed = true;        // "pause"
+			if (joystick[j].action_pressed[5])                              // "pause"
+			{
+				if (joystick_pause_opens_menu(j))
+					ingamemenu_pressed = true;
+				else
+					pause_pressed = true;
+			}
 			if (joystick[j].action_pressed[1]) changefire_pressed = true;   // "change fire"
 
 			if (joystick[j].analog)

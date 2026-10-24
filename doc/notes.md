@@ -138,6 +138,22 @@ which widens that range; a spark written any other way would never be drawn.
 `qa_test_spark_ring_bounds` compares bounded passes with a full-ring scan
 through cursor wraps and rewinds.
 
+### CRT filter
+
+Every present path goes through `present_frame`, which draws the frame and then
+the filter's layers over `dst`, before the touch controls. Scanlines are a
+1 x 400 strip (light, then dark, per game row) multiplied over the frame, so
+they follow the game's rows at any window size. Full then adds the glow, a
+3-column mask at output resolution and a vignette, in that order; the glow is
+added after the scanlines so it fills their gaps where the picture is bright.
+
+The glow halves the frame through render targets until it is under 3/8 of the
+game's height. SDL2 reads a texture's scale mode when its command queue runs,
+so `crt_glow_from` flushes before it restores the frame's own mode. The layers
+belong to `main_window_renderer` and are released before it is destroyed. A
+CPU renderer, or one that refuses multiply blending, hides the setting. The CRT
+Filter is a display preference and stays outside the enhancement presets.
+
 ### Coordinates
 
 The frame is 356x200. The playfield is 299x184 and the HUD is 57 pixels wide.
@@ -1015,22 +1031,34 @@ bit-identical when Off, and is redesigned whenever the device rate changes.
 
 Rumble is presentation. `JE_playerDamage` pulses only when `!rollback_resim`,
 keys hull hits off `cmHullHit` so the infinite-armor cheat still rumbles, and
-routes through the ship's input device the way `JE_playerMovement` reads it.
-Demo playback and the remote seat of an online game never rumble.
+routes through the ship's input device the way `JE_playerMovement` reads it
+(`seat_rumble_device`). Demo playback and the remote seat of an online game
+never rumble.
 
-Explosions add `EXPLOSION_RUMBLE_*` energy as they spawn: every
-`JE_setupExplosionLarge`, plus the small enemy deaths and sequence pops that
-call `JE_setupExplosion` directly. The game loop spends the sum once per tick
-after the sound queue, with the same live-pass gate, and rumbles every local
-pad.
+Explosions call `explosion_rumble_add` as they spawn: every
+`JE_setupExplosionLarge` as a heavy blast, plus the small enemy deaths and
+sequence pops that call `JE_setupExplosion` directly as light ones. Each ship's
+share falls off with its distance from the blast. `explosion_rumble_tick`, after
+the sound queue, fades each ship's heavy and light levels and holds the result
+on its pads with `joystick_rumble_level`; a resim or demo tick only drops its
+blasts. Destruct fades its blasts the same way at its 70 Hz tick.
+
+Each pad mixes two voices, a pulse (`joystick_rumble`) and a held level
+(`joystick_rumble_level`), and runs each motor at the louder of the two. The
+game ends every pulse itself in `joystick_service`, because SDL ends a timed one
+only inside `SDL_JoystickUpdate`. SDL drops a request equal to its last one,
+never resends a stop, and its HIDAPI rumble thread ignores a failed write, so a
+single lost stop report can leave a Bluetooth DualSense running at its last
+level. Every stop is therefore repeated twice over 750 ms, each preceded by a
+(1, 1) nudge so SDL cannot drop it, and `joystick_rumble_stop_all` runs on
+pause, the in-game menu, the shop and focus loss.
 
 Controllers stay on the raw joystick API with joystick events ignored, so
 nothing else runs SDL's device detection. `joystick_service` (from
-`service_SDL_events`) rescans once a second and keeps calling
-`SDL_JoystickUpdate` until the last rumble has ended, the only place SDL stops a
-timed one. Slots never move or shrink: an unplugged pad keeps its slot, index
-and bindings, its live input is cleared, and a device with the same GUID takes
-it back. Switch and Vita keep their startup list.
+`service_SDL_events`) rescans once a second. Slots never move or shrink: an
+unplugged pad keeps its slot, index and bindings, its live input is cleared, and
+a device with the same GUID takes it back. Switch and Vita keep their startup
+list.
 
 `reset_joystick_assignments` takes defaults from SDL's controller database when
 it knows the pad; `SDL_INIT_GAMECONTROLLER` exists only for that. SDL2 binds
@@ -1052,6 +1080,16 @@ Switch must keep its SDL window resizable for dock changes and save controller
 changes immediately. Vita boots with the None scaler, resolves Sub-pixel Auto to
 the scaler factor without the desktop's 2x minimum, keeps presenting during IME
 use, and uses front touch only.
+
+switch-sdl2 lists eight players whether or not they are connected and names
+them all "Switch Controller". The game opens two, and slot 1 saves its bindings
+as "Switch Controller 2" so it cannot overwrite slot 0's. Its rumble drives one
+motor per controller, none in handheld mode and at a fixed strength, so
+`switch_rumble` drives the motors through libnx and `joystick_service` stops
+each pulse at its deadline. switch-sdl2 also opens its own controller screen
+when a controller's style changes, so after `switch_controller_setup` the game
+reopens its joysticks; the driver then reads the new styles as its starting
+state.
 
 ## Level and data formats
 

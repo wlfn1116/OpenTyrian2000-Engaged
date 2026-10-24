@@ -568,6 +568,68 @@ static int de_round(float v)
 	return (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
 }
 
+/* Rumble gathered during a tick and spent where its sounds play, on the live pass only. Blasts
+ * shake every pad and fade; a hit or a lost unit shakes the pad of the human whose unit it was. */
+typedef enum
+{
+	DE_RUMBLE_NONE = 0,
+	DE_RUMBLE_HIT,
+	DE_RUMBLE_LOST,
+} de_rumble_t;
+
+#define DE_BLAST_FADE  0.9f   // per 70 Hz tick: about half a second from a full blast to silence
+#define DE_BLAST_FLOOR 0.03f
+
+static float de_rumble_blast;  // this tick's blasts
+static float de_rumble_fade;   // the fading blast rumble felt now
+static de_rumble_t de_rumble_side[MAX_PLAYERS];
+
+// Two human players with two connected controllers drive one each (DE_RunTickGetInput).
+static bool de_human_pads(void)
+{
+	return !destruct_player[PLAYER_LEFT].is_cpu && !destruct_player[PLAYER_RIGHT].is_cpu
+	    && joystick_connected(0) && joystick_connected(1);
+}
+
+static void de_rumble_note(enum de_player_t side, de_rumble_t kind)
+{
+	if (kind > de_rumble_side[side])
+		de_rumble_side[side] = kind;
+}
+
+static void DE_RunTickRumble(bool live)
+{
+	if (live)
+	{
+		// One more call after the fade ends lets the motors stop at once.
+		const bool felt = de_rumble_fade > 0.0f;
+		de_rumble_fade = MIN(de_rumble_fade * DE_BLAST_FADE + de_rumble_blast, 1.0f);
+		if (de_rumble_fade < DE_BLAST_FLOOR)
+			de_rumble_fade = 0.0f;
+		if (de_rumble_fade > 0.0f || felt)
+			joystick_rumble_level(0, de_rumble_fade, de_rumble_fade * 0.5f, 80);
+
+		for (int side = PLAYER_LEFT; side < MAX_PLAYERS; side++)
+		{
+			if (de_rumble_side[side] == DE_RUMBLE_NONE || destruct_player[side].is_cpu)
+				continue;
+			if (de_net && side != (int)de_net_local_side)
+				continue;
+
+			// The device numbers of JE_playerMovement: 3 + n is joystick n.
+			const int device = 3 + ((!de_net && de_human_pads()) ? side : 0);
+			if (de_rumble_side[side] == DE_RUMBLE_LOST)
+				joystick_rumble(device, 1.0f, 0.6f, 500);
+			else
+				joystick_rumble(device, 0.5f, 0.3f, 180);
+		}
+	}
+
+	de_rumble_blast = 0.0f;
+	for (int side = PLAYER_LEFT; side < MAX_PLAYERS; side++)
+		de_rumble_side[side] = DE_RUMBLE_NONE;
+}
+
 static bool DE_ensureSmoothBuffers(int scale)
 {
 	return video_ensure_scaled_surface(&destruct_hi, scale) != NULL
@@ -1545,6 +1607,9 @@ static void JE_makeExplosion(unsigned int tempPosX, unsigned int tempPosY, enum 
 		exploRec[i].explofill = (mt_rand() % 60) + 20;
 		exploRec[i].exploType = EXPL_NORMAL;
 	}
+
+	// Rumble follows the blast's final radius; 60 and up is a full-strength one.
+	de_rumble_blast += 0.7f * MIN((float)exploRec[i].explomax, 60.0f) / 60.0f;
 }
 
 static void JE_eSound(unsigned int sound)
@@ -1730,6 +1795,7 @@ static void DE_ResetLevel(void)
 
 	JE_generateTerrain();
 	DE_ResetAI();
+	de_rumble_fade = 0.0f;
 }
 
 static void DE_ResetAI(void)
@@ -2445,6 +2511,7 @@ de_sim_pass:
 	// A re-simulation pass would replay sounds the live pass it corrects already played.
 	if (!drb_resim())
 		DE_RunTickPlaySounds();
+	DE_RunTickRumble(!drb_resim());
 
 	/* Offline-only shortcuts. Online control bits own quit, and blocking or local
 	 * toggles here would stall or split the simulation. */
@@ -2776,6 +2843,7 @@ static void DE_TestExplosionCollision(unsigned int PosX, unsigned int PosY)
 				PosY < unit->unitY && PosY > unit->unitY - 11)
 			{
 				unit->health--;
+				de_rumble_note((enum de_player_t)i, DE_RUMBLE_HIT);
 				if (unit->health <= 0)
 					DE_DestroyUnit(i, unit);
 			}
@@ -2787,6 +2855,7 @@ static void DE_DestroyUnit(enum de_player_t playerID, struct destruct_unit_s* un
 {
 	// Only helicopters use the small-shot explosion.
 	JE_makeExplosion(unit->unitX + 5, roundf(unit->unitY) - 5, (unit->unitType == UNIT_HELI) ? SHOT_SMALL : SHOT_INVALID);
+	de_rumble_note(playerID, DE_RUMBLE_LOST);
 
 	if (unit->unitType != UNIT_SATELLITE)
 	{
@@ -3289,32 +3358,39 @@ static void DE_RunTickGetInput(void)
 		}
 	}
 
-	// One controller drives every human Destruct player; consoles have no keyboard fallback.
+	// Two human players with two controllers get one each; otherwise the first drives every human
+	// player, since consoles have no keyboard fallback.
 	if (joysticks > 0)
 	{
-		poll_joystick(0);
+		const bool own_pads = de_human_pads();
+		const int pads = own_pads ? 2 : 1;
+		for (int pad = 0; pad < pads; pad++)
+		{
+			poll_joystick(pad);
 
-		// Pause quits the minigame; there is no keyboard Escape on the Switch.
-		if (joystick[0].action_pressed[5])
-			keysactive[SDL_SCANCODE_ESCAPE] = true;
+			// Pause quits the minigame; there is no keyboard Escape on the Switch.
+			if (joystick[pad].action_pressed[5])
+				keysactive[SDL_SCANCODE_ESCAPE] = true;
+		}
 
 		for (player_index = 0; player_index < MAX_PLAYERS; player_index++)
 		{
 			if (destruct_player[player_index].is_cpu)
 				continue;
 
+			const Joystick *const js = &joystick[own_pads ? player_index : 0];
 			bool *act = destruct_player[player_index].moves.actions;
-			if (joystick[0].direction[3])      act[KEY_LEFT]   = true;  // aim left  / move left
-			if (joystick[0].direction[1])      act[KEY_RIGHT]  = true;  // aim right / move right
-			if (joystick[0].direction[0])      act[KEY_UP]     = true;  // more power
-			if (joystick[0].direction[2])      act[KEY_DOWN]   = true;  // less power
+			if (js->direction[3])      act[KEY_LEFT]   = true;  // aim left  / move left
+			if (js->direction[1])      act[KEY_RIGHT]  = true;  // aim right / move right
+			if (js->direction[0])      act[KEY_UP]     = true;  // more power
+			if (js->direction[2])      act[KEY_DOWN]   = true;  // less power
 			// Ignore fire while a weapon-cycle action is held, preventing dual-bound
 			// controller buttons from firing during a cycle.
-			bool cycling = joystick[0].action[2] || joystick[0].action[3];
-			if (joystick[0].action[0] && !cycling) act[KEY_FIRE] = true;  // fire (held)
-			if (joystick[0].action_pressed[1]) act[KEY_CHANGE] = true;  // change unit (tap)
-			if (joystick[0].action_pressed[2]) act[KEY_CYDN]   = true;  // previous weapon (tap)
-			if (joystick[0].action_pressed[3]) act[KEY_CYUP]   = true;  // next weapon (tap)
+			bool cycling = js->action[2] || js->action[3];
+			if (js->action[0] && !cycling) act[KEY_FIRE] = true;  // fire (held)
+			if (js->action_pressed[1]) act[KEY_CHANGE] = true;  // change unit (tap)
+			if (js->action_pressed[2]) act[KEY_CYDN]   = true;  // previous weapon (tap)
+			if (js->action_pressed[3]) act[KEY_CYUP]   = true;  // next weapon (tap)
 		}
 	}
 

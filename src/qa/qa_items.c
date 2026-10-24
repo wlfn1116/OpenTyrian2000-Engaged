@@ -317,6 +317,24 @@ void qa_test_controller_hotplug(void)
 		joystick_rumble(0, 1.0f, 0.5f, 50);
 		qa_check(qaPadRumbleLow == 0xFFFF && qaPadRumbleHigh == 0x7FFF,
 		         "Strong rumble runs the motors at full strength");
+		joystick_rumble_level(0, 0.5f, 0.75f, 50);
+		qa_check(qaPadRumbleLow == 0xFFFF && qaPadRumbleHigh == 0xBFFF,
+		         "a pulse and a held level run each motor at the louder of the two");
+		joystick_rumble_stop_all();
+		qa_check(qaPadRumbleLow == 0 && qaPadRumbleHigh == 0,
+		         "stopping all rumble silences the motors");
+		qaPadRumbleLow = qaPadRumbleHigh = 1;
+		joystick_rumble_stop_all();
+		qa_check(qaPadRumbleLow == 0 && qaPadRumbleHigh == 0,
+		         "a stop still reaches a controller SDL believes is idle");
+
+		joystick_rumble(0, 1.0f, 0.5f, 1);
+		const Uint32 pulseEnd = SDL_GetTicks() + 3;
+		while (!SDL_TICKS_PASSED(SDL_GetTicks(), pulseEnd))
+			SDL_Delay(1);
+		joystick_service();
+		qa_check(qaPadRumbleLow == 0 && qaPadRumbleHigh == 0,
+		         "the game stops a pulse once it ends");
 		qaPadRumbleLow = qaPadRumbleHigh = 1;
 		rumble_strength = RUMBLE_OFF;
 		joystick_rumble(0, 1.0f, 0.5f, 50);

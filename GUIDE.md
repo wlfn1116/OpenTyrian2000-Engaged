@@ -359,7 +359,7 @@ also sends designs referenced by custom ships.
 
 | Menu | Contents |
 | --- | --- |
-| Visuals | Parallax, mirrored layers, sparks, tint, shop sprites |
+| Visuals | Parallax, mirrored layers, sparks, tint, shop sprites, CRT filter |
 | Heads-Up Display | Enemy bars, boss bars, gauges, touch buttons |
 | Weapons | Weapon Creator, Charge-Laser, autofire, spark trails |
 | Gameplay | Hitboxes, Guided Aim, Ice Base Shots, Arcade options |
@@ -373,8 +373,8 @@ also sends designs referenced by custom ships.
 | Engaged | Default set for this fork |
 | Custom | Most recent hand-edited set |
 
-Changing an enhancement stores the result as Custom. Sidekick Autofire and
-touch button settings stay outside presets.
+Changing an enhancement stores the result as Custom. Sidekick Autofire, touch
+button settings, and the CRT Filter stay outside presets.
 
 Episode Versions rows accept Auto, Ep 1-3, or Ep 4+. Auto follows the current
 episode. Online sessions use the host's choices.
@@ -385,6 +385,10 @@ Useful individual settings:
 - **Unused Sprites** gives distinct shipped icons to items that share or lack
   one.
 - **Special Tint** controls the full-screen wash from flare specials.
+- **CRT Filter** draws scanlines over the picture. **Full** adds a phosphor
+  mask, a glow around bright areas, and darker edges. It is off by default,
+  looks best with the None scaler or a plain 2x to 5x one, and is missing from
+  the menu when the graphics driver cannot draw it.
 - **Vulnerable Cue** greys invulnerable boss bars and flashes enemies when they
   become damageable.
 - **Shot Hitboxes** chooses classic top-left or centered sprite anchors.
@@ -470,18 +474,51 @@ Joystick Setup**.
 | Start | Menu |
 | Back | Pause |
 
+In Destruct, two human players with two controllers connected get one each.
+Otherwise the first controller drives every human player.
+
+### Switch
+
+The Switch build reads two controllers. Player 1 is the attached Joy-Cons or
+the first controller, player 2 the second. A Joy-Con pair, a Pro Controller, and
+a single Joy-Con held sideways all work, and all of them rumble. Detaching the
+Joy-Cons during play opens the system controller screen.
+
+| Sideways Joy-Con | Action |
+| --- | --- |
+| Stick | Steer |
+| Right face button | Fire |
+| Bottom face button | Change rear weapon mode |
+| SL, SR | Left and right sidekick |
+| Stick press | Menu |
+| Minus on the left Joy-Con, Plus on the right | Menu |
+
+Starting a 2-player game opens the controller screen when a second controller
+is missing: hold a Joy-Con sideways and press SL and SR to register it. Each
+player then plays on their own controller. A loaded 2-player game seats them
+the same way. In a 2-player game Plus and Minus open the menu instead of
+pausing, on every controller.
+
 ### Rumble
 
 **Setup > Rumble** appears while a connected controller has a vibration motor.
 It vibrates the controller when your ship is hit: a short pulse on the shield, a
-stronger one when damage reaches the hull, and a long one when the ship is
-destroyed. Explosions rumble too, harder for larger blasts and when several go
-off at once. Choose **Light** or **Strong**; it is **Off** by default, and
-changing it plays a sample pulse.
+stronger one when damage reaches the hull, harder the more armor the hit takes,
+and a long one when the ship is destroyed. Choose **Light** or **Strong**; it is
+**Off** by default, and changing it plays a sample pulse.
+
+Explosions rumble too. A large blast thumps and fades away within half a
+second, a small one gives a short buzz, and several at once rumble harder. A
+blast near your ship hits harder than one across the screen.
 
 A hit rumbles the pad steering the ship that was hit, which online is only ever
-yours. Explosions rumble every local pad. The Vita handheld has no vibration
-motor.
+yours. In a local 2-player game each pad feels the blasts by their distance from
+its own ship. In Destruct, blasts rumble every pad, and a hit or a lost unit
+rumbles the pad of the player whose unit it was. The Vita handheld has no
+vibration motor.
+
+Rumble stops when you pause, open the in-game menu, reach the shop or outpost
+between levels, or switch to another window.
 
 A Bluetooth DualShock 4 or DualSense only rumbles in an extended mode, which
 the game turns on. Until you switch the pad off, some older PC games that read

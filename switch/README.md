@@ -54,9 +54,12 @@ NRO directly.
 
 ## Controls and text
 
-Joy-Con and Pro Controllers use SDL's joystick interface. Default bindings
-cover menus, movement, and firing; change them under **Setup**. The right stick
-also moves the ship.
+Joy-Con and Pro Controllers use SDL's joystick interface, two players at most.
+A single Joy-Con held sideways works as one player's controller. Default
+bindings cover menus, movement, and firing; change them under **Options >
+Joystick Setup**. The right stick also moves the ship. Rumble goes through
+libnx directly. See [GUIDE.md](../GUIDE.md#switch) for the sideways layout and
+2-player setup.
 
 Text fields open the Switch software keyboard. MIDI is disabled.
 

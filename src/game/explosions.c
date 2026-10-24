@@ -19,6 +19,11 @@
 
 #include "net_style.h"
 #include "opentyr.h"
+#include "player.h"
+#include "player_ship.h"
+
+#include <math.h>
+#include <string.h>
 
 /*ExplosionData*/
 Explosion explosions[MAX_EXPLOSIONS]; /* [1..ExplosionMax] */
@@ -37,18 +42,66 @@ Uint8 explosion_opacity(uint slot)
 /*Repeating Explosions*/
 rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
 
-static float explosionRumble;
+// Blast rumble keeps these shares of its level each 35 Hz tick: about half a second from a
+// full heavy blast to silence, a tenth of one for a light pop.
+#define BLAST_FADE_HEAVY 0.82f
+#define BLAST_FADE_LIGHT 0.55f
+#define BLAST_CROSS      0.5f    // the share of each kind that also drives the other motor
+#define BLAST_FLOOR      0.03f   // a fading level this low is silence
+#define BLAST_NEAR_PX    160.0f  // from here on a ship feels only BLAST_FAR_SHARE of a blast
+#define BLAST_FAR_SHARE  0.35f
+#define BLAST_HOLD_MS    80      // the motors stop this long after the ticks do
 
-void explosion_rumble_add(float energy)
+static float blastPending[2][2];  // [ship][heavy, light] blasts of this tick
+static float blastLevel[2][2];    // [ship][heavy, light] fading rumble felt now
+static bool blastFelt;            // the last tick held a level above zero
+
+void explosion_rumble_add(float energy, bool heavy, int x, int y)
 {
-	explosionRumble += energy;
+	for (uint seat = 0; seat < COUNTOF(blastPending); ++seat)
+	{
+		const float dx = (float)(x - player[seat].x), dy = (float)(y - player[seat].y);
+		const float closeness = MAX(0.0f, 1.0f - sqrtf(dx * dx + dy * dy) / BLAST_NEAR_PX);
+		const float share = BLAST_FAR_SHARE + (1.0f - BLAST_FAR_SHARE) * closeness;
+		blastPending[seat][heavy ? 0 : 1] += energy * share;
+	}
 }
 
-float explosion_rumble_take(void)
+void explosion_rumble_tick(bool live)
 {
-	const float energy = explosionRumble;
-	explosionRumble = 0.0f;
-	return energy;
+	if (live)
+	{
+		static const float fade[2] = { BLAST_FADE_HEAVY, BLAST_FADE_LIGHT };
+		float low[2], high[2];
+		bool felt = false;
+		for (uint seat = 0; seat < COUNTOF(blastLevel); ++seat)
+		{
+			float *const level = blastLevel[seat];
+			for (uint kind = 0; kind < 2; ++kind)
+			{
+				level[kind] = MIN(level[kind] * fade[kind] + blastPending[seat][kind], 1.0f);
+				if (level[kind] < BLAST_FLOOR)
+					level[kind] = 0.0f;
+			}
+			low[seat] = MIN(level[0] + BLAST_CROSS * level[1], 1.0f);
+			high[seat] = MIN(level[1] + BLAST_CROSS * level[0], 1.0f);
+			felt = felt || level[0] > 0.0f || level[1] > 0.0f;
+		}
+
+		// One more call after the fade ends lets the motors stop at once.
+		if (felt || blastFelt)
+			player_rumble_level(low, high, BLAST_HOLD_MS);
+		blastFelt = felt;
+	}
+
+	memset(blastPending, 0, sizeof(blastPending));
+}
+
+void explosion_rumble_reset(void)
+{
+	memset(blastPending, 0, sizeof(blastPending));
+	memset(blastLevel, 0, sizeof(blastLevel));
+	blastFelt = false;
 }
 
 void JE_setupExplosion(
@@ -154,7 +207,8 @@ void JE_setupExplosionLarge(JE_boolean enemyGround, JE_byte exploNum, JE_integer
 {
 	if (y >= 0)
 	{
-		explosion_rumble_add(exploNum > 10 ? EXPLOSION_RUMBLE_BIG : EXPLOSION_RUMBLE_LARGE);
+		explosion_rumble_add(exploNum > 10 ? EXPLOSION_RUMBLE_BIG : EXPLOSION_RUMBLE_LARGE,
+		                     true, x, y);
 
 		if (enemyGround)
 		{

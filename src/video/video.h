@@ -76,6 +76,19 @@ int effective_supersample(void);
  * foreground motion smooth. Vita reuses the 1x endpoint for one simulation tick. */
 extern bool smoothie_full_res;
 
+// Setup > Enhancements > Visuals CRT look, layered over each presented frame by the GPU.
+typedef enum
+{
+	CRT_FILTER_OFF = 0,
+	CRT_FILTER_SCANLINES,
+	CRT_FILTER_FULL,  // scanlines, phosphor mask, glow and vignette
+	CRT_FILTER_COUNT
+} CrtFilter;
+
+extern int crt_filter;  // CrtFilter
+// False when the renderer cannot draw the filter (no multiply blending, or CPU rendering).
+bool crt_filter_available(void);
+
 extern bool show_fps;          // draw the FPS counter during gameplay
 extern int current_fps;        // presented frames during the last sampled second
 

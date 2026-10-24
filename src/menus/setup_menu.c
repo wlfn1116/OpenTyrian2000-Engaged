@@ -193,10 +193,13 @@ static const char *const sfxFilterNames[] = { "Off", "Light", "Strong" };
 static const char *const sfxCopyLimitNames[] = { "Off", "1", "2", "3" };
 // Indexed by RumbleStrength (joystick.h).
 static const char *const rumbleNames[] = { "Off", "Light", "Strong" };
+// Indexed by CrtFilter (video.h).
+static const char *const crtFilterNames[] = { "Off", "Scanlines", "Full" };
 
 SDL_COMPILE_TIME_ASSERT(sfx_filter_names, COUNTOF(sfxFilterNames) == SFX_FILTER_COUNT);
 SDL_COMPILE_TIME_ASSERT(sfx_copy_names, COUNTOF(sfxCopyLimitNames) == SFX_COPY_LIMIT_MAX + 1);
 SDL_COMPILE_TIME_ASSERT(rumble_names, COUNTOF(rumbleNames) == RUMBLE_COUNT);
+SDL_COMPILE_TIME_ASSERT(crt_filter_names, COUNTOF(crtFilterNames) == CRT_FILTER_COUNT);
 
 NAME_PICKER(bossBarStyle, bossBarStyleNames)
 NAME_PICKER(bossBarLayout, bossBarLayoutNames)
@@ -212,6 +215,7 @@ NAME_PICKER(customEndless, customEndlessNames)
 NAME_PICKER(sfxFilter, sfxFilterNames)
 NAME_PICKER(sfxCopyLimit, sfxCopyLimitNames)
 NAME_PICKER(rumble, rumbleNames)
+NAME_PICKER(crtFilter, crtFilterNames)
 
 /* The preset picker shows Custom but does not let the user apply it. */
 static size_t enhPresetCount(void)
@@ -331,6 +335,7 @@ typedef enum
 	MENU_ITEM_EXTRA_SPARKS,
 	MENU_ITEM_SPECIAL_TINT,         // flare specials grade the whole screen their colour
 	MENU_ITEM_UNUSED_SPRITES,       // spend the shop sheet's unreferenced icons (episodes.c)
+	MENU_ITEM_CRT_FILTER,           // scanline / full CRT layers over the presented frame
 
 	/* Enhancements -> Heads-Up Display. */
 	MENU_ITEM_ENEMY_BARS,
@@ -466,6 +471,8 @@ static bool isMenuItemVisible(const MenuItem *item)
 		return customEpisodeAnyPresent();
 	if (item->id == MENU_ITEM_RUMBLE)
 		return joystick_can_rumble();
+	if (item->id == MENU_ITEM_CRT_FILTER)
+		return crt_filter_available();
 	return true;
 }
 
@@ -511,6 +518,7 @@ static int *menuItemIntSetting(MenuItemId id)
 	case MENU_ITEM_SFX_FILTER:       return &sfx_filter;
 	case MENU_ITEM_SFX_COPY_LIMIT:   return &sfx_copy_limit;
 	case MENU_ITEM_RUMBLE:           return &rumble_strength;
+	case MENU_ITEM_CRT_FILTER:       return &crt_filter;
 	default:                         return NULL;
 	}
 }
@@ -833,6 +841,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_EXTRA_SPARKS, "Extra Sparks:", "Denser, longer-lasting explosion spark showers." },
 				{ MENU_ITEM_SPECIAL_TINT, "Special Tint:", "Flare specials wash the screen in their colour." },
 				{ MENU_ITEM_UNUSED_SPRITES, "Unused Sprites:", "Give spare shop icons to look-alike weapons." },
+				{ MENU_ITEM_CRT_FILTER, "CRT Filter:",
+				  "Scanlines, or add a phosphor mask, glow and vignette.",
+				  .getPickerItemsCount = crtFilterCount, .getPickerItem = crtFilterItem },
 				MENU_DONE_ROW
 			},
 		},

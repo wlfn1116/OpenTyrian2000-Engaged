@@ -700,6 +700,10 @@ static bool load_opentyrian_config(void)
 
 		load_int_flag(section, "show_fps", &show_fps);
 
+		config_get_int_option(section, "crt_filter", &crt_filter);
+		if (crt_filter < CRT_FILTER_OFF || crt_filter >= CRT_FILTER_COUNT)
+			crt_filter = CRT_FILTER_OFF;
+
 		// Ship-control sensitivity slider: touch on the handheld ports, mouse on desktop.
 		config_get_int_option(section, SHIP_SENS_CFG, &ship_sensitivity);
 		if (ship_sensitivity < 0 || ship_sensitivity > SHIP_SENS_MAX)
@@ -1086,6 +1090,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "vsync", output_vsync ? 1 : 0);
 
 	config_set_int_option(section, "show_fps", show_fps ? 1 : 0);
+	config_set_int_option(section, "crt_filter", crt_filter);
 
 	config_set_int_option(section, SHIP_SENS_CFG, ship_sensitivity);
 

@@ -128,6 +128,7 @@ void JE_doInGameSetup(void)
 	render_list_recording = false;
 
 	mouseSetRelative(false);
+	joystick_rumble_stop_all();
 
 	haltGame = false;
 

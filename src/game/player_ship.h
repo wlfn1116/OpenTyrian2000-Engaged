@@ -61,6 +61,8 @@ extern JE_byte chargeWait, chargeLevel, chargeMax, chargeGr, chargeGrWait;
 
 void JE_resetPlayerOptions(Player *this_player);
 JE_byte JE_playerDamage(JE_byte temp, Player *);
+// Hold the rumble each ship's controllers feel, per seat, for hold_ms. Presentation only.
+void player_rumble_level(const float low[2], const float high[2], Uint32 hold_ms);
 // Clear enemy shots within a ship's Countermeasures reach; return the number cleared.
 int endlessCountermeasureBurst(Player *);
 // Firing patterns this ship's rear bay offers; clamp its weapon_mode against its own, not another's.

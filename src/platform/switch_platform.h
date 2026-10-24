@@ -32,6 +32,20 @@ bool switch_get_local_ip(uint32_t *out);
 // Either output pointer may be NULL.
 void switch_get_output_size(int *w, int *h);
 
+// Vibrate the controllers behind SDL joystick `slot`, following switch-sdl2: slot n is player n+1,
+// and slot 0 also covers handheld mode. Motor levels run 0..1; zero stops them. switch-sdl2's own
+// rumble drives one motor per controller, never in handheld mode, at a fixed strength.
+void switch_rumble(int slot, float low, float high);
+
+// Show the system controller screen for `players` players, where each can register a Joy-Con pair,
+// a Pro Controller, or a single Joy-Con held sideways. The screen is skipped when they already are.
+void switch_controller_setup(int players);
+
+// Whether SDL joystick `slot` has a controller; switch-sdl2 reports every slot as attached.
+bool switch_slot_connected(int slot);
+// Whether that controller is a single Joy-Con, which is held sideways.
+bool switch_slot_single_joycon(int slot);
+
 #endif // __SWITCH__
 
 #endif // SWITCH_PLATFORM_H

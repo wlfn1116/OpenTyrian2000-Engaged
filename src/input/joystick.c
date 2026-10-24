@@ -27,11 +27,13 @@
 #include "player_ship.h"
 #include "rollback.h"
 #include "timing.h"
+#include "switch_platform.h"
 #include "touch_ui.h"
 #include "video.h"
 
 #include <assert.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 static int joystick_axis_threshold(int j, int value);
@@ -39,6 +41,9 @@ static int check_assigned(SDL_Joystick *joystick_handle, const Joystick_assignme
 
 static const char *assignment_to_code(const Joystick_assignment *assignment);
 static void code_to_assignment(Joystick_assignment *assignment, const char *buffer);
+
+static bool joystick_rumble_engaged(int j);
+static void joystick_motor(int j, Uint16 lo, Uint16 hi, Uint32 duration_ms);
 
 static int joystick_repeat_delay = 300; // milliseconds, repeat delay for buttons
 bool joydown = false;            // any joystick buttons down, updated by poll_joysticks()
@@ -58,11 +63,27 @@ static bool pad_database = false;  // SDL_INIT_GAMECONTROLLER is up, for default
 #endif
 
 static bool joysticks_ready = false;
-static Uint32 rumble_update_until = 0;  // SDL_GetTicks until which SDL_JoystickUpdate keeps running
 
 static const int joystick_analog_max = 32767;
 
 static bool load_joystick_assignments(Config *config, int j);
+
+// Config section name for slot j. switch-sdl2 calls every player "Switch Controller", so later
+// Switch slots add their player number; slot 0 keeps the plain name its saved bindings use.
+static const char *joystick_config_name(int j, char *buf, size_t size)
+{
+	const char *const name = SDL_JoystickName(joystick[j].handle);
+#ifdef __SWITCH__
+	if (j > 0 && name != NULL)
+	{
+		snprintf(buf, size, "%s %d", name, j + 1);
+		return buf;
+	}
+#endif
+	(void)buf;
+	(void)size;
+	return name;
+}
 
 // eliminates axis movement below the threshold
 static int joystick_axis_threshold(int j, int value)
@@ -339,6 +360,10 @@ static void joystick_open(int j, int index)
 
 	if (!load_joystick_assignments(&opentyrian_config, j))
 		reset_joystick_assignments(j);
+
+	// A pad can still be running from a session that ended mid-pulse.
+	if (joystick_rumble_engaged(j))
+		joystick_motor(j, 0, 0, 0);
 }
 
 // initializes SDL joystick system and loads assignments for joysticks found
@@ -379,10 +404,9 @@ void init_joysticks(void)
 	joysticks = SDL_NumJoysticks();
 
 #ifdef __SWITCH__
-	// switch-sdl2 always reports 8 slots but only slot 0 is real; saving the idle
-	// placeholders clobbers slot 0's shared bindings, so use only slot 0.
-	if (joysticks > 1)
-		joysticks = 1;
+	// switch-sdl2 always lists eight players, connected or not; the game seats two at most.
+	if (joysticks > 2)
+		joysticks = 2;
 #endif
 
 	joystick = malloc_die(joysticks * sizeof(*joystick));
@@ -396,47 +420,200 @@ void init_joysticks(void)
 		printf("no joysticks detected\n");
 }
 
+// A motor level in 32 steps, so a slowly changing rumble sends fewer reports.
 static Uint16 rumble_motor(float level, float scale)
 {
-	return (Uint16)(MIN(MAX(level * scale, 0.0f), 1.0f) * 0xFFFF);
+	const float v = MIN(MAX(level * scale, 0.0f), 1.0f);
+	return (Uint16)((Uint32)(v * 32.0f + 0.5f) * 65535u / 32u);
+}
+
+// The Rumble setting as a motor scale, 0 while it is off.
+static float rumble_scale(void)
+{
+	switch (rumble_strength)
+	{
+	case RUMBLE_LIGHT:  return 0.5f;
+	case RUMBLE_STRONG: return 1.0f;
+	default:            return 0.0f;
+	}
+}
+
+// Whether joystick j may need silencing: rumble is on, or its motors ran lately.
+static bool joystick_rumble_engaged(int j)
+{
+	const Joystick *const js = &joystick[j];
+	return rumble_scale() > 0.0f || js->rumble_lo != 0 || js->rumble_hi != 0
+	    || js->rumble_stops > 0;
+}
+
+// Tell joystick j's motors (lo, hi). SDL drops a request equal to its last one, so a stop is
+// preceded by a faint nudge and always goes out, even when SDL believes the motors are idle.
+static void joystick_motor(int j, Uint16 lo, Uint16 hi, Uint32 duration_ms)
+{
+	Joystick *const js = &joystick[j];
+#ifdef __SWITCH__
+	(void)duration_ms;
+	switch_rumble(j, lo / 65535.0f, hi / 65535.0f);
+#elif SDL_VERSION_ATLEAST(2, 0, 9)
+	if (lo == 0 && hi == 0)
+		SDL_JoystickRumble(js->handle, 1, 1, 0);
+	SDL_JoystickRumble(js->handle, lo, hi, duration_ms);
+#else
+	(void)duration_ms;
+#endif
+	js->rumble_lo = lo;
+	js->rumble_hi = hi;
+}
+
+static bool rumble_voice_live(const RumbleVoice *v, Uint32 now)
+{
+	return (v->lo != 0 || v->hi != 0) && !SDL_TICKS_PASSED(now, v->until);
+}
+
+// Stop joystick j's motors, then twice more over the next 750 ms. SDL sends a stop once and
+// never again, and a DualSense whose stop report is lost over Bluetooth runs until told otherwise.
+static void joystick_motor_stop(int j, Uint32 now)
+{
+	joystick_motor(j, 0, 0, 0);
+	joystick[j].rumble_stops = 2;
+	joystick[j].rumble_stop_at = now + 250;
+}
+
+// Run joystick j's motors at the louder of its voices, and stop them once both have ended.
+// The game stops every pulse itself; SDL's own timer, given a little longer, is a backstop.
+static void joystick_rumble_mix(int j, Uint32 now)
+{
+	Joystick *const js = &joystick[j];
+	const RumbleVoice *const voices[2] = { &js->rumble_event, &js->rumble_flow };
+
+	Uint16 lo = 0, hi = 0;
+	Uint32 until = now;
+	for (int v = 0; v < 2; ++v)
+	{
+		if (!rumble_voice_live(voices[v], now))
+			continue;
+		lo = MAX(lo, voices[v]->lo);
+		hi = MAX(hi, voices[v]->hi);
+		if (SDL_TICKS_PASSED(voices[v]->until, until))
+			until = voices[v]->until;
+	}
+
+	if (lo != 0 || hi != 0)
+	{
+		js->rumble_stops = 0;
+#ifdef __SWITCH__
+		if (lo == js->rumble_lo && hi == js->rumble_hi)
+			return;
+#endif
+		joystick_motor(j, lo, hi, until - now + 50);  // SDL sends a report only on a change
+	}
+	else if (js->rumble_lo != 0 || js->rumble_hi != 0)
+	{
+		joystick_motor_stop(j, now);
+	}
+	else if (js->rumble_stops > 0 && SDL_TICKS_PASSED(now, js->rumble_stop_at))
+	{
+		joystick_motor(j, 0, 0, 0);
+		js->rumble_stops--;
+		js->rumble_stop_at = now + 500;
+	}
+}
+
+// The joystick slots behind an input device, as [*first, *last); empty for keyboard and mouse.
+static void rumble_slots(int device, int *first, int *last)
+{
+	*first = device == 0 ? 0 : device - 3;
+	*last = device == 0 ? joysticks : MIN(device - 2, joysticks);
+	if (device == 1 || device == 2)
+		*first = *last = 0;
 }
 
 void joystick_rumble(int device, float low, float high, Uint32 duration_ms)
 {
-#if SDL_VERSION_ATLEAST(2, 0, 9)
-	if (rumble_strength <= RUMBLE_OFF || rumble_strength >= RUMBLE_COUNT)
-		return;
-	if (device == 1 || device == 2)  // keyboard, mouse
+	const float scale = rumble_scale();
+	if (scale <= 0.0f || !joysticks_ready)
 		return;
 
-	const float scale = rumble_strength == RUMBLE_LIGHT ? 0.5f : 1.0f;
 	const Uint16 lo = rumble_motor(low, scale);
 	const Uint16 hi = rumble_motor(high, scale);
-	const Uint16 level = MAX(lo, hi);
 	const Uint32 now = SDL_GetTicks();
 
-	const int first = device == 0 ? 0 : device - 3;
-	const int last = device == 0 ? joysticks : MIN(device - 2, joysticks);
+	int first, last;
+	rumble_slots(device, &first, &last);
 	for (int j = first; j < last; ++j)
 	{
 		Joystick *const js = &joystick[j];
 		if (js->handle == NULL)
 			continue;
-		if (!SDL_TICKS_PASSED(now, js->rumble_until) && level < js->rumble_level)
+
+		RumbleVoice *const ev = &js->rumble_event;
+		if (rumble_voice_live(ev, now) && MAX(lo, hi) < MAX(ev->lo, ev->hi))
+			continue;
+		ev->lo = lo;
+		ev->hi = hi;
+		ev->until = now + duration_ms;
+		joystick_rumble_mix(j, now);
+	}
+}
+
+void joystick_rumble_level(int device, float low, float high, Uint32 hold_ms)
+{
+	const float scale = rumble_scale();
+	if (scale <= 0.0f || !joysticks_ready)
+		return;
+
+	const Uint32 now = SDL_GetTicks();
+	const RumbleVoice flow = { rumble_motor(low, scale), rumble_motor(high, scale), now + hold_ms };
+
+	int first, last;
+	rumble_slots(device, &first, &last);
+	for (int j = first; j < last; ++j)
+	{
+		if (joystick[j].handle == NULL)
 			continue;
 
-		if (SDL_JoystickRumble(js->handle, lo, hi, duration_ms) == 0)
-		{
-			js->rumble_until = now + duration_ms;
-			js->rumble_level = level;
-
-			const Uint32 stop_by = js->rumble_until + 100;
-			if (rumble_update_until == 0 || SDL_TICKS_PASSED(stop_by, rumble_update_until))
-				rumble_update_until = stop_by;
-		}
+		joystick[j].rumble_flow = flow;
+		joystick_rumble_mix(j, now);
 	}
+}
+
+void joystick_rumble_stop_all(void)
+{
+	if (!joysticks_ready)
+		return;
+
+	const Uint32 now = SDL_GetTicks();
+	for (int j = 0; j < joysticks; ++j)
+	{
+		Joystick *const js = &joystick[j];
+		if (js->handle == NULL)
+			continue;
+
+		js->rumble_event.lo = js->rumble_event.hi = 0;
+		js->rumble_flow.lo = js->rumble_flow.hi = 0;
+		if (joystick_rumble_engaged(j))
+			joystick_motor_stop(j, now);
+	}
+}
+
+bool joystick_pause_opens_menu(int j)
+{
+#ifdef __SWITCH__
+	return twoPlayerMode || switch_slot_single_joycon(j);
 #else
-	(void)device; (void)low; (void)high; (void)duration_ms;
+	(void)j;
+	return false;
+#endif
+}
+
+bool joystick_connected(int j)
+{
+	if (j < 0 || j >= joysticks || joystick[j].handle == NULL)
+		return false;
+#ifdef __SWITCH__
+	return switch_slot_connected(j);
+#else
+	return SDL_JoystickGetAttached(joystick[j].handle);
 #endif
 }
 
@@ -506,8 +683,10 @@ static void joystick_hotplug(void)
 		memset(js->action, 0, sizeof(js->action));
 		memset(js->action_pressed, 0, sizeof(js->action_pressed));
 		js->confirm = js->cancel = js->input_pressed = false;
-		js->rumble_until = 0;
-		js->rumble_level = 0;
+		memset(&js->rumble_event, 0, sizeof(js->rumble_event));
+		memset(&js->rumble_flow, 0, sizeof(js->rumble_flow));
+		js->rumble_lo = js->rumble_hi = 0;
+		js->rumble_stops = 0;
 	}
 
 	for (int index = 0; index < SDL_NumJoysticks(); index++)
@@ -550,14 +729,20 @@ void joystick_service(void)
 		joystick_rescan();
 	}
 
-	// SDL ends a timed rumble only inside SDL_JoystickUpdate, which screens without a
-	// controller poll never call.
-	if (rumble_update_until != 0)
-	{
-		SDL_JoystickUpdate();
-		if (SDL_TICKS_PASSED(now, rumble_update_until))
-			rumble_update_until = 0;
-	}
+	// The game ends each pulse itself. SDL would end one only inside SDL_JoystickUpdate, which
+	// screens without a controller poll never call, and the Switch has no timer at all.
+	for (int j = 0; j < joysticks; j++)
+		if (joystick[j].handle != NULL)
+			joystick_rumble_mix(j, now);
+}
+
+void joystick_reopen_all(void)
+{
+	if (ignore_joystick || !joysticks_ready)
+		return;
+
+	deinit_joysticks();
+	init_joysticks();
 }
 
 // deinitializes SDL joystick system and saves joystick assignments
@@ -570,6 +755,8 @@ void deinit_joysticks(void)
 	{
 		if (joystick[j].handle != NULL)
 		{
+			if (joystick_rumble_engaged(j))
+				joystick_motor(j, 0, 0, 0);
 			save_joystick_assignments(&opentyrian_config, j);
 			SDL_JoystickClose(joystick[j].handle);
 		}
@@ -579,7 +766,6 @@ void deinit_joysticks(void)
 	joystick = NULL;
 	joysticks = 0;
 	joysticks_ready = false;
-	rumble_update_until = 0;
 
 #ifdef JOYSTICK_HOTPLUG
 	if (pad_database)
@@ -754,6 +940,15 @@ void reset_joystick_assignments(int j)
 				joystick[j].assignment[a][0].type = BUTTON;
 				joystick[j].assignment[a][0].num = btn;
 			}
+#if defined(__SWITCH__)
+			// ZL and ZR (8/9) fire the sidekicks too; switch-sdl2 puts a sideways Joy-Con's SL
+			// and SR there, the shoulder buttons of a single Joy-Con.
+			if (a == 6 || a == 7)
+			{
+				joystick[j].assignment[a][1].type = BUTTON;
+				joystick[j].assignment[a][1].num = a == 6 ? 8 : 9;
+			}
+#endif
 		}
 	}
 }
@@ -774,7 +969,9 @@ static const char* const assignment_names[] =
 
 static bool load_joystick_assignments(Config *config, int j)
 {
-	ConfigSection *section = config_find_section(config, "joystick", SDL_JoystickName(joystick[j].handle));
+	char name[64];
+	ConfigSection *section = config_find_section(config, "joystick",
+	                                             joystick_config_name(j, name, sizeof(name)));
 	if (section == NULL)
 		return false;
 	
@@ -843,6 +1040,18 @@ static bool load_joystick_assignments(Config *config, int j)
 		}
 	}
 #endif
+#if defined(__SWITCH__)
+	// Older configs leave the sidekicks' second slot empty: give it ZL/ZR, a sideways
+	// Joy-Con's SL/SR (see reset_joystick_assignments).
+	for (size_t a = 6; a <= 7; ++a)  // assignment_names: 6 = "left sidekick", 7 = "right sidekick"
+	{
+		if (joystick[j].assignment[a][1].type == NONE)
+		{
+			joystick[j].assignment[a][1].type = BUTTON;
+			joystick[j].assignment[a][1].num = a == 6 ? 8 : 9;
+		}
+	}
+#endif
 
 	return true;
 }
@@ -852,7 +1061,9 @@ bool save_joystick_assignments(Config *config, int j)
 	if (joystick[j].handle == NULL)
 		return false;  // disconnected; its bindings were saved when it went
 
-	ConfigSection *section = config_find_or_add_section(config, "joystick", SDL_JoystickName(joystick[j].handle));
+	char name[64];
+	const char *const section_name = joystick_config_name(j, name, sizeof(name));
+	ConfigSection *section = config_find_or_add_section(config, "joystick", section_name);
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
 	

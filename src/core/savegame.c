@@ -275,6 +275,13 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	secretHint = rec->secretHint;
 	inputDevice[0] = rec->input1;
 	inputDevice[1] = rec->input2;
+#ifdef __SWITCH__
+	// Older saves and other platforms seat players on the keyboard and mouse; here each gets a
+	// controller instead.
+	for (uint p = 0; p < COUNTOF(inputDevice); ++p)
+		if (inputDevice[p] == 1 || inputDevice[p] == 2)
+			inputDevice[p] = (JE_byte)(3 + p);
+#endif
 
 	for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
 		netStyleSetSeatColor(p, rec->shipColor[p]);

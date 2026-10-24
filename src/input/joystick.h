@@ -45,6 +45,14 @@ typedef struct
 }
 Joystick_assignment;
 
+// One source of rumble on a controller; silent once `until` (SDL_GetTicks) has passed.
+typedef struct
+{
+	Uint16 lo, hi;
+	Uint32 until;
+}
+RumbleVoice;
+
 typedef struct
 {
 	SDL_Joystick *handle;  // NULL while the device is disconnected; the slot keeps its index
@@ -65,8 +73,12 @@ typedef struct
 	Uint32 joystick_delay;
 	bool input_pressed;
 
-	Uint32 rumble_until;  // SDL_GetTicks deadline of the pulse in progress
-	Uint16 rumble_level;  // its stronger motor, so a weaker pulse cannot cut it short
+	// The motors run at the louder of the two voices (joystick_rumble_mix).
+	RumbleVoice rumble_event;     // a hit or similar pulse
+	RumbleVoice rumble_flow;      // a level its caller keeps refreshing, such as blast rumble
+	Uint16 rumble_lo, rumble_hi;  // what the motors were last told
+	Uint8 rumble_stops;           // stop commands still to repeat
+	Uint32 rumble_stop_at;
 }
 Joystick;
 
@@ -86,17 +98,31 @@ typedef enum
 extern int rumble_strength;  // RumbleStrength, Setup > Rumble
 
 // Pulse the controllers behind an input device (0 all, 1 keyboard, 2 mouse, 3+ joystick n-3).
-// Motor levels run 0..1 and are scaled by rumble_strength. Presentation only.
+// Motor levels run 0..1 and are scaled by rumble_strength. A weaker pulse never cuts a stronger
+// one short. Presentation only.
 void joystick_rumble(int device, float low, float high, Uint32 duration_ms);
+// Set the refreshed rumble level of those controllers, held for hold_ms unless set again. It may
+// fall below its last value; event pulses still play over it.
+void joystick_rumble_level(int device, float low, float high, Uint32 hold_ms);
+// Silence every controller now, for screens where gameplay rumble should not continue.
+void joystick_rumble_stop_all(void);
 // Whether any connected controller has a rumble motor.
 bool joystick_can_rumble(void);
+// On Switch the pause button of joystick j opens the in-game menu in a 2-player game or on a single
+// sideways Joy-Con, whose own menu button is the awkward stick press. Plus and Minus then both do.
+bool joystick_pause_opens_menu(int j);
+// Whether joystick j has a controller connected right now.
+bool joystick_connected(int j);
 
 // Called from the event pump: opens controllers connected after startup, closes ones that left,
-// and lets SDL stop a finished rumble.
+// and stops finished rumble.
 void joystick_service(void);
 // The connect and disconnect pass joystick_service runs once a second, run now. No-op on the
 // consoles, which keep their startup list.
 void joystick_rescan(void);
+// Close and reopen every controller, keeping bindings, so the driver rereads how controllers are
+// assigned. On Switch this follows the controller screen; switch-sdl2 would open its own otherwise.
+void joystick_reopen_all(void);
 
 int joystick_axis_reduce(int j, int value);
 bool joystick_analog_angle(int j, float *angle);

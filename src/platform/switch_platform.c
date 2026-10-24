@@ -93,6 +93,103 @@ bool switch_swkbd(char *out, size_t out_size, size_t max_len,
 	return R_SUCCEEDED(rc);
 }
 
+// Vibration handles per npad, No1..No8 then Handheld, rebuilt when the controller style changes.
+typedef struct
+{
+	u32 style;  // the one style tag the handles were made for, 0 for none
+	int count;  // a single Joy-Con has one motor, the other styles two
+	HidVibrationDeviceHandle handles[2];
+}
+SwitchRumbleTarget;
+
+static SwitchRumbleTarget rumble_targets[9];
+
+static u32 switch_style_tag(HidNpadIdType id)
+{
+	static const u32 tags[] = {
+		HidNpadStyleTag_NpadFullKey, HidNpadStyleTag_NpadHandheld, HidNpadStyleTag_NpadJoyDual,
+		HidNpadStyleTag_NpadJoyLeft, HidNpadStyleTag_NpadJoyRight,
+	};
+	const u32 set = hidGetNpadStyleSet(id);
+	for (size_t i = 0; i < sizeof(tags) / sizeof(*tags); ++i)
+		if (set & tags[i])
+			return tags[i];
+	return 0;
+}
+
+static void switch_vibrate(HidNpadIdType id, SwitchRumbleTarget *target, float low, float high)
+{
+	const u32 style = switch_style_tag(id);
+	if (style == 0)
+		return;
+
+	if (style != target->style)
+	{
+		const bool single = style == HidNpadStyleTag_NpadJoyLeft
+		                 || style == HidNpadStyleTag_NpadJoyRight;
+		target->count = single ? 1 : 2;
+		target->style = 0;
+		const Result rc = hidInitializeVibrationDevices(target->handles, target->count, id,
+		                                                (HidNpadStyleTag)style);
+		if (R_FAILED(rc))
+			return;
+		target->style = style;
+	}
+
+	// The motors' default bands, the ones libnx's own idle vibration value uses.
+	HidVibrationValue values[2];
+	for (int i = 0; i < target->count; ++i)
+	{
+		values[i].amp_low = low;
+		values[i].freq_low = 160.0f;
+		values[i].amp_high = high;
+		values[i].freq_high = 320.0f;
+	}
+	hidSendVibrationValues(target->handles, values, target->count);
+}
+
+void switch_rumble(int slot, float low, float high)
+{
+	if (slot < 0 || slot >= 8)
+		return;
+
+	if (slot == 0)
+		switch_vibrate(HidNpadIdType_Handheld, &rumble_targets[8], low, high);
+	switch_vibrate((HidNpadIdType)(HidNpadIdType_No1 + slot), &rumble_targets[slot], low, high);
+}
+
+// The style of the controller behind `slot`, handheld first for slot 0; 0 for none.
+static u32 switch_slot_style(int slot)
+{
+	if (slot < 0 || slot >= 8)
+		return 0;
+
+	const u32 handheld = slot == 0 ? switch_style_tag(HidNpadIdType_Handheld) : 0;
+	return handheld != 0 ? handheld : switch_style_tag((HidNpadIdType)(HidNpadIdType_No1 + slot));
+}
+
+bool switch_slot_connected(int slot)
+{
+	return switch_slot_style(slot) != 0;
+}
+
+bool switch_slot_single_joycon(int slot)
+{
+	const u32 style = switch_slot_style(slot);
+	return style == HidNpadStyleTag_NpadJoyLeft || style == HidNpadStyleTag_NpadJoyRight;
+}
+
+void switch_controller_setup(int players)
+{
+	HidLaControllerSupportArg arg;
+	hidLaCreateControllerSupportArg(&arg);
+	arg.hdr.player_count_min = (s8)players;
+	arg.hdr.player_count_max = (s8)players;
+
+	// A cancelled screen keeps whatever controllers were already connected.
+	hidLaShowControllerSupport(NULL, &arg);
+}
+
 void switch_get_output_size(int *w, int *h)
 {
 	// Match switch-sdl2's handheld or docked window size from the first frame.

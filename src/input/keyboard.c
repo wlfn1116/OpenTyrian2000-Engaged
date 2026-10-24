@@ -285,6 +285,7 @@ void service_SDL_events(JE_boolean clear_new)
 					windowHasFocus = false;
 
 					mouseSetRelative(mouseRelativeEnabled);
+					joystick_rumble_stop_all();
 #ifdef PLATFORM_HANDHELD
 					touchFingerCount = 0;
 #endif

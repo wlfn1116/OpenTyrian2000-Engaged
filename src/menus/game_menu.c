@@ -2294,6 +2294,9 @@ void JE_itemScreen(void)
 
 	crashlog_set_phase("shop / buy-sell menu");
 
+	// Nothing rumbles here, so a pad still running from the level is told to stop.
+	joystick_rumble_stop_all();
+
 	// A staged debug-browser pick is good for the launch it was made for and nothing else.
 	debugLevelPickReset();
 

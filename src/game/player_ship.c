@@ -542,6 +542,7 @@ void JE_pauseGame(void)
 	render_list_recording = false;
 
 	mouseSetRelative(false);
+	joystick_rumble_stop_all();
 
 	JE_boolean done = false;
 	JE_word mouseX, mouseY;
@@ -1192,7 +1193,10 @@ redo:
 						button[3] |= joystick[j].action_pressed[1];
 
 						ingamemenu_pressed |= joystick[j].action_pressed[4];
-						pause_pressed |= joystick[j].action_pressed[5];
+						if (joystick_pause_opens_menu(j))
+							ingamemenu_pressed |= joystick[j].action_pressed[5];
+						else
+							pause_pressed |= joystick[j].action_pressed[5];
 					}
 				}
 
@@ -3363,7 +3367,8 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 									else
 									{
 										JE_setupExplosion(enemy_screen_x, enemy[temp2].ey, 0, 1, false, false);
-										explosion_rumble_add(EXPLOSION_RUMBLE_SMALL);
+										explosion_rumble_add(EXPLOSION_RUMBLE_SMALL, false,
+										                     enemy_screen_x, enemy[temp2].ey);
 										soundQueue[5] = S_EXPLOSION_4;
 									}
 									explosionFilter = 0;
@@ -3524,16 +3529,40 @@ static void shield_hit_ring(const Player *this_player)
 	JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
 }
 
-// Rumble the controllers steering this ship, with the same device routing as JE_playerMovement.
-// Demos and the remote seat of an online game have no controller here.
-static void ship_rumble(const Player *this_player, float low, float high, Uint32 duration_ms)
+// The input device steering `seat`'s ship, as JE_playerMovement routes it, or -1 where no
+// controller here does: in a demo, and for the remote seat of an online game.
+static int seat_rumble_device(uint seat)
 {
-	const uint seat = (uint)(this_player - &player[0]);
 	if (play_demo || (isNetworkGame && seat + 1 != thisPlayerNum))
-		return;
+		return -1;
 
 	const bool ownDevice = twoPlayerMode && !isNetworkGame && !galagaMode;
-	joystick_rumble(ownDevice ? inputDevice[seat] : 0, low, high, duration_ms);
+	return ownDevice ? inputDevice[seat] : 0;
+}
+
+static void ship_rumble(const Player *this_player, float low, float high, Uint32 duration_ms)
+{
+	const int device = seat_rumble_device((uint)(this_player - &player[0]));
+	if (device >= 0)
+		joystick_rumble(device, low, high, duration_ms);
+}
+
+void player_rumble_level(const float low[2], const float high[2], Uint32 hold_ms)
+{
+	int device[2] = { seat_rumble_device(0), twoPlayerMode ? seat_rumble_device(1) : -1 };
+	float lo[2] = { low[0], low[1] }, hi[2] = { high[0], high[1] };
+
+	// One controller steering both ships, as in a solo Galaga level, feels the stronger.
+	if (device[1] >= 0 && device[1] == device[0])
+	{
+		lo[0] = MAX(lo[0], lo[1]);
+		hi[0] = MAX(hi[0], hi[1]);
+		device[1] = -1;
+	}
+
+	for (uint seat = 0; seat < 2; ++seat)
+		if (device[seat] >= 0)
+			joystick_rumble_level(device[seat], lo[seat], hi[seat], hold_ms);
 }
 
 JE_byte JE_playerDamage(JE_byte temp,
@@ -3658,11 +3687,20 @@ JE_byte JE_playerDamage(JE_byte temp,
 	if (!rollback_resim)
 	{
 		if (wasAlive && !this_player->is_alive)
+		{
 			ship_rumble(this_player, 1.0f, 0.6f, 600);
+		}
 		else if (cmHullHit)
-			ship_rumble(this_player, 0.55f, 0.35f, 220);
+		{
+			// A hit rumbles harder the more armor it takes, up to 12 points.
+			const int taken = oldArmor - (int)this_player->armor;
+			const float severity = MIN((float)MAX(taken, 0) / 12.0f, 1.0f);
+			ship_rumble(this_player, 0.45f + 0.45f * severity, 0.3f + 0.3f * severity, 220);
+		}
 		else if (this_player->shield < oldShield)
+		{
 			ship_rumble(this_player, 0.25f, 0.15f, 120);
+		}
 	}
 
 	/* Kinetic Converter's generator share needs shield absorption; its other effects need any hit. */

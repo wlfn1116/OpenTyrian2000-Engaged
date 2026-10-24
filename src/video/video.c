@@ -149,6 +149,7 @@ static bool gradient_cache_valid = false;
 
 static void init_renderer(void);
 static void deinit_renderer(void);
+static void crt_release(void);
 static bool video_rows_ready(void);
 static void video_rows_shutdown(void);
 static void video_rows_end_frame(void);
@@ -313,6 +314,7 @@ static void deinit_renderer(void)
 	if (main_window_renderer != NULL)
 	{
 		touch_ui_renderer_lost();   // the overlay caches textures this renderer owns
+		crt_release();
 		SDL_DestroyRenderer(main_window_renderer);
 		main_window_renderer = NULL;
 	}
@@ -825,6 +827,223 @@ static void sample_fps(void)
 	}
 }
 
+/* CRT filter. Every layer multiplies or adds over the frame on the GPU; the textures belong to
+ * main_window_renderer and are built on first use. The mask and vignette follow crtview's
+ * crtemu.h. */
+int crt_filter = CRT_FILTER_OFF;
+
+#define CRT_SCANLINE_DARK 150   // the dark half of each game row, of 255
+#define CRT_GLOW_ALPHA    77    // the blurred frame added back over the scanlines, of 255
+#define CRT_GLOW_LEVELS   8     // halvings at most, enough for an 8K frame
+#define CRT_VIGNETTE_W    64
+#define CRT_VIGNETTE_H    36
+
+static const Uint8 crt_mask_level[3] = { 255, 226, 196 };  // one output column each
+
+static bool crt_ready = false;   // the textures below exist for this renderer
+static bool crt_broken = false;  // this renderer cannot draw them
+static SDL_Texture *crt_scanlines = NULL;  // 1 x 2 texels per game row, light then dark
+static SDL_Texture *crt_vignette = NULL;
+static SDL_Texture *crt_mask = NULL;       // 1 texel per output column
+static int crt_mask_w = 0;
+static SDL_Texture *crt_glow[CRT_GLOW_LEVELS];  // successive halvings of the frame
+static int crt_glow_levels = 0, crt_glow_src_w = 0, crt_glow_src_h = 0;
+
+static Uint32 crt_grey(int v)
+{
+	return 0xFF000000u | (Uint32)v * 0x010101u;
+}
+
+static SDL_Texture *crt_texture(int w, int h, const Uint32 *argb, SDL_BlendMode blend,
+                                SDL_ScaleMode scale)
+{
+	SDL_Texture *t = SDL_CreateTexture(main_window_renderer, SDL_PIXELFORMAT_ARGB8888,
+	                                   SDL_TEXTUREACCESS_STATIC, w, h);
+	if (t == NULL)
+		return NULL;
+
+	if (SDL_UpdateTexture(t, NULL, argb, w * (int)sizeof(*argb)) != 0 ||
+	    SDL_SetTextureBlendMode(t, blend) != 0 || SDL_SetTextureScaleMode(t, scale) != 0)
+	{
+		SDL_DestroyTexture(t);
+		return NULL;
+	}
+	return t;
+}
+
+static void crt_release_glow(void)
+{
+	for (int i = 0; i < crt_glow_levels; ++i)
+		SDL_DestroyTexture(crt_glow[i]);
+	crt_glow_levels = 0;
+	crt_glow_src_w = crt_glow_src_h = 0;
+}
+
+static void crt_release(void)
+{
+	if (crt_scanlines != NULL)
+		SDL_DestroyTexture(crt_scanlines);
+	if (crt_vignette != NULL)
+		SDL_DestroyTexture(crt_vignette);
+	if (crt_mask != NULL)
+		SDL_DestroyTexture(crt_mask);
+	crt_scanlines = crt_vignette = crt_mask = NULL;
+	crt_mask_w = 0;
+	crt_release_glow();
+	crt_ready = crt_broken = false;
+}
+
+static bool crt_build(void)
+{
+	if (crt_ready || crt_broken || main_window_renderer == NULL)
+		return crt_ready;
+
+	// A CPU renderer would blend every output pixel several times per frame.
+	SDL_RendererInfo info;
+	if (SDL_GetRendererInfo(main_window_renderer, &info) != 0 ||
+	    (info.flags & SDL_RENDERER_SOFTWARE))
+	{
+		crt_broken = true;
+		return false;
+	}
+
+	Uint32 scan[2 * vga_height];
+	for (int i = 0; i < 2 * vga_height; ++i)
+		scan[i] = crt_grey(i % 2 == 0 ? 255 : CRT_SCANLINE_DARK);
+	crt_scanlines = crt_texture(1, 2 * vga_height, scan, SDL_BLENDMODE_MOD, SDL_ScaleModeLinear);
+
+	// crtemu's 16xy(1-x)(1-y) falloff, flattened so only the edges darken.
+	Uint32 vignette[CRT_VIGNETTE_W * CRT_VIGNETTE_H];
+	for (int y = 0; y < CRT_VIGNETTE_H; ++y)
+	{
+		for (int x = 0; x < CRT_VIGNETTE_W; ++x)
+		{
+			const float u = (x + 0.5f) / CRT_VIGNETTE_W, v = (y + 0.5f) / CRT_VIGNETTE_H;
+			const float falloff = powf(16.0f * u * v * (1.0f - u) * (1.0f - v), 0.25f);
+			vignette[y * CRT_VIGNETTE_W + x] = crt_grey((int)(255.0f * (0.6f + 0.4f * falloff)));
+		}
+	}
+	crt_vignette = crt_texture(CRT_VIGNETTE_W, CRT_VIGNETTE_H, vignette, SDL_BLENDMODE_MOD,
+	                           SDL_ScaleModeLinear);
+
+	if (crt_scanlines == NULL || crt_vignette == NULL)
+	{
+		crt_release();
+		crt_broken = true;
+		return false;
+	}
+
+	crt_ready = true;
+	return true;
+}
+
+bool crt_filter_available(void)
+{
+	return crt_build();
+}
+
+static bool crt_ensure_mask(int w)
+{
+	if (crt_mask != NULL && crt_mask_w == w)
+		return true;
+
+	if (crt_mask != NULL)
+		SDL_DestroyTexture(crt_mask);
+	crt_mask = NULL;
+	crt_mask_w = 0;
+
+	Uint32 *const row = w > 0 ? SDL_malloc((size_t)w * sizeof(*row)) : NULL;
+	if (row == NULL)
+		return false;
+	for (int x = 0; x < w; ++x)
+		row[x] = crt_grey(crt_mask_level[x % 3]);
+	crt_mask = crt_texture(w, 1, row, SDL_BLENDMODE_MOD, SDL_ScaleModeNearest);
+	SDL_free(row);
+
+	if (crt_mask != NULL)
+		crt_mask_w = w;
+	return crt_mask != NULL;
+}
+
+// Halve the frame until it is under 3/8 of the game's height. The linear filter does the
+// averaging, so the last level is a soft copy of the frame. NULL when targets are unsupported.
+static SDL_Texture *crt_glow_from(SDL_Texture *frame)
+{
+	int w = 0, h = 0;
+	if (!SDL_RenderTargetSupported(main_window_renderer) ||
+	    SDL_QueryTexture(frame, NULL, NULL, &w, &h) != 0)
+		return NULL;
+
+	if (w != crt_glow_src_w || h != crt_glow_src_h)
+	{
+		crt_release_glow();
+		int lw = w, lh = h;
+		while (lh > vga_height * 3 / 8 && crt_glow_levels < CRT_GLOW_LEVELS)
+		{
+			lw = (lw + 1) / 2;
+			lh = (lh + 1) / 2;
+			SDL_Texture *const level = SDL_CreateTexture(main_window_renderer,
+				SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, lw, lh);
+			if (level == NULL)
+				break;
+			SDL_SetTextureScaleMode(level, SDL_ScaleModeLinear);
+			crt_glow[crt_glow_levels++] = level;
+		}
+		crt_glow_src_w = w;
+		crt_glow_src_h = h;
+	}
+	if (crt_glow_levels == 0)
+		return NULL;
+
+	// The scale mode is read when the queue runs, so flush before putting the frame's back.
+	SDL_ScaleMode frame_scale = SDL_ScaleModeNearest;
+	SDL_GetTextureScaleMode(frame, &frame_scale);
+	SDL_SetTextureScaleMode(frame, SDL_ScaleModeLinear);
+
+	SDL_Texture *src = frame;
+	for (int i = 0; i < crt_glow_levels; ++i)
+	{
+		SDL_SetRenderTarget(main_window_renderer, crt_glow[i]);
+		SDL_SetTextureBlendMode(src, SDL_BLENDMODE_NONE);
+		SDL_RenderCopy(main_window_renderer, src, NULL, NULL);
+		src = crt_glow[i];
+	}
+	SDL_RenderFlush(main_window_renderer);
+	SDL_SetTextureScaleMode(frame, frame_scale);
+	SDL_SetRenderTarget(main_window_renderer, NULL);
+	return src;
+}
+
+// Clear the window and draw the frame into dst, with the CRT filter over it when it is on.
+// Touch controls go on afterwards and stay unfiltered.
+static void present_frame(SDL_Texture *frame, const SDL_Rect *dst)
+{
+	const bool crt = crt_filter != CRT_FILTER_OFF && frame != NULL && crt_build();
+	SDL_Texture *const glow = crt && crt_filter == CRT_FILTER_FULL ? crt_glow_from(frame) : NULL;
+
+	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
+	SDL_RenderClear(main_window_renderer);
+	if (frame != NULL)
+		SDL_RenderCopy(main_window_renderer, frame, NULL, dst);
+	if (!crt)
+		return;
+
+	SDL_RenderCopy(main_window_renderer, crt_scanlines, NULL, dst);
+	if (crt_filter != CRT_FILTER_FULL)
+		return;
+
+	// Added after the scanlines, the glow fills their gaps where the picture is bright.
+	if (glow != NULL)
+	{
+		SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
+		SDL_SetTextureAlphaMod(glow, CRT_GLOW_ALPHA);
+		SDL_RenderCopy(main_window_renderer, glow, NULL, dst);
+	}
+	if (crt_ensure_mask(dst->w))
+		SDL_RenderCopy(main_window_renderer, crt_mask, NULL, dst);
+	SDL_RenderCopy(main_window_renderer, crt_vignette, NULL, dst);
+}
+
 static void scale_and_flip(SDL_Surface *src_surface)
 {
 	assert(src_surface->format->BitsPerPixel == 8);
@@ -860,10 +1079,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 	SDL_Rect dst_rect;
 	calc_dst_render_rect(src_surface, &dst_rect);
 
-	// Clear the window and blit the output texture to it
-	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
-	SDL_RenderClear(main_window_renderer);
-	SDL_RenderCopy(main_window_renderer, main_window_texture, NULL, &dst_rect);
+	present_frame(main_window_texture, &dst_rect);
 	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
 
@@ -881,10 +1097,7 @@ void video_repeat_last_present(void)
 	if (main_window_renderer == NULL)
 		return;
 
-	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
-	SDL_RenderClear(main_window_renderer);
-	if (last_present_texture != NULL)
-		SDL_RenderCopy(main_window_renderer, last_present_texture, NULL, &last_output_rect);
+	present_frame(last_present_texture, &last_output_rect);
 	touch_ui_render(main_window_renderer, &last_output_rect);
 	SDL_RenderPresent(main_window_renderer);
 }
@@ -1471,9 +1684,7 @@ void present_hi(SDL_Surface *hi)
 	// Present supersampled output with one unfiltered nearest-neighbor copy.
 	SDL_SetTextureScaleMode(hi_texture, SDL_ScaleModeNearest);
 
-	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
-	SDL_RenderClear(main_window_renderer);
-	SDL_RenderCopy(main_window_renderer, hi_texture, NULL, &dst_rect);
+	present_frame(hi_texture, &dst_rect);
 	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
 

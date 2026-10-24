@@ -3152,6 +3152,7 @@ start_level_first:
 
 	memset(explosions,       0, sizeof(explosions));
 	memset(rep_explosions,   0, sizeof(rep_explosions));
+	explosion_rumble_reset();
 
 	/* --- Clear Sound Queue --- */
 	memset(soundQueue,       0, sizeof(soundQueue));
@@ -4466,7 +4467,7 @@ draw_player_shot_loop_end:
 			else
 			{
 				JE_setupExplosion(tempX, tempY, 0, 1, false, false);
-				explosion_rumble_add(EXPLOSION_RUMBLE_POP);
+				explosion_rumble_add(EXPLOSION_RUMBLE_POP, false, tempX, tempY);
 
 				soundQueue[5] = S_EXPLOSION_4;
 
@@ -4712,10 +4713,8 @@ draw_player_shot_loop_end:
 		}
 	}
 
-	// Every blast of the tick feeds one rumble pulse, so a busier tick rumbles harder.
-	const float blastEnergy = explosion_rumble_take();
-	if (blastEnergy > 0.0f && !rollback_resim && !play_demo)
-		joystick_rumble(0, MIN(blastEnergy, 1.0f), MIN(blastEnergy * 0.5f, 1.0f), 120);
+	// The tick's blasts all feed one fading rumble, so a busier tick rumbles harder.
+	explosion_rumble_tick(!rollback_resim && !play_demo);
 
 	if (returnActive && enemyOnScreen == 0)
 	{

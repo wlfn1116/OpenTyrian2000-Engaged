@@ -57,15 +57,19 @@ extern rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS];
 void JE_setupExplosion(JE_integer x, JE_integer y, JE_integer deltaY, JE_integer type, bool fixedPosition, bool followPlayer);
 void JE_setupExplosionLarge(JE_boolean enemyground, JE_byte explonum, JE_integer x, JE_integer y);
 
-// Rumble energy per blast, as a share of full motor strength. The game loop sums one tick's
-// blasts into a single pulse; presentation only.
+// Rumble energy per blast, as a share of full motor strength. Presentation only.
 #define EXPLOSION_RUMBLE_SMALL 0.2f   // a small enemy's death
 #define EXPLOSION_RUMBLE_POP   0.15f  // one pop of a small repeating sequence
 #define EXPLOSION_RUMBLE_LARGE 0.35f  // every JE_setupExplosionLarge
 #define EXPLOSION_RUMBLE_BIG   0.6f   // a large blast that starts a big sequence
 
-void explosion_rumble_add(float energy);
-// The energy added since the last call, which resets it.
-float explosion_rumble_take(void);
+// A blast at (x, y) for this tick's rumble. Heavy blasts lean on the low motor and fade slowly,
+// light ones on the high motor and fade fast. A ship feels a distant blast less.
+void explosion_rumble_add(float energy, bool heavy, int x, int y);
+// Once per tick: fade each ship's blast rumble, add the tick's blasts and hold the result on
+// its controllers. A tick that is not `live` (a rollback resim, a demo) only drops its blasts.
+void explosion_rumble_tick(bool live);
+// Silence the fading rumble, for a new level.
+void explosion_rumble_reset(void);
 
 #endif /* EXPLOSIONS_H */
