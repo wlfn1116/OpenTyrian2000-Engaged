@@ -29,6 +29,10 @@ bool vita_get_local_ip(uint32_t *out);
 // Return the fixed 960x544 output size. Either pointer may be NULL.
 void vita_get_output_size(int *w, int *h);
 
+// Whether SDL joystick instance `instance` is a paired controller. SDL reads and rumbles instance i
+// through port i + 1; any controller type there counts except the console's own controls.
+bool vita_pad_is_paired(int instance);
+
 #endif // __vita__
 
 #endif // VITA_PLATFORM_H

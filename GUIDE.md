@@ -522,7 +522,8 @@ A hit rumbles the pad steering the ship that was hit, which online is only ever
 yours. In a local 2-player game each pad feels the blasts by their distance from
 its own ship. In Destruct, blasts rumble every pad, and a hit or a lost unit
 rumbles the pad of the player whose unit it was. The Vita handheld has no
-vibration motor.
+vibration motor, so on a Vita the setting appears only while a paired
+controller is connected.
 
 Rumble stops when you pause, open the in-game menu, reach the shop or outpost
 between levels, or switch to another window.

@@ -11,6 +11,7 @@
 #include "keyboard.h"          // keydown/mousedown, see the end of vita_swkbd
 #include "video.h"             // main_window, video_repeat_last_present()
 
+#include <psp2/ctrl.h>         // sceCtrlGetControllerPortInfo
 #include <psp2/io/stat.h>      // sceIoMkdir
 #include <psp2/sysmodule.h>    // sceSysmoduleLoadModule, SCE_SYSMODULE_IME
 #include <psp2/common_dialog.h>// SceCommonDialogStatus
@@ -206,6 +207,19 @@ void vita_get_output_size(int *w, int *h)
 		*w = 960;
 	if (h != NULL)
 		*h = 544;
+}
+
+bool vita_pad_is_paired(int instance)
+{
+	SceCtrlPortInfo info;
+	if (instance < 0 || (size_t)instance + 1 >= sizeof(info.port) ||
+	    sceCtrlGetControllerPortInfo(&info) < 0)
+		return false;
+
+	// PHY is the handheld's built-in controls, VIRT the PS TV's virtual pad.
+	const uint8_t type = info.port[instance + 1];
+	return type != SCE_CTRL_TYPE_UNPAIRED && type != SCE_CTRL_TYPE_PHY &&
+	       type != SCE_CTRL_TYPE_VIRT;
 }
 
 #endif // __vita__

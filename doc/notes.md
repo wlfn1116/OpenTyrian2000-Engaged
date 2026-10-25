@@ -1065,7 +1065,9 @@ it knows the pad; `SDL_INIT_GAMECONTROLLER` exists only for that. SDL2 binds
 give no axis half, so stick and d-pad directions read up and left as negative.
 The PS4/PS5 rumble hints are set before any pad opens because those drivers
 report rumble capability only in extended mode, and the Rumble row is shown by
-`joystick_can_rumble`. Android needs the `VIBRATE` permission for gamepad
+`joystick_can_rumble`. SDL claims rumble for every Vita pad, so there any paired
+controller counts (`vita_pad_is_paired`) and the console's own controls never
+do. Android needs the `VIBRATE` permission for gamepad
 motors, and the mobile accelerometers are kept out of the joystick list.
 
 Logs are created lazily under `log/`. Network reports keep unsymbolized RVAs to

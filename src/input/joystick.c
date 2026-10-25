@@ -30,6 +30,7 @@
 #include "switch_platform.h"
 #include "touch_ui.h"
 #include "video.h"
+#include "vita_platform.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -660,6 +661,11 @@ bool joystick_can_rumble(void)
 			continue;
 #if defined(__SWITCH__)
 		return true;  // every controller the system hands the game has HD rumble
+#elif defined(__vita__)
+		// SDL claims rumble for every Vita pad. Only the console's own controls are known to have
+		// no motors.
+		if (vita_pad_is_paired(SDL_JoystickInstanceID(joystick[j].handle)))
+			return true;
 #elif SDL_VERSION_ATLEAST(2, 0, 18)
 		if (SDL_JoystickHasRumble(joystick[j].handle))
 			return true;
