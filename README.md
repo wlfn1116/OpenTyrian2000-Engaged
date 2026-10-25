@@ -142,8 +142,8 @@ make sanitize-test
 ```
 
 The suite covers deterministic replays, rollback state, save codecs, upstream
-save import, malformed inputs, Endless generation, pixel loops and threaded
-rendering, and two network peers behind a fault proxy.
+save import, malformed inputs, Endless generation, pixel loops
+and threaded rendering, and two network peers behind a fault proxy.
 [testing/README.md](testing/README.md) lists the runners and scenarios.
 
 GitHub Actions builds Windows (x86-64 and ARM64), Linux (x86-64 and aarch64),
