@@ -31,6 +31,8 @@ It covers:
 - online mode flags, ownership, and lobby settings
 - both-player Endless perks, shops, drives, deaths, and course choices
 - deterministic generation across 768 course seeds
+- every shipped level's event script through the loader, its data corrections,
+  and how far each spawn group's pieces spread
 - hostile values, truncation, string termination, and guard bytes
 - SSE2, NEON, and SWAR pixel loops against frozen scalar copies
 - threaded frame rows, Render Threads tuning, band replay, and scalers whose

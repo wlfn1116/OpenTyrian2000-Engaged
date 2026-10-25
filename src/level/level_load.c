@@ -22,6 +22,7 @@
 #include "background.h"
 #include "config.h"
 #include "crashlog.h"
+#include "custom_episode.h"
 #include "demo.h"
 #include "draw.h"
 #include "episodes.h"
@@ -347,6 +348,59 @@ static void event_backdate_savara_cannons(void)
 		}
 		eventRec[j] = moved;
 	}
+}
+
+// Tyrian 2000 moved every SURFACE arch nub (enemy 212) to y 116, where it pops in mid-screen 194px
+// below its arch. Restore the Tyrian 2.1 spot: 18px left of the arch's enemy 213 and 6px lower.
+static void event_reattach_surface_arch_nubs(void)
+{
+	if (episodeNum != 4 || lvlFileNum != 4 || customEpisodeActive())
+		return;
+
+	for (JE_word i = 0; i < maxEvent; ++i)
+	{
+		struct JE_EventRecType *const nub = &eventRec[i];
+		if (nub->eventtype != 7 || nub->eventdat != 212 || nub->eventdat5 != 116)
+			continue;
+
+		for (JE_word j = 0; j < maxEvent; ++j)
+		{
+			const struct JE_EventRecType *const arch = &eventRec[j];
+			if (arch->eventtype == 7 && arch->eventdat == 213 &&
+			    arch->eventtime == nub->eventtime && arch->eventdat2 == nub->eventdat2)
+			{
+				nub->eventdat2 = arch->eventdat2 - 18;
+				nub->eventdat5 = arch->eventdat5 + 6;
+				break;
+			}
+		}
+	}
+}
+
+/* Read the event script that follows a level's random-enemy list, then apply the shipped-data
+ * corrections. Fails when the script would overflow eventRec. */
+static bool level_read_event_script(FILE *f)
+{
+	fread_u16_die(&maxEvent, 1, f);
+	if (maxEvent >= COUNTOF(eventRec))
+		return false;
+
+	for (JE_word i = 0; i < maxEvent; ++i)
+	{
+		fread_u16_die(&eventRec[i].eventtime, 1, f);
+		fread_u8_die( &eventRec[i].eventtype, 1, f);
+		fread_s16_die(&eventRec[i].eventdat,  1, f);
+		fread_s16_die(&eventRec[i].eventdat2, 1, f);
+		fread_s8_die( &eventRec[i].eventdat3, 1, f);
+		fread_s8_die( &eventRec[i].eventdat5, 1, f);
+		fread_s8_die( &eventRec[i].eventdat6, 1, f);
+		fread_u8_die( &eventRec[i].eventdat4, 1, f);
+	}
+	eventRec[maxEvent].eventtime = 65500;  /* Sentinel event. */
+
+	event_backdate_savara_cannons();
+	event_reattach_surface_arch_nubs();
+	return true;
 }
 
 /* --- Load Level/Map Data --- */
@@ -1069,8 +1123,7 @@ new_game:
 	}
 	fread_u16_die(levelEnemy, levelEnemyMax, level_f);
 
-	fread_u16_die(&maxEvent, 1, level_f);
-	if (maxEvent >= COUNTOF(eventRec))
+	if (!level_read_event_script(level_f))
 	{
 		fprintf(stderr, "error: episode %u level file %u has too many events (%u)\n",
 		        (unsigned int)episodeNum, (unsigned int)lvlFileNum, (unsigned int)maxEvent);
@@ -1078,19 +1131,6 @@ new_game:
 		JE_tyrianHalt(1);
 		return;
 	}
-	for (x = 0; x < maxEvent; x++)
-	{
-		fread_u16_die(&eventRec[x].eventtime, 1, level_f);
-		fread_u8_die( &eventRec[x].eventtype, 1, level_f);
-		fread_s16_die(&eventRec[x].eventdat,  1, level_f);
-		fread_s16_die(&eventRec[x].eventdat2, 1, level_f);
-		fread_s8_die( &eventRec[x].eventdat3, 1, level_f);
-		fread_s8_die( &eventRec[x].eventdat5, 1, level_f);
-		fread_s8_die( &eventRec[x].eventdat6, 1, level_f);
-		fread_u8_die( &eventRec[x].eventdat4, 1, level_f);
-	}
-	eventRec[x].eventtime = 65500;  /* Sentinel event. */
-	event_backdate_savara_cannons();
 
 	/* Map shape lookup table; each map follows its level data. */
 	for (temp = 0; temp < 3; temp++)
@@ -1274,4 +1314,187 @@ static void JE_displayText(void)
 
 	} while (!(JE_anyButton() || (frameCountMax == 0 && temp == 1) || ESCPressed));
 	levelWarningDisplay = false;
+}
+
+/* ---- QA: shipped event scripts --------------------------------------------------------------- */
+
+// A spawn group is the explicitly placed enemies one tick creates through one event type. No piece
+// may sit farther than this from its group's median height.
+#define QA_SPAWN_SPREAD_PX 100
+
+// Authored groups that place one piece past the spread bound; all are unchanged since Tyrian 2.1.
+static const struct
+{
+	JE_byte episode, lvl_file, type;
+	JE_integer enemy;
+} qa_authored_spread[] =
+{
+	{ 2,  8,  6, 810 },  // MARKERS
+	{ 3,  6, 15, 707 },  // FLEET
+	{ 4, 10,  7, 393 },  // DESERTRUN
+};
+
+static bool qa_spread_authored(const struct JE_EventRecType *e)
+{
+	for (size_t i = 0; i < COUNTOF(qa_authored_spread); ++i)
+	{
+		if (qa_authored_spread[i].episode == episodeNum &&
+		    qa_authored_spread[i].lvl_file == lvlFileNum &&
+		    qa_authored_spread[i].type == e->eventtype &&
+		    qa_authored_spread[i].enemy == e->eventdat)
+			return true;
+	}
+	return false;
+}
+
+// Count the loaded script's spawns farther than the bound from their group's median height.
+static unsigned int qa_scattered_spawns(void)
+{
+	static const JE_byte spawn_types[] = { 6, 7, 10, 15 };
+	static JE_shortint height[EVENT_MAXIMUM];
+	unsigned int scattered = 0;
+
+	JE_word start = 0;
+	while (start < maxEvent)
+	{
+		JE_word end = start + 1;
+		while (end < maxEvent && eventRec[end].eventtime == eventRec[start].eventtime)
+			++end;
+
+		for (size_t t = 0; t < COUNTOF(spawn_types); ++t)
+		{
+			unsigned int n = 0;
+			for (JE_word i = start; i < end; ++i)
+			{
+				if (eventRec[i].eventtype != spawn_types[t] || eventRec[i].eventdat2 == -99)
+					continue;
+
+				JE_word k = (JE_word)n++;
+				for (; k > 0 && height[k - 1] > eventRec[i].eventdat5; --k)
+					height[k] = height[k - 1];
+				height[k] = eventRec[i].eventdat5;
+			}
+			if (n < 3)
+				continue;
+
+			const int median2 = height[(n - 1) / 2] + height[n / 2];  // twice the median
+			for (JE_word i = start; i < end; ++i)
+			{
+				const struct JE_EventRecType *const e = &eventRec[i];
+				if (e->eventtype != spawn_types[t] || e->eventdat2 == -99 ||
+				    abs(2 * e->eventdat5 - median2) <= 2 * QA_SPAWN_SPREAD_PX ||
+				    qa_spread_authored(e))
+					continue;
+
+				printf("# scattered spawn: episode %u file %u tick %u enemy %d at y %d\n",
+				       (unsigned int)episodeNum, (unsigned int)lvlFileNum,
+				       (unsigned int)e->eventtime, (int)e->eventdat, (int)e->eventdat5);
+				++scattered;
+			}
+		}
+		start = end;
+	}
+	return scattered;
+}
+
+// Count the loaded SURFACE nubs, returning how many sit where the load-time correction puts them.
+static unsigned int qa_attached_surface_nubs(unsigned int *nubs)
+{
+	unsigned int attached = 0;
+	for (JE_word i = 0; i < maxEvent; ++i)
+	{
+		const struct JE_EventRecType *const nub = &eventRec[i];
+		if (nub->eventtype != 7 || nub->eventdat != 212)
+			continue;
+
+		++*nubs;
+		for (JE_word j = 0; j < maxEvent; ++j)
+		{
+			const struct JE_EventRecType *const arch = &eventRec[j];
+			if (arch->eventtype == 7 && arch->eventdat == 213 &&
+			    arch->eventtime == nub->eventtime &&
+			    arch->eventdat2 == nub->eventdat2 + 18 && arch->eventdat5 == nub->eventdat5 - 6)
+			{
+				++attached;
+				break;
+			}
+		}
+	}
+	return attached;
+}
+
+void qa_test_level_event_scripts(void)
+{
+	struct JE_EventRecType *const saved = malloc(sizeof(eventRec));
+	if (saved == NULL)
+	{
+		qa_check(false, "the level event test can save the loaded event script");
+		return;
+	}
+	memcpy(saved, eventRec, sizeof(eventRec));
+	const JE_word saved_events = maxEvent;
+	const JE_byte saved_episode = episodeNum, saved_lvl_file = lvlFileNum;
+
+	unsigned int levels = 0, nubs = 0, attached = 0, scattered = 0;
+	bool read_all = true;
+	for (int ep = 1; ep <= EPISODE_MAX; ++ep)
+	{
+		if (!episodeAvail[ep - 1])
+			continue;
+
+		char name[13];
+		snprintf(name, sizeof(name), "tyrian%d.lvl", ep);
+		FILE *const f = dir_fopen_warn(data_dir(), name, "rb");
+		JE_LvlPosType pos;
+		JE_word offsets = 0;
+		if (f != NULL)
+			fread_u16_die(&offsets, 1, f);
+		if (f == NULL || offsets < 3 || offsets >= COUNTOF(pos) || offsets % 2 == 0)
+		{
+			read_all = false;
+			if (f != NULL)
+				fclose(f);
+			continue;
+		}
+		fread_s32_die(pos, offsets, f);
+
+		episodeNum = (JE_byte)ep;
+		for (lvlFileNum = 1; lvlFileNum <= offsets / 2; ++lvlFileNum)
+		{
+			// Skip what JE_loadMap reads first: two file letters, three map origins, then the
+			// random-enemy list.
+			JE_word enemies;
+			if (fseek(f, pos[(lvlFileNum - 1) * 2] + 8, SEEK_SET) != 0)
+			{
+				read_all = false;
+				break;
+			}
+			fread_u16_die(&enemies, 1, f);
+			if (fseek(f, 2L * enemies, SEEK_CUR) != 0 || !level_read_event_script(f))
+			{
+				read_all = false;
+				continue;
+			}
+
+			++levels;
+			scattered += qa_scattered_spawns();
+			if (ep == 4 && lvlFileNum == 4)
+				attached += qa_attached_surface_nubs(&nubs);
+		}
+		fclose(f);
+	}
+
+	memcpy(eventRec, saved, sizeof(eventRec));
+	free(saved);
+	maxEvent = saved_events;
+	episodeNum = saved_episode;
+	lvlFileNum = saved_lvl_file;
+
+	qa_check(read_all && levels > 0, "every shipped level's event script reads through the loader");
+	qa_check(!episodeAvail[4 - 1] || (nubs > 0 && attached == nubs),
+	         "SURFACE's arch nubs spawn beside their arches, as in Tyrian 2.1");
+	qa_check(scattered == 0, "outside the authored designs, no spawn group places a piece over "
+	         "100px from its median height");
+	printf("# level events: %u levels, %u SURFACE arch nubs, %u scattered spawns\n",
+	       levels, nubs, scattered);
 }

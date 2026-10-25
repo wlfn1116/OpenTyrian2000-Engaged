@@ -124,7 +124,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       94           /* The save record carries the dual-ship fields unpacked. */
+#define NET_VERSION       95           /* SURFACE's arch nubs load beside their arches. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

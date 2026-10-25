@@ -1116,6 +1116,11 @@ does not reorder authored pickups.
   `MAP_STOP_STALL_LIMIT`.
 - Test the HARVEST entrance after watchdog changes.
 - Dormant dispenser bases are enemy IDs 80 through 83; piece 80 fires on frame 9.
+- `level_read_event_script` corrects shipped scripts as they load: it backdates
+  Episode 5 SAVARA's cannon groups and returns SURFACE's arch nubs (enemy 212),
+  which Tyrian 2000 moved 194 px below their arches, to the Tyrian 2.1 spot.
+- `qa_test_level_event_scripts` fails any spawn piece over 100 px from its
+  group's median height, except three authored designs kept since Tyrian 2.1.
 
 `tools/dump/dump_data.py` mirrors the loaders and writes the tracked `dumps/`
 trees. Every decoder needs a verification check that accounts for its source

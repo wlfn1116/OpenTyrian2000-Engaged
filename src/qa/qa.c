@@ -435,6 +435,7 @@ int qa_run_unit_suite(void)
 	qa_test_course_reroll();
 	qa_test_course_seat_parity();
 	qa_test_course_reroll_dodge();
+	qa_test_level_event_scripts();
 	qa_test_item_data_settings();
 	qa_test_firing_sound_levels();
 	qa_test_sfx_filter();
