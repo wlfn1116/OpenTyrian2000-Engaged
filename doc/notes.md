@@ -1077,7 +1077,11 @@ A fresh profile has no user directory. Code that writes a file opens it under
 `get_user_directory()` and must not create it.
 
 Switch must keep its SDL window resizable for dock changes and save controller
-changes immediately. Vita boots with the None scaler, resolves Sub-pixel Auto to
+changes immediately. Its quit leaves through `_Exit`, because newlib's stdio
+teardown in `exit` crashes once romfs is unmounted, so `JE_tyrianHalt` calls
+`switch_platform_exit` itself. An NRO that skips `socketExit` leaves its socket
+session in hbloader's process, and bsdsocket aborts with 2162-0002 when HOME
+closes that process. Vita boots with the None scaler, resolves Sub-pixel Auto to
 the scaler factor without the desktop's 2x minimum, keeps presenting during IME
 use, and uses front touch only.
 

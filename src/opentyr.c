@@ -143,7 +143,9 @@ void JE_tyrianHalt(JE_byte code)
 
 #ifdef __SWITCH__
 	// Switch: libc exit()'s atexit/stdio teardown NULL-derefs in newlib once romfs is
-	// gone; everything is already flushed, so _Exit and skip it.
+	// gone; everything is already flushed, so _Exit and skip it. That skips atexit too,
+	// so the console services are released here.
+	switch_platform_exit();
 	_Exit(code);
 #else
 	exit(code);

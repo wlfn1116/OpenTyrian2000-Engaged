@@ -2,11 +2,12 @@ plugins {
 	id 'com.android.application'
 }
 
-// Read the version from the header shared by the game and other packages.
+// Read the version from the header shared by the game and other packages, as its dotted numbers
+// and any suffix after them, such as the "a" of 1.4.5a.
 def engagedVersion() {
 	def header = file('../../src/opentyrian_version.h').text
-	def match = header =~ /OPENTYRIAN_VERSION\s+"[^"0-9]*([0-9]+(?:\.[0-9]+)*)"/
-	return match ? match[0][1] : '1.0'
+	def match = header =~ /OPENTYRIAN_VERSION\s+"[^"0-9]*([0-9]+(?:\.[0-9]+)*)([^"]*)"/
+	return match ? [match[0][1], match[0][2]] : ['1.0', '']
 }
 
 // Pack the dotted version into Android's monotonically increasing integer versionCode.
@@ -25,8 +26,8 @@ android {
 		applicationId 'net.opentyrian.engaged'
 		minSdk 26
 		targetSdk 35
-		versionName engagedVersion()
-		versionCode engagedVersionCode(engagedVersion())
+		versionName engagedVersion().join('')
+		versionCode engagedVersionCode(engagedVersion()[0])
 
 		externalNativeBuild {
 			ndkBuild {

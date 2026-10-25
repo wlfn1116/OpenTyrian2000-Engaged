@@ -7,6 +7,8 @@
 
 #ifdef __SWITCH__
 
+#include "switch_ldn.h"
+
 #include <switch.h>
 
 #include <stdlib.h>
@@ -15,12 +17,16 @@
 // romfsInit() mounts the read-only asset bundle baked into the .nro at romfs:/.
 // The SD card (sdmc:/) is mounted automatically by libnx before main() runs.
 
-// Set once socketInitializeDefault() has succeeded, so the exit path only tears down what
-// was actually brought up.
+// Set once socketInitializeDefault() and romfsInit() have succeeded, so the exit path only
+// tears down what was actually brought up.
 static bool net_up = false;
+static bool romfs_up = false;
 
-static void switch_platform_exit(void)
+void switch_platform_exit(void)
 {
+	// A local wireless network carries sockets, so it closes before the socket layer.
+	switch_ldn_leave();
+
 	if (net_up)
 	{
 		nifmExit();
@@ -28,13 +34,17 @@ static void switch_platform_exit(void)
 		net_up = false;
 	}
 
-	romfsExit();
+	if (romfs_up)
+	{
+		romfsExit();
+		romfs_up = false;
+	}
 }
 
 void switch_platform_init(void)
 {
 	// Mount bundled read-only data. Failure means the SD-card copy is used.
-	romfsInit();
+	romfs_up = R_SUCCEEDED(romfsInit());
 
 	// Create the standard Switch data directory and this game's writable subdirectory.
 	mkdir("sdmc:/switch", 0777);

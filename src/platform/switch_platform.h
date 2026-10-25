@@ -18,6 +18,9 @@
 // Mount romfs, ensure the SD-card user directory exists, and register cleanup.
 // Call once, as early as possible in main() (before any file access).
 void switch_platform_init(void);
+// Release what switch_platform_init and local wireless brought up; safe to call twice. An exit
+// that skips it leaves the socket session open, which crashes bsdsocket later (doc/notes.md).
+void switch_platform_exit(void);
 
 // Show the modal Switch keyboard. `max_len` 0 uses the output buffer's full
 // capacity, and `numeric` selects the number pad. Returns false on cancel.

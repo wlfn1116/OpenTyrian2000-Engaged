@@ -21,9 +21,10 @@ endif()
 set(OT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(OT_BUNDLE_ID "net.opentyrian.engaged" CACHE STRING "macOS bundle identifier")
 
-# Version string for the bundle, taken from the header the title screen reads.
+# Version string for the bundle, taken from the header the title screen reads. Bundle versions
+# are numbers only, so a letter suffix such as the "a" of 1.4.5a is dropped.
 file(READ "${OT_ROOT}/src/opentyrian_version.h" OT_VERSION_HEADER)
-if(OT_VERSION_HEADER MATCHES "OPENTYRIAN_VERSION[ \t]+\"[^\"0-9]*([0-9]+(\\.[0-9]+)*)\"")
+if(OT_VERSION_HEADER MATCHES "OPENTYRIAN_VERSION[ \t]+\"[^\"0-9]*([0-9]+(\\.[0-9]+)*)[^\"]*\"")
   set(OT_VERSION "${CMAKE_MATCH_1}")
 else()
   set(OT_VERSION "1.0")
