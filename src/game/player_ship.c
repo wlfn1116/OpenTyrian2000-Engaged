@@ -1931,10 +1931,16 @@ redo:
 		int ship_banking;
 		if (vt)
 		{
-			// Display-rate banking uses inter-tick horizontal motion.
+			// Bank from momentum like the classic path: a tick's displacement varies with how many
+			// display frames it spans. Mouse and touch steering add no momentum and bank from the
+			// displacement, as does Delay-Based netplay, whose wire carries no velocity.
 			int dvx, dvy;
 			vt_ship_shot_delta(playerNum_ - 1, &dvx, &dvy);
-			ship_banking = dvx / 2;
+			const bool velocity_synced = !isNetworkGame || nrb_active();
+			if (velocity_synced && this_player->x_velocity != 0)
+				ship_banking = this_player->x_velocity / 2;
+			else
+				ship_banking = dvx / 2;
 		}
 		else
 		{
