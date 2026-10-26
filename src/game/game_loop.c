@@ -2561,10 +2561,7 @@ start_level:
 
 	JE_clearKeyboard();
 
-	free_sprite2s(&enemySpriteSheets[0]);
-	free_sprite2s(&enemySpriteSheets[1]);
-	free_sprite2s(&enemySpriteSheets[2]);
-	free_sprite2s(&enemySpriteSheets[3]);
+	free_enemy_sprite_sheets();
 
 	/* Normal speed */
 	if (fastPlay != 0)
@@ -5219,7 +5216,7 @@ draw_player_shot_loop_end:
 						network_check();
 						SDL_Delay(1);
 					}
-					exit(rc);
+					JE_tyrianExitWithoutSaving(rc);
 				}
 			}
 		}

@@ -121,6 +121,8 @@ void JE_loadCompShapes(Sprite2_array *, char s);
 void JE_loadCompShapesB(Sprite2_array *, FILE *f);
 void free_sprite2s(Sprite2_array *);
 
+enum { SPRITE2_CELL_W = 12, SPRITE2_CELL_H = 14, SPRITE2_CELL_PIXELS = 12 * 14 };
+
 int sprite2_count(const Sprite2_array *);
 Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank (0..15) the sprite is mostly drawn in
 
@@ -129,6 +131,8 @@ bool sprite2_ink_bounds(Sprite2_array, unsigned int index, int *x0, int *y0, int
 bool sprite2_hflip_equal(Sprite2_array, unsigned int index, unsigned int mirrored_index);
 bool sprite2_has_color(Sprite2_array, unsigned int index, Uint8 color);
 Uint8 sprite2x2_pixel(Sprite2_array, unsigned int index, int x, int y);
+void sprite2x2_decode(Sprite2_array, unsigned int index,
+                      Uint8 pixels[2 * SPRITE2_CELL_H][2 * SPRITE2_CELL_W]);
 
 void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
@@ -205,5 +209,6 @@ void blit_sprite2x2_scaled(SDL_Surface *, int x, int y, Sprite2_array, unsigned 
 
 void JE_loadMainShapeTables(const char *shpfile);
 void free_main_shape_tables(void);
+void free_enemy_sprite_sheets(void);
 
 #endif // SPRITE_H

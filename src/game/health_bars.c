@@ -71,6 +71,7 @@ static void JE_barX(JE_word x1, JE_word y1, JE_word x2, JE_word y2, JE_byte col)
 }
 
 #define BOSS_BAR_GREY_BANK ENEMY_FLASH_BANK
+#define HEALTH_BAR_BANK 112
 
 /* Return the link group's bar palette and flash lift. Invulnerable groups use the grey bank. */
 static void boss_bar_colours(JE_byte link_num, int *base, int *lift)
@@ -106,7 +107,7 @@ static void boss_bar_colours(JE_byte link_num, int *base, int *lift)
 	}
 
 	const Uint8 tint = endlessFxActive() ? endlessEliteTint(tier) : 0;
-	*base = (tint != 0) ? tint : 112;  // palette bank 7 (default)
+	*base = (tint != 0) ? tint : HEALTH_BAR_BANK;  // palette bank 7 (default)
 }
 
 static void bbfill(SDL_Surface *dst, int x0, int y0, int x1, int y1, int scale, Uint8 color)
@@ -452,7 +453,7 @@ static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, fl
 
 void draw_enemy_hp_bar_box(int id, int boxL, int boxR, int boxT, int boxB, float frac)
 {
-	draw_enemy_hp_bar(id, boxL, boxR, boxT, boxB, frac, 112, 0.0f, 0, 0.0f, 0, 0.0f, 0);
+	draw_enemy_hp_bar(id, boxL, boxR, boxT, boxB, frac, HEALTH_BAR_BANK, 0.0f, 0, 0.0f, 0, 0.0f, 0);
 }
 
 // Draw one small bar per damaged, non-boss linked hull.
@@ -522,7 +523,7 @@ void draw_enemy_health_bars(void)
 			// Endless special enemies get a bar in their tint bank (elite / champion) so the
 			// bar reads as part of the enemy; ordinary enemies keep the bank-7 yellow ramp.
 			const Uint8 barTint = endlessEliteTint(enemy[e].eliteState);
-			const int barBase = (barTint != 0) ? barTint : 112;  // palette bank 7
+			const int barBase = (barTint != 0) ? barTint : HEALTH_BAR_BANK;  // palette bank 7
 			// Preserve the representative enemy's draw-batch anchor for its bar.
 			const int par_layer = (e < 25) ? 2 : (e < 50) ? 1 : (e < 75) ? 3 : 1;
 			const float par_anchor = (float)(enemy[e].mapoffset - PLAYFIELD_X_SHIFT) + enemy[e].mapoffset_frac;

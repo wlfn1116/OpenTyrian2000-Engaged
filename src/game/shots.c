@@ -143,11 +143,17 @@ static void draw_player_shot_special(int x, int y, unsigned int frame, NetShipSt
 }
 
 // Draw one shot with its returned-shot tint and owner opacity. Faded shots omit shadows.
+Sprite2_array *shot_sprite_sheet(unsigned int sprite_frame, unsigned int *index)
+{
+	*index = (sprite_frame > 500) ? sprite_frame - 500 : sprite_frame;
+	return (sprite_frame > 500) ? &spriteSheet12 : &spriteSheet8;
+}
+
 static void draw_player_shot_sprite(int x, int y, JE_word sprite_frame, Uint8 tint,
                                     NetShipStyle style, bool shadow)
 {
-	Sprite2_array *const sheet = (sprite_frame > 500) ? &spriteSheet12 : &spriteSheet8;
-	const unsigned int frame = (sprite_frame > 500) ? sprite_frame - 500 : sprite_frame;
+	unsigned int frame;
+	Sprite2_array *const sheet = shot_sprite_sheet(sprite_frame, &frame);
 
 	if (shadow && style.opacity >= NET_STYLE_SOLID)
 		blit_sprite2_darken(VGAScreen, x, y + shadowYDist, *sheet, frame);
@@ -342,15 +348,21 @@ void player_shot_set_direction(JE_integer shot_id, uint weapon_id, JE_real direc
 	}
 }
 
+static const Sprite *special_shot_sprite(JE_word sprite_frame)
+{
+	const unsigned int id = (unsigned int)(sprite_frame - 60001);
+	return id < sprite_table[OPTION_SHAPES].count ? sprite(OPTION_SHAPES, id) : NULL;
+}
+
 void player_shot_hit_offset(JE_word sprite_frame, int *out_dx, int *out_dy)
 {
 	if (sprite_frame > 60000)  // special weapon: drawn from the sprite table, which stores its size
 	{
-		const unsigned int id = sprite_frame - 60001;
+		const Sprite *const special = special_shot_sprite(sprite_frame);
 		// A special is already taken from the middle of its sprite in both modes; only the pixel
 		// its blit is offset by is new, so Classic keeps the point the vanilla test used.
-		*out_dx = (centeredShotHitboxes ? 1 : 0) + sprite(OPTION_SHAPES, id)->width / 2;
-		*out_dy = sprite(OPTION_SHAPES, id)->height / 2;
+		*out_dx = (centeredShotHitboxes ? 1 : 0) + (special != NULL ? special->width / 2 : 0);
+		*out_dy = special != NULL ? special->height / 2 : 0;
 		return;
 	}
 
@@ -363,10 +375,9 @@ void player_shot_hit_offset(JE_word sprite_frame, int *out_dx, int *out_dy)
 	if (sprite_frame > 1000)  // superspark trail marker; the frame itself is what is left below it
 		sprite_frame %= 1000;
 
-	if (sprite_frame > 500)
-		sprite2_center_offset(spriteSheet12, sprite_frame - 500, out_dx, out_dy);
-	else
-		sprite2_center_offset(spriteSheet8, sprite_frame, out_dx, out_dy);
+	unsigned int index;
+	const Sprite2_array *const sheet = shot_sprite_sheet(sprite_frame, &index);
+	sprite2_center_offset(*sheet, index, out_dx, out_dy);
 
 	*out_dx += 1;  // the shot is blitted one pixel right of the position it is stored at
 }
@@ -522,19 +533,22 @@ bool player_shot_move_and_draw(
 			rl_shot_attach = 3;
 		if (*out_is_special)
 		{
-			draw_player_shot_special(*out_shotx + 1, *out_shoty, sprite_frame - 60001,
-			                         shot_draw_style(shot->playerNumber));
+			const Sprite *const special = special_shot_sprite(sprite_frame);
+			if (special != NULL)
+				draw_player_shot_special(*out_shotx + 1, *out_shoty, sprite_frame - 60001,
+				                         shot_draw_style(shot->playerNumber));
 
-			*out_special_radiusw = sprite(OPTION_SHAPES, sprite_frame - 60001)->width / 2;
-			*out_special_radiush = sprite(OPTION_SHAPES, sprite_frame - 60001)->height / 2;
+			*out_special_radiusw = special != NULL ? special->width / 2 : 0;
+			*out_special_radiush = special != NULL ? special->height / 2 : 0;
 
 			// Opening Salvo: blended shots come from the sprite TABLE, so they need the table
 			// colour walker, and centre on the real sprite rather than a bullet's +6/+6.
 			if (shot->salvoBoost)
 			{
+				const Uint8 bank = special != NULL
+				                   ? sprite_dominant_bank(OPTION_SHAPES, sprite_frame - 60001) : 0;
 				salvo_sparks_at(*out_shotx + 1 + *out_special_radiusw, *out_shoty + *out_special_radiush,
-				                sprite_dominant_bank(OPTION_SHAPES, sprite_frame - 60001),
-				                shot->salvoBoost == 1);
+				                bank, shot->salvoBoost == 1);
 				shot->salvoBoost = 2;
 			}
 		}
@@ -579,7 +593,7 @@ static bool salvoBoostOverride = false;    // take the tag from salvoBoostFromPa
 static bool salvoBoostFromParent = false;  // the chain parent's tag, valid while the override is set
 
 // A circlesize shot closes its loop after 4 * cir_size ticks.
-static int shot_circle_center_offset_px(int dev, int dir, int cir_size)
+int shot_circle_sway2(int dev, int dir, int cir_size)
 {
 	if (cir_size <= 0)
 		return 0;
@@ -598,7 +612,12 @@ static int shot_circle_center_offset_px(int dev, int dir, int cir_size)
 			highest = pos;
 	}
 
-	return (lowest + highest) / 2;
+	return lowest + highest;
+}
+
+static int shot_circle_center_offset_px(int dev, int dir, int cir_size)
+{
+	return shot_circle_sway2(dev, dir, cir_size) / 2;
 }
 
 JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word PY, JE_word mouseX, JE_word mouseY, JE_word wpNum, JE_byte playerNum)

@@ -52,10 +52,6 @@
 
 static char lobby_status[64];  // transient one-line feedback under the menu
 
-// The session being started runs on a console's local wireless network, which has no address
-// worth reading out.
-static bool lobby_wireless = false;
-
 static const int lobby_difficulties[] =
 {
 	DIFFICULTY_EASY,
@@ -728,6 +724,8 @@ static int lobbyPickRow(const char *const *rows, int count, const char *footer)
 	const int dyItems = 18;
 	const int hItem = 13;
 
+	if (count <= 0)
+		return -1;
 	if (count > LOBBY_MAX_FOUND)
 		count = LOBBY_MAX_FOUND;
 
@@ -1326,7 +1324,7 @@ static void lobbyAbort(const char *status)
 }
 
 // Shared setup for both roles.  Returns true once connected.
-static bool lobbyStartSession(bool as_host)
+static bool lobbyStartSession(bool as_host, bool wireless)
 {
 	isNetworkGame = true;
 	network_from_lobby = true;
@@ -1359,7 +1357,8 @@ static bool lobbyStartSession(bool as_host)
 	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 70,
 	                    as_host ? "Waiting for a player to join..." : "Connecting...",
 	                    normal_font, centered, 15, -2, false, 2);
-	if (as_host && !lobby_wireless)
+	// A session on a console's local wireless network has no address worth reading out.
+	if (as_host && !wireless)
 		lobbyDrawLocalAddresses(100);
 	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160, "Esc to cancel", normal_font, centered, 15, -5, false, 2);
 	JE_showVGA();
@@ -1391,10 +1390,7 @@ static bool lobbyHostWireless(char *port_buf, size_t port_buf_size)
 		return false;
 	}
 
-	lobby_wireless = true;
-	const bool started = lobbyStartSession(true);
-	lobby_wireless = false;
-	return started;
+	return lobbyStartSession(true, true);
 }
 
 // Scan for local wireless games, join the one the player picks, and connect to its host.
@@ -1451,10 +1447,7 @@ static bool lobbyJoinWireless(void)
 	network_opponent_port = hosts[pick].port;
 	network_player_port = 0;  // any free port, as for every joiner
 
-	lobby_wireless = true;
-	const bool started = lobbyStartSession(false);
-	lobby_wireless = false;
-	return started;
+	return lobbyStartSession(false, true);
 }
 
 static bool lobbyWirelessMenu(char *port_buf, size_t port_buf_size)
@@ -1698,7 +1691,7 @@ bool networkLobby(void)
 		case ITEM_HOST:
 			JE_playSampleNum(S_SELECT);
 
-			if (lobbyHostMenu(port_buf, sizeof(port_buf)) && lobbyStartSession(true))
+			if (lobbyHostMenu(port_buf, sizeof(port_buf)) && lobbyStartSession(true, false))
 				return true;
 			break;
 
@@ -1727,7 +1720,7 @@ bool networkLobby(void)
 
 			network_player_port = 0;  // any free port; see the Join case
 
-			if (lobbyStartSession(false))
+			if (lobbyStartSession(false, false))
 				return true;
 			break;
 		}
@@ -1770,7 +1763,7 @@ bool networkLobby(void)
 			// both try to claim the listen port, and a joiner has no reason to need a fixed one.
 			network_player_port = 0;
 
-			if (lobbyStartSession(false))
+			if (lobbyStartSession(false, false))
 				return true;
 			break;
 		}

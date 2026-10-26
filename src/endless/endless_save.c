@@ -935,6 +935,9 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessPerkChoiceN = endlessClamp(r->perkChoiceN, 0, ENDLESS_SAVE_OFFERS);
 	for (int i = 0; i < ENDLESS_SAVE_OFFERS; ++i)
 		endlessPerkChoice[i] = r->perkChoice[i];
+	for (int i = 0; i < endlessPerkChoiceN; ++i)
+		if (endlessPerkChoice[i] < 0 || endlessPerkChoice[i] >= PERK_COUNT)
+			endlessPerkChoiceN = 0;
 
 	endlessLastEp  = r->lastEp;
 	endlessLastSec = r->lastSec;

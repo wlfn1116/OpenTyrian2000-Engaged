@@ -151,6 +151,9 @@
     <ClCompile Include="..\src\game\custom_weapon.c">
       <Filter>game</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\game\custom_weapon_autoscale.c">
+      <Filter>game</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\game\debug_flags.c">
       <Filter>game</Filter>
     </ClCompile>
@@ -212,6 +215,9 @@
       <Filter>input</Filter>
     </ClCompile>
     <ClCompile Include="..\src\input\mouse.c">
+      <Filter>input</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\input\rumble.c">
       <Filter>input</Filter>
     </ClCompile>
     <ClCompile Include="..\src\input\touch_ui.c">
@@ -316,10 +322,16 @@
     <ClCompile Include="..\src\qa\qa.c">
       <Filter>qa</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\qa\qa_audio.c">
+      <Filter>qa</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\qa\qa_combat.c">
       <Filter>qa</Filter>
     </ClCompile>
     <ClCompile Include="..\src\qa\qa_course.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_custom_weapons.c">
       <Filter>qa</Filter>
     </ClCompile>
     <ClCompile Include="..\src\qa\qa_economy.c">
@@ -328,7 +340,13 @@
     <ClCompile Include="..\src\qa\qa_endless.c">
       <Filter>qa</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\qa\qa_input.c">
+      <Filter>qa</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\qa\qa_items.c">
+      <Filter>qa</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\qa\qa_levels.c">
       <Filter>qa</Filter>
     </ClCompile>
     <ClCompile Include="..\src\qa\qa_net.c">
@@ -383,6 +401,9 @@
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\video.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\video_crt.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\video_scale.c">
@@ -587,6 +608,9 @@
     <ClInclude Include="..\src\input\mouse.h">
       <Filter>input</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\input\rumble.h">
+      <Filter>input</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\input\touch_ui.h">
       <Filter>input</Filter>
     </ClInclude>
@@ -723,6 +747,9 @@
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\video.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\video_crt.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\video_scale.h">

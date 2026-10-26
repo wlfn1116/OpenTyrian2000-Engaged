@@ -20,6 +20,8 @@
 
 #include "opentyr.h"
 
+#include "SDL.h"
+
 enum
 {
 	C_PANEL = 0xF1, C_WELL = 0xF0, C_DIV = 0xF6, C_GUIDE = 0xF8, C_HI = 0xFB, C_SEL = 0xF5,
@@ -31,5 +33,19 @@ double editorTickMs(void);
 void editorDrawHint(const char *text);
 void editorDrawPanel(int x0, int y0, int x1, int y1);
 void editorDrawWell(int x0, int y0, int x1, int y1, Uint8 fill, Uint8 rim, Uint8 clamp);
+
+typedef void (*EditorStarCell)(SDL_Surface *dst, int scale, int x_offset, int x, float fy,
+                               JE_byte c);
+void editorDrawStars(SDL_Surface *dst, int scale, int x_offset, Uint32 clock_ms, int x0, int y0,
+                     int x1, int y1, unsigned int count, EditorStarCell cell);
+
+typedef struct
+{
+	int x0, y0, x1, y1;
+	Uint32 start_ms;
+}
+EditorFlash;
+void editorFlashStart(EditorFlash *flash, int x0, int y0, int x1, int y1);
+void editorDrawFlash(EditorFlash *flash, SDL_Surface *dst, int scale, int x_offset);
 
 #endif // EDITOR_UI_H

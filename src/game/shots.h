@@ -68,6 +68,8 @@ void player_shot_set_direction(JE_integer shot_id, uint weapon_id, JE_real direc
 /** Return the hit-test offset for Classic or Centered Hitboxes. Decodes
  * \a sprite_frame here so every caller uses the same geometry. */
 void player_shot_hit_offset(JE_word sprite_frame, int *out_dx, int *out_dy);
+Sprite2_array *shot_sprite_sheet(unsigned int sprite_frame, unsigned int *index);
+int shot_circle_sway2(int dev, int dir, int cir_size);
 void enemy_shot_hit_offset(JE_word sgr, JE_word animate, int *out_dx, int *out_dy);
 
 /** Apply one due homing correction; Guidance shots retarget and always use screen x. */

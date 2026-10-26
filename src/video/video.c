@@ -23,6 +23,7 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "touch_ui.h"
+#include "video_crt.h"
 #include "video_scale.h"
 
 #include "console_platform.h"  // console_get_output_size()
@@ -127,7 +128,7 @@ static SDL_Surface *menu_hi = NULL;
 static int current_x_offset = MENU_X_OFFSET;
 
 SDL_Window *main_window = NULL;
-static SDL_Renderer *main_window_renderer = NULL;
+SDL_Renderer *main_window_renderer = NULL;
 SDL_PixelFormat *main_window_tex_format = NULL;
 static SDL_Texture *main_window_texture = NULL;
 
@@ -149,7 +150,6 @@ static bool gradient_cache_valid = false;
 
 static void init_renderer(void);
 static void deinit_renderer(void);
-static void crt_release(void);
 static bool video_rows_ready(void);
 static void video_rows_shutdown(void);
 static void video_rows_end_frame(void);
@@ -181,7 +181,7 @@ void init_video(void)
 	if (SDL_InitSubSystem(SDL_INIT_VIDEO) == -1)
 	{
 		fprintf(stderr, "error: failed to initialize SDL video: %s\n", SDL_GetError());
-		exit(1);
+		JE_tyrianExitWithoutSaving(1);
 	}
 
 	// Create the software surfaces that the game renders to. These are all 356x200x8 (16:9)
@@ -226,7 +226,7 @@ void init_video(void)
 	if (main_window == NULL)
 	{
 		fprintf(stderr, "error: failed to create window: %s\n", SDL_GetError());
-		exit(EXIT_FAILURE);
+		JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 	}
 
 	reinit_fullscreen(fullscreen_display);
@@ -287,7 +287,7 @@ static void init_renderer(void)
 	if (main_window_renderer == NULL)
 	{
 		fprintf(stderr, "error: failed to create renderer: %s\n", SDL_GetError());
-		exit(EXIT_FAILURE);
+		JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 	}
 }
 
@@ -339,7 +339,7 @@ static void init_texture(void)
 	if (main_window_texture == NULL)
 	{
 		fprintf(stderr, "error: failed to create scaler texture %dx%dx%s: %s\n", scaler_w, scaler_h, SDL_GetPixelFormatName(format), SDL_GetError());
-		exit(EXIT_FAILURE);
+		JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 	}
 }
 
@@ -827,701 +827,6 @@ static void sample_fps(void)
 	}
 }
 
-/* CRT filter. Every layer multiplies or adds over the frame on the GPU; the textures belong to
- * main_window_renderer and are built on first use. The vignette follows crtview's crtemu.h. */
-int crt_filter = CRT_FILTER_OFF;
-int crt_strength = CRT_STRENGTH_MEDIUM;
-int crt_curvature = CRT_CURVATURE_OFF;
-
-#define CRT_GLOW_LEVELS   8     // halvings at most, enough for an 8K frame
-#define CRT_VIGNETTE_W    64
-#define CRT_VIGNETTE_H    36
-#define CRT_GAP_SHARE     0.18f
-#define CRT_RAMP_SHARE    0.15f
-#define CRT_LINE_MIN_WEIGHT         26
-#define CRT_PHOSPHORS_PER_GAME_PX   5
-#define CRT_MASK_MIN_PX_PER_GAME_PX 3
-#define CRT_CURVE_MIN_PX_PER_GAME_ROW 5
-#define CRT_CURVE_CELLS_X 64
-#define CRT_CURVE_CELLS_Y 36
-
-typedef struct
-{
-	float gap;
-	float fill;
-	float glow;
-	float mask_lit;
-	float mask_unlit;
-} CrtLook;
-
-static const CrtLook crt_looks[CRT_STRENGTH_COUNT] = {
-	[CRT_STRENGTH_LIGHT]  = { .gap = 0.62f, .fill = 0.85f, .glow = 0.30f, .mask_lit = 1.2f, .mask_unlit = 0.9f },
-	[CRT_STRENGTH_MEDIUM] = { .gap = 0.45f, .fill = 0.80f, .glow = 0.45f, .mask_lit = 1.4f, .mask_unlit = 0.8f },
-	[CRT_STRENGTH_STRONG] = { .gap = 0.28f, .fill = 0.70f, .glow = 0.60f, .mask_lit = 1.6f, .mask_unlit = 0.7f },
-};
-
-static const SDL_FPoint crt_bends[CRT_CURVATURE_COUNT] = {
-	[CRT_CURVATURE_OFF]    = { 0.0f, 0.0f },
-	[CRT_CURVATURE_SUBTLE] = { 1.0f / 32.0f, 1.0f / 24.0f },
-	[CRT_CURVATURE_STRONG] = { 1.0f / 16.0f, 1.0f / 12.0f },
-};
-
-typedef struct
-{
-	SDL_Rect dst;
-	int frame_h;
-	int strength;
-	int scale;
-} CrtLinesKey;
-
-static bool crt_ready = false;   // the textures below exist for this renderer
-static bool crt_broken = false;  // this renderer cannot draw them
-static bool crt_glow_broken = false;
-static bool crt_lines_unsupported = false;
-static SDL_Texture *crt_scanlines = NULL;
-static SDL_Texture *crt_vignette = NULL;
-static SDL_Texture *crt_mask = NULL;       // 1 texel per output column
-static int crt_mask_w = 0, crt_mask_strength = 0;
-static SDL_Texture *crt_glow[CRT_GLOW_LEVELS];  // successive halvings of the frame
-static int crt_glow_levels = 0, crt_glow_src_w = 0, crt_glow_src_h = 0;
-static SDL_Texture *crt_glow_full = NULL, *crt_glow_half = NULL, *crt_glow_quarter = NULL;
-static bool crt_curve_broken = false;
-static SDL_Texture *crt_curve_target = NULL;
-static SDL_FPoint crt_curve_shown = { 0.0f, 0.0f };
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-static SDL_Vertex crt_curve_vertices[(CRT_CURVE_CELLS_X + 1) * (CRT_CURVE_CELLS_Y + 1)];
-static int crt_curve_indices[6 * CRT_CURVE_CELLS_X * CRT_CURVE_CELLS_Y];
-static SDL_Rect crt_curve_mesh_dst;
-static SDL_FPoint crt_curve_mesh_bend;
-#endif
-
-static CrtLinesKey crt_lines_key;
-static bool crt_lines_valid = false;
-static bool crt_lines_shown = false;
-static Uint8 *crt_line_weight = NULL;
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-static SDL_Vertex *crt_line_vertices = NULL;
-static int *crt_line_indices = NULL;
-static int crt_line_quads = 0;
-#endif
-
-static Uint32 crt_grey(int v)
-{
-	return 0xFF000000u | (Uint32)v * 0x010101u;
-}
-
-static SDL_Texture *crt_texture(int w, int h, const Uint32 *argb, SDL_BlendMode blend,
-                                SDL_ScaleMode scale)
-{
-	SDL_Texture *t = SDL_CreateTexture(main_window_renderer, SDL_PIXELFORMAT_ARGB8888,
-	                                   SDL_TEXTUREACCESS_STATIC, w, h);
-	if (t == NULL)
-		return NULL;
-
-	if (SDL_UpdateTexture(t, NULL, argb, w * (int)sizeof(*argb)) != 0 ||
-	    SDL_SetTextureBlendMode(t, blend) != 0 || SDL_SetTextureScaleMode(t, scale) != 0)
-	{
-		SDL_DestroyTexture(t);
-		return NULL;
-	}
-	return t;
-}
-
-static SDL_Texture *crt_target(int w, int h)
-{
-	SDL_Texture *const t = SDL_CreateTexture(main_window_renderer, SDL_PIXELFORMAT_ARGB8888,
-	                                         SDL_TEXTUREACCESS_TARGET, w, h);
-	if (t != NULL)
-		SDL_SetTextureScaleMode(t, SDL_ScaleModeLinear);
-	return t;
-}
-
-static void crt_destroy(SDL_Texture **t)
-{
-	if (*t != NULL)
-		SDL_DestroyTexture(*t);
-	*t = NULL;
-}
-
-static void crt_release_glow(void)
-{
-	for (int i = 0; i < crt_glow_levels; ++i)
-		SDL_DestroyTexture(crt_glow[i]);
-	crt_glow_levels = 0;
-	crt_glow_src_w = crt_glow_src_h = 0;
-}
-
-static void crt_release(void)
-{
-	crt_destroy(&crt_scanlines);
-	crt_destroy(&crt_vignette);
-	crt_destroy(&crt_mask);
-	crt_mask_w = 0;
-	crt_release_glow();
-	crt_destroy(&crt_glow_full);
-	crt_destroy(&crt_glow_half);
-	crt_destroy(&crt_glow_quarter);
-	crt_destroy(&crt_curve_target);
-	crt_curve_shown = crt_bends[CRT_CURVATURE_OFF];
-
-	SDL_free(crt_line_weight);
-	crt_line_weight = NULL;
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-	SDL_free(crt_line_vertices);
-	SDL_free(crt_line_indices);
-	crt_line_vertices = NULL;
-	crt_line_indices = NULL;
-	crt_line_quads = 0;
-#endif
-	crt_lines_valid = crt_lines_shown = false;
-	crt_ready = crt_broken = crt_glow_broken = crt_lines_unsupported = crt_curve_broken = false;
-}
-
-static bool crt_build(void)
-{
-	if (crt_ready || crt_broken || main_window_renderer == NULL)
-		return crt_ready;
-
-	// A CPU renderer would blend every output pixel several times per frame.
-	SDL_RendererInfo info;
-	if (SDL_GetRendererInfo(main_window_renderer, &info) != 0 ||
-	    (info.flags & SDL_RENDERER_SOFTWARE))
-	{
-		crt_broken = true;
-		return false;
-	}
-
-	// crtemu's 16xy(1-x)(1-y) falloff, flattened so only the edges darken.
-	Uint32 vignette[CRT_VIGNETTE_W * CRT_VIGNETTE_H];
-	for (int y = 0; y < CRT_VIGNETTE_H; ++y)
-	{
-		for (int x = 0; x < CRT_VIGNETTE_W; ++x)
-		{
-			const float u = (x + 0.5f) / CRT_VIGNETTE_W, v = (y + 0.5f) / CRT_VIGNETTE_H;
-			const float falloff = powf(16.0f * u * v * (1.0f - u) * (1.0f - v), 0.25f);
-			vignette[y * CRT_VIGNETTE_W + x] = crt_grey((int)(255.0f * (0.6f + 0.4f * falloff)));
-		}
-	}
-	crt_vignette = crt_texture(CRT_VIGNETTE_W, CRT_VIGNETTE_H, vignette, SDL_BLENDMODE_MOD,
-	                           SDL_ScaleModeLinear);
-
-	if (crt_vignette == NULL)
-	{
-		crt_release();
-		crt_broken = true;
-		return false;
-	}
-
-	crt_ready = true;
-	return true;
-}
-
-bool crt_filter_available(void)
-{
-	return crt_build();
-}
-
-static bool crt_on_handheld_screen(void)
-{
-#if defined(__SWITCH__)
-	int w = 0, h = 0;
-	console_get_output_size(&w, &h);
-	return h < 1080;
-#elif defined(PLATFORM_HANDHELD)
-	return true;
-#else
-	return false;
-#endif
-}
-
-static int crt_game_row(int y, int dst_h, int frame_h)
-{
-	const Sint64 texel = ((Sint64)2 * y + 1) * frame_h / ((Sint64)2 * dst_h);
-	return (int)(texel * vga_height / frame_h);
-}
-
-static bool crt_line_weights(Uint8 *weight, int dst_h, int frame_h)
-{
-	if (dst_h < 2 * vga_height || frame_h <= 0)
-		return false;
-
-	const float row_px = (float)dst_h / vga_height;
-	int gap_px = (int)(row_px * CRT_GAP_SHARE + 0.5f);
-	if (gap_px < 1)
-		gap_px = 1;
-	const float gap_mid = 0.5f * gap_px;
-	const float ramp_px = row_px * CRT_RAMP_SHARE;
-
-	for (int top = 0; top < dst_h; )
-	{
-		const int row = crt_game_row(top, dst_h, frame_h);
-		int end = top + 1;
-		while (end < dst_h && crt_game_row(end, dst_h, frame_h) == row)
-			++end;
-
-		for (int y = top; y < end; ++y)
-		{
-			const float from_top = (float)(y - top) + 0.5f;
-			const float above = from_top + gap_mid;
-			const float below = fabsf((float)(end - top) - gap_mid - from_top);
-			float t = ((above < below ? above : below) - gap_mid) / ramp_px;
-			t = t <= 0.0f ? 0.0f : t >= 1.0f ? 1.0f : t * t * (3.0f - 2.0f * t);
-			const int w = (int)(255.0f * (1.0f - t) + 0.5f);
-			weight[y] = (Uint8)(w < CRT_LINE_MIN_WEIGHT ? 0 : w);
-		}
-		top = end;
-	}
-	return true;
-}
-
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-static void crt_line_geometry(const SDL_Rect *dst, int rows, int scale)
-{
-	static const int corners[6] = { 0, 1, 2, 0, 2, 3 };
-
-	crt_line_quads = 0;
-	SDL_Vertex *const vertices = SDL_realloc(crt_line_vertices,
-	                                         (size_t)rows * 4 * sizeof(*vertices));
-	if (vertices == NULL)
-		return;
-	crt_line_vertices = vertices;
-	int *const indices = SDL_realloc(crt_line_indices, (size_t)rows * 6 * sizeof(*indices));
-	if (indices == NULL)
-		return;
-	crt_line_indices = indices;
-
-	const CrtLook *const look = &crt_looks[crt_strength];
-	const float left = (float)dst->x, right = (float)(dst->x + dst->w);
-	for (int top = 0; top < rows; )
-	{
-		const Uint8 weight = crt_line_weight[top];
-		int end = top + 1;
-		while (end < rows && crt_line_weight[end] == weight)
-			++end;
-
-		if (weight != 0)
-		{
-			const float dark = (1.0f - look->gap) * weight / 255.0f;
-			const Uint8 fill = (Uint8)(255.0f * look->fill * dark + 0.5f);
-			const SDL_Color color = { fill, fill, fill, (Uint8)(255.0f * dark + 0.5f) };
-			const float y0 = (float)(dst->y + top * scale), y1 = (float)(dst->y + end * scale);
-			const float v0 = (float)top / rows, v1 = (float)end / rows;
-
-			SDL_Vertex *const v = &crt_line_vertices[4 * crt_line_quads];
-			v[0] = (SDL_Vertex){ { left, y0 }, color, { 0.0f, v0 } };
-			v[1] = (SDL_Vertex){ { right, y0 }, color, { 1.0f, v0 } };
-			v[2] = (SDL_Vertex){ { right, y1 }, color, { 1.0f, v1 } };
-			v[3] = (SDL_Vertex){ { left, y1 }, color, { 0.0f, v1 } };
-			for (int i = 0; i < 6; ++i)
-				crt_line_indices[6 * crt_line_quads + i] = 4 * crt_line_quads + corners[i];
-			++crt_line_quads;
-		}
-		top = end;
-	}
-}
-#endif
-
-static bool crt_lines_prepare(const SDL_Rect *dst, int frame_h, int scale)
-{
-	const CrtLinesKey key = { *dst, frame_h, crt_strength, scale };
-	if (crt_lines_valid && memcmp(&key, &crt_lines_key, sizeof(key)) == 0)
-		return crt_lines_shown;
-
-	crt_destroy(&crt_scanlines);
-	crt_lines_key = key;
-	crt_lines_valid = true;
-	crt_lines_shown = false;
-
-	const int rows = dst->h / scale;
-	Uint8 *const weight = SDL_realloc(crt_line_weight, (size_t)(rows > 0 ? rows : 1));
-	if (weight == NULL)
-		return false;
-	crt_line_weight = weight;
-	if (!crt_line_weights(crt_line_weight, rows, frame_h))
-		return false;
-
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-	crt_line_geometry(dst, rows, scale);
-#endif
-	crt_lines_shown = true;
-	return true;
-}
-
-static bool crt_ensure_strip(int h)
-{
-	if (crt_scanlines != NULL)
-		return true;
-
-	Uint32 *const strip = SDL_malloc((size_t)h * sizeof(*strip));
-	if (strip == NULL)
-		return false;
-	const float depth = 1.0f - crt_looks[crt_strength].gap;
-	for (int y = 0; y < h; ++y)
-		strip[y] = crt_grey((int)(255.0f * (1.0f - depth * crt_line_weight[y] / 255.0f) + 0.5f));
-	crt_scanlines = crt_texture(1, h, strip, SDL_BLENDMODE_MOD, SDL_ScaleModeNearest);
-	SDL_free(strip);
-	return crt_scanlines != NULL;
-}
-
-static void crt_draw_lines(SDL_Texture *frame, const SDL_Rect *dst, int scale)
-{
-	int frame_h = 0;
-	if (SDL_QueryTexture(frame, NULL, NULL, NULL, &frame_h) != 0 ||
-	    !crt_lines_prepare(dst, frame_h, scale))
-		return;
-
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-	if (!crt_lines_unsupported && crt_line_quads > 0)
-	{
-		SDL_BlendMode blend = SDL_BLENDMODE_NONE;
-		SDL_GetTextureBlendMode(frame, &blend);
-		SDL_SetTextureBlendMode(frame, SDL_BLENDMODE_MUL);
-		const int drawn = SDL_RenderGeometry(main_window_renderer, frame, crt_line_vertices,
-		                                     4 * crt_line_quads, crt_line_indices,
-		                                     6 * crt_line_quads);
-		SDL_SetTextureBlendMode(frame, blend);
-		if (drawn == 0)
-			return;
-		crt_lines_unsupported = true;
-	}
-#endif
-	if (crt_ensure_strip(dst->h / scale))
-		SDL_RenderCopy(main_window_renderer, crt_scanlines, NULL, dst);
-}
-
-static Uint32 crt_mask_texel(int x, int phosphor_px, const CrtLook *look)
-{
-	const Uint32 alpha = (Uint32)(255.0f * (1.0f - look->mask_unlit) + 0.5f);
-	const Uint32 lit = (Uint32)(255.0f * (look->mask_lit - look->mask_unlit) + 0.5f);
-	return alpha << 24 | lit << (16 - 8 * (x / phosphor_px % 3));
-}
-
-static int crt_phosphor_px(int w)
-{
-	const int span = vga_width * CRT_PHOSPHORS_PER_GAME_PX;
-	const int px = (w + span / 2) / span;
-	return px < 1 ? 1 : px;
-}
-
-static bool crt_ensure_mask(int w)
-{
-	if (crt_mask != NULL && crt_mask_w == w && crt_mask_strength == crt_strength)
-		return true;
-
-	crt_destroy(&crt_mask);
-	crt_mask_w = 0;
-	if (w < CRT_MASK_MIN_PX_PER_GAME_PX * vga_width)
-		return false;
-
-	Uint32 *const row = SDL_malloc((size_t)w * sizeof(*row));
-	if (row == NULL)
-		return false;
-	const int phosphor_px = crt_phosphor_px(w);
-	for (int x = 0; x < w; ++x)
-		row[x] = crt_mask_texel(x, phosphor_px, &crt_looks[crt_strength]);
-	crt_mask = crt_texture(w, 1, row, SDL_BLENDMODE_MUL, SDL_ScaleModeNearest);
-	SDL_free(row);
-
-	if (crt_mask != NULL)
-	{
-		crt_mask_w = w;
-		crt_mask_strength = crt_strength;
-	}
-	return crt_mask != NULL;
-}
-
-static bool crt_glow_ensure(int w, int h)
-{
-	if (crt_glow_broken)
-		return false;
-
-	if (crt_glow_quarter == NULL)
-	{
-		crt_glow_full = crt_target(vga_width, vga_height);
-		crt_glow_half = crt_target(vga_width / 2, vga_height / 2);
-		crt_glow_quarter = crt_target(vga_width / 4, vga_height / 4);
-		if (crt_glow_full == NULL || crt_glow_half == NULL || crt_glow_quarter == NULL)
-		{
-			crt_destroy(&crt_glow_full);
-			crt_destroy(&crt_glow_half);
-			crt_destroy(&crt_glow_quarter);
-			crt_glow_broken = true;
-			return false;
-		}
-	}
-
-	if (w != crt_glow_src_w || h != crt_glow_src_h)
-	{
-		crt_release_glow();
-		int lw = w, lh = h;
-		while (lh > 2 * vga_height && crt_glow_levels < CRT_GLOW_LEVELS)
-		{
-			lw = (lw + 1) / 2;
-			lh = (lh + 1) / 2;
-			SDL_Texture *const level = crt_target(lw, lh);
-			if (level == NULL)
-				break;
-			crt_glow[crt_glow_levels++] = level;
-		}
-		crt_glow_src_w = w;
-		crt_glow_src_h = h;
-	}
-	return true;
-}
-
-static void crt_glow_shrink(SDL_Texture *src, SDL_Texture *dst)
-{
-	int w = 0, h = 0;
-	SDL_QueryTexture(dst, NULL, NULL, &w, &h);
-	SDL_SetRenderTarget(main_window_renderer, dst);
-
-	SDL_SetTextureBlendMode(src, SDL_BLENDMODE_NONE);
-	SDL_SetTextureColorMod(src, 128, 128, 128);
-	SDL_RenderCopy(main_window_renderer, src, NULL, NULL);
-	SDL_SetTextureColorMod(src, 255, 255, 255);
-
-	SDL_SetTextureBlendMode(src, SDL_BLENDMODE_ADD);
-	SDL_SetTextureAlphaMod(src, 32);
-	for (int i = 0; i < 4; ++i)
-	{
-		const SDL_FRect at = { i % 2 != 0 ? 0.5f : -0.5f, i / 2 != 0 ? 0.5f : -0.5f,
-		                       (float)w, (float)h };
-		SDL_RenderCopyF(main_window_renderer, src, NULL, &at);
-	}
-	SDL_SetTextureAlphaMod(src, 255);
-}
-
-// NULL when targets are unsupported.
-static SDL_Texture *crt_glow_from(SDL_Texture *frame, bool one_scale)
-{
-	int w = 0, h = 0;
-	if (!SDL_RenderTargetSupported(main_window_renderer) ||
-	    SDL_QueryTexture(frame, NULL, NULL, &w, &h) != 0 || !crt_glow_ensure(w, h))
-		return NULL;
-
-	// The scale mode is read when the queue runs, so flush before putting the frame's back.
-	SDL_ScaleMode frame_scale = SDL_ScaleModeNearest;
-	SDL_GetTextureScaleMode(frame, &frame_scale);
-	SDL_SetTextureScaleMode(frame, SDL_ScaleModeLinear);
-
-	SDL_Texture *src = frame;
-	for (int i = 0; i < crt_glow_levels; ++i)
-	{
-		SDL_SetRenderTarget(main_window_renderer, crt_glow[i]);
-		SDL_SetTextureBlendMode(src, SDL_BLENDMODE_NONE);
-		SDL_RenderCopy(main_window_renderer, src, NULL, NULL);
-		src = crt_glow[i];
-	}
-
-	SDL_SetRenderTarget(main_window_renderer, crt_glow_full);
-	SDL_SetTextureBlendMode(src, SDL_BLENDMODE_NONE);
-	SDL_RenderCopy(main_window_renderer, src, NULL, NULL);
-	SDL_SetTextureBlendMode(src, SDL_BLENDMODE_MOD);
-	SDL_RenderCopy(main_window_renderer, src, NULL, NULL);
-	SDL_RenderCopy(main_window_renderer, src, NULL, NULL);
-	SDL_SetTextureBlendMode(src, SDL_BLENDMODE_NONE);
-	SDL_RenderFlush(main_window_renderer);
-	SDL_SetTextureScaleMode(frame, frame_scale);
-
-	crt_glow_shrink(crt_glow_full, crt_glow_half);
-	crt_glow_shrink(crt_glow_half, crt_glow_quarter);
-
-	SDL_Texture *glow = crt_glow_quarter;
-	if (!one_scale)
-	{
-		SDL_SetRenderTarget(main_window_renderer, crt_glow_half);
-		SDL_SetTextureBlendMode(crt_glow_quarter, SDL_BLENDMODE_BLEND);
-		SDL_SetTextureAlphaMod(crt_glow_quarter, 128);
-		SDL_RenderCopy(main_window_renderer, crt_glow_quarter, NULL, NULL);
-		SDL_SetTextureAlphaMod(crt_glow_quarter, 255);
-
-		SDL_SetRenderTarget(main_window_renderer, crt_glow_full);
-		SDL_SetTextureBlendMode(crt_glow_half, SDL_BLENDMODE_NONE);
-		SDL_RenderCopy(main_window_renderer, crt_glow_half, NULL, NULL);
-		glow = crt_glow_full;
-	}
-	SDL_SetRenderTarget(main_window_renderer, NULL);
-	return glow;
-}
-
-static void crt_bend(SDL_FPoint bend, float *x, float *y)
-{
-	const float px = *x, py = *y;
-	*x = px * (1.0f + bend.x * py * py);
-	*y = py * (1.0f + bend.y * px * px);
-}
-
-static void crt_unbend(SDL_FPoint bend, float *x, float *y)
-{
-	const float sx = *x, sy = *y;
-	float px = sx, py = sy;
-	for (int i = 0; i < 8; ++i)
-	{
-		px = sx / (1.0f + bend.x * py * py);
-		py = sy / (1.0f + bend.y * px * px);
-	}
-	*x = px;
-	*y = py;
-}
-
-static void crt_curve_source(float *x, float *y)
-{
-	if ((crt_curve_shown.x == 0.0f && crt_curve_shown.y == 0.0f) ||
-	    last_output_rect.w <= 0 || last_output_rect.h <= 0)
-		return;
-
-	float px = 2.0f * (*x - (float)last_output_rect.x) / (float)last_output_rect.w - 1.0f;
-	float py = 2.0f * (*y - (float)last_output_rect.y) / (float)last_output_rect.h - 1.0f;
-	crt_bend(crt_curve_shown, &px, &py);
-	*x = (float)last_output_rect.x + 0.5f * (px + 1.0f) * (float)last_output_rect.w;
-	*y = (float)last_output_rect.y + 0.5f * (py + 1.0f) * (float)last_output_rect.h;
-}
-
-bool crt_curvature_available(void)
-{
-#if !SDL_VERSION_ATLEAST(2, 0, 18) || (defined(PLATFORM_HANDHELD) && !defined(__SWITCH__))
-	return false;
-#else
-	return crt_filter_available();
-#endif
-}
-
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-static void crt_curve_mesh(const SDL_Rect *dst, SDL_FPoint bend)
-{
-	const SDL_Color white = { 255, 255, 255, 255 };
-	for (int j = 0; j <= CRT_CURVE_CELLS_Y; ++j)
-	{
-		for (int i = 0; i <= CRT_CURVE_CELLS_X; ++i)
-		{
-			const float u = (float)i / CRT_CURVE_CELLS_X, v = (float)j / CRT_CURVE_CELLS_Y;
-			float x = 2.0f * u - 1.0f, y = 2.0f * v - 1.0f;
-			crt_unbend(bend, &x, &y);
-			crt_curve_vertices[j * (CRT_CURVE_CELLS_X + 1) + i] = (SDL_Vertex){
-				{ (float)dst->x + 0.5f * (x + 1.0f) * (float)dst->w,
-				  (float)dst->y + 0.5f * (y + 1.0f) * (float)dst->h },
-				white, { u, v } };
-		}
-	}
-
-	int *index = crt_curve_indices;
-	for (int j = 0; j < CRT_CURVE_CELLS_Y; ++j)
-	{
-		for (int i = 0; i < CRT_CURVE_CELLS_X; ++i)
-		{
-			const int a = j * (CRT_CURVE_CELLS_X + 1) + i, c = a + CRT_CURVE_CELLS_X + 1;
-			const int corners[6] = { a, a + 1, c + 1, a, c + 1, c };
-			memcpy(index, corners, sizeof(corners));
-			index += 6;
-		}
-	}
-	crt_curve_mesh_dst = *dst;
-	crt_curve_mesh_bend = bend;
-}
-#endif
-
-static int crt_curve_scale(int dst_h)
-{
-	const int rows = CRT_CURVE_MIN_PX_PER_GAME_ROW * vga_height;
-	return dst_h <= 0 || dst_h >= rows ? 1 : (rows + dst_h - 1) / dst_h;
-}
-
-static SDL_Texture *crt_curve_begin(const SDL_Rect *dst, SDL_FPoint bend, bool lines, int *scale)
-{
-	*scale = 1;
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-	if (crt_curve_broken || (bend.x == 0.0f && bend.y == 0.0f) || dst->w <= 0 || dst->h <= 0 ||
-	    !SDL_RenderTargetSupported(main_window_renderer))
-		return NULL;
-
-	const int factor = lines ? crt_curve_scale(dst->h) : 1;
-	int w = 0, h = 0;
-	if (crt_curve_target != NULL)
-		SDL_QueryTexture(crt_curve_target, NULL, NULL, &w, &h);
-	if (w != factor * dst->w || h != factor * dst->h)
-	{
-		crt_destroy(&crt_curve_target);
-		crt_curve_target = crt_target(factor * dst->w, factor * dst->h);
-		if (crt_curve_target == NULL ||
-		    SDL_SetTextureBlendMode(crt_curve_target, SDL_BLENDMODE_NONE) != 0)
-		{
-			crt_destroy(&crt_curve_target);
-			crt_curve_broken = true;
-			return NULL;
-		}
-	}
-
-	if (memcmp(dst, &crt_curve_mesh_dst, sizeof(*dst)) != 0 ||
-	    bend.x != crt_curve_mesh_bend.x || bend.y != crt_curve_mesh_bend.y)
-		crt_curve_mesh(dst, bend);
-	if (SDL_SetRenderTarget(main_window_renderer, crt_curve_target) != 0)
-		return NULL;
-	*scale = factor;
-	return crt_curve_target;
-#else
-	(void)dst;
-	(void)bend;
-	(void)lines;
-	return NULL;
-#endif
-}
-
-static void crt_curve_end(SDL_Texture *curved, const SDL_Rect *dst)
-{
-	SDL_SetRenderTarget(main_window_renderer, NULL);
-	SDL_RenderClear(main_window_renderer);
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-	if (SDL_RenderGeometry(main_window_renderer, curved, crt_curve_vertices,
-	                       (int)COUNTOF(crt_curve_vertices), crt_curve_indices,
-	                       (int)COUNTOF(crt_curve_indices)) == 0)
-		return;
-#endif
-	crt_curve_broken = true;
-	crt_curve_shown = crt_bends[CRT_CURVATURE_OFF];
-	SDL_RenderCopy(main_window_renderer, curved, NULL, dst);
-}
-
-// Clear the window and draw the frame into dst, with the CRT filter over it when it is on.
-// Touch controls go on afterwards and stay unfiltered.
-static void present_frame(SDL_Texture *frame, const SDL_Rect *dst)
-{
-	const bool wanted = crt_filter != CRT_FILTER_OFF || crt_curvature != CRT_CURVATURE_OFF;
-	const bool gpu = frame != NULL && wanted && crt_build();
-	const bool crt = gpu && crt_filter != CRT_FILTER_OFF;
-	const bool full = crt && crt_filter == CRT_FILTER_FULL;
-	const bool handheld = gpu && crt_on_handheld_screen();
-	SDL_Texture *const glow = full ? crt_glow_from(frame, handheld) : NULL;
-	const SDL_FPoint bend = crt_bends[gpu && !handheld ? crt_curvature : CRT_CURVATURE_OFF];
-	int scale = 1;
-	SDL_Texture *const curved = crt_curve_begin(dst, bend, crt, &scale);
-	const SDL_Rect area = curved != NULL ? (SDL_Rect){ 0, 0, scale * dst->w, scale * dst->h }
-	                                     : *dst;
-	crt_curve_shown = curved != NULL ? bend : crt_bends[CRT_CURVATURE_OFF];
-
-	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
-	SDL_RenderClear(main_window_renderer);
-	if (frame != NULL)
-		SDL_RenderCopy(main_window_renderer, frame, NULL, &area);
-	if (crt)
-		crt_draw_lines(frame, &area, scale);
-
-	// Added after the scanlines, the glow fills their gaps where the picture is bright.
-	if (glow != NULL)
-	{
-		SDL_SetTextureBlendMode(glow, SDL_BLENDMODE_ADD);
-		SDL_SetTextureAlphaMod(glow, (Uint8)(255.0f * crt_looks[crt_strength].glow + 0.5f));
-		SDL_RenderCopy(main_window_renderer, glow, NULL, &area);
-	}
-	if (curved != NULL)
-		crt_curve_end(curved, dst);
-	if (!full)
-		return;
-
-	if (!handheld && crt_ensure_mask(dst->w))
-		SDL_RenderCopy(main_window_renderer, crt_mask, NULL, dst);
-	SDL_RenderCopy(main_window_renderer, crt_vignette, NULL, dst);
-}
-
 static void scale_and_flip(SDL_Surface *src_surface)
 {
 	assert(src_surface->format->BitsPerPixel == 8);
@@ -1557,7 +862,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 	SDL_Rect dst_rect;
 	calc_dst_render_rect(src_surface, &dst_rect);
 
-	present_frame(main_window_texture, &dst_rect);
+	crt_present_frame(main_window_texture, &dst_rect);
 	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
 
@@ -1575,7 +880,7 @@ void video_repeat_last_present(void)
 	if (main_window_renderer == NULL)
 		return;
 
-	present_frame(last_present_texture, &last_output_rect);
+	crt_present_frame(last_present_texture, &last_output_rect);
 	touch_ui_render(main_window_renderer, &last_output_rect);
 	SDL_RenderPresent(main_window_renderer);
 }
@@ -2162,7 +1467,7 @@ void present_hi(SDL_Surface *hi)
 	// Present supersampled output with one unfiltered nearest-neighbor copy.
 	SDL_SetTextureScaleMode(hi_texture, SDL_ScaleModeNearest);
 
-	present_frame(hi_texture, &dst_rect);
+	crt_present_frame(hi_texture, &dst_rect);
 	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
 
@@ -2490,198 +1795,6 @@ bool video_test_rows_watch(char *detail, size_t detailSize)
 	return fault == NULL;
 }
 
-bool video_test_crt_rows(char *detail, size_t detailSize)
-{
-	enum { ROW_PX_MAX = 16 };
-	static const int sizes[][2] = {
-		{ 539, 200 }, { 719, 800 }, { 1078, 1078 }, { 1078, 1424 }, { 1438, 1000 },
-		{ 2157, 1068 }, { 400, 400 }, { 600, 1600 }, { 800, 200 },
-	};
-	static Uint8 weight[2160];
-	char fault[128] = "";
-
-	if (crt_line_weights(weight, 2 * vga_height - 1, vga_height))
-		snprintf(fault, sizeof(fault), "lines drawn at under two output rows per game row");
-
-	for (size_t k = 0; k < COUNTOF(sizes) && fault[0] == '\0'; ++k)
-	{
-		const int dst_h = sizes[k][0], frame_h = sizes[k][1];
-		if (!crt_line_weights(weight, dst_h, frame_h))
-		{
-			snprintf(fault, sizeof(fault), "no lines at %d rows from %d", dst_h, frame_h);
-			break;
-		}
-
-		for (int y = 0; y < dst_h && fault[0] == '\0'; ++y)
-		{
-			const int want = frame_h == dst_h
-			               ? y * vga_height / dst_h
-			               : (int)floor(floor((y + 0.5) * frame_h / dst_h) * vga_height / frame_h);
-			const int got = crt_game_row(y, dst_h, frame_h);
-			if (got != want)
-				snprintf(fault, sizeof(fault), "row %d of %d from %d is game row %d, not %d",
-				         y, dst_h, frame_h, got, want);
-		}
-
-		Uint8 shape[ROW_PX_MAX + 1][ROW_PX_MAX];
-		bool shape_seen[ROW_PX_MAX + 1] = { false };
-		int gap_px = -1;
-		for (int top = 0; top < dst_h && fault[0] == '\0'; )
-		{
-			const int row = crt_game_row(top, dst_h, frame_h);
-			int end = top + 1;
-			while (end < dst_h && crt_game_row(end, dst_h, frame_h) == row)
-				++end;
-
-			const int n = end - top;
-			int dark = 0;
-			while (dark < n && weight[end - 1 - dark] == 255)
-				++dark;
-			bool lit = false;
-			for (int y = top; y < end; ++y)
-				lit = lit || weight[y] == 0;
-
-			if (n > ROW_PX_MAX)
-				snprintf(fault, sizeof(fault), "game row %d is %d rows tall", row, n);
-			else if (dark == 0 || (gap_px >= 0 && dark != gap_px))
-				snprintf(fault, sizeof(fault),
-				         "game row %d at %d rows from %d ends in %d dark rows",
-				         row, dst_h, frame_h, dark);
-			else if (!lit)
-				snprintf(fault, sizeof(fault), "game row %d at %d rows from %d has no lit row",
-				         row, dst_h, frame_h);
-			else if (shape_seen[n] && memcmp(shape[n], &weight[top], (size_t)n) != 0)
-				snprintf(fault, sizeof(fault), "two %d-row game rows differ at %d rows from %d",
-				         n, dst_h, frame_h);
-
-			if (!shape_seen[n] && n <= ROW_PX_MAX)
-			{
-				memcpy(shape[n], &weight[top], (size_t)n);
-				shape_seen[n] = true;
-			}
-			gap_px = dark;
-			top = end;
-		}
-	}
-
-	for (int s = 0; s < CRT_STRENGTH_COUNT && fault[0] == '\0'; ++s)
-	{
-		for (int px = 1; px <= 4 && fault[0] == '\0'; ++px)
-		{
-			float sum[3] = { 0.0f, 0.0f, 0.0f };
-			for (int x = 0; x < 3 * px; ++x)
-			{
-				const Uint32 texel = crt_mask_texel(x, px, &crt_looks[s]);
-				const float alpha = (float)(texel >> 24) / 255.0f;
-				for (int c = 0; c < 3; ++c)
-				{
-					const Uint32 v = texel >> (16 - 8 * c) & 0xFF;
-					sum[c] += (float)v / 255.0f + 1.0f - alpha;
-					if ((v != 0) != (c == x / px % 3))
-						snprintf(fault, sizeof(fault),
-						         "mask column %d of width %d lights channel %d", x, px, c);
-				}
-			}
-			for (int c = 0; c < 3 && fault[0] == '\0'; ++c)
-				if (fabsf(sum[c] / (float)(3 * px) - 1.0f) > 0.01f)
-					snprintf(fault, sizeof(fault), "mask channel %d averages %.3f at strength %d",
-					         c, sum[c] / (float)(3 * px), s);
-		}
-	}
-
-	static const int phosphors[][2] = { { 1920, 1 }, { 3840, 2 }, { 5120, 3 }, { 7680, 4 } };
-	for (size_t k = 0; k < COUNTOF(phosphors) && fault[0] == '\0'; ++k)
-		if (crt_phosphor_px(phosphors[k][0]) != phosphors[k][1])
-			snprintf(fault, sizeof(fault), "phosphors %d wide at %d columns, not %d",
-			         crt_phosphor_px(phosphors[k][0]), phosphors[k][0], phosphors[k][1]);
-
-	if (fault[0] != '\0' && detail != NULL && detailSize != 0)
-		snprintf(detail, detailSize, "%s", fault);
-	return fault[0] == '\0';
-}
-
-bool video_test_crt_curve(char *detail, size_t detailSize)
-{
-	char fault[128] = "";
-
-	for (int k = CRT_CURVATURE_SUBTLE; k < CRT_CURVATURE_COUNT && fault[0] == '\0'; ++k)
-	{
-		const SDL_FPoint bend = crt_bends[k];
-		for (int j = 0; j <= 20 && fault[0] == '\0'; ++j)
-		{
-			for (int i = 0; i <= 20 && fault[0] == '\0'; ++i)
-			{
-				const float sx = (float)i / 10.0f - 1.0f, sy = (float)j / 10.0f - 1.0f;
-				float x = sx, y = sy;
-				crt_unbend(bend, &x, &y);
-				const bool on_screen = fabsf(x) <= 1.0f && fabsf(y) <= 1.0f;
-				crt_bend(bend, &x, &y);
-				if (!on_screen)
-					snprintf(fault, sizeof(fault),
-					         "curvature %d puts picture point %.1f,%.1f off screen", k, sx, sy);
-				else if (fabsf(x - sx) > 1e-4f || fabsf(y - sy) > 1e-4f)
-					snprintf(fault, sizeof(fault), "curvature %d does not invert at %.1f,%.1f",
-					         k, sx, sy);
-			}
-		}
-
-		float x = 1.0f, y = 0.0f;
-		crt_unbend(bend, &x, &y);
-		if (fault[0] == '\0' && (fabsf(x - 1.0f) > 1e-6f || y != 0.0f))
-			snprintf(fault, sizeof(fault), "curvature %d moves the middle of the right edge", k);
-		x = y = 1.0f;
-		crt_unbend(bend, &x, &y);
-		if (fault[0] == '\0' && (x > 0.99f || y > 0.99f))
-			snprintf(fault, sizeof(fault), "curvature %d leaves the corners square", k);
-	}
-
-	const int composite_rows = CRT_CURVE_MIN_PX_PER_GAME_ROW * vga_height;
-	for (int h = vga_height; h <= 1200 && fault[0] == '\0'; ++h)
-	{
-		const int f = crt_curve_scale(h);
-		if (f < 1 || f * h < composite_rows || (f > 1 && (f - 1) * h >= composite_rows))
-			snprintf(fault, sizeof(fault), "curved picture of %d rows is drawn %d times taller",
-			         h, f);
-	}
-
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-	const SDL_Rect saved_rect = last_output_rect;
-	const SDL_FPoint saved_shown = crt_curve_shown;
-	const SDL_Rect dst = { 37, 11, 1920, 1078 };
-	last_output_rect = dst;
-	for (int k = CRT_CURVATURE_SUBTLE; k < CRT_CURVATURE_COUNT && fault[0] == '\0'; ++k)
-	{
-		crt_curve_mesh(&dst, crt_bends[k]);
-		crt_curve_shown = crt_bends[k];
-		for (size_t n = 0; n < COUNTOF(crt_curve_vertices) && fault[0] == '\0'; ++n)
-		{
-			const SDL_Vertex *const v = &crt_curve_vertices[n];
-			float x = v->position.x, y = v->position.y;
-			crt_curve_source(&x, &y);
-			const float want_x = (float)dst.x + v->tex_coord.x * (float)dst.w;
-			const float want_y = (float)dst.y + v->tex_coord.y * (float)dst.h;
-			const bool inside = v->position.x >= (float)dst.x - 0.01f
-			                 && v->position.x <= (float)(dst.x + dst.w) + 0.01f
-			                 && v->position.y >= (float)dst.y - 0.01f
-			                 && v->position.y <= (float)(dst.y + dst.h) + 0.01f;
-			if (!inside)
-				snprintf(fault, sizeof(fault), "curvature %d mesh vertex %u leaves the picture",
-				         k, (unsigned)n);
-			else if (fabsf(x - want_x) > 0.05f || fabsf(y - want_y) > 0.05f)
-				snprintf(fault, sizeof(fault),
-				         "curvature %d pointer misses mesh vertex %u by %.2f,%.2f",
-				         k, (unsigned)n, x - want_x, y - want_y);
-		}
-	}
-	last_output_rect = saved_rect;
-	crt_curve_shown = saved_shown;
-#endif
-
-	if (fault[0] != '\0' && detail != NULL && detailSize != 0)
-		snprintf(detail, detailSize, "%s", fault);
-	return fault[0] == '\0';
-}
-
 // Restore an invalidated drawable from the current logical frame while input-wait loops are idle.
 static void video_repaint(void)
 {
@@ -2811,7 +1924,7 @@ void mapWindowPointToScreen(Sint32 *const inout_x, Sint32 *const inout_y)
 	float scale_x, scale_y;
 	video_output_pixel_scale(&scale_x, &scale_y);
 	float fx = (float)*inout_x * scale_x, fy = (float)*inout_y * scale_y;
-	crt_curve_source(&fx, &fy);
+	crt_curve_source(&last_output_rect, &fx, &fy);
 	const Sint32 x = (Sint32)fx;
 	const Sint32 y = (Sint32)fy;
 
@@ -2825,7 +1938,7 @@ void mapWindowPointToScreenF(float *const inout_x, float *const inout_y)
 	float scale_x, scale_y;
 	video_output_pixel_scale(&scale_x, &scale_y);
 	float x = *inout_x * scale_x, y = *inout_y * scale_y;
-	crt_curve_source(&x, &y);
+	crt_curve_source(&last_output_rect, &x, &y);
 
 	if (last_output_rect.w > 0)
 		*inout_x = (x - (float)last_output_rect.x + 0.5f)

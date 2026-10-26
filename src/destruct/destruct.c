@@ -588,13 +588,20 @@ static de_rumble_t de_rumble_side[MAX_PLAYERS];
 static bool de_human_pads(void)
 {
 	return !destruct_player[PLAYER_LEFT].is_cpu && !destruct_player[PLAYER_RIGHT].is_cpu
-	    && joystick_connected(0) && joystick_connected(1);
+	    && joystick_nth_connected(1) >= 0;
 }
 
 static void de_rumble_note(enum de_player_t side, de_rumble_t kind)
 {
 	if (kind > de_rumble_side[side])
 		de_rumble_side[side] = kind;
+}
+
+static void de_rumble_clear_tick(void)
+{
+	de_rumble_blast = 0.0f;
+	for (int side = PLAYER_LEFT; side < MAX_PLAYERS; side++)
+		de_rumble_side[side] = DE_RUMBLE_NONE;
 }
 
 static void DE_RunTickRumble(bool live)
@@ -616,8 +623,11 @@ static void DE_RunTickRumble(bool live)
 			if (de_net && side != (int)de_net_local_side)
 				continue;
 
+			const int pad = joystick_nth_connected((!de_net && de_human_pads()) ? side : 0);
+			if (pad < 0)
+				continue;
 			// The device numbers of JE_playerMovement: 3 + n is joystick n.
-			const int device = 3 + ((!de_net && de_human_pads()) ? side : 0);
+			const int device = 3 + pad;
 			if (de_rumble_side[side] == DE_RUMBLE_LOST)
 				joystick_rumble(device, 1.0f, 0.6f, 500);
 			else
@@ -625,9 +635,7 @@ static void DE_RunTickRumble(bool live)
 		}
 	}
 
-	de_rumble_blast = 0.0f;
-	for (int side = PLAYER_LEFT; side < MAX_PLAYERS; side++)
-		de_rumble_side[side] = DE_RUMBLE_NONE;
+	de_rumble_clear_tick();
 }
 
 static bool DE_ensureSmoothBuffers(int scale)
@@ -1796,6 +1804,7 @@ static void DE_ResetLevel(void)
 	JE_generateTerrain();
 	DE_ResetAI();
 	de_rumble_fade = 0.0f;
+	de_rumble_clear_tick();
 }
 
 static void DE_ResetAI(void)
@@ -2123,23 +2132,24 @@ static Uint8 DE_NetLocalActions(void)
 		}
 	}
 
-	if (joysticks > 0)
+	const int pad = joystick_nth_connected(0);
+	if (pad >= 0)
 	{
-		poll_joystick(0);
+		poll_joystick(pad);
 
-		if (joystick[0].direction[3]) bits |= 1 << KEY_LEFT;
-		if (joystick[0].direction[1]) bits |= 1 << KEY_RIGHT;
-		if (joystick[0].direction[0]) bits |= 1 << KEY_UP;
-		if (joystick[0].direction[2]) bits |= 1 << KEY_DOWN;
+		if (joystick[pad].direction[3]) bits |= 1 << KEY_LEFT;
+		if (joystick[pad].direction[1]) bits |= 1 << KEY_RIGHT;
+		if (joystick[pad].direction[0]) bits |= 1 << KEY_UP;
+		if (joystick[pad].direction[2]) bits |= 1 << KEY_DOWN;
 		// Same dual-bound guard as the offline pad mapping: no firing mid-cycle.
-		const bool cycling = joystick[0].action[2] || joystick[0].action[3];
-		if (joystick[0].action[0] && !cycling) bits |= 1 << KEY_FIRE;
-		if (joystick[0].action_pressed[1]) bits |= 1 << KEY_CHANGE;
-		if (joystick[0].action_pressed[2]) bits |= 1 << KEY_CYDN;
-		if (joystick[0].action_pressed[3]) bits |= 1 << KEY_CYUP;
+		const bool cycling = joystick[pad].action[2] || joystick[pad].action[3];
+		if (joystick[pad].action[0] && !cycling) bits |= 1 << KEY_FIRE;
+		if (joystick[pad].action_pressed[1]) bits |= 1 << KEY_CHANGE;
+		if (joystick[pad].action_pressed[2]) bits |= 1 << KEY_CYDN;
+		if (joystick[pad].action_pressed[3]) bits |= 1 << KEY_CYUP;
 		// Pad pause = leave, like offline (no keyboard on the consoles); routed through the
 		// quit control bit by the gather below.
-		if (joystick[0].action_pressed[5]) keysactive[SDL_SCANCODE_ESCAPE] = true;
+		if (joystick[pad].action_pressed[5]) keysactive[SDL_SCANCODE_ESCAPE] = true;
 	}
 
 	bits |= DE_TouchActions();
@@ -3360,16 +3370,19 @@ static void DE_RunTickGetInput(void)
 
 	// Two human players with two controllers get one each; otherwise the first drives every human
 	// player, since consoles have no keyboard fallback.
-	if (joysticks > 0)
+	const int first_pad = joystick_nth_connected(0);
+	if (first_pad >= 0)
 	{
 		const bool own_pads = de_human_pads();
+		const int second_pad = own_pads ? joystick_nth_connected(1) : first_pad;
+		const int slot[MAX_PLAYERS] = { first_pad, second_pad };
 		const int pads = own_pads ? 2 : 1;
 		for (int pad = 0; pad < pads; pad++)
 		{
-			poll_joystick(pad);
+			poll_joystick(slot[pad]);
 
 			// Pause quits the minigame; there is no keyboard Escape on the Switch.
-			if (joystick[pad].action_pressed[5])
+			if (joystick[slot[pad]].action_pressed[5])
 				keysactive[SDL_SCANCODE_ESCAPE] = true;
 		}
 
@@ -3378,7 +3391,7 @@ static void DE_RunTickGetInput(void)
 			if (destruct_player[player_index].is_cpu)
 				continue;
 
-			const Joystick *const js = &joystick[own_pads ? player_index : 0];
+			const Joystick *const js = &joystick[slot[own_pads ? player_index : 0]];
 			bool *act = destruct_player[player_index].moves.actions;
 			if (js->direction[3])      act[KEY_LEFT]   = true;  // aim left  / move left
 			if (js->direction[1])      act[KEY_RIGHT]  = true;  // aim right / move right

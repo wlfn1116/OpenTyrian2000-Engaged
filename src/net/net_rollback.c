@@ -29,6 +29,7 @@
 #include "keyboard.h"
 #include "net_start.h"
 #include "network.h"
+#include "opentyr.h"
 #include "player.h"
 #include "qa.h"
 #include "render_list.h"
@@ -2068,7 +2069,7 @@ static void nrb_qa_gameplay_verdict(void)
 		network_check();
 		SDL_Delay(1);
 	}
-	exit(rc);
+	JE_tyrianExitWithoutSaving(rc);
 }
 
 /* Multi-zone wire runs reach their target between levels, where the outpost hook has the zone

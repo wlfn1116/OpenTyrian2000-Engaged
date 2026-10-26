@@ -125,6 +125,13 @@ void qa_test_present_paths(void)
 	         detail[0] ? ": " : "", detail);
 	qa_check(crtCurve, label);
 
+	detail[0] = '\0';
+	const bool crtLayers = video_test_crt_layers(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "CRT slot mask keeps brightness, corners stay smooth, the rolling bar rolls down%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(crtLayers, label);
+
 	memcpy(rgb_palette, savedPalette, sizeof(savedPalette));
 }
 

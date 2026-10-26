@@ -684,8 +684,6 @@ static inline bool sprite2_index_valid(Sprite2_array sprite2s, unsigned int inde
 	return SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]) < sprite2s.size;  // ...and what it points at
 }
 
-enum { SPRITE2_CELL_W = 12, SPRITE2_CELL_H = 14, SPRITE2_CELL_PIXELS = 12 * 14 };
-
 static bool sprite2_decode_cell(Sprite2_array sprite2s, unsigned int index,
                                 Uint8 pixels[SPRITE2_CELL_PIXELS])
 {
@@ -757,6 +755,19 @@ Uint8 sprite2x2_pixel(Sprite2_array sprite2s, unsigned int index, int x, int y)
 	if (!sprite2_decode_cell(sprite2s, cell, pixels))
 		return 0;
 	return pixels[(y % SPRITE2_CELL_H) * SPRITE2_CELL_W + x % SPRITE2_CELL_W];
+}
+
+void sprite2x2_decode(Sprite2_array sprite2s, unsigned int index,
+                      Uint8 pixels[2 * SPRITE2_CELL_H][2 * SPRITE2_CELL_W])
+{
+	Uint8 cell[SPRITE2_CELL_PIXELS];
+	for (int c = 0; c < 4; ++c)
+	{
+		sprite2_decode_cell(sprite2s, index + c % 2 + (c / 2) * 19, cell);
+		for (int y = 0; y < SPRITE2_CELL_H; ++y)
+			memcpy(&pixels[(c / 2) * SPRITE2_CELL_H + y][(c % 2) * SPRITE2_CELL_W],
+			       &cell[y * SPRITE2_CELL_W], SPRITE2_CELL_W);
+	}
 }
 
 static size_t sprite2_encode_cell(const Uint8 pixels[SPRITE2_CELL_PIXELS], Uint8 *encoded)
@@ -987,7 +998,7 @@ int sprite2_count(const Sprite2_array *sprite2s)
 {
 	if (sprite2s->data == NULL || sprite2s->size < 2)
 		return 0;
-	return SDL_SwapLE16(((const Uint16 *)sprite2s->data)[0]) / 2;
+	return MIN(SDL_SwapLE16(((const Uint16 *)sprite2s->data)[0]) / 2, (int)(sprite2s->size / 2));
 }
 
 /* Find painted bounds in the packed sprite's 12-pixel grid; false means no painted pixels. */
@@ -2350,4 +2361,10 @@ void free_main_shape_tables(void)
 	free_sprite2s(&spriteSheet12);
 	free_sprite2s(&spriteSheetT2000);  // JE_loadMainShapeTables loads this too; must be freed
 	                                   // or JE_loadCompShapesB's assert(data==NULL) aborts on reload
+}
+
+void free_enemy_sprite_sheets(void)
+{
+	for (uint i = 0; i < COUNTOF(enemySpriteSheets); ++i)
+		free_sprite2s(&enemySpriteSheets[i]);
 }

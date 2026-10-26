@@ -368,7 +368,7 @@ const char *font_fit_text(const char *text, unsigned int font, int maxWidth, cha
 {
 	if (JE_textWidth(text, font) <= maxWidth)
 		return text;
-	for (int len = (int)strlen(text) - 1; len > 0; --len)
+	for (int len = MIN((int)strlen(text) - 1, (int)n - 3); len > 0; --len)
 	{
 		while (len > 0 && text[len - 1] == ' ')
 			--len;
@@ -376,7 +376,7 @@ const char *font_fit_text(const char *text, unsigned int font, int maxWidth, cha
 		if (JE_textWidth(buf, font) <= maxWidth)
 			return buf;
 	}
-	return "";
+	return (n >= 3 && JE_textWidth("..", font) <= maxWidth) ? ".." : "";
 }
 
 void JE_textShade(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int shadetype)

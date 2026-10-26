@@ -278,9 +278,15 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 #ifdef __SWITCH__
 	// Older saves and other platforms seat players on the keyboard and mouse; here each gets a
 	// controller instead.
-	for (uint p = 0; p < COUNTOF(inputDevice); ++p)
-		if (inputDevice[p] == 1 || inputDevice[p] == 2)
-			inputDevice[p] = (JE_byte)(3 + p);
+	for (uint p = 0; p < 2; ++p)
+	{
+		if (inputDevice[p] != 1 && inputDevice[p] != 2)
+			continue;
+		JE_byte device = (JE_byte)(3 + p);
+		if (device == inputDevice[1 - p])
+			device = (JE_byte)(3 + (1 - p));
+		inputDevice[p] = device;
+	}
 #endif
 
 	for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)

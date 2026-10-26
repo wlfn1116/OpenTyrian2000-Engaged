@@ -74,6 +74,13 @@ void qa_test_shot_hitboxes(void)
 	enemy_shot_hit_offset(1, 0, &dx, &dy);
 	qa_check(dx == 3 && dy == 1, "...and an enemy shot from the frame's middle, which is blitted where it sits");
 
+	const unsigned int optionShapes = sprite_table[OPTION_SHAPES].count;
+	sprite_table[OPTION_SHAPES].count = 2;
+	player_shot_hit_offset(60001 + 2, &dx, &dy);
+	sprite_table[OPTION_SHAPES].count = optionShapes;
+	qa_check(optionShapes > 2 && dx == 1 && dy == 0,
+	         "a special shot past the sprite table collides from its blit position");
+
 	spriteSheet8 = savedSheet;
 	centeredShotHitboxes = savedCentered;
 }
@@ -1511,6 +1518,15 @@ void qa_test_elite_explosion_tint(void)
 	memset(explosions, 0, sizeof(explosions));
 	qa_check(rollback_state_hash() == hashBefore,
 	         "...and that opacity never reaches the registered state byte stream");
+
+	JE_setupExplosion(100, 100, 0, EXPLOSION_TYPES, false, false);
+	JE_setupExplosion(100, 100, 0, -1, false, false);
+	JE_setupExplosion(100, 100, 0, 97, false, false);
+	bool spawned = false;
+	for (unsigned int i = 0; i < COUNTOF(explosions); ++i)
+		spawned = spawned || explosions[i].ttl != 0 || explosions[i].x != 0 || explosions[i].y != 0;
+	qa_check(!spawned, "an explosion type outside the table spawns nothing");
+	memset(explosions, 0, sizeof(explosions));
 
 	// Partner shield bubbles follow hull opacity and Apply to Ship.
 	{

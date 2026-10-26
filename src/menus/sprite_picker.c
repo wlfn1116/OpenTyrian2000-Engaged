@@ -176,6 +176,56 @@ static bool spEnsureScratch(int w, int h)
 	return spScratch != NULL;
 }
 
+void spritePickerInkBox(Sprite2_array sheet, unsigned int index, bool big, int *x0, int *y0,
+                        int *x1, int *y1)
+{
+	const int w = big ? 24 : 12, h = big ? 28 : 14;
+	*x0 = 0;
+	*y0 = 0;
+	*x1 = w - 1;
+	*y1 = h - 1;
+	if (!spEnsureScratch(w, h))
+		return;
+
+	SDL_FillRect(spScratch, &(SDL_Rect){ 0, 0, w, h }, 0);
+	SDL_Surface *const saved = VGAScreen;
+	VGAScreen = spScratch;
+	if (big)
+		blit_sprite2x2(spScratch, 0, 0, sheet, index);
+	else
+		blit_sprite2(spScratch, 0, 0, sheet, index);
+	VGAScreen = saved;
+
+	int lx = w, ly = h, hx = -1, hy = -1;
+	for (int y = 0; y < h; ++y)
+	{
+		const Uint8 *const row = (const Uint8 *)spScratch->pixels + y * spScratch->pitch;
+		for (int x = 0; x < w; ++x)
+			if (row[x] != 0)
+			{
+				lx = MIN(lx, x);
+				hx = MAX(hx, x);
+				ly = MIN(ly, y);
+				hy = MAX(hy, y);
+			}
+	}
+	if (hx >= 0)
+	{
+		*x0 = lx;
+		*y0 = ly;
+		*x1 = hx;
+		*y1 = hy;
+	}
+}
+
+void spritePickerRelease(void)
+{
+	SDL_FreeSurface(spScratch);
+	spScratch = NULL;
+	SDL_FreeSurface(spStrip);
+	spStrip = NULL;
+}
+
 void spritePickerDrawFit(SDL_Surface *dst, unsigned int table, unsigned int index, int x, int y,
                          int w, int h, int maxScale)
 {
@@ -185,7 +235,7 @@ void spritePickerDrawFit(SDL_Surface *dst, unsigned int table, unsigned int inde
 	if (sw == 0 || sh == 0 || w <= 0 || h <= 0 || !spEnsureScratch(sw, sh))
 		return;
 
-	SDL_FillRect(spScratch, NULL, 0);
+	SDL_FillRect(spScratch, &(SDL_Rect){ 0, 0, sw, sh }, 0);
 	blit_sprite(spScratch, 0, 0, table, index);
 
 	const int shrink = MAX(MAX((sw + w - 1) / w, (sh + h - 1) / h), 1);
@@ -819,7 +869,7 @@ bool spritePickerRun(const SpritePickerSpec *spec, int *value)
 			JE_showVGA();
 			JE_mouseReplace();
 			if (newkey || newmouse || new_text || mouse_scroll != 0 || mouse_x != prevX ||
-			    mouse_y != prevY || s.pressed != (mousedown != 0) || s.fling != 0.0f ||
+			    mouse_y != prevY || (s.pressed && !mousedown) || s.fling != 0.0f ||
 			    getDelayTicks() == 0)
 				break;
 			if (!output_vsync)

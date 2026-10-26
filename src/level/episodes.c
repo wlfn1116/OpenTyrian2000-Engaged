@@ -255,6 +255,8 @@ const char *JE_shipName(JE_word id)
 // Item tables pad names with spaces; layout needs the visible width.
 const char *JE_trimItemName(const char *name, char *buf, size_t bufSize)
 {
+	if (bufSize == 0)
+		return "";
 	while (*name == ' ')
 		++name;
 	size_t n = strlen(name);
@@ -296,6 +298,14 @@ int JE_distinctShipHulls(JE_byte *list, size_t capacity, bool (*accept)(int ship
 			list[count++] = (JE_byte)ship;
 	}
 	return count;
+}
+
+int JE_shipHullOwner(JE_word shipgraphic)
+{
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+		if (ships[ship].name[0] != '\0' && ships[ship].shipgraphic == shipgraphic)
+			return ship;
+	return 0;
 }
 
 /* Save the sidekick row replaced by Charge-Laser so the toggle can restore it. */

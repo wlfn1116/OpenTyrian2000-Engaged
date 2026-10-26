@@ -290,7 +290,7 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	Player *const p = &player[pnum];
 	const JE_byte *const table = extraShipsFor(pnum);
 
-	int slot = extraShipIdIsCustom(p->items.ship) ? p->items.ship - 90 : 0;
+	int slot = extraShipIdIsCustom(p->items.ship) ? p->items.ship - EXTRA_SHIP_ID_BASE : 0;
 	extraShipRememberStandard(pnum);
 	slot = extraMenuNextCustomShipSlot(slot, dir, extraShipReturn[pnum].valid);
 

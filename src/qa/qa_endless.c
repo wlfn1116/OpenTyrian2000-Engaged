@@ -2392,6 +2392,14 @@ static void qa_scenario_suite(void)
 		         && endlessExtraPerksBought[1] == 0 && endlessExtraPerkPrice() > 0,
 		         "a corrupt bought-perk count clamps on load and still quotes a price");
 
+		endlessPerkChoiceN = 2;
+		endlessPerkChoice[0] = 3;
+		endlessPerkChoice[1] = PERK_COUNT + 40;
+		JE_saveGame(22, "PERK COUNTS   ");
+		qa_check(endlessLoadSlot(22) && endlessPerkChoiceN == 0,
+		         "a corrupt offered-perk id drops the offers on load");
+		endlessPerkChoiceN = 0;
+
 		endlessExtraPerksBought[0] = endlessExtraPerksBought[1] = 0;
 		endlessExtraPerksVisit[0] = endlessExtraPerksVisit[1] = 0;
 		saveFiles[22 - 1] = original;

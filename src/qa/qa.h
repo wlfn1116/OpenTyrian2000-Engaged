@@ -100,7 +100,7 @@ void qa_test_net_lobby_strings(void);
 void qa_test_save_transfer(void);
 void qa_test_save_transfer_preinit(void);
 void qa_test_custom_episode(void);
-// Every shipped event script through the loader: its corrections and spawn spread (level_load.c).
+// Every shipped event script through the loader: its corrections and spawn spread (qa_levels.c).
 void qa_test_level_event_scripts(void);
 
 void qa_test_load_screen_help(void);

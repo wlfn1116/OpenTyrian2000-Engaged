@@ -77,6 +77,7 @@ typedef struct
 	RumbleVoice rumble_event;     // a hit or similar pulse
 	RumbleVoice rumble_flow;      // a level its caller keeps refreshing, such as blast rumble
 	Uint16 rumble_lo, rumble_hi;  // what the motors were last told
+	Uint32 rumble_until;
 	Uint8 rumble_stops;           // stop commands still to repeat
 	Uint32 rumble_stop_at;
 }
@@ -113,6 +114,7 @@ bool joystick_can_rumble(void);
 bool joystick_pause_opens_menu(int j);
 // Whether joystick j has a controller connected right now.
 bool joystick_connected(int j);
+int joystick_nth_connected(int n);
 
 // Called from the event pump: opens controllers connected after startup, closes ones that left,
 // and stops finished rumble.

@@ -135,9 +135,6 @@ void JE_drawShipSpecs(SDL_Surface *, SDL_Surface *);
 void JE_weaponSimUpdate(void);
 void JE_weaponViewFrame(void);
 
-// Drawn over the finished preview box each present, receiving the interpolation alpha so the
-// overlay glides. NULL except in the Weapon Editor.
-extern void (*weaponSimOverlayFn)(float alpha);
 void JE_weaponSimSmoothPresent(void);
 void menuWaitWithSmoothCursor(void);
 

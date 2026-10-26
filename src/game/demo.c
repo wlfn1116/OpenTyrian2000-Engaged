@@ -23,11 +23,11 @@
 #include "game_loop.h"
 #include "game_state.h"
 #include "keyboard.h"
+#include "opentyr.h"
 #include "player.h"
 #include "player_ship.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 
 /* Demo Stuff */
 bool play_demo = false, record_demo = false, stopped_demo = false;
@@ -143,7 +143,7 @@ void begin_demo_recording(void)
 
 	demo_file = dir_fopen_warn(get_user_directory(), tempStr, "wb");
 	if (!demo_file)
-		exit(1);
+		JE_tyrianExitWithoutSaving(1);
 
 	fwrite_u8_die(&episodeNum, 1, demo_file);
 

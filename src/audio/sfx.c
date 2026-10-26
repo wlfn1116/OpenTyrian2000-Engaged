@@ -160,9 +160,9 @@ void loadSndFile(bool xmas)
 	return;
 
 die:
+	fclose(f);
 	fprintf(stderr, "error: Unexpected data was read from a file.\n");
-	SDL_Quit();
-	exit(EXIT_FAILURE);
+	JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 }
 
 void JE_playSampleNum(JE_byte samplenum)

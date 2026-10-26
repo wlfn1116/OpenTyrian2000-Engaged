@@ -396,16 +396,6 @@ static void seRestoreBoxBase(void)
 		memcpy(dst, seBoxBase[y], SE_BOX_X1 - SE_BOX_X0 + 1);
 }
 
-static Uint32 seStarHash(Uint32 v)
-{
-	v ^= v >> 16;
-	v *= 0x7feb352du;
-	v ^= v >> 15;
-	v *= 0x846ca68bu;
-	v ^= v >> 16;
-	return v;
-}
-
 static bool seBayGlassAt(int x, int y)
 {
 	if (y < SE_CENTER_Y - 1 || y > SE_CENTER_Y + 28)
@@ -440,86 +430,14 @@ static void seDrawStarCell(SDL_Surface *dst, int scale, int x_offset, int x, flo
 	}
 }
 
-static void seDrawPreviewStars(SDL_Surface *dst, int scale, int x_offset, Uint32 clock_ms)
-{
-	static const float speed_px_s[3] = { 5.0f, 9.0f, 14.0f };
-	static const JE_byte shade[3] = { 0x56, 0x58, 0x5a };
-	static const JE_byte flicker[4] = { 0, 1, 2, 1 };
-	const float spanY = (float)(SE_BOX_Y1 - SE_BOX_Y0 - 1);
-
-	for (unsigned int i = 0; i < SE_BG_STAR_COUNT; ++i)
-	{
-		const Uint32 h = seStarHash(i + 1);
-		const Uint32 h2 = seStarHash(h ^ 0x9e3779b9u);
-		const unsigned int layer = ((h >> 28) % 5 == 4) ? 2 : ((h >> 27) & 1);
-		const Uint32 spanX = (Uint32)(SE_BOX_X1 - SE_BOX_X0 - 1);
-		const int x = SE_BOX_X0 + 1 + (int)((i * spanX + h % spanX) / SE_BG_STAR_COUNT);
-		const float drift = (float)(h2 % (Uint32)(SE_BOX_Y1 - SE_BOX_Y0 - 1))
-		                  + (float)clock_ms * speed_px_s[layer] / 1000.0f;
-		const float fy = (float)(SE_BOX_Y0 + 1) + fmodf(drift, spanY);
-
-		JE_byte c = (JE_byte)(shade[layer] + ((h >> 8) % 7 == 0 ? 2 : 0));
-		if (layer == 2)
-			c += flicker[((clock_ms >> 8) + (h2 >> 4)) % 4];
-
-		seDrawStarCell(dst, scale, x_offset, x, fy, c);
-		if (layer == 2)
-		{
-			const JE_byte arm = (JE_byte)(c - 4);
-			seDrawStarCell(dst, scale, x_offset, x - 1, fy, arm);
-			seDrawStarCell(dst, scale, x_offset, x + 1, fy, arm);
-			seDrawStarCell(dst, scale, x_offset, x, fy - 1.0f, arm);
-			seDrawStarCell(dst, scale, x_offset, x, fy + 1.0f, arm);
-		}
-	}
-}
-
-static void seMountArtColumns(bool big, uint sprite, int *a0, int *a1)
-{
-	static SDL_Surface *scratch = NULL;
-
-	*a0 = 0;
-	*a1 = (big ? 24 : 12) - 1;
-	if (scratch == NULL)
-		scratch = SDL_CreateRGBSurface(0, 24, 28, 8, 0, 0, 0, 0);
-	if (scratch == NULL)
-		return;
-
-	SDL_FillRect(scratch, NULL, 0);
-	if (big)
-		blit_sprite2x2(scratch, 0, 0, spriteSheet10, sprite);
-	else
-		blit_sprite2(scratch, 0, 0, spriteSheet9, sprite);
-
-	const int w = big ? 24 : 12, h = big ? 28 : 14;
-	int lo = w, hi = -1;
-	for (int y = 0; y < h; ++y)
-	{
-		const Uint8 *row = (const Uint8 *)scratch->pixels + y * scratch->pitch;
-		for (int x = 0; x < w; ++x)
-			if (row[x] != 0)
-			{
-				if (x < lo)
-					lo = x;
-				if (x > hi)
-					hi = x;
-			}
-	}
-	if (hi >= 0)
-	{
-		*a0 = lo;
-		*a1 = hi;
-	}
-}
-
 static int seMountArtX(bool rightSide, bool big, uint sprite)
 {
 	const int mid = (SE_BOX_X0 + SE_BOX_X1 + 1) / 2;
 	const int gap0 = rightSide ? mid + SHOP_WIDE_HULL_HALF : SE_KICK_L_X + 26;
 	const int gap1 = rightSide ? SE_KICK_R_X - 3 : mid - SHOP_WIDE_HULL_HALF - 1;
 
-	int a0, a1;
-	seMountArtColumns(big, sprite, &a0, &a1);
+	int a0, a1, top, bottom;
+	spritePickerInkBox(big ? spriteSheet10 : spriteSheet9, sprite, big, &a0, &top, &a1, &bottom);
 	return gap0 + (gap1 - gap0 + 1 - (a1 - a0 + 1) + (rightSide ? 1 : 0)) / 2 - a0;
 }
 
@@ -701,50 +619,7 @@ static void seDrawPreviewBackdrop(void)
 	                   SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
 }
 
-enum { SE_FLASH_MS = 200 };
-
-static int seFlashX0, seFlashY0, seFlashX1, seFlashY1;
-static Uint32 seFlashStart_ms;
-
-static void seFlashRegion(int x0, int y0, int x1, int y1)
-{
-	seFlashX0 = x0;
-	seFlashY0 = y0;
-	seFlashX1 = x1;
-	seFlashY1 = y1;
-	seFlashStart_ms = SDL_GetTicks();
-}
-
-static void seDrawClickFlash(SDL_Surface *dst, int scale, int x_offset)
-{
-	if (seFlashStart_ms == 0)
-		return;
-	const Uint32 age = SDL_GetTicks() - seFlashStart_ms;
-	if (age >= SE_FLASH_MS)
-	{
-		seFlashStart_ms = 0;
-		return;
-	}
-
-	static const Uint8 dither[2][2] = { { 0, 2 }, { 3, 1 } };
-	const int glow4 = (int)((SE_FLASH_MS - age) * 10 / SE_FLASH_MS);
-	const int hy1 = (seFlashY1 + 1) * scale - 1;
-	const int hx0 = (seFlashX0 + x_offset) * scale;
-	const int hx1 = (seFlashX1 + 1 + x_offset) * scale - 1;
-
-	for (int y = seFlashY0 * scale; y <= hy1; ++y)
-	{
-		Uint8 *row = (Uint8 *)dst->pixels + y * dst->pitch;
-		for (int x = hx0; x <= hx1; ++x)
-		{
-			const int lift = (glow4 + dither[y & 1][x & 1]) >> 2;
-			if (lift == 0)
-				continue;
-			const int v = (row[x] & 0x0f) + lift;
-			row[x] = (Uint8)((row[x] & 0xf0) | (v > 15 ? 15 : v));
-		}
-	}
-}
+static EditorFlash seFlash;
 
 static SDL_Surface *seHiFrame = NULL;
 
@@ -779,10 +654,11 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms,
 		if (hi == NULL)
 		{
 			if (shipEditorStars)
-				seDrawPreviewStars(VGAScreen, 1, 0, *clock_ms);
+				editorDrawStars(VGAScreen, 1, 0, *clock_ms, SE_BOX_X0, SE_BOX_Y0, SE_BOX_X1,
+				                SE_BOX_Y1, SE_BG_STAR_COUNT, seDrawStarCell);
 			seDrawMountBody(VGAScreen, 1, 0, false, orbitAngle);
 			seDrawMountBody(VGAScreen, 1, 0, true, orbitAngle);
-			seDrawClickFlash(VGAScreen, 1, 0);
+			editorDrawFlash(&seFlash, VGAScreen, 1, 0);
 		}
 
 		JE_mouseStart();
@@ -791,10 +667,11 @@ static void sePresentPreviewTick(Uint32 *clock_ms, Uint32 *last_ms,
 			const int x_offset = video_get_menu_x_offset();
 			expand_frame_to_hi(video_compose_frame(), hi, ss);
 			if (shipEditorStars)
-				seDrawPreviewStars(hi, ss, x_offset, *clock_ms);
+				editorDrawStars(hi, ss, x_offset, *clock_ms, SE_BOX_X0, SE_BOX_Y0, SE_BOX_X1,
+				                SE_BOX_Y1, SE_BG_STAR_COUNT, seDrawStarCell);
 			seDrawMountBody(hi, ss, x_offset, false, orbitAngle);
 			seDrawMountBody(hi, ss, x_offset, true, orbitAngle);
-			seDrawClickFlash(hi, ss, x_offset);
+			editorDrawFlash(&seFlash, hi, ss, x_offset);
 			JE_drawMouseToHiFrame(hi, ss, x_offset);
 			present_hi(hi);
 		}
@@ -2172,9 +2049,9 @@ static void seSpriteEditor(int bank)
 				         mouse_x >= STRIP_X && mouse_x < STRIP_X + SE_FRAMES * 26)
 				{
 					frame = (mouse_x - STRIP_X) / 26 + 1;
-					seFlashRegion(STRIP_X + (frame - 1) * 26, STRIP_Y,
-					              STRIP_X + (frame - 1) * 26 + SE_FRAME_W - 1,
-					              STRIP_Y + SE_FRAME_H - 1);
+					editorFlashStart(&seFlash, STRIP_X + (frame - 1) * 26, STRIP_Y,
+					                 STRIP_X + (frame - 1) * 26 + SE_FRAME_W - 1,
+					                 STRIP_Y + SE_FRAME_H - 1);
 					JE_playSampleNum(S_CURSOR);
 				}
 				else if (hover >= 0)
@@ -2833,7 +2710,7 @@ void JE_shipEditor(void)
 			{
 				slot += (dir < 0) ? (slot > 1 ? -1 : 9) : (slot < 10 ? 1 : -9);
 				selected = SE_ROW_SLOT;
-				seFlashRegion(fx0, fy0, fx1, fy1);
+				editorFlashStart(&seFlash, fx0, fy0, fx1, fy1);
 				JE_playSampleNum(S_CURSOR);
 			}
 			else if (boxRow == SE_ROW_GRAPHIC && dir > 0)
@@ -2845,7 +2722,7 @@ void JE_shipEditor(void)
 			{
 				seStepField(slot, boxRow, dir);
 				selected = boxRow;
-				seFlashRegion(fx0, fy0, fx1, fy1);
+				editorFlashStart(&seFlash, fx0, fy0, fx1, fy1);
 				JE_playSampleNum(S_CURSOR);
 			}
 			else if (hover >= 0 && hover < SE_NAV_COUNT)
@@ -3115,6 +2992,7 @@ void JE_shipEditor(void)
 	wait_noinput(false, false, true);
 
 	shipEditorEndMusicFade();
+	spritePickerRelease();
 
 	VGAScreen = temp_surface;
 	set_menu_centered(prevCentered);

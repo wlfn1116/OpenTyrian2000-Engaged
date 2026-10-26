@@ -686,6 +686,18 @@ void qa_test_ship_editor_file(void)
 		qa_check(white, "Gencore II fills the highlight holes in its center and slight-bank poses");
 	}
 	{
+		bool same = true;
+		for (unsigned int gr = 1; gr <= 300 && same; gr += 19)
+		{
+			Uint8 pixels[2 * SPRITE2_CELL_H][2 * SPRITE2_CELL_W];
+			sprite2x2_decode(spriteSheet9, gr, pixels);
+			for (int y = 0; y < 2 * SPRITE2_CELL_H; ++y)
+				for (int x = 0; x < 2 * SPRITE2_CELL_W; ++x)
+					same = same && pixels[y][x] == sprite2x2_pixel(spriteSheet9, gr, x, y);
+		}
+		qa_check(same, "a decoded 2x2 hull matches sprite2x2_pixel at every pixel");
+	}
+	{
 		const unsigned int gr = ships[10].shipgraphic;
 		qa_check(gr == 271 &&
 		         !sprite2_has_color(spriteSheet9, gr + 5, 0xfe) &&

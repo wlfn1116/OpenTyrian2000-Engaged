@@ -22,10 +22,14 @@
 
 #include "SDL.h"
 
+#include <stdio.h>
+
 extern JE_byte itemAvail[9][10], itemAvailMax[9];
 extern JE_word levelEnemyFrequency;
 
 void JE_loadMap(void);
+void close_episode_file(void);
+bool level_read_event_script(FILE *f);
 
 extern JE_boolean levelWarningDisplay;
 extern JE_byte levelWarningLines;

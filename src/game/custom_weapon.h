@@ -24,6 +24,8 @@
 // Highest sound sample the engine can play (see sndmast.h SFX_COUNT).
 #define CUSTOM_SOUND_MAX 31
 
+#define CUSTOM_AIM_MAX 132
+
 #define CUSTOM_ICON_MAX 284
 
 enum  // where the custom weapon equips
@@ -93,6 +95,7 @@ extern int customSidekickAnimate;   // option: 1 = animate while firing, 2 = alw
 // Largest body sprite a mount's sheet can address (so the editor + materialize can clamp
 // the sprite index; the sidekick blit is not bounds-checked). 0 if the sheet isn't loaded.
 int customSidekickSpriteCount(int mount);
+int customSidekickSpriteMax(int mount, int chargeStages);
 
 // Named stock weapon and sidekick sources used by the editor's Import actions.
 typedef struct
@@ -115,6 +118,8 @@ extern int                customBulletPresetCount;
 // 1 means the look is fixed (a sidekick shot, or a weapon with a single level).
 int customBulletMaxPower(int presetIdx);
 int customBulletPresetWeapon(int presetIdx, int mode, int basePower);
+bool customWeaponTrailValid(int trail);
+int customWeaponTrailStep(int trail, int dir);
 
 // Initialize after JE_loadItemDat(); repeated calls preserve loaded designs.
 void customWeaponInit(void);
@@ -146,6 +151,7 @@ void customWeaponAddAllLevels(int presetIdx);
 // always valid) design into the current level.
 void customWeaponReset(void);
 void customWeaponRandomize(void);
+int customRand(int range);
 
 // Add duplicates and nudges a bullet segment; remove compacts the array.
 // Both return the next selected index, or -1 at their size limit.
@@ -187,7 +193,7 @@ extern int customWeaponSpread;
 extern int customWeaponLastSpread;
 const char *customWeaponSpreadName(int spread);
 
-// Persistence helpers (used by config.c). One (mode, level) design serializes to a
+// Persistence helpers. One (mode, level) design serializes to a
 // compact, whitespace-free comma-separated list of integers (safe for the parser).
 void customWeaponSerializeLevel(int mode, int level, char *buf, size_t bufSize);
 void customWeaponDeserializeLevel(int mode, int level, const char *str);
@@ -202,6 +208,9 @@ typedef struct
 	int  sidekickMount, sidekickSprite, sidekickFrames, sidekickFrameStep, sidekickAnimate;
 	JE_WeaponType raw[CUSTOM_WEAPON_MODES][CUSTOM_POWER_LEVELS];
 } CustomWeaponSlot;
+
+void customDesignStore(CustomWeaponSlot *s);
+void customDesignLoad(const CustomWeaponSlot *s);
 
 extern int customWeaponLibCount;    // number of saved weapons (always >= 1)
 extern int customWeaponCurrentSlot; // which slot the working copy came from

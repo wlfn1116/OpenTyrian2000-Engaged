@@ -37,6 +37,7 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "net_savexfer.h"
+#include "opentyr.h"
 #include "palette.h"
 #include "params.h"
 #include "picload.h"
@@ -197,6 +198,9 @@ static const char *const rumbleNames[] = { "Off", "Light", "Strong" };
 static const char *const crtFilterNames[] = { "Off", "Scanlines", "Full" };
 static const char *const crtStrengthNames[] = { "Light", "Medium", "Strong" };
 static const char *const crtCurvatureNames[] = { "Off", "Subtle", "Strong" };
+static const char *const crtMaskNames[] = { "Off", "Grille", "Slot" };
+static const char *const crtCornerNames[] = { "Square", "Rounded" };
+static const char *const crtRollingBarNames[] = { "Off", "Subtle", "Strong" };
 
 SDL_COMPILE_TIME_ASSERT(sfx_filter_names, COUNTOF(sfxFilterNames) == SFX_FILTER_COUNT);
 SDL_COMPILE_TIME_ASSERT(sfx_copy_names, COUNTOF(sfxCopyLimitNames) == SFX_COPY_LIMIT_MAX + 1);
@@ -204,6 +208,10 @@ SDL_COMPILE_TIME_ASSERT(rumble_names, COUNTOF(rumbleNames) == RUMBLE_COUNT);
 SDL_COMPILE_TIME_ASSERT(crt_filter_names, COUNTOF(crtFilterNames) == CRT_FILTER_COUNT);
 SDL_COMPILE_TIME_ASSERT(crt_strength_names, COUNTOF(crtStrengthNames) == CRT_STRENGTH_COUNT);
 SDL_COMPILE_TIME_ASSERT(crt_curvature_names, COUNTOF(crtCurvatureNames) == CRT_CURVATURE_COUNT);
+SDL_COMPILE_TIME_ASSERT(crt_mask_names, COUNTOF(crtMaskNames) == CRT_MASK_COUNT);
+SDL_COMPILE_TIME_ASSERT(crt_corner_names, COUNTOF(crtCornerNames) == CRT_CORNERS_COUNT);
+SDL_COMPILE_TIME_ASSERT(crt_rolling_bar_names,
+                        COUNTOF(crtRollingBarNames) == CRT_ROLLING_BAR_COUNT);
 
 NAME_PICKER(bossBarStyle, bossBarStyleNames)
 NAME_PICKER(bossBarLayout, bossBarLayoutNames)
@@ -222,6 +230,9 @@ NAME_PICKER(rumble, rumbleNames)
 NAME_PICKER(crtFilter, crtFilterNames)
 NAME_PICKER(crtStrength, crtStrengthNames)
 NAME_PICKER(crtCurvature, crtCurvatureNames)
+NAME_PICKER(crtMask, crtMaskNames)
+NAME_PICKER(crtCorner, crtCornerNames)
+NAME_PICKER(crtRollingBar, crtRollingBarNames)
 
 /* The preset picker shows Custom but does not let the user apply it. */
 static size_t enhPresetCount(void)
@@ -344,6 +355,9 @@ typedef enum
 	MENU_ITEM_CRT_FILTER,           // scanline / full CRT layers over the presented frame
 	MENU_ITEM_CRT_STRENGTH,
 	MENU_ITEM_CRT_CURVATURE,
+	MENU_ITEM_CRT_MASK,
+	MENU_ITEM_CRT_CORNERS,
+	MENU_ITEM_CRT_ROLLING_BAR,
 
 	/* Enhancements -> Heads-Up Display. */
 	MENU_ITEM_ENEMY_BARS,
@@ -481,7 +495,9 @@ static bool isMenuItemVisible(const MenuItem *item)
 	if (item->id == MENU_ITEM_RUMBLE)
 		return joystick_can_rumble();
 	if ((item->id == MENU_ITEM_SUBMENU && item->submenu == MENU_CRT) ||
-	    item->id == MENU_ITEM_CRT_FILTER || item->id == MENU_ITEM_CRT_STRENGTH)
+	    item->id == MENU_ITEM_CRT_FILTER || item->id == MENU_ITEM_CRT_STRENGTH ||
+	    item->id == MENU_ITEM_CRT_MASK || item->id == MENU_ITEM_CRT_CORNERS ||
+	    item->id == MENU_ITEM_CRT_ROLLING_BAR)
 		return crt_filter_available();
 	if (item->id == MENU_ITEM_CRT_CURVATURE)
 		return crt_curvature_available();
@@ -533,6 +549,9 @@ static int *menuItemIntSetting(MenuItemId id)
 	case MENU_ITEM_CRT_FILTER:       return &crt_filter;
 	case MENU_ITEM_CRT_STRENGTH:     return &crt_strength;
 	case MENU_ITEM_CRT_CURVATURE:    return &crt_curvature;
+	case MENU_ITEM_CRT_MASK:         return &crt_mask;
+	case MENU_ITEM_CRT_CORNERS:      return &crt_corners;
+	case MENU_ITEM_CRT_ROLLING_BAR:  return &crt_rolling_bar;
 	default:                         return NULL;
 	}
 }
@@ -765,11 +784,13 @@ static void drawArcadeShip(unsigned int i, int xCenter, int yTop, Palette shown)
 	const int xLeft = xCenter - (int)hulls * HULL_W * SCALE / 2;
 	for (unsigned int h = 0; h < hulls; ++h)
 	{
+		Uint8 pixels[HULL_H][HULL_W];
+		sprite2x2_decode(*sheet, hull[h], pixels);
 		for (int row = 0; row < HULL_H; ++row)
 		{
 			for (int col = 0; col < HULL_W; ++col)
 			{
-				const Uint8 c = sprite2x2_pixel(*sheet, hull[h], col, row);
+				const Uint8 c = pixels[row][col];
 				if (c == 0)
 					continue;
 				if (slot[c] == 0 && slotsUsed < COUNTOF(menuUnusedBanks) * 16)
@@ -914,8 +935,17 @@ static bool runOptionsMenu(MenuId startMenu)
 				  .getPickerItemsCount = crtFilterCount, .getPickerItem = crtFilterItem },
 				{ MENU_ITEM_CRT_STRENGTH, "Strength:", "Depth of the scanlines, glow and phosphor mask.",
 				  .getPickerItemsCount = crtStrengthCount, .getPickerItem = crtStrengthItem },
+				{ MENU_ITEM_CRT_MASK, "Mask:",
+				  "Phosphor pattern in Full: aperture grille or slots.",
+				  .getPickerItemsCount = crtMaskCount, .getPickerItem = crtMaskItem },
 				{ MENU_ITEM_CRT_CURVATURE, "Curvature:", "Bend the picture like a curved tube screen.",
 				  .getPickerItemsCount = crtCurvatureCount, .getPickerItem = crtCurvatureItem },
+				{ MENU_ITEM_CRT_CORNERS, "Corners:",
+				  "Round the picture's corners like a tube screen.",
+				  .getPickerItemsCount = crtCornerCount, .getPickerItem = crtCornerItem },
+				{ MENU_ITEM_CRT_ROLLING_BAR, "Rolling Bar:",
+				  "A faint band that rolls down the screen now and then.",
+				  .getPickerItemsCount = crtRollingBarCount, .getPickerItem = crtRollingBarItem },
 				MENU_DONE_ROW
 			},
 		},
@@ -1311,6 +1341,16 @@ static bool runOptionsMenu(MenuId startMenu)
 		// so keep the selection inside the list.
 		if (*selectedMenuItemIndex >= menuItemsCount)
 			*selectedMenuItemIndex = menuItemsCount - 1;
+		if (currentPicker != MENU_ITEM_NONE)
+		{
+			size_t pickerRow = 0;
+			while (pickerRow < menuItemsCount && menuItems[pickerRow].id != currentPicker)
+				++pickerRow;
+			if (pickerRow < menuItemsCount)
+				*selectedMenuItemIndex = pickerRow;
+			else
+				currentPicker = MENU_ITEM_NONE;
+		}
 
 		// Tighten long menus enough to keep the final row above the footer, using
 		// the spare gap below the header first.
@@ -1335,7 +1375,9 @@ static bool runOptionsMenu(MenuId startMenu)
 			                   || (menuItem->id == MENU_ITEM_SUPERSAMPLE && !smoothMotion)
 			                   || (menuItem->id == MENU_ITEM_SUBPIXEL_FX && !subpixelFxAvailable())
 			                   || (menuItem->id == MENU_ITEM_CRT_STRENGTH
-			                       && crt_filter == CRT_FILTER_OFF);
+			                       && crt_filter == CRT_FILTER_OFF)
+			                   || (menuItem->id == MENU_ITEM_CRT_MASK
+			                       && crt_filter != CRT_FILTER_FULL);
 
 			if (selected)
 				yPicker = y;
@@ -2381,7 +2423,7 @@ static bool runOptionsMenu(MenuId startMenu)
 						if (!init_scaler(pickerSelectedIndex) &&  // try new scaler
 							!init_scaler(oldScaler))              // revert on fail
 						{
-							exit(EXIT_FAILURE);
+							JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 						}
 					}
 					break;

@@ -53,6 +53,7 @@
 #include "console_platform.h"
 #include "title.h"
 #include "video.h"
+#include "weapon_editor.h"
 #include "xmas.h"
 
 #include "SDL.h"
@@ -76,11 +77,13 @@ static void JE_tyrianShutdown(bool saveConfiguration)
 	destruct_deinit();
 	game_loop_deinit();
 	game_menu_deinit();
+	weaponEditorRelease();
 	rl_deinit();
 	deinit_video();
 	deinit_joysticks();
 
 	free_main_shape_tables();
+	free_enemy_sprite_sheets();
 	free_sprite2s(&shopSpriteSheet);
 	free_sprite2s(&explosionSpriteSheet);
 
@@ -91,6 +94,7 @@ static void JE_tyrianShutdown(bool saveConfiguration)
 	}
 
 	close_demo_file();
+	close_episode_file();
 
 	if (saveConfiguration)
 		JE_saveConfiguration();
@@ -100,6 +104,42 @@ static void JE_tyrianShutdown(bool saveConfiguration)
 	rollback_deinit();
 	config_deinit(&opentyrian_config);
 	network_deinit();
+}
+
+static void JE_tyrianQuitSDL(void)
+{
+	SDL_Quit();
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+	SDL_TLSCleanup();
+#endif
+}
+
+static int JE_tyrianFinish(int result)
+{
+	JE_tyrianShutdown(false);
+	JE_tyrianQuitSDL();
+	return result;
+}
+
+static OT_NORETURN void JE_tyrianExitProcess(int code)
+{
+	JE_tyrianQuitSDL();
+
+#ifdef __SWITCH__
+	// Switch: libc exit()'s atexit/stdio teardown NULL-derefs in newlib once romfs is
+	// gone; everything is already flushed, so _Exit and skip it. That skips atexit too,
+	// so the console services are released here.
+	switch_platform_exit();
+	_Exit(code);
+#else
+	exit(code);
+#endif
+}
+
+void JE_tyrianExitWithoutSaving(int code)
+{
+	JE_tyrianShutdown(false);
+	JE_tyrianExitProcess(code);
 }
 
 void JE_tyrianHalt(JE_byte code)
@@ -139,17 +179,7 @@ void JE_tyrianHalt(JE_byte code)
 		       "\n");
 	}
 
-	SDL_Quit();
-
-#ifdef __SWITCH__
-	// Switch: libc exit()'s atexit/stdio teardown NULL-derefs in newlib once romfs is
-	// gone; everything is already flushed, so _Exit and skip it. That skips atexit too,
-	// so the console services are released here.
-	switch_platform_exit();
-	_Exit(code);
-#else
-	exit(code);
-#endif
+	JE_tyrianExitProcess(code);
 }
 
 #ifdef _MSC_VER
@@ -270,34 +300,22 @@ int main(int argc, char *argv[])
 
 	if (qa_test_suite)
 	{
-		const int result = qa_run_unit_suite();
-		JE_tyrianShutdown(false);
-		SDL_Quit();
-		return result;
+		return JE_tyrianFinish(qa_run_unit_suite());
 	}
 
 	if (qa_xfer_send != NULL || qa_xfer_recv != NULL)
 	{
-		const int result = qa_run_xfer();
-		JE_tyrianShutdown(false);
-		SDL_Quit();
-		return result;
+		return JE_tyrianFinish(qa_run_xfer());
 	}
 
 	if (qa_replay_demo != 0)
 	{
-		const int result = qa_run_replay_fixture();
-		JE_tyrianShutdown(false);
-		SDL_Quit();
-		return result;
+		return JE_tyrianFinish(qa_run_replay_fixture());
 	}
 
 	if (qa_destruct_selftest_ticks > 0)
 	{
-		const int result = qa_run_destruct_selftest();
-		JE_tyrianShutdown(false);
-		SDL_Quit();
-		return result;
+		return JE_tyrianFinish(qa_run_destruct_selftest());
 	}
 
 	if (qa_net_rounds > 0)
@@ -389,7 +407,7 @@ int main(int argc, char *argv[])
 		{
 			fprintf(stderr, "network test: custom episode '%s' is not installed here\n",
 			        qa_net_custom_episode);
-			exit(1);
+			JE_tyrianExitWithoutSaving(1);
 		}
 		SDL_strlcpy(network_host_custom_file, customEpisodeFile(idx),
 		            sizeof(network_host_custom_file));
@@ -408,10 +426,7 @@ int main(int argc, char *argv[])
 
 	if (qa_net_rounds > 0)
 	{
-		const int result = network_test_peer(qa_net_rounds, qa_net_scenario);
-		JE_tyrianShutdown(false);
-		SDL_Quit();
-		return result;
+		return JE_tyrianFinish(network_test_peer(qa_net_rounds, qa_net_scenario));
 	}
 
 #ifdef NDEBUG
@@ -482,10 +497,7 @@ int main(int argc, char *argv[])
 			 * condition. It has no title-screen driver, so end the two test processes here. */
 			if (qa_net_scenario == 20 && qa_net_gameplay_ticks > 0 && timedBattleMode
 			    && mainLevel == 0)
-			{
-				network_shutdown();
-				exit(0);
-			}
+				JE_tyrianExitWithoutSaving(0);
 
 			if (trentWin)
 			{

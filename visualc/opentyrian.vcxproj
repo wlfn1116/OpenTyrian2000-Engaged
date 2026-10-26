@@ -170,6 +170,7 @@
     <ClCompile Include="..\src\endless\endless_shop.c" />
     <ClCompile Include="..\src\game\background.c" />
     <ClCompile Include="..\src\game\custom_weapon.c" />
+    <ClCompile Include="..\src\game\custom_weapon_autoscale.c" />
     <ClCompile Include="..\src\game\debug_flags.c" />
     <ClCompile Include="..\src\game\demo.c" />
     <ClCompile Include="..\src\game\enemy_death.c" />
@@ -191,6 +192,7 @@
     <ClCompile Include="..\src\input\joystick.c" />
     <ClCompile Include="..\src\input\keyboard.c" />
     <ClCompile Include="..\src\input\mouse.c" />
+    <ClCompile Include="..\src\input\rumble.c" />
     <ClCompile Include="..\src\input\touch_ui.c" />
     <ClCompile Include="..\src\level\custom_episode.c" />
     <ClCompile Include="..\src\level\episodes.c" />
@@ -225,11 +227,15 @@
     <ClCompile Include="..\src\net\rollback.c" />
     <ClCompile Include="..\src\net\rollback_state.c" />
     <ClCompile Include="..\src\qa\qa.c" />
+    <ClCompile Include="..\src\qa\qa_audio.c" />
     <ClCompile Include="..\src\qa\qa_combat.c" />
     <ClCompile Include="..\src\qa\qa_course.c" />
+    <ClCompile Include="..\src\qa\qa_custom_weapons.c" />
     <ClCompile Include="..\src\qa\qa_economy.c" />
     <ClCompile Include="..\src\qa\qa_endless.c" />
+    <ClCompile Include="..\src\qa\qa_input.c" />
     <ClCompile Include="..\src\qa\qa_items.c" />
+    <ClCompile Include="..\src\qa\qa_levels.c" />
     <ClCompile Include="..\src\qa\qa_net.c" />
     <ClCompile Include="..\src\qa\qa_netplay.c" />
     <ClCompile Include="..\src\qa\qa_online.c" />
@@ -248,6 +254,7 @@
     <ClCompile Include="..\src\video\sprite.c" />
     <ClCompile Include="..\src\video\starlib.c" />
     <ClCompile Include="..\src\video\video.c" />
+    <ClCompile Include="..\src\video\video_crt.c" />
     <ClCompile Include="..\src\video\video_scale.c" />
     <ClCompile Include="..\src\video\video_scale_hqNx.c" />
   </ItemGroup>
@@ -412,6 +419,7 @@
     <ClInclude Include="..\src\input\joystick.h" />
     <ClInclude Include="..\src\input\keyboard.h" />
     <ClInclude Include="..\src\input\mouse.h" />
+    <ClInclude Include="..\src\input\rumble.h" />
     <ClInclude Include="..\src\input\touch_ui.h" />
     <ClInclude Include="..\src\level\custom_episode.h" />
     <ClInclude Include="..\src\level\episodes.h" />
@@ -458,6 +466,7 @@
     <ClInclude Include="..\src\video\starlib.h" />
     <ClInclude Include="..\src\video\swar.h" />
     <ClInclude Include="..\src\video\video.h" />
+    <ClInclude Include="..\src\video\video_crt.h" />
     <ClInclude Include="..\src\video\video_scale.h" />
   </ItemGroup>
   <ItemGroup>

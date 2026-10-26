@@ -57,6 +57,9 @@ typedef struct
 } SpritePickerSpec;
 
 bool spritePickerRun(const SpritePickerSpec *spec, int *value);
+void spritePickerInkBox(Sprite2_array sheet, unsigned int index, bool big, int *x0, int *y0,
+                        int *x1, int *y1);
+void spritePickerRelease(void);
 void spritePickerDrawFit(SDL_Surface *dst, unsigned int table, unsigned int index, int x, int y,
                          int w, int h, int maxScale);
 void spritePickerDrawHull(const Sprite2_array *sheet, JE_word gr, int x, int y, int w, int h);

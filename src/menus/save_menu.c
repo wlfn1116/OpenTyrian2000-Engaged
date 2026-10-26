@@ -33,6 +33,7 @@
 #include "mouse.h"
 #include "net_savexfer.h"
 #include "network.h"
+#include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
 #include "qa.h"
@@ -45,7 +46,6 @@
 
 #include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 JE_boolean performSave;
@@ -131,7 +131,7 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 			fprintf(stderr, "net gameplay: slot %d is not a two-player save slot\n",
 			        qa_net_disconnect_save);
 			fflush(stderr);
-			exit(2);
+			JE_tyrianExitWithoutSaving(2);
 		}
 		performSave = true;
 		JE_operation((JE_byte)qa_net_disconnect_save);

@@ -144,11 +144,13 @@ Every present path goes through `present_frame`. It draws the frame and the CRT
 layers; the caller then draws the touch controls unfiltered. The layers belong
 to `main_window_renderer` and are released before it is destroyed. A CPU
 renderer hides the CRT Filter submenu, whose settings are display preferences
-outside the enhancement presets. Tuning lives in `crt_looks[]` (per Strength)
-and `crt_bends[]` (per Curvature).
+outside the enhancement presets. Tuning lives in `crt_looks[]` (per Strength),
+`crt_bends[]` (per Curvature) and `crt_bar_depths[]` (per Rolling Bar).
 
 Every layer uses SDL's standard blend modes. The Vita's GXM renderer has no
-custom ones.
+custom ones. Alpha and colour mods stay on a texture across frames, and even a
+NONE copy applies them, so a draw that sets one puts it back, unless that draw
+is the texture's only user.
 
 Lines:
 
@@ -170,17 +172,27 @@ Glow (Full):
   MOD draws so only bright pixels glow.
 - Shrink to 178x100 and 89x50 with a [1 3 3 1] kernel: a half-weight center draw
   plus four diagonal ADD draws at alpha 32.
-- Blend 89x50 back into 178x100 and upsample to 356x200. Handheld screens stop
-  at 89x50.
+- Blend 89x50 back into 178x100 at alpha `glow_spread`, upsample to 356x200,
+  and add the result over the picture at alpha `glow`.
 - SDL2 reads a texture's scale mode when its command queue runs, so
   `crt_glow_from` flushes before it restores the frame's own mode.
 
 Mask and vignette (Full):
 
-- The mask is an RGB aperture grille drawn with MUL. Each channel's multiplier
-  is rgb + 1 - alpha, so lit and unlit columns average 1.
-- A phosphor is round(output pixels per game pixel / 5) wide. The mask is
-  skipped under 3 output pixels per game pixel.
+- The mask is drawn with MUL. Each channel's multiplier is rgb + 1 - alpha, so
+  a lit channel sits at most 1 above the unlit ones.
+- Grille is one row of RGB columns stretched down the picture. Lit and unlit
+  columns average 1.
+- Slot is a tile of whole slots, as many as fit in `CRT_MASK_TILE_ROWS` rows
+  (at least one), drawn in bands. A slot is `CRT_SLOT_ROWS` phosphor widths
+  tall, and in the last `CRT_SLOT_GAP_ROWS` of them the lit channel drops to
+  the unlit level. Odd column triads are offset by half a slot.
+- `crt_slot_levels` floors the unlit level at (2r + g) / (3r) for r rows and g
+  gap rows (0.75), the lowest that keeps the lit channel within 1 of it. It
+  then solves the lit level so every channel still averages 1 over the tile.
+- Off skips the mask. The vignette still draws.
+- A phosphor is round(output pixels per game pixel / 5) wide, at least 1
+  pixel.
 - The vignette is crtemu's falloff, flattened.
 
 Curvature:
@@ -200,12 +212,26 @@ Curvature:
   Relative motion is not bent.
 - Curvature also runs with the filter off, at 1x.
 
-`crt_on_handheld_screen` (the Vita, phones and tablets always, the Switch below
-1080 output rows) skips the mask, the second glow scale and curvature.
-`crt_curvature_available` hides the Curvature row where it can never run.
-`video_test_crt_rows` and `video_test_crt_curve`, run from
-`qa_test_present_paths`, cover the snapping, mask balance, phosphor widths, bend
-inverse, supersample factor and pointer mapping.
+Corners and rolling bar:
+
+- Both draw into the picture after the glow and before `crt_curve_end`, so they
+  bend with Curvature. Like Curvature, they run with the filter off.
+- Corners stretch one quadrant of a 128x128 black BLEND texture over each
+  corner of the picture, at a radius of 4% of its height (at least 2 pixels).
+  The alpha is the 4x4-sampled coverage outside a quarter circle.
+- The rolling bar is a 1x64 black BLEND strip with a raised-cosine alpha,
+  alpha-modded by `crt_bar_depths[]` and stretched to 20% of the picture's
+  height. It enters above the top and leaves below the bottom in
+  `CRT_BAR_CROSS_MS`, once every `CRT_BAR_PERIOD_MS`. It runs on `SDL_GetTicks`,
+  so it keeps rolling in menus and pauses.
+
+Every platform and output size gets the same layers. The one size floor is the
+lines' 400 rows: a game row only one output row tall would be all gap.
+`crt_curvature_available` hides the Curvature row when SDL is older than 2.0.18.
+`video_test_crt_rows`, `video_test_crt_curve` and `video_test_crt_layers`, run
+from `qa_test_present_paths`, cover the snapping, mask balance, phosphor widths,
+bend inverse, supersample factor, pointer mapping, slot balance, gaps and
+stagger, corner coverage, and the bar's profile and timing.
 
 ### Coordinates
 

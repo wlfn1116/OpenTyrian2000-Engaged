@@ -22,6 +22,7 @@
 
 #define MAX_EXPLOSIONS           200
 #define MAX_REPEATING_EXPLOSIONS 20
+#define EXPLOSION_TYPES          54
 
 typedef struct {
 	JE_byte ttl;

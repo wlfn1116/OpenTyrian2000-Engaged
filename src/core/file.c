@@ -214,8 +214,7 @@ void fread_die(void *buffer, size_t size, size_t count, FILE *stream)
 		         count, size, size * count, result);
 		fprintf(stderr, "error: An unexpected problem occurred while reading from a file.\n");
 		crashlog_report_fatal("FATAL (file read failed -- fread_die)", detail);
-		SDL_Quit();
-		exit(EXIT_FAILURE);
+		JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 	}
 }
 
@@ -230,8 +229,7 @@ void fwrite_die(const void *buffer, size_t size, size_t count, FILE *stream)
 		         count, size, size * count, result);
 		fprintf(stderr, "error: An unexpected problem occurred while writing to a file.\n");
 		crashlog_report_fatal("FATAL (file write failed -- fwrite_die)", detail);
-		SDL_Quit();
-		exit(EXIT_FAILURE);
+		JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 	}
 }
 

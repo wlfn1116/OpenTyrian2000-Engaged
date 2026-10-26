@@ -104,16 +104,18 @@ void draw_corner_clamps(SDL_Surface *surface, int x0, int y0, int x1, int y1, in
 /* Draw a 1px rectangle outline, clamped to the surface. */
 void draw_rect_outline(SDL_Surface *s, int x0, int y0, int x1, int y1, Uint8 col)
 {
-	if (x0 < 0) x0 = 0;
-	if (y0 < 0) y0 = 0;
-	if (x1 > s->w - 1) x1 = s->w - 1;
-	if (y1 > s->h - 1) y1 = s->h - 1;
-	if (x1 < x0 || y1 < y0)
+	const int cx0 = MAX(x0, 0), cy0 = MAX(y0, 0);
+	const int cx1 = MIN(x1, s->w - 1), cy1 = MIN(y1, s->h - 1);
+	if (cx1 < cx0 || cy1 < cy0)
 		return;
-	fill_rectangle_xy(s, x0, y0, x1, y0, col);  // top
-	fill_rectangle_xy(s, x0, y1, x1, y1, col);  // bottom
-	fill_rectangle_xy(s, x0, y0, x0, y1, col);  // left
-	fill_rectangle_xy(s, x1, y0, x1, y1, col);  // right
+	if (y0 >= 0)
+		fill_rectangle_xy(s, cx0, y0, cx1, y0, col);  // top
+	if (y1 <= s->h - 1)
+		fill_rectangle_xy(s, cx0, y1, cx1, y1, col);  // bottom
+	if (x0 >= 0)
+		fill_rectangle_xy(s, x0, cy0, x0, cy1, col);  // left
+	if (x1 <= s->w - 1)
+		fill_rectangle_xy(s, x1, cy0, x1, cy1, col);  // right
 }
 
 void JE_barShade(SDL_Surface *surface, int a, int b, int c, int d) /* x1, y1, x2, y2 */

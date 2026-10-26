@@ -124,7 +124,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       95           /* SURFACE's arch nubs load beside their arches. */
+#define NET_VERSION       96           /* Custom weapon trail and homing values are clamped. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.
@@ -1644,7 +1644,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 				network_check();
 			}
 		}
-		exit(1);
+		JE_tyrianExitWithoutSaving(1);
 	}
 
 	// The session is over; take the music with it rather than leaving the level's track playing
@@ -1695,7 +1695,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 			fprintf(stderr, "net gameplay: host kept the session in slot %d\n",
 			        qa_net_disconnect_save);
 			fflush(stderr);
-			exit(0);
+			JE_tyrianExitWithoutSaving(0);
 		}
 	}
 	else
@@ -3837,9 +3837,6 @@ void network_shutdown(void)
 	console_wireless_leave();
 #endif
 
-	if (!net_initialized)
-		return;
-
 	for (int i = 0; i < NET_PACKET_QUEUE; i++)
 	{
 		packet_destroy(&packet_in[i]);
@@ -3853,6 +3850,9 @@ void network_shutdown(void)
 	packet_destroy(&packet_out_temp);
 	while (packet_pool_count > 0)
 		packet_destroy(&packet_pool[--packet_pool_count]);
+
+	if (!net_initialized)
+		return;
 
 	if (net_socket)
 	{

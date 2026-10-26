@@ -365,6 +365,8 @@ static int pickerRowStep(const PickerRow *rows, int rowCount, int sel, int dir)
  * on a heading: clamping, paging, Home/End, a letter jump, a click. */
 static int pickerRowSnap(const PickerRow *rows, int rowCount, int sel)
 {
+	if (rowCount <= 0)
+		return 0;
 	if (sel < 0)
 		sel = 0;
 	if (sel > rowCount - 1)

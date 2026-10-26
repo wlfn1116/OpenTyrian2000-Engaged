@@ -405,13 +405,16 @@ during recharge, and flashes when ready.
 
 ### CRT Filter
 
-**Setup > Enhancements > Visuals > CRT Filter** holds three settings:
+**Setup > Enhancements > Visuals > CRT Filter** holds six settings:
 
 | Setting | Choices |
 | --- | --- |
 | Filter | Off (default), Scanlines, Full |
 | Strength | Light, Medium (default), Strong |
+| Mask | Off, Grille (default), Slot |
 | Curvature | Off (default), Subtle, Strong |
+| Corners | Square (default), Rounded |
+| Rolling Bar | Off (default), Subtle, Strong |
 
 - **Filter**: Scanlines draws a dark line under every game row. Full adds a
   phosphor mask, a glow around bright objects, and darker edges. Bright colors
@@ -419,16 +422,23 @@ during recharge, and flashes when ready.
   brightness while dark areas show deep lines.
 - **Strength** sets the depth of the lines, glow and mask. It is dimmed while
   Filter is Off.
+- **Mask** picks the phosphor pattern for Full. Grille draws unbroken red,
+  green and blue stripes like an aperture-grille tube. Slot breaks them into
+  staggered slots like a slot-mask TV. Off keeps the glow and darker edges
+  without a mask. The row is dimmed unless Filter is Full.
 - **Curvature** bends the picture like a curved tube, with Filter on or off.
   The whole picture stays on screen: the edges bow and the corners pull in,
   with black behind them. Clicks and touches follow the bend; touch buttons
   stay flat.
-- Lines appear once the picture is at least 2x the game's size, the phosphor
-  mask from 3x.
-- The Vita, phones and tablets, and the Switch in handheld mode, skip the
-  phosphor mask, use a lighter glow, and never bend the picture. The Vita,
-  phones and tablets hide the Curvature row.
-- The submenu is missing when the graphics driver cannot draw it.
+- **Corners**: Rounded gives the picture round corners like a tube screen,
+  with Filter on or off. With Curvature they bend along with the picture.
+- **Rolling Bar** sends a soft dark band down the screen every 9 seconds, like
+  the hum bar of an old TV, with Filter on or off. Strong is twice as dark as
+  Subtle.
+- Lines appear once the picture is at least 2x the game's size. The other
+  layers work at every size, on every platform.
+- The submenu is missing when the graphics driver cannot draw it. Curvature
+  also needs SDL 2.0.18 or newer.
 
 ## Diagnostics
 

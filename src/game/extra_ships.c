@@ -414,10 +414,8 @@ const char *extraShipEditorGraphicName(int graphic, char *buf, size_t bufSize)
 	if (!extraShipGraphicRaw(graphic, &raw))
 		return NULL;
 
-	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
-		if (ships[ship].name[0] != '\0' && ships[ship].shipgraphic == raw)
-			return JE_shipShortName((JE_word)ship, buf, bufSize);
-	return NULL;
+	const int ship = JE_shipHullOwner(raw);
+	return ship != 0 ? JE_shipShortName((JE_word)ship, buf, bufSize) : NULL;
 }
 
 // Route online extra-ship graphics through the owning seat's file.

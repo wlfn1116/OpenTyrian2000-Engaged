@@ -215,6 +215,7 @@ const char *JE_shipName(JE_word id);
 const char *JE_trimItemName(const char *name, char *buf, size_t bufSize);
 const char *JE_shipShortName(JE_word id, char *buf, size_t bufSize);
 int JE_distinctShipHulls(JE_byte *list, size_t capacity, bool (*accept)(int ship));
+int JE_shipHullOwner(JE_word shipgraphic);
 
 // Refresh ammo sidekick names after effective magazine sizes change.
 void JE_labelAmmoSidekicks(void);

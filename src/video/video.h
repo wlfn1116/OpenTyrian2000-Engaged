@@ -101,9 +101,35 @@ typedef enum
 	CRT_CURVATURE_COUNT
 } CrtCurvature;
 
+typedef enum
+{
+	CRT_MASK_OFF = 0,
+	CRT_MASK_GRILLE,
+	CRT_MASK_SLOT,
+	CRT_MASK_COUNT
+} CrtMask;
+
+typedef enum
+{
+	CRT_CORNERS_SQUARE = 0,
+	CRT_CORNERS_ROUNDED,
+	CRT_CORNERS_COUNT
+} CrtCorners;
+
+typedef enum
+{
+	CRT_ROLLING_BAR_OFF = 0,
+	CRT_ROLLING_BAR_SUBTLE,
+	CRT_ROLLING_BAR_STRONG,
+	CRT_ROLLING_BAR_COUNT
+} CrtRollingBar;
+
 extern int crt_filter;  // CrtFilter
 extern int crt_strength;
 extern int crt_curvature;
+extern int crt_mask;
+extern int crt_corners;
+extern int crt_rolling_bar;
 // False when the renderer cannot draw the filter (no multiply blending, or CPU rendering).
 bool crt_filter_available(void);
 bool crt_curvature_available(void);
@@ -116,6 +142,7 @@ extern SDL_Surface *game_screen;
 extern SDL_Surface *VGAScreen2;
 
 extern SDL_Window *main_window;
+extern SDL_Renderer *main_window_renderer;
 extern SDL_PixelFormat *main_window_tex_format;
 
 void init_video(void);
@@ -187,6 +214,7 @@ bool video_test_rows_pick(char *detail, size_t detailSize);
 bool video_test_rows_watch(char *detail, size_t detailSize);
 bool video_test_crt_rows(char *detail, size_t detailSize);
 bool video_test_crt_curve(char *detail, size_t detailSize);
+bool video_test_crt_layers(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.

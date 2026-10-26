@@ -542,8 +542,6 @@ static void draw_menu_power_bar(SDL_Surface *s, int power_value)
 	fill_rectangle_xy(s, 145, temp - 1, 149, temp - 1, temp2);
 }
 
-void (*weaponSimOverlayFn)(float alpha) = NULL;
-
 // Preview region (inclusive), in VGAScreen coordinates.
 enum { SIM_BOX_X0 = 8, SIM_BOX_Y0 = 8, SIM_BOX_X1 = 143, SIM_BOX_Y1 = 182 };
 
@@ -621,7 +619,6 @@ void JE_weaponSimSmoothPresent(void)
 	// menuWaitWithSmoothCursor() wait out the tick; classic, non-interpolated.
 	if (!smoothMotion)
 	{
-		if (weaponSimOverlayFn) weaponSimOverlayFn(1.0f);
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
@@ -667,7 +664,6 @@ void JE_weaponSimSmoothPresent(void)
 			draw_menu_power_bar(VGAScreenSeg, (int)(level + 0.5f));
 		}
 
-		if (weaponSimOverlayFn) weaponSimOverlayFn(alpha);
 		JE_mouseStart();
 
 		// Sub-pixel preview when supersampling is on, classic present otherwise.
@@ -4526,9 +4522,9 @@ const char *shop_ship_name(JE_word ship, char *buf, size_t n)
 JE_word shop_ship_hull(JE_word ship, Sprite2_array **sheet)
 {
 	*sheet = &spriteSheet9;
-	if (ship > 90)
-		return JE_SGr(shop_draw_seat(), (JE_word)(ship - 90), sheet);
-	const JE_word gr = ships[ship].shipgraphic;
+	if (extraShipIdIsCustom(ship))
+		return JE_SGr(shop_draw_seat(), (JE_word)(ship - EXTRA_SHIP_ID_BASE), sheet);
+	const JE_word gr = ships[ship <= SHIP_DRAGONWING ? ship : 0].shipgraphic;
 	if (gr <= 500)
 		return gr;
 	*sheet = &spriteSheetT2000;

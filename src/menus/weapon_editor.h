@@ -22,6 +22,8 @@
 #include "config_file.h"
 
 bool JE_weaponEditor(bool canEquip);
+int weaponEditorRangeShip(int ship);
+void weaponEditorRelease(void);
 void weaponEditorConfigLoad(const ConfigSection *section);
 void weaponEditorConfigSave(ConfigSection *section);
 

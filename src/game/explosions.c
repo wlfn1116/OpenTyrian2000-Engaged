@@ -115,7 +115,7 @@ void JE_setupExplosion(
 	const struct {
 		JE_word sprite;
 		JE_byte ttl;
-	} explosion_data[54] /* [1..54] */ = {
+	} explosion_data[EXPLOSION_TYPES] /* [1..54] */ = {
 		{ 144,  7 },
 		{ 120, 12 },
 		{ 190, 12 },
@@ -171,6 +171,9 @@ void JE_setupExplosion(
 		{ 265, 14 },
 		{  96,  3 }
 	};
+
+	if (type != 98 && type != 198 && (type < 0 || type >= EXPLOSION_TYPES))
+		return;
 
 	if (y > -16 && y < 190)
 	{

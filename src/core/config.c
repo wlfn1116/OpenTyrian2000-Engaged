@@ -710,6 +710,15 @@ static bool load_opentyrian_config(void)
 		config_get_int_option(section, "crt_curvature", &crt_curvature);
 		if (crt_curvature < CRT_CURVATURE_OFF || crt_curvature >= CRT_CURVATURE_COUNT)
 			crt_curvature = CRT_CURVATURE_OFF;
+		config_get_int_option(section, "crt_mask", &crt_mask);
+		if (crt_mask < CRT_MASK_OFF || crt_mask >= CRT_MASK_COUNT)
+			crt_mask = CRT_MASK_GRILLE;
+		config_get_int_option(section, "crt_corners", &crt_corners);
+		if (crt_corners < CRT_CORNERS_SQUARE || crt_corners >= CRT_CORNERS_COUNT)
+			crt_corners = CRT_CORNERS_SQUARE;
+		config_get_int_option(section, "crt_rolling_bar", &crt_rolling_bar);
+		if (crt_rolling_bar < CRT_ROLLING_BAR_OFF || crt_rolling_bar >= CRT_ROLLING_BAR_COUNT)
+			crt_rolling_bar = CRT_ROLLING_BAR_OFF;
 
 		// Ship-control sensitivity slider: touch on the handheld ports, mouse on desktop.
 		config_get_int_option(section, SHIP_SENS_CFG, &ship_sensitivity);
@@ -1101,6 +1110,9 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "crt_filter", crt_filter);
 	config_set_int_option(section, "crt_strength", crt_strength);
 	config_set_int_option(section, "crt_curvature", crt_curvature);
+	config_set_int_option(section, "crt_mask", crt_mask);
+	config_set_int_option(section, "crt_corners", crt_corners);
+	config_set_int_option(section, "crt_rolling_bar", crt_rolling_bar);
 
 	config_set_int_option(section, SHIP_SENS_CFG, ship_sensitivity);
 

@@ -484,6 +484,7 @@ enum { CW_RANGE_SHIPS_MAX = SHIP_DRAGONWING + EXTRA_SHIP_SLOTS };
 static const CwRange cwRangeDefaults = CW_RANGE_DEFAULTS;
 static CwRange cwRange = CW_RANGE_DEFAULTS;
 static int cwTickShipX, cwTickShipY;
+static int cwConfiguredShip = -1;
 
 static const struct { const char *key; int *value; } cwRangeKeys[] =
 {
@@ -509,7 +510,11 @@ void weaponEditorConfigSave(ConfigSection *section)
 {
 	config_set_bool_option(section, "weapon_editor_stats", cwRange.stats, ZERO_ONE);
 	for (size_t i = 0; i < COUNTOF(cwRangeKeys); ++i)
-		config_set_int_option(section, cwRangeKeys[i].key, *cwRangeKeys[i].value);
+	{
+		const bool stashed = cwRangeKeys[i].value == &cwRange.ship && cwConfiguredShip >= 0;
+		config_set_int_option(section, cwRangeKeys[i].key,
+		                      stashed ? cwConfiguredShip : *cwRangeKeys[i].value);
+	}
 }
 
 static int cwRangeNumeric(int f)
@@ -557,6 +562,11 @@ static bool cwIsSidekickSlot(void)
 static bool cwLevelUsed(int level)
 {
 	return !cwIsSidekickSlot() || level < customWeaponChargeStages;
+}
+
+static int cwSidekickSpriteMax(void)
+{
+	return customSidekickSpriteMax(customSidekickMount, customWeaponChargeStages);
 }
 
 static JE_WeaponType *cwCur(void)
@@ -647,36 +657,12 @@ static CustomWeaponSlot *cwHistoryAt(int i)
 static void cwCaptureWorking(CustomWeaponSlot *s)
 {
 	memset(s, 0, sizeof(*s));
-	SDL_strlcpy(s->name, customWeaponName, sizeof(s->name));
-	s->cost         = customWeaponCost;
-	s->powerUse     = customWeaponPowerUse;
-	s->equipSlot    = customWeaponEquipSlot;
-	s->itemGraphic  = customWeaponItemGraphic;
-	s->chargeStages = customWeaponChargeStages;
-	s->modes        = customWeaponModes;
-	s->sidekickMount     = customSidekickMount;
-	s->sidekickSprite    = customSidekickSprite;
-	s->sidekickFrames    = customSidekickFrames;
-	s->sidekickFrameStep = customSidekickFrameStep;
-	s->sidekickAnimate   = customSidekickAnimate;
-	memcpy(s->raw, customWeaponRaw, sizeof(customWeaponRaw));
+	customDesignStore(s);
 }
 
 static void cwRestoreWorking(const CustomWeaponSlot *s)
 {
-	SDL_strlcpy(customWeaponName, s->name, sizeof(customWeaponName));
-	customWeaponCost         = s->cost;
-	customWeaponPowerUse     = s->powerUse;
-	customWeaponEquipSlot    = s->equipSlot;
-	customWeaponItemGraphic  = s->itemGraphic;
-	customWeaponChargeStages = s->chargeStages;
-	customWeaponModes        = s->modes;
-	customSidekickMount      = s->sidekickMount;
-	customSidekickSprite     = s->sidekickSprite;
-	customSidekickFrames     = s->sidekickFrames;
-	customSidekickFrameStep  = s->sidekickFrameStep;
-	customSidekickAnimate    = s->sidekickAnimate;
-	memcpy(customWeaponRaw, s->raw, sizeof(customWeaponRaw));
+	customDesignLoad(s);
 
 	customWeaponEditMode = clampi(customWeaponEditMode, 0, customWeaponModes - 1);
 	customWeaponMaterialize();
@@ -749,7 +735,7 @@ static void cwFmtLife(int d, char *b, size_t n)
 	if (d == 98)                 snprintf(b, n, "Aim X");
 	else if (d == 99)            snprintf(b, n, "Aim X+Y");
 	else if (d == 100)           snprintf(b, n, "Aim Y");
-	else if (d == 121)           snprintf(b, n, "No Trail");
+	else if (d == 121)           snprintf(b, n, "Max+Trail 0");
 	else if (d > 100 && d < 120) snprintf(b, n, "Anim %d fr", d - 100 + 1);
 	else if (d >= 255)           snprintf(b, n, "Max");
 	else                         snprintf(b, n, "%d", d);
@@ -774,7 +760,7 @@ static void cwFmtVelX(int v, char *b, size_t n)
 
 static void cwFmtTrail(int t, char *b, size_t n)
 {
-	if (t == 255 || t == 0) snprintf(b, n, "None");
+	if (t == 255)           snprintf(b, n, "None");
 	else if (t == 98)       snprintf(b, n, "Smoke");
 	else if (t == 198)      snprintf(b, n, "Partial");
 	else                    snprintf(b, n, "%d", t);
@@ -804,8 +790,9 @@ static JE_word cwToggleSparks(JE_word sg)
 		return (JE_word)cwSpriteFrame(sg);
 	if (!cwCanSpark(sg))
 		return sg;
-	const int bank = sprite2_dominant_bank((sg > 500) ? spriteSheet12 : spriteSheet8,
-	                                       (sg > 500) ? sg - 500u : sg);
+	unsigned int index;
+	const Sprite2_array *const sheet = shot_sprite_sheet(sg, &index);
+	const int bank = sprite2_dominant_bank(*sheet, index);
 	return (JE_word)(((bank > 0) ? bank : CW_SPARK_GREY) * 1000 + sg);
 }
 
@@ -829,6 +816,19 @@ static int cwRangeShipOrder(int *order, int *inGame)
 		for (int slot = 1; slot <= EXTRA_SHIP_SLOTS; ++slot)
 			order[count++] = EXTRA_SHIP_ID_BASE + slot;
 	return count;
+}
+
+int weaponEditorRangeShip(int ship)
+{
+	if (extraShipIdIsCustom(ship))
+	{
+		int order[CW_RANGE_SHIPS_MAX];
+		return spritePickerIndexOf(order, cwRangeShipOrder(order, NULL), ship) >= 0 ? ship : -1;
+	}
+	if (ship < 1 || ship > SHIP_DRAGONWING)
+		return -1;
+	const int owner = JE_shipHullOwner(ships[ship].shipgraphic);
+	return owner != 0 ? owner : -1;
 }
 
 static void cwFieldValue(int f, char *buf, size_t n)
@@ -1085,13 +1085,7 @@ static bool cwNumericRange(int f, int *lo, int *hi)
 	case CWF_COST:          *lo = 0;    *hi = 64000;              return true;
 	case CWF_ICON:          *lo = 1;    *hi = CUSTOM_ICON_MAX;    return true;
 	case CWF_POWER_USE:     *lo = 0;    *hi = 255;                return true;
-	case CWF_SK_SPRITE:
-	{
-		const int cnt = customSidekickSpriteCount(customSidekickMount);
-		*lo = 1;
-		*hi = (cnt > 0) ? cnt : 65535;
-		return true;
-	}
+	case CWF_SK_SPRITE:     *lo = 1;    *hi = cwSidekickSpriteMax(); return true;
 	case CWF_SK_FRAMES:     *lo = 1;    *hi = 20;                 return true;
 	case CWF_SK_STEP:       *lo = 0;    *hi = 40;                 return true;
 	case CWF_CHARGE:        *lo = 1;    *hi = CUSTOM_POWER_LEVELS; return true;
@@ -1099,7 +1093,7 @@ static bool cwNumericRange(int f, int *lo, int *hi)
 	case CWF_BULLETS:       *lo = 1;    *hi = CUSTOM_BULLETS_MAX; return true;
 	case CWF_PATTERN:       *lo = 1;    *hi = CUSTOM_BULLETS_MAX; return true;
 	case CWF_ANIM:          *lo = 1;    *hi = 256;                return true;
-	case CWF_HOMING:        *lo = 0;    *hi = 255;                return true;
+	case CWF_HOMING:        *lo = 0;    *hi = CUSTOM_AIM_MAX;     return true;
 	case CWF_ACCEL_Y:       *lo = -128; *hi = 127;                return true;
 	case CWF_ACCEL_X:       *lo = -128; *hi = 127;                return true;
 	case CWF_SPIRAL:        *lo = 0;    *hi = 255;                return true;
@@ -1259,22 +1253,16 @@ static void cwFieldAdjust(int f, int dir)
 		for (int i = 0; i < abs(dir); ++i)
 			if ((dir > 0 ? customWeaponAddChargeState() : customWeaponRemoveChargeState()) < 0)
 				break;
+		customSidekickSprite = clampi(customSidekickSprite, 1, cwSidekickSpriteMax());
 		break;
 	case CWF_SK_MOUNT:
-	{
 		customSidekickMount =
 		    (customSidekickMount + CUSTOM_SIDEKICK_MOUNTS + one) % CUSTOM_SIDEKICK_MOUNTS;
-		const int cnt = customSidekickSpriteCount(customSidekickMount);
-		if (cnt > 0)
-			customSidekickSprite = clampi(customSidekickSprite, 1, cnt);
+		customSidekickSprite = clampi(customSidekickSprite, 1, cwSidekickSpriteMax());
 		break;
-	}
 	case CWF_SK_SPRITE:
-	{
-		const int cnt = customSidekickSpriteCount(customSidekickMount);
-		customSidekickSprite = clampi(customSidekickSprite + dir, 1, (cnt > 0) ? cnt : 65535);
+		customSidekickSprite = clampi(customSidekickSprite + dir, 1, cwSidekickSpriteMax());
 		break;
-	}
 	case CWF_SK_FRAMES:
 		customSidekickFrames = clampi(customSidekickFrames + dir, 1, 20);
 		break;
@@ -1301,7 +1289,7 @@ static void cwFieldAdjust(int f, int dir)
 		w->weapani = (JE_word)clampi((int)w->weapani + dir, 0, 255);
 		break;
 	case CWF_HOMING:
-		w->aim = (JE_byte)clampi(w->aim + dir, 0, 255);
+		w->aim = (JE_byte)clampi(w->aim + dir, 0, CUSTOM_AIM_MAX);
 		break;
 	case CWF_ACCEL_Y:
 		w->acceleration = (JE_shortint)clampi(w->acceleration + dir, -128, 127);
@@ -1316,7 +1304,7 @@ static void cwFieldAdjust(int f, int dir)
 		w->sound = (JE_byte)clampi(w->sound + dir, 0, CUSTOM_SOUND_MAX);
 		break;
 	case CWF_TRAIL:
-		w->trail = (JE_byte)clampi(w->trail + dir, 0, 255);
+		w->trail = (JE_byte)customWeaponTrailStep(w->trail, dir);
 		break;
 	case CWF_BLAST:
 		w->shipblastfilter = (JE_byte)clampi(w->shipblastfilter + dir, 0, 255);
@@ -1387,7 +1375,12 @@ static void cwSetNumeric(int f, int v)
 	case CWF_SK_SPRITE:     customSidekickSprite     = v; break;
 	case CWF_SK_FRAMES:     customSidekickFrames     = v; break;
 	case CWF_SK_STEP:       customSidekickFrameStep  = v; break;
-	case CWF_CHARGE:        customWeaponChargeStages = v; break;
+	case CWF_CHARGE:
+		customWeaponChargeStages = v;
+		if (customWeaponEditLevel >= v)
+			customWeaponEditLevel = v - 1;
+		customSidekickSprite = clampi(customSidekickSprite, 1, cwSidekickSpriteMax());
+		break;
 	case CWF_FIRE_RATE:     w->shotrepeat = (JE_byte)v; break;
 	case CWF_BULLETS:
 		w->multi = (JE_byte)v;
@@ -1401,7 +1394,7 @@ static void cwSetNumeric(int f, int v)
 	case CWF_ACCEL_X:       w->accelerationx   = (JE_shortint)v;   break;
 	case CWF_SPIRAL:        w->circlesize      = (JE_byte)v;       break;
 	case CWF_SOUND:         w->sound           = (JE_byte)v;       break;
-	case CWF_TRAIL:         w->trail           = (JE_byte)v;       break;
+	case CWF_TRAIL:         w->trail = (JE_byte)(customWeaponTrailValid(v) ? v : 255); break;
 	case CWF_BLAST:         w->shipblastfilter = (JE_byte)v;       break;
 	case CWF_B_SPRITE:      w->sg[b]           = (JE_word)(cwSparkBank(w->sg[b]) * 1000 + v); break;
 	case CWF_B_DAMAGE:      w->attack[b]       = (JE_byte)v;       break;
@@ -1699,53 +1692,25 @@ static bool cwResolveShotSprite(JE_word sg, Sprite2_array *sheet, int *index)
 		return false;
 	if (af > 1000)
 		af %= 1000;
-	Sprite2_array s = (af > 500) ? spriteSheet12 : spriteSheet8;
-	int idx = (af > 500) ? (af - 500) : af;
-	if (idx < 1 || idx > sprite2_count(&s))
+	unsigned int idx;
+	const Sprite2_array s = *shot_sprite_sheet(af, &idx);
+	if (idx < 1 || (int)idx > sprite2_count(&s))
 		return false;
 	*sheet = s;
-	*index = idx;
+	*index = (int)idx;
 	return true;
 }
 
-// Decode a Sprite2 sprite's opaque bounding box within its 12px-wide cell (rows are 12px;
-// each control byte = low-nibble transparent skip + high-nibble opaque run, 0x0f ends).
+// Decode a Sprite2 sprite's opaque bounding box within its 12px-wide cell.
 static bool cwSpriteExtent(JE_word sg, int *ox, int *oy, int *ow, int *oh)
 {
 	Sprite2_array s;
-	int index;
-	if (!cwResolveShotSprite(sg, &s, &index))
+	int index, x1, y1;
+	if (!cwResolveShotSprite(sg, &s, &index) ||
+	    !sprite2_ink_bounds(s, (unsigned int)index, ox, oy, &x1, &y1))
 		return false;
-
-	const Uint8 *data = (const Uint8 *)s.data + SDL_SwapLE16(((const Uint16 *)s.data)[index - 1]);
-	int x = 0, row = 0, minx = 12, maxx = -1, miny = 9999, maxy = -1;
-	for (; *data != 0x0f; ++data)
-	{
-		x += *data & 0x0f;
-		const int count = (*data & 0xf0) >> 4;
-		if (count == 0)
-		{
-			++row;
-			x = 0;
-			continue;
-		}
-		if (x < minx)
-			minx = x;
-		data += count;
-		x += count;
-		if (x - 1 > maxx)
-			maxx = x - 1;
-		if (row < miny)
-			miny = row;
-		if (row > maxy)
-			maxy = row;
-	}
-	if (maxx < minx || maxy < miny)
-		return false;
-	*ox = minx;
-	*oy = miny;
-	*ow = maxx - minx + 1;
-	*oh = maxy - miny + 1;
+	*ow = x1 - *ox + 1;
+	*oh = y1 - *oy + 1;
 	return true;
 }
 
@@ -1820,7 +1785,7 @@ static void cwOpenPicker(int f)
 		spec.title = "Sidekick Body";
 		pages[spec.pageCount++] =
 		    cwSheetPage("Bodies", big ? &spriteSheet10 : &spriteSheet9, big,
-		                customSidekickSpriteCount(customSidekickMount), 0);
+		                cwSidekickSpriteMax(), 0);
 		value = customSidekickSprite;
 		break;
 	}
@@ -1906,14 +1871,19 @@ static int cwSlotDamage(const JE_WeaponType *w, int slots, bool *ice, int depth)
 
 static int cwVolleyDamage(const JE_WeaponType *w, bool *ice, int depth)
 {
-	return cwSlotDamage(w, clampi(w->multi, 1, CUSTOM_BULLETS_MAX), ice, depth);
+	const int multi = clampi(w->multi, 1, CUSTOM_BULLETS_MAX);
+	const int slots = clampi(w->max, 1, CUSTOM_BULLETS_MAX);
+	if (slots >= multi)
+		return cwSlotDamage(w, multi, ice, depth);
+	return cwSlotDamage(w, slots, ice, depth) * (multi / slots) +
+	       cwSlotDamage(w, multi % slots, ice, depth);
 }
 
 static int cwDps(const JE_WeaponType *w)
 {
 	bool ice = false;
 	const int multi = clampi(w->multi, 1, CUSTOM_BULLETS_MAX);
-	const int slots = MAX(multi, clampi(w->max, 1, CUSTOM_BULLETS_MAX));
+	const int slots = clampi(w->max, 1, CUSTOM_BULLETS_MAX);
 	return cwSlotDamage(w, slots, &ice, 2) * multi * 35 / (slots * (w->shotrepeat + 1));
 }
 
@@ -2528,16 +2498,6 @@ static void cwCaptureBoxBase(void)
 		memcpy(cwBoxBase[y], src, CW_BOX_W);
 }
 
-static Uint32 cwStarHash(Uint32 v)
-{
-	v ^= v >> 16;
-	v *= 0x7feb352du;
-	v ^= v >> 15;
-	v *= 0x846ca68bu;
-	v ^= v >> 16;
-	return v;
-}
-
 static void cwDrawStarCell(SDL_Surface *dst, int scale, int x_offset, int x, float fy, JE_byte c)
 {
 	if (x < CW_BOX_X0 || x > CW_BOX_X1)
@@ -2557,83 +2517,7 @@ static void cwDrawStarCell(SDL_Surface *dst, int scale, int x_offset, int x, flo
 	}
 }
 
-static void cwDrawStars(SDL_Surface *dst, int scale, int x_offset, Uint32 clock_ms)
-{
-	static const float speed_px_s[3] = { 5.0f, 9.0f, 14.0f };
-	static const JE_byte shade[3] = { 0x56, 0x58, 0x5a };
-	static const JE_byte flicker[4] = { 0, 1, 2, 1 };
-	const float spanY = (float)(CW_RANGE_Y1 - CW_BOX_Y0 - 1);
-	const Uint32 spanX = (Uint32)(CW_BOX_X1 - CW_BOX_X0 - 1);
-
-	for (unsigned int i = 0; i < CW_STAR_COUNT; ++i)
-	{
-		const Uint32 h = cwStarHash(i + 1);
-		const Uint32 h2 = cwStarHash(h ^ 0x9e3779b9u);
-		const unsigned int layer = ((h >> 28) % 5 == 4) ? 2 : ((h >> 27) & 1);
-		const int x = CW_BOX_X0 + 1 + (int)((i * spanX + h % spanX) / CW_STAR_COUNT);
-		const float drift =
-		    (float)(h2 % (Uint32)spanY) + (float)clock_ms * speed_px_s[layer] / 1000.0f;
-		const float fy = (float)(CW_BOX_Y0 + 1) + fmodf(drift, spanY);
-
-		JE_byte c = (JE_byte)(shade[layer] + ((h >> 8) % 7 == 0 ? 2 : 0));
-		if (layer == 2)
-			c += flicker[((clock_ms >> 8) + (h2 >> 4)) % 4];
-
-		cwDrawStarCell(dst, scale, x_offset, x, fy, c);
-		if (layer == 2)
-		{
-			const JE_byte arm = (JE_byte)(c - 4);
-			cwDrawStarCell(dst, scale, x_offset, x - 1, fy, arm);
-			cwDrawStarCell(dst, scale, x_offset, x + 1, fy, arm);
-			cwDrawStarCell(dst, scale, x_offset, x, fy - 1.0f, arm);
-			cwDrawStarCell(dst, scale, x_offset, x, fy + 1.0f, arm);
-		}
-	}
-}
-
-enum { CW_FLASH_MS = 200 };
-
-static int cwFlashX0, cwFlashY0, cwFlashX1, cwFlashY1;
-static Uint32 cwFlashStart_ms;
-
-static void cwFlashRegion(int x0, int y0, int x1, int y1)
-{
-	cwFlashX0 = x0;
-	cwFlashY0 = y0;
-	cwFlashX1 = x1;
-	cwFlashY1 = y1;
-	cwFlashStart_ms = SDL_GetTicks();
-}
-
-static void cwDrawClickFlash(SDL_Surface *dst, int scale, int x_offset)
-{
-	if (cwFlashStart_ms == 0)
-		return;
-	const Uint32 age = SDL_GetTicks() - cwFlashStart_ms;
-	if (age >= CW_FLASH_MS)
-	{
-		cwFlashStart_ms = 0;
-		return;
-	}
-
-	static const Uint8 dither[2][2] = { { 0, 2 }, { 3, 1 } };
-	const int glow4 = (int)((CW_FLASH_MS - age) * 10 / CW_FLASH_MS);
-	const int hy1 = (cwFlashY1 + 1) * scale - 1;
-	const int hx0 = (cwFlashX0 + x_offset) * scale;
-	const int hx1 = (cwFlashX1 + 1 + x_offset) * scale - 1;
-	for (int y = cwFlashY0 * scale; y <= hy1; ++y)
-	{
-		Uint8 *row = (Uint8 *)dst->pixels + y * dst->pitch;
-		for (int x = hx0; x <= hx1; ++x)
-		{
-			const int lift = (glow4 + dither[y & 1][x & 1]) >> 2;
-			if (lift == 0)
-				continue;
-			const int v = (row[x] & 0x0f) + lift;
-			row[x] = (Uint8)((row[x] & 0xf0) | (v > 15 ? 15 : v));
-		}
-	}
-}
+static EditorFlash cwFlash;
 
 static int cwSelectedField(void)
 {
@@ -2801,9 +2685,10 @@ static void cwPresentFrame(float alpha, Uint32 clock_ms)
 		rl_replay_interp(game_screen, alpha, false, 1);
 		cwCompositeRange();
 		if (shipEditorStars)
-			cwDrawStars(VGAScreenSeg, 1, 0, clock_ms);
+			editorDrawStars(VGAScreenSeg, 1, 0, clock_ms, CW_BOX_X0, CW_BOX_Y0, CW_BOX_X1,
+			                CW_RANGE_Y1, CW_STAR_COUNT, cwDrawStarCell);
 		cwDrawOverlay(alpha);
-		cwDrawClickFlash(VGAScreenSeg, 1, 0);
+		editorDrawFlash(&cwFlash, VGAScreenSeg, 1, 0);
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
@@ -2817,8 +2702,9 @@ static void cwPresentFrame(float alpha, Uint32 clock_ms)
 	expand_frame_to_hi(video_compose_frame(), frame, ss);
 	cwCompositeRangeHi(frame, replay, ss, x_offset);
 	if (shipEditorStars)
-		cwDrawStars(frame, ss, x_offset, clock_ms);
-	cwDrawClickFlash(frame, ss, x_offset);
+		editorDrawStars(frame, ss, x_offset, clock_ms, CW_BOX_X0, CW_BOX_Y0, CW_BOX_X1, CW_RANGE_Y1,
+		                CW_STAR_COUNT, cwDrawStarCell);
+	editorDrawFlash(&cwFlash, frame, ss, x_offset);
 	JE_drawMouseToHiFrame(frame, ss, x_offset);
 	present_hi(frame);
 	JE_mouseReplace();
@@ -3010,55 +2896,10 @@ static void cwDrawTabs(const CwNav *n, bool rowSel)
 
 enum { CW_CARD_X0 = CW_INNER_X0 + 2, CW_CARD_W = 30, CW_CARD_H = 34 };
 
-static void cwArtBox(Sprite2_array sheet, unsigned int index, bool big, int *x0, int *y0, int *x1,
-                     int *y1)
-{
-	static SDL_Surface *scratch = NULL;
-	const int w = big ? 24 : 12, h = big ? 28 : 14;
-	*x0 = 0;
-	*y0 = 0;
-	*x1 = w - 1;
-	*y1 = h - 1;
-	if (scratch == NULL)
-		scratch = SDL_CreateRGBSurface(0, 24, 28, 8, 0, 0, 0, 0);
-	if (scratch == NULL)
-		return;
-
-	SDL_FillRect(scratch, NULL, 0);
-	SDL_Surface *const saved = VGAScreen;
-	VGAScreen = scratch;
-	if (big)
-		blit_sprite2x2(scratch, 0, 0, sheet, index);
-	else
-		blit_sprite2(scratch, 0, 0, sheet, index);
-	VGAScreen = saved;
-
-	int lx = w, ly = h, hx = -1, hy = -1;
-	for (int y = 0; y < h; ++y)
-	{
-		const Uint8 *const row = (const Uint8 *)scratch->pixels + y * scratch->pitch;
-		for (int x = 0; x < w; ++x)
-			if (row[x] != 0)
-			{
-				lx = MIN(lx, x);
-				hx = MAX(hx, x);
-				ly = MIN(ly, y);
-				hy = MAX(hy, y);
-			}
-	}
-	if (hx >= 0)
-	{
-		*x0 = lx;
-		*y0 = ly;
-		*x1 = hx;
-		*y1 = hy;
-	}
-}
-
 static void cwDrawCardArt(int y0, Sprite2_array sheet, unsigned int index, bool big, int scale)
 {
 	int ax0, ay0, ax1, ay1;
-	cwArtBox(sheet, index, big, &ax0, &ay0, &ax1, &ay1);
+	spritePickerInkBox(sheet, index, big, &ax0, &ay0, &ax1, &ay1);
 	const int x = CW_CARD_X0 + (CW_CARD_W - (ax1 - ax0 + 1) * scale) / 2 - ax0 * scale;
 	const int y = y0 + (CW_CARD_H - (ay1 - ay0 + 1) * scale) / 2 - ay0 * scale;
 	if (big)
@@ -3673,7 +3514,8 @@ static void cwHandleBoxPress(void)
 			cwSelectLevel(bar);
 			JE_playSampleNum(S_CURSOR);
 		}
-		cwFlashRegion(cwBarX(bar), CW_BAR_TOP, cwBarX(bar) + CW_BAR_W - 1, CW_BAR_BOT);
+		editorFlashStart(&cwFlash, cwBarX(bar), CW_BAR_TOP, cwBarX(bar) + CW_BAR_W - 1,
+		                 CW_BAR_BOT);
 		return;
 	}
 	if (mouse_y > CW_RANGE_Y1)
@@ -3875,10 +3717,17 @@ bool JE_weaponEditor(bool canEquip)
 
 	cwClearPreviewShots();
 	cwRangeSanitize();
+	const int equippedHull =
+	    canEquip ? weaponEditorRangeShip(player[customWeaponLocalOwner()].items.ship) : -1;
+	if (equippedHull > 0)
+	{
+		cwConfiguredShip = cwRange.ship;
+		cwRange.ship = equippedHull;
+	}
 	cwLayoutDummies();
 	cwPreviewKey = -1;
 	cwDrag = CW_DRAG_NONE;
-	cwFlashStart_ms = 0;
+	cwFlash.start_ms = 0;
 	cwNumField = -1;
 	cwNumText[0] = '\0';
 	cwNoticeTicks = 0;
@@ -3972,8 +3821,23 @@ bool JE_weaponEditor(bool canEquip)
 	free(cwRevertBuf);
 	cwRevertBuf = NULL;
 	cwRevertLen = 0;
+	weaponEditorRelease();
 
+	if (cwConfiguredShip >= 0)
+	{
+		cwRange.ship = cwConfiguredShip;
+		cwConfiguredShip = -1;
+	}
 	customWeaponLibrarySave();
 	save_opentyrian_config();
 	return equipped;
+}
+
+void weaponEditorRelease(void)
+{
+	SDL_FreeSurface(cwHiFrame);
+	cwHiFrame = NULL;
+	SDL_FreeSurface(cwHiReplay);
+	cwHiReplay = NULL;
+	spritePickerRelease();
 }

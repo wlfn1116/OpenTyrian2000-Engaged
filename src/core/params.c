@@ -114,7 +114,7 @@ void JE_paramCheck(int argc, char *argv[])
 		case AMBIGUOUS_OPTION:
 		case OPTION_MISSING_ARG:
 			fprintf(stderr, "Try `%s --help' for more information.\n", argv[0]);
-			exit(EXIT_FAILURE);
+			JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 			break;
 			
 		case 'h':
@@ -131,7 +131,7 @@ void JE_paramCheck(int argc, char *argv[])
 			       "                               (1 or 2)\n"
 			       "  -p, --net-port=PORT          Local port to bind (default is 1333)\n"
 			       "  -d, --net-delay=FRAMES       Set lag-compensation delay (default is 1)\n", argv[0]);
-			exit(0);
+			JE_tyrianExitWithoutSaving(0);
 			break;
 			
 		case 's':
@@ -168,7 +168,7 @@ void JE_paramCheck(int argc, char *argv[])
 				else
 				{
 					fprintf(stderr, "%s: error: invalid network port number\n", argv[0]);
-					exit(EXIT_FAILURE);
+					JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 				}
 
 				free(network_opponent_host);
@@ -195,7 +195,7 @@ void JE_paramCheck(int argc, char *argv[])
 			else
 			{
 				fprintf(stderr, "%s: error: invalid network player number\n", argv[0]);
-				exit(EXIT_FAILURE);
+				JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 			}
 			break;
 		}
@@ -207,7 +207,7 @@ void JE_paramCheck(int argc, char *argv[])
 			else
 			{
 				fprintf(stderr, "%s: error: invalid network port number\n", argv[0]);
-				exit(EXIT_FAILURE);
+				JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 			}
 			break;
 		}
@@ -219,7 +219,7 @@ void JE_paramCheck(int argc, char *argv[])
 			else
 			{
 				fprintf(stderr, "%s: error: invalid network delay value\n", argv[0]);
-				exit(EXIT_FAILURE);
+				JE_tyrianExitWithoutSaving(EXIT_FAILURE);
 			}
 			break;
 		}
