@@ -132,6 +132,35 @@ void qa_test_weapon_editor(void)
 	qa_check(customWeaponChargeStages == 1,
 	         "weapon editor charge pool keeps one valid stage");
 
+	customWeaponResetAllLevels();
+	customWeaponSelectMode(0);
+	for (int anchor = 0; anchor < CUSTOM_POWER_LEVELS; anchor += CUSTOM_POWER_LEVELS - 1)
+	{
+		customWeaponSelectLevel(anchor);
+		customWeaponAutoScaleLevels();
+		bool mirrored = true, bounded = true;
+		int dps[CUSTOM_POWER_LEVELS];
+		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
+		{
+			const JE_WeaponType *const w = &customWeaponRaw[0][p];
+			int bx[CUSTOM_BULLETS_MAX], volley = 0;
+			for (int i = 0; i < w->multi; ++i)
+			{
+				int j = i;
+				for (; j > 0 && bx[j - 1] > w->bx[i]; --j)
+					bx[j] = bx[j - 1];
+				bx[j] = w->bx[i];
+				volley += w->attack[i];
+			}
+			for (int i = 0; i < w->multi; ++i)
+				mirrored &= bx[i] == -bx[w->multi - 1 - i];
+			bounded &= w->multi >= 1 && w->multi <= 8 && w->max == w->multi;
+			dps[p] = volley * 35 / (w->shotrepeat + 1);
+		}
+		qa_check(mirrored && bounded && dps[CUSTOM_POWER_LEVELS - 1] > dps[0] * 4,
+		         "auto-scale builds centred, bounded, rising levels from either end");
+	}
+
 	customWeaponModes = 999;
 	customWeaponCost = 1000000;
 	customWeaponPowerUse = 1000000;

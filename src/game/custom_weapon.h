@@ -112,6 +112,7 @@ extern int                customBulletPresetCount;
 // Number of base power levels the given import source can be sampled at (1..11);
 // 1 means the look is fixed (a sidekick shot, or a weapon with a single level).
 int customBulletMaxPower(int presetIdx);
+int customBulletPresetWeapon(int presetIdx, int mode, int basePower);
 
 // Initialize after JE_loadItemDat(); repeated calls preserve loaded designs.
 void customWeaponInit(void);
@@ -119,6 +120,7 @@ void customWeaponInit(void);
 // Copy every power level's raw design into this owner's scratch weapon slots and wire up its
 // port and sidekick. Safe to call after every edit.
 void customWeaponMaterialize(void);
+int customWeaponScratchWeapon(int mode, int level);
 
 // Equip the (freshly materialized) custom weapon into the player's front/rear bay
 // or sidekick slot per customWeaponEquipSlot. Returns true on success.
@@ -197,6 +199,7 @@ bool customWeaponLibrarySave(void);
 
 size_t customWeaponSerializeLibrary(Uint8 *buf, size_t cap);
 bool customWeaponAdoptLibrary(const Uint8 *buf, size_t len);
+bool customWeaponRestoreLibrary(const Uint8 *buf, size_t len);
 
 /* Exchange a versioned Campaign design; adoption clamps data and does not touch the editor. */
 #define CUSTOM_WEAPON_WIRE_VERSION 1

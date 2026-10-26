@@ -62,6 +62,7 @@ int  boss_bar_bottom_band_top(void);          // topmost row that bar covers, or
 void boss_bar_vertical_span(bool onLeft, int *top, int *bot);
 
 void draw_enemy_health_bars(void);
+void draw_enemy_hp_bar_box(int id, int boxL, int boxR, int boxT, int boxB, float frac);
 void boss_bar_present_tick(void);
 void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha);
 

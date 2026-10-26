@@ -450,6 +450,11 @@ static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, fl
 	}
 }
 
+void draw_enemy_hp_bar_box(int id, int boxL, int boxR, int boxT, int boxB, float frac)
+{
+	draw_enemy_hp_bar(id, boxL, boxR, boxT, boxB, frac, 112, 0.0f, 0, 0.0f, 0, 0.0f, 0);
+}
+
 // Draw one small bar per damaged, non-boss linked hull.
 void draw_enemy_health_bars(void)
 {
