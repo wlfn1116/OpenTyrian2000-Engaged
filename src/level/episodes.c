@@ -252,6 +252,52 @@ const char *JE_shipName(JE_word id)
 	return ships[id].name;
 }
 
+// Item tables pad names with spaces; layout needs the visible width.
+const char *JE_trimItemName(const char *name, char *buf, size_t bufSize)
+{
+	while (*name == ' ')
+		++name;
+	size_t n = strlen(name);
+	while (n > 0 && name[n - 1] == ' ')
+		--n;
+	if (n >= bufSize)
+		n = bufSize - 1;
+	memcpy(buf, name, n);
+	buf[n] = '\0';
+	return buf;
+}
+
+// Keep the stock data-file name in shops and gameplay; only the editor uses the short label.
+const char *JE_shipShortName(JE_word id, char *buf, size_t bufSize)
+{
+	JE_trimItemName(JE_shipName(id), buf, bufSize);
+	char *const subtitle = strstr(buf, "  ");
+	if (subtitle != NULL)
+		*subtitle = '\0';
+	return buf;
+}
+
+int JE_distinctShipHulls(JE_byte *list, size_t capacity, bool (*accept)(int ship))
+{
+	int count = 0;
+	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+	{
+		if (ships[ship].name[0] == '\0' || (accept != NULL && !accept(ship)))
+			continue;
+
+		bool duplicate = false;
+		for (int i = 0; i < count; ++i)
+			if (ships[list[i]].shipgraphic == ships[ship].shipgraphic)
+			{
+				duplicate = true;
+				break;
+			}
+		if (!duplicate && (size_t)count < capacity)
+			list[count++] = (JE_byte)ship;
+	}
+	return count;
+}
+
 /* Save the sidekick row replaced by Charge-Laser so the toggle can restore it. */
 static int chargeLaserNativeSlot = 0;
 static JE_OptionType chargeLaserNativeOption;

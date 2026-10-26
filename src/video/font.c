@@ -27,6 +27,7 @@
 #include "timing.h"
 #include "video.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /**
@@ -361,6 +362,21 @@ int JE_textWidth(const char *s, unsigned int font)
 	}
 
 	return x;
+}
+
+const char *font_fit_text(const char *text, unsigned int font, int maxWidth, char *buf, size_t n)
+{
+	if (JE_textWidth(text, font) <= maxWidth)
+		return text;
+	for (int len = (int)strlen(text) - 1; len > 0; --len)
+	{
+		while (len > 0 && text[len - 1] == ' ')
+			--len;
+		snprintf(buf, n, "%.*s..", len, text);
+		if (JE_textWidth(buf, font) <= maxWidth)
+			return buf;
+	}
+	return "";
 }
 
 void JE_textShade(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int shadetype)

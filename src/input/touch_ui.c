@@ -202,11 +202,6 @@ static bool btn_tapped[TOUCH_BTN_COUNT];
 static Uint32 btn_pressed_ms[TOUCH_BTN_COUNT];
 static Uint32 btn_repeat_ms[TOUCH_BTN_COUNT];
 
-static int clampi(int v, int lo, int hi)
-{
-	return v < lo ? lo : (v > hi ? hi : v);
-}
-
 // Apply the opacity setting to each button's authored alpha.
 static Uint8 scaled_alpha(int base)
 {

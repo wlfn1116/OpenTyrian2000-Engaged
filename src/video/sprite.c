@@ -982,6 +982,14 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 	return dominant_bank_of(count);
 }
 
+// A Sprite2 sheet's first offset is the byte length of its JE_word offset table.
+int sprite2_count(const Sprite2_array *sprite2s)
+{
+	if (sprite2s->data == NULL || sprite2s->size < 2)
+		return 0;
+	return SDL_SwapLE16(((const Uint16 *)sprite2s->data)[0]) / 2;
+}
+
 /* Find painted bounds in the packed sprite's 12-pixel grid; false means no painted pixels. */
 bool sprite2_ink_bounds(Sprite2_array sprite2s, unsigned int index, int *x0, int *y0, int *x1, int *y1)
 {
@@ -1981,6 +1989,16 @@ void blit_sprite2x2_alpha(SDL_Surface *surface, int x, int y, Sprite2_array spri
 	blit_sprite2_alpha(surface, x + 12, y,      sprite2s, index + 1, bank, opacity);
 	blit_sprite2_alpha(surface, x,      y + 14, sprite2s, index + 19, bank, opacity);
 	blit_sprite2_alpha(surface, x + 12, y + 14, sprite2s, index + 20, bank, opacity);
+}
+
+void blit_sprite2x2_scaled(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s,
+                           unsigned int index, int scale, Blit2Op op, Uint8 filter)
+{
+	const int x2 = x + 12 * scale, y2 = y + 14 * scale;
+	blit_sprite2_scaled(surface, x,  y,  sprite2s, index, scale, op, filter);
+	blit_sprite2_scaled(surface, x2, y,  sprite2s, index + 1, scale, op, filter);
+	blit_sprite2_scaled(surface, x,  y2, sprite2s, index + 19, scale, op, filter);
+	blit_sprite2_scaled(surface, x2, y2, sprite2s, index + 20, scale, op, filter);
 }
 
 // Supersampled blits used by render-list replay.

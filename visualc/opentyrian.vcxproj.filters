@@ -244,6 +244,9 @@
     <ClCompile Include="..\src\menus\debug_menu.c">
       <Filter>menus</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\menus\editor_ui.c">
+      <Filter>menus</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\menus\game_menu.c">
       <Filter>menus</Filter>
     </ClCompile>
@@ -269,6 +272,9 @@
       <Filter>menus</Filter>
     </ClCompile>
     <ClCompile Include="..\src\menus\ship_editor.c">
+      <Filter>menus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\menus\sprite_picker.c">
       <Filter>menus</Filter>
     </ClCompile>
     <ClCompile Include="..\src\menus\sprite_viewer.c">
@@ -611,6 +617,9 @@
     <ClInclude Include="..\src\menus\debug_menu.h">
       <Filter>menus</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\menus\editor_ui.h">
+      <Filter>menus</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\menus\game_menu.h">
       <Filter>menus</Filter>
     </ClInclude>
@@ -636,6 +645,9 @@
       <Filter>menus</Filter>
     </ClInclude>
     <ClInclude Include="..\src\menus\ship_editor.h">
+      <Filter>menus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\menus\sprite_picker.h">
       <Filter>menus</Filter>
     </ClInclude>
     <ClInclude Include="..\src\menus\sprite_viewer.h">

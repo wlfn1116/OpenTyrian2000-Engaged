@@ -811,7 +811,7 @@ void JE_debugMenu(bool center)
 			case DBG_SHIP:
 				if (it->ship <= SHIP_DRAGONWING)
 					snprintf(buf, sizeof(buf), "%s", ships[it->ship].name);
-				else if (it->ship >= 91 && it->ship <= 100 && extraAvailFor((uint)dbgPlayer))
+				else if (extraShipIdIsCustom(it->ship) && extraAvailFor((uint)dbgPlayer))
 					snprintf(buf, sizeof(buf), "Extra Ship %d", it->ship - 90);
 				else
 				{
@@ -1420,21 +1420,6 @@ void JE_debugMenu(bool center)
 	VGAScreen = temp_surface;
 }
 
-/* Draw a 1px rectangle outline, clamped to the surface. */
-static void debug_box(SDL_Surface *s, int x0, int y0, int x1, int y1, Uint8 col)
-{
-	if (x0 < 0) x0 = 0;
-	if (y0 < 0) y0 = 0;
-	if (x1 > s->w - 1) x1 = s->w - 1;
-	if (y1 > s->h - 1) y1 = s->h - 1;
-	if (x1 < x0 || y1 < y0)
-		return;
-	fill_rectangle_xy(s, x0, y0, x1, y0, col);  // top
-	fill_rectangle_xy(s, x0, y1, x1, y1, col);  // bottom
-	fill_rectangle_xy(s, x0, y0, x0, y1, col);  // left
-	fill_rectangle_xy(s, x1, y0, x1, y1, col);  // right
-}
-
 // Hitboxes use simulation coordinates and snap between ticks. The performance
 // overlay is drawn at presentation time.
 void JE_drawDebugOverlays(void)
@@ -1453,7 +1438,7 @@ void JE_drawDebugOverlays(void)
 			const int cy = enemy[i].ey + (centeredShotHitboxes ? 7 : (small ? -6 : -12));
 			const int hw = small ? 13 : 25;
 			const int hh = small ? 15 : 29;
-			debug_box(VGAScreen, cx - hw, cy - hh, cx + hw, cy + hh, COL_ENEMY);
+			draw_rect_outline(VGAScreen, cx - hw, cy - hh, cx + hw, cy + hh, COL_ENEMY);
 		}
 
 		// player ship body box, centred on the hull sprite (drawn ~7px right/down
@@ -1463,7 +1448,7 @@ void JE_drawDebugOverlays(void)
 			if (!player[p].is_alive)
 				continue;
 			const int cx = player[p].x + 7, cy = player[p].y + 7;
-			debug_box(VGAScreen, cx - 12, cy - 14, cx + 12, cy + 14, COL_PLAYER);
+			draw_rect_outline(VGAScreen, cx - 12, cy - 14, cx + 12, cy + 14, COL_PLAYER);
 
 			// ...and within it the box enemy shots are tested against, which Centered Hitboxes
 			// moves onto the middle of the hull and Classic leaves on the ship's own position.
@@ -1471,7 +1456,7 @@ void JE_drawDebugOverlays(void)
 			const int sy = cy - (centeredShotHitboxes ? 0 : 7);
 			const int hw = endlessHitboxScale((int)player[p].shot_hit_area_x);
 			const int hh = endlessHitboxScale((int)player[p].shot_hit_area_y);
-			debug_box(VGAScreen, sx - hw, sy - hh, sx + hw, sy + hh, COL_PLAYER);
+			draw_rect_outline(VGAScreen, sx - hw, sy - hh, sx + hw, sy + hh, COL_PLAYER);
 		}
 
 		// projectiles, marked at the point each one's own hit test is taken from. The last slot is
@@ -1483,7 +1468,7 @@ void JE_drawDebugOverlays(void)
 			int dx, dy;
 			player_shot_hit_offset(playerShotData[i].shotGr + playerShotData[i].shotAni, &dx, &dy);
 			const int sx = playerShotData[i].shotX + dx, sy = playerShotData[i].shotY + dy;
-			debug_box(VGAScreen, sx - 1, sy - 1, sx + 1, sy + 1, COL_PSHOT);
+			draw_rect_outline(VGAScreen, sx - 1, sy - 1, sx + 1, sy + 1, COL_PSHOT);
 		}
 		for (int i = 0; i < ENEMY_SHOT_MAX; ++i)
 		{
@@ -1492,7 +1477,7 @@ void JE_drawDebugOverlays(void)
 			int dx, dy;
 			enemy_shot_hit_offset(enemyShot[i].sgr, enemyShot[i].animate, &dx, &dy);
 			const int sx = enemyShot[i].sx + dx, sy = enemyShot[i].sy + dy;
-			debug_box(VGAScreen, sx - 1, sy - 1, sx + 1, sy + 1, COL_ESHOT);
+			draw_rect_outline(VGAScreen, sx - 1, sy - 1, sx + 1, sy + 1, COL_ESHOT);
 		}
 	}
 }

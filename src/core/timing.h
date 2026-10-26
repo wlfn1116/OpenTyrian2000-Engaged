@@ -30,6 +30,7 @@ void set_fps(int fps);
 void setDelay(int delay);
 void setDelay2(int delay);
 float get_delay_period(void);
+bool tick_schedule_due(double *next_ms, double period_ms, Uint32 now_ms);
 Uint32 getDelayTicks(void);
 Uint32 getDelayTicks2(void);
 

@@ -19,7 +19,10 @@
 #define WEAPON_EDITOR_H
 
 #include "opentyr.h"
+#include "config_file.h"
 
 bool JE_weaponEditor(bool canEquip);
+void weaponEditorConfigLoad(const ConfigSection *section);
+void weaponEditorConfigSave(ConfigSection *section);
 
 #endif // WEAPON_EDITOR_H

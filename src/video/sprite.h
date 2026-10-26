@@ -121,6 +121,7 @@ void JE_loadCompShapes(Sprite2_array *, char s);
 void JE_loadCompShapesB(Sprite2_array *, FILE *f);
 void free_sprite2s(Sprite2_array *);
 
+int sprite2_count(const Sprite2_array *);
 Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank (0..15) the sprite is mostly drawn in
 
 // Extent of the sprite's painted pixels within its 12px cell, for centring it on something else.
@@ -199,6 +200,8 @@ void blit_sprite2x2_blend(SDL_Surface *, int x, int y, Sprite2_array, unsigned i
 void blit_sprite2x2_darken(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2x2_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2x2_alpha(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int bank, Uint8 opacity);
+void blit_sprite2x2_scaled(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index,
+                           int scale, Blit2Op op, Uint8 filter);
 
 void JE_loadMainShapeTables(const char *shpfile);
 void free_main_shape_tables(void);

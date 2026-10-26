@@ -55,6 +55,15 @@ float get_delay_period(void)  // ms per delay unit; tick period = frameCountMax 
 	return delayPeriod;
 }
 
+bool tick_schedule_due(double *next_ms, double period_ms, Uint32 now_ms)
+{
+	if ((double)now_ms < *next_ms)
+		return false;
+	*next_ms = ((double)now_ms - *next_ms > 4.0 * period_ms) ? now_ms + period_ms
+	                                                          : *next_ms + period_ms;
+	return true;
+}
+
 void setDelay2(int delay)  // FKA NortSong.frameCount2
 {
 	target2 = SDL_GetTicks() + delay * delayPeriod;

@@ -89,6 +89,33 @@ void fill_rectangle_xy(SDL_Surface *surface, int x, int y, int x2, int y2, Uint8
 	SDL_FillRect(surface, &rect, color);
 }
 
+void draw_corner_clamps(SDL_Surface *surface, int x0, int y0, int x1, int y1, int arm, Uint8 color)
+{
+	fill_rectangle_xy(surface, x0, y0, x0 + arm, y0, color);
+	fill_rectangle_xy(surface, x1 - arm, y0, x1, y0, color);
+	fill_rectangle_xy(surface, x0, y1, x0 + arm, y1, color);
+	fill_rectangle_xy(surface, x1 - arm, y1, x1, y1, color);
+	fill_rectangle_xy(surface, x0, y0, x0, y0 + arm, color);
+	fill_rectangle_xy(surface, x1, y0, x1, y0 + arm, color);
+	fill_rectangle_xy(surface, x0, y1 - arm, x0, y1, color);
+	fill_rectangle_xy(surface, x1, y1 - arm, x1, y1, color);
+}
+
+/* Draw a 1px rectangle outline, clamped to the surface. */
+void draw_rect_outline(SDL_Surface *s, int x0, int y0, int x1, int y1, Uint8 col)
+{
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 > s->w - 1) x1 = s->w - 1;
+	if (y1 > s->h - 1) y1 = s->h - 1;
+	if (x1 < x0 || y1 < y0)
+		return;
+	fill_rectangle_xy(s, x0, y0, x1, y0, col);  // top
+	fill_rectangle_xy(s, x0, y1, x1, y1, col);  // bottom
+	fill_rectangle_xy(s, x0, y0, x0, y1, col);  // left
+	fill_rectangle_xy(s, x1, y0, x1, y1, col);  // right
+}
+
 void JE_barShade(SDL_Surface *surface, int a, int b, int c, int d) /* x1, y1, x2, y2 */
 {
 	if (a < surface->pitch && b < surface->h &&

@@ -24,6 +24,8 @@
 // Highest sound sample the engine can play (see sndmast.h SFX_COUNT).
 #define CUSTOM_SOUND_MAX 31
 
+#define CUSTOM_ICON_MAX 284
+
 enum  // where the custom weapon equips
 {
 	CUSTOM_EQUIP_FRONT = 0,   // front weapon bay
@@ -48,7 +50,7 @@ extern char customWeaponName[31];
 extern int  customWeaponCost;       // shop price, 0 .. 64000
 extern int  customWeaponPowerUse;   // generator drain (port poweruse)
 extern int  customWeaponEquipSlot;  // CUSTOM_EQUIP_*
-extern int  customWeaponItemGraphic; // shop/HUD icon (weaponPort itemgraphic), 1 .. 237
+extern int  customWeaponItemGraphic; // shop/HUD icon (weaponPort itemgraphic), 1 .. CUSTOM_ICON_MAX
 
 // Sidekick charge stages map to option pwr+1 and use consecutive mode-0 power levels.
 // A value of 1 fires immediately; larger values charge through independently editable shots.

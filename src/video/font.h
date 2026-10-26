@@ -23,6 +23,7 @@
 #include "SDL.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef enum
 {
@@ -63,6 +64,7 @@ void JE_dStringDarken(SDL_Surface * screen, int x, int y, const char *s, unsigne
 
 int JE_fontCenter(const char *s, unsigned int font);
 int JE_textWidth(const char *s, unsigned int font);
+const char *font_fit_text(const char *text, unsigned int font, int maxWidth, char *buf, size_t n);
 void JE_textShade(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int shadetype);
 // FULL_SHADE only, for text drawn straight onto a supersampled present frame. x and y are 1x.
 void JE_textShadeScaled(SDL_Surface *screen, int x, int y, const char *s, unsigned int colorbank, int brightness, int scale);

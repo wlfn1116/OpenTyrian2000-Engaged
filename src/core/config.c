@@ -40,6 +40,7 @@
 #include "timing.h"
 #include "video.h"
 #include "video_scale.h"
+#include "weapon_editor.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -399,7 +400,6 @@ bool arcadeRearGunScale = true;
 /* Give unused sheet icons to items that otherwise reuse an icon or have none. */
 bool unusedShopSprites = true;
 bool shipEditorStars = true;
-int weaponEditorShip = SHIP_GENCORE_II;
 /* Use sprite centres as projectile and target hit-test anchors. */
 bool centeredShotHitboxes = true;
 /* Steer a weapon-table guided shot toward the enemy's screen x (ex + mapoffset), where the
@@ -985,9 +985,7 @@ static bool load_opentyrian_config(void)
 		load_int_flag(section, "centered_shot_hitboxes", &centeredShotHitboxes);
 		load_int_flag(section, "guided_shot_screen_aim", &guidedShotScreenAim);
 		load_int_flag(section, "ship_editor_stars", &shipEditorStars);
-		config_get_int_option(section, "weapon_editor_ship", &weaponEditorShip);
-		if (weaponEditorShip < 0 || weaponEditorShip > SHIP_DRAGONWING)
-			weaponEditorShip = SHIP_GENCORE_II;
+		weaponEditorConfigLoad(section);
 
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
@@ -1221,7 +1219,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "centered_shot_hitboxes", centeredShotHitboxes ? 1 : 0);
 	config_set_int_option(section, "guided_shot_screen_aim", guidedShotScreenAim ? 1 : 0);
 	config_set_int_option(section, "ship_editor_stars", shipEditorStars ? 1 : 0);
-	config_set_int_option(section, "weapon_editor_ship", weaponEditorShip);
+	weaponEditorConfigSave(section);
 	enhancementSaveCustomSet(section);
 	config_set_int_option(section, "xmas", xmasMode);
 

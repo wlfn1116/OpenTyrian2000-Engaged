@@ -27,6 +27,8 @@ void JE_pix3(SDL_Surface *surface, int x, int y, JE_byte c);
 void JE_rectangle(SDL_Surface *surface, int a, int b, int c, int d, int e);
 
 void fill_rectangle_xy(SDL_Surface *, int x, int y, int x2, int y2, Uint8 color);
+void draw_corner_clamps(SDL_Surface *, int x0, int y0, int x1, int y1, int arm, Uint8 color);
+void draw_rect_outline(SDL_Surface *, int x0, int y0, int x1, int y1, Uint8 color);
 
 void JE_barShade(SDL_Surface *surface, int a, int b, int c, int d);
 void JE_barBright(SDL_Surface *surface, int a, int b, int c, int d);

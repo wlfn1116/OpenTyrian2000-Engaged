@@ -365,7 +365,6 @@ extern bool unusedShopSprites;  // give the shop sheet's unreferenced icons to i
 extern bool centeredShotHitboxes;  // collide a projectile from the middle of its sprite, not its corner (game_loop.c)
 extern bool guidedShotScreenAim;   // weapon-table homing steers toward an enemy's screen x, ex + mapoffset (shots.c)
 extern bool shipEditorStars;
-extern int  weaponEditorShip;
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
 /* Enhancement presets cover enhancementSettings[] only. */

@@ -347,6 +347,16 @@ or sidekick.
 | Ctrl+S | Save |
 | Esc or right-click | Save and return |
 
+Enter or a click on **Shop Icon**, **Sprite**, **Body Sprite**, or the Range
+page's **Ship** opens a picker grid. Tap or press Enter to choose, drag or use
+the mouse wheel to scroll, and type a number to jump to it. Tab switches between
+the tabs along the top; Esc or right-click cancels. The bullet sprite grid also
+holds the miscellaneous interface sprites. The ship grid shows each distinct
+hull once and lists Ship Editor ships under **Custom**.
+
+The Range page's targets, stats, layout, and ship are saved in
+`opentyrian.cfg` and return on the next visit.
+
 Levels can be copied, pasted, spread across the power curve, or generated as a
 curve. The preview uses the real shot simulation.
 
@@ -449,6 +459,9 @@ The Ship Editor edits ten slots saved in `custom_ships.shp`; slot 10 uses the 0
 key. Put `User.shp` beside the game executable or in `data`, then choose
 **Import**. Its filename is case-insensitive. **Done** writes `custom_ships.shp`
 without changing the shipped `data/newsh$.shp`.
+
+Enter or a click on **Graphic** opens a hull grid with the built-in hulls under
+**In-Game** and the eight custom banks under **Custom**.
 
 To change ship during play:
 

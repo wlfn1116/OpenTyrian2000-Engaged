@@ -82,11 +82,6 @@ bool extraShipsAllowedInGame(void)
 	                                superTyrian, superArcadeMode);
 }
 
-static bool isExtraShipId(JE_byte ship)
-{
-	return ship >= 91 && ship <= 100;
-}
-
 void extraShipReturnReset(void)
 {
 	memset(extraShipReturn, 0, sizeof(extraShipReturn));
@@ -94,7 +89,7 @@ void extraShipReturnReset(void)
 
 void extraShipRememberStandard(uint pnum)
 {
-	if (pnum >= COUNTOF(extraShipReturn) || isExtraShipId(player[pnum].items.ship))
+	if (pnum >= COUNTOF(extraShipReturn) || extraShipIdIsCustom(player[pnum].items.ship))
 		return;
 
 	extraShipReturn[pnum].items = player[pnum].items;
@@ -295,7 +290,7 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	Player *const p = &player[pnum];
 	const JE_byte *const table = extraShipsFor(pnum);
 
-	int slot = isExtraShipId(p->items.ship) ? p->items.ship - 90 : 0;
+	int slot = extraShipIdIsCustom(p->items.ship) ? p->items.ship - 90 : 0;
 	extraShipRememberStandard(pnum);
 	slot = extraMenuNextCustomShipSlot(slot, dir, extraShipReturn[pnum].valid);
 

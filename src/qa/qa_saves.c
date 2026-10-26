@@ -287,7 +287,7 @@ void qa_test_weapon_editor(void)
 		qa_check(customWeaponModes == CUSTOM_WEAPON_MODES
 		         && weaponPort[customWeaponPort].cost == 64000
 		         && weaponPort[customWeaponPort].poweruse == 255
-		         && weaponPort[customWeaponPort].itemgraphic == 237,
+		         && weaponPort[customWeaponPort].itemgraphic == CUSTOM_ICON_MAX,
 		         "weapon materialization clamps hostile port metadata to engine field bounds");
 		qa_check(o->pwr == CUSTOM_POWER_LEVELS - 1 && o->tr == CUSTOM_SIDEKICK_MOUNTS - 1
 		         && o->option == 2 && o->ani == 20 && o->cost == 64000 && framesSafe,

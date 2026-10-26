@@ -2773,10 +2773,7 @@ void JE_itemScreen(void)
 				switch (curSel[MENU_UPGRADES]-1)
 				{
 					case 1: /* ship */
-						if (temp > 90)
-							snprintf(tempStr, sizeof(tempStr), "Custom Ship %d", temp - 90);
-						else
-							strcpy(tempStr, JE_shipName(temp));
+						shop_ship_name(temp, tempStr, sizeof(tempStr));
 						break;
 					case 2: /* front and rear weapon */
 					case 3:
@@ -4491,27 +4488,51 @@ static JE_word shop_seat_hull(uint seat, Sprite2_array **sheet)
 }
 
 // Graphics 0 and 1 are the wide Dragonwing and Nort Ship sentinels.
+void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py)
+{
+	if (gr == 0)
+	{
+		blit_preview_ship2x2(VGAScreen, px - SHOP_WIDE_HULL_HALF, py, *sheet, 13);
+		blit_preview_ship2x2(VGAScreen, px + SHOP_WIDE_HULL_HALF, py, *sheet, 51);
+	}
+	else if (gr == 1)
+	{
+		blit_preview_ship2x2(VGAScreen, px - SHOP_WIDE_HULL_HALF, py, *sheet, 220);
+		blit_preview_ship2x2(VGAScreen, px + SHOP_WIDE_HULL_HALF, py, *sheet, 222);
+	}
+	else
+	{
+		blit_preview_ship2x2(VGAScreen, px, py, *sheet, gr);
+	}
+}
+
 static void draw_preview_hull(uint seat, int x, int y)
 {
 	Sprite2_array *sheet = NULL;
 	const JE_word gr = shop_seat_hull(seat, &sheet);
-	if (sheet == NULL)
-		return;
+	if (sheet != NULL)
+		shop_draw_hull(sheet, gr, x, y);
+}
 
-	if (gr == 0)
-	{
-		blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *sheet, 13);
-		blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *sheet, 51);
-	}
-	else if (gr == 1)
-	{
-		blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *sheet, 220);
-		blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *sheet, 222);
-	}
+const char *shop_ship_name(JE_word ship, char *buf, size_t n)
+{
+	if (extraShipIdIsCustom(ship))
+		snprintf(buf, n, "Custom Ship %d", ship - EXTRA_SHIP_ID_BASE);
 	else
-	{
-		blit_preview_ship2x2(VGAScreen, x, y, *sheet, gr);
-	}
+		SDL_strlcpy(buf, JE_shipName(ship), n);
+	return buf;
+}
+
+JE_word shop_ship_hull(JE_word ship, Sprite2_array **sheet)
+{
+	*sheet = &spriteSheet9;
+	if (ship > 90)
+		return JE_SGr(shop_draw_seat(), (JE_word)(ship - 90), sheet);
+	const JE_word gr = ships[ship].shipgraphic;
+	if (gr <= 500)
+		return gr;
+	*sheet = &spriteSheetT2000;
+	return (JE_word)(gr - 500);
 }
 
 void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
@@ -4540,45 +4561,14 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 
 		if (itemType == 1)
 		{
+			Sprite2_array *sheet;
+			const JE_word gr = shop_ship_hull(itemNum, &sheet);
 			if (itemNum > 90)
 			{
-				shipGrPtr = &spriteSheet9;
-				shipGr = JE_SGr(shop_draw_seat(), itemNum - 90, &shipGrPtr);
-				if (shipGr == 0)
-				{
-					blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 13);
-					blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 51);
-				}
-				else if (shipGr == 1)
-				{
-					blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 220);
-					blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, *shipGrPtr, 222);
-				}
-				else
-					blit_preview_ship2x2(VGAScreen, x, y, *shipGrPtr, shipGr);
+				shipGrPtr = sheet;
+				shipGr = gr;
 			}
-			else if (ships[itemNum].shipgraphic == 0)
-			{
-				// The Dragonwing's shipgraphic (0) is a sentinel too (see the Nort Ship below):
-				// draw the two flat-banking halves the gameplay draw uses.
-				blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 13);
-				blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 51);
-			}
-			else if (ships[itemNum].shipgraphic == 1)
-			{
-				// The Nort Ship's shipgraphic (1) is a sentinel, not a real sprite index; the gameplay draw
-				// (JE_playerMovement) special-cases it into a two-piece hull.
-				blit_preview_ship2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 220);
-				blit_preview_ship2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 222);
-			}
-			else if (ships[itemNum].shipgraphic > 500)
-			{
-				blit_preview_ship2x2(VGAScreen, x, y, spriteSheetT2000, ships[itemNum].shipgraphic - 500);
-			}
-			else
-			{
-				blit_preview_ship2x2(VGAScreen, x, y, spriteSheet9, ships[itemNum].shipgraphic);
-			}
+			shop_draw_hull(sheet, gr, x, y);
 		}
 		else if (tempW > 0)
 		{

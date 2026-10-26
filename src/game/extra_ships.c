@@ -334,6 +334,11 @@ bool extraAvailFor(uint playerIdx)
 static const JE_word extraLegacyGraphics[7] = { 233, 157, 195, 271, 81, 0, 119 };
 static const JE_word extraCustomGraphics[8] = { 5, 43, 81, 119, 157, 195, 233, 271 };
 
+bool extraShipIdIsCustom(int ship)
+{
+	return ship > EXTRA_SHIP_ID_BASE && ship <= EXTRA_SHIP_ID_BASE + EXTRA_SHIP_SLOTS;
+}
+
 bool extraShipGraphicIsCustom(int graphic)
 {
 	return graphic >= 8 && graphic <= 15;
@@ -403,7 +408,7 @@ int extraShipGraphicMax(void)
 	return 15 + extraShipExtendedGraphics(extended, COUNTOF(extended));
 }
 
-const char *extraShipEditorGraphicName(int graphic)
+const char *extraShipEditorGraphicName(int graphic, char *buf, size_t bufSize)
 {
 	JE_word raw;
 	if (!extraShipGraphicRaw(graphic, &raw))
@@ -411,14 +416,18 @@ const char *extraShipEditorGraphicName(int graphic)
 
 	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
 		if (ships[ship].name[0] != '\0' && ships[ship].shipgraphic == raw)
-			return ship == 1 ? "USP Talon" : ships[ship].name;
+			return JE_shipShortName((JE_word)ship, buf, bufSize);
 	return NULL;
 }
 
 // Route online extra-ship graphics through the owning seat's file.
 JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr)
 {
-	const int graphic = extraShipsFor(seat)[(ship - 1) * 15];
+	return extraShipGraphicSprite(seat, extraShipsFor(seat)[(ship - 1) * 15], ptr);
+}
+
+JE_word extraShipGraphicSprite(uint seat, int graphic, Sprite2_array **ptr)
+{
 	if (extraShipGraphicIsCustom(graphic))
 	{
 		*ptr = extraShapesFor(seat);

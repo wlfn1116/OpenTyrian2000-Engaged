@@ -27,6 +27,11 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+static inline int clampi(int v, int lo, int hi)
+{
+	return (v < lo) ? lo : (v > hi) ? hi : v;
+}
+
 // Annotation for functions that terminate instead of returning.
 #if defined(_MSC_VER)
 #define OT_NORETURN __declspec(noreturn)

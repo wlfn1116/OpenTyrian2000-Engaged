@@ -616,7 +616,8 @@ void qa_test_ship_editor_file(void)
 	memcpy(backup, extraShips, sizeof(backup));
 	qa_check(strstr(ships[1].name, "Light Fighter") != NULL,
 	         "the USP Talon keeps its full data-file name outside the ship editor");
-	qa_check(strcmp(extraShipEditorGraphicName(1), "USP Talon") == 0,
+	char shortName[32];
+	qa_check(strcmp(extraShipEditorGraphicName(1, shortName, sizeof(shortName)), "USP Talon") == 0,
 	         "the ship editor shortens the USP Talon's graphic label");
 
 	qa_check(extraAvail, "the stock compiled ship file loads");
@@ -719,7 +720,8 @@ void qa_test_ship_editor_file(void)
 				unique = unique && !(seenSheets[i] == sheet && seenGraphics[i] == gr);
 			seenSheets[seenCount] = sheet;
 			seenGraphics[seenCount++] = gr;
-			named = named && extraShipEditorGraphicName(graphic) != NULL;
+			named = named &&
+			        extraShipEditorGraphicName(graphic, shortName, sizeof(shortName)) != NULL;
 			nort = nort || (sheet == &spriteSheet9 && gr == 1);
 			dragonwing = dragonwing || (sheet == &spriteSheet9 && gr == 0);
 			t2000 = t2000 || sheet == &spriteSheetT2000;

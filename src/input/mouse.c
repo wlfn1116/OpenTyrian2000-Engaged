@@ -199,15 +199,10 @@ void JE_drawMouseToHiFrame(SDL_Surface *hi, int scale, int x_offset)
 	const int y = (int)lroundf(mouse_yf * (float)scale)
 	            - (spriteInfo->y + spriteInfo->fy) * scale;
 
-	// The quadrant layout of blit_sprite2x2_clip, at hi coordinates. A deferred
-	// JE_mouseStartFilter draw carries its darken filter.
+	// A deferred JE_mouseStartFilter draw carries its darken filter.
 	const Blit2Op op = cursorPresentFiltered ? BLIT2_FILTER : BLIT2_COPY;
 	const Uint8 filter = cursorPresentFiltered ? cursorPresentFilter : 0;
-	const int x2 = x + 12 * scale, y2 = y + 14 * scale;
-	blit_sprite2_scaled(hi, x, y, shopSpriteSheet, gr, scale, op, filter);
-	blit_sprite2_scaled(hi, x2, y, shopSpriteSheet, gr + 1, scale, op, filter);
-	blit_sprite2_scaled(hi, x, y2, shopSpriteSheet, gr + 19, scale, op, filter);
-	blit_sprite2_scaled(hi, x2, y2, shopSpriteSheet, gr + 20, scale, op, filter);
+	blit_sprite2x2_scaled(hi, x, y, shopSpriteSheet, gr, scale, op, filter);
 }
 
 // Same deferral as JE_mouseStart, carrying the darken filter

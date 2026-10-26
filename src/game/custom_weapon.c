@@ -58,12 +58,6 @@ static CustomWeaponSlot customWeaponLib[CUSTOM_WEAPON_LIB_MAX];
 int              customWeaponLibCount    = 0;
 int              customWeaponCurrentSlot = 0;
 
-// Most indexes in this file pass through these clamps; baseMulti must stay nonzero.
-static inline int clampi(int v, int lo, int hi)
-{
-	return (v < lo) ? lo : (v > hi) ? hi : v;
-}
-
 // The scratch weapon slot backing (owner, mode, level).
 static int customScratchSlot(int owner, int mode, int level)
 {
@@ -420,7 +414,7 @@ void customWeaponResetAllLevels(void)
 	customWeaponCost         = 5000;
 	customWeaponPowerUse     = 3;
 	customWeaponEquipSlot    = CUSTOM_EQUIP_FRONT;
-	customWeaponItemGraphic  = clampi(weaponPort[1].itemgraphic, 1, 237);
+	customWeaponItemGraphic  = clampi(weaponPort[1].itemgraphic, 1, CUSTOM_ICON_MAX);
 	customWeaponChargeStages = 1;
 	customWeaponModes        = 1;
 	customWeaponEditMode     = 0;
@@ -3169,10 +3163,7 @@ static Sprite2_array *sidekickSheet(int mount)
 
 int customSidekickSpriteCount(int mount)
 {
-	const Sprite2_array *s = sidekickSheet(mount);
-	if (s->data == NULL || s->size < 2)
-		return 0;   // sheet not loaded yet
-	return SDL_SwapLE16(((const Uint16 *)s->data)[0]) / 2;   // offset table's first entry = #sprites * 2
+	return sprite2_count(sidekickSheet(mount));
 }
 
 // Synthesize an owner's custom sidekick (an options[] entry firing that owner's compiled
@@ -3246,7 +3237,8 @@ static void customWeaponMaterializeOwner(int owner)
 		weaponPort[port].op[1][p] = (JE_word)customScratchSlot(owner, modes >= 2 ? 1 : 0, p);
 	}
 	weaponPort[port].cost        = (JE_word)clampi(design->cost, 0, 64000);
-	weaponPort[port].itemgraphic = (JE_word)clampi(design->itemGraphic, 1, 237);  // shop/HUD icon
+	weaponPort[port].itemgraphic =
+	    (JE_word)clampi(design->itemGraphic, 1, CUSTOM_ICON_MAX);  // shop/HUD icon
 	weaponPort[port].poweruse    = (JE_word)clampi(design->powerUse, 0, 255);
 
 	customSidekickMaterialize(owner, design);  // keep the sidekick in sync with the weapon
@@ -3683,7 +3675,7 @@ static size_t customWeaponSerializeSlot(const CustomWeaponSlot *design, Uint8 *b
 	wirePutU16(&w, clampi(design->cost, 0, 64000));
 	wirePutU16(&w, clampi(design->powerUse, 0, 255));
 	wirePutU8(&w, clampi(design->equipSlot, 0, CUSTOM_EQUIP_COUNT - 1));
-	wirePutU16(&w, clampi(design->itemGraphic, 1, 237));
+	wirePutU16(&w, clampi(design->itemGraphic, 1, CUSTOM_ICON_MAX));
 	wirePutU8(&w, clampi(design->chargeStages, 1, CUSTOM_POWER_LEVELS));
 	wirePutU8(&w, clampi(design->modes, 1, CUSTOM_WEAPON_MODES));
 	wirePutU8(&w, clampi(design->sidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1));
@@ -3720,7 +3712,7 @@ static bool customWeaponDeserializeSlot(CustomWeaponSlot *design, const Uint8 *b
 	design->cost              = clampi(wireGetU16(&r), 0, 64000);
 	design->powerUse          = clampi(wireGetU16(&r), 0, 255);
 	design->equipSlot         = clampi(wireGetU8(&r), 0, CUSTOM_EQUIP_COUNT - 1);
-	design->itemGraphic       = clampi(wireGetU16(&r), 1, 237);
+	design->itemGraphic       = clampi(wireGetU16(&r), 1, CUSTOM_ICON_MAX);
 	design->chargeStages      = clampi(wireGetU8(&r), 1, CUSTOM_POWER_LEVELS);
 	design->modes             = clampi(wireGetU8(&r), 1, CUSTOM_WEAPON_MODES);
 	design->sidekickMount     = clampi(wireGetU8(&r), 0, CUSTOM_SIDEKICK_MOUNTS - 1);
@@ -3887,7 +3879,7 @@ static void slotSetDefault(CustomWeaponSlot *s)
 	s->cost         = 5000;
 	s->powerUse     = 3;
 	s->equipSlot    = CUSTOM_EQUIP_FRONT;
-	s->itemGraphic  = clampi(weaponPort[1].itemgraphic, 1, 237);
+	s->itemGraphic  = clampi(weaponPort[1].itemgraphic, 1, CUSTOM_ICON_MAX);
 	s->chargeStages = 1;
 	s->modes        = 1;
 	s->sidekickMount     = 0;    // side pod
@@ -4159,7 +4151,7 @@ void customWeaponInit(void)
 
 	// Default the shop icon to a real weapon's icon the first time (borrow port 1's).
 	if (customWeaponItemGraphic < 1)
-		customWeaponItemGraphic = clampi(weaponPort[1].itemgraphic, 1, 237);
+		customWeaponItemGraphic = clampi(weaponPort[1].itemgraphic, 1, CUSTOM_ICON_MAX);
 
 	// Seed an empty library with a valid design.
 	bool anyDefined = false;

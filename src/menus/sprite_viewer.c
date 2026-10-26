@@ -180,12 +180,6 @@ static const char *const spriteTableNames[SPRITE_TABLES_MAX] = {
 };
 
 /* Helpers for 1-based, 12-pixel compiled Sprite2 sheets. */
-static int sprite2_count(const Sprite2_array *a)
-{
-	if (a->data == NULL || a->size < 2)
-		return 0;
-	return SDL_SwapLE16(((const Uint16 *)a->data)[0]) / 2;
-}
 static int sprite2_height(const Sprite2_array *a, int index1)
 {
 	if (index1 < 1 || index1 > sprite2_count(a))

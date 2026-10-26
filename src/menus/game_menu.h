@@ -20,6 +20,7 @@
 
 #include "helptext.h"
 #include "opentyr.h"
+#include "sprite.h"
 
 typedef JE_byte JE_MenuChoiceType[MENU_MAX];
 
@@ -37,6 +38,9 @@ void load_cubes(void);
 bool load_cube(int cube_slot, int cube_index);
 
 void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y);
+const char *shop_ship_name(JE_word ship, char *buf, size_t n);
+JE_word shop_ship_hull(JE_word ship, Sprite2_array **sheet);
+void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py);
 
 // Item-list columns: the icon anchor, the label rows drawn beside it, and the last column a row
 // may paint (the scroll-bar track is at 306).

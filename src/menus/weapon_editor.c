@@ -21,8 +21,10 @@
 #include "console_platform.h"
 #include "custom_weapon.h"
 #include "draw.h"
+#include "editor_ui.h"
 #include "episodes.h"
 #include "explosions.h"
+#include "extra_ships.h"
 #include "font.h"
 #include "game_loop.h"
 #include "game_menu.h"
@@ -42,6 +44,7 @@
 #include "sndmast.h"
 #include "sparks.h"
 #include "sprite.h"
+#include "sprite_picker.h"
 #include "timing.h"
 #include "touch_ui.h"
 #include "video.h"
@@ -115,7 +118,7 @@ static const struct { const char *label, *help; } cwFields[CWF_COUNT] =
 	{ "Weapon",          "Choose which saved weapon to edit." },
 	{ "Name",            "Type to rename. Backspace erases." },
 	{ "Equip To",        "Mount it in a gun bay or as a sidekick." },
-	{ "Shop Icon",       "The icon shown in the shop and on the HUD." },
+	{ "Shop Icon",       "Shop and HUD icon. Enter or click opens the icon grid." },
 	{ "Cost",            "The shop price." },
 	{ "Power Use",       "Generator power drained by each shot." },
 	{ "Level",           "The power level being edited and previewed." },
@@ -133,7 +136,7 @@ static const struct { const char *label, *help; } cwFields[CWF_COUNT] =
 	{ "Trail",           "Exhaust trail behind each bullet." },
 	{ "Blast FX",        "Palette filter of the impact flash." },
 	{ "Bullet",          "Which bullet the rows below edit." },
-	{ "Sprite",          "Bullet sprite number." },
+	{ "Sprite",          "Bullet sprite. Enter or click opens the sprite grid." },
 	{ "Sparks",          "Trail sparks in the bullet's own colour." },
 	{ "Damage",          "Damage per hit. 99 freezes as Ice." },
 	{ "Explode To",      "On a hit, burst into another weapon instead." },
@@ -145,7 +148,7 @@ static const struct { const char *label, *help; } cwFields[CWF_COUNT] =
 	{ "Source",          "Stock weapon to copy from. The preview fires it." },
 	{ "Source Level",    "Source level for Replace and Add To Level." },
 	{ "Mount",           "Where the sidekick sits around the ship." },
-	{ "Body Sprite",     "Sidekick body sprite. Charge stages step up from it." },
+	{ "Body Sprite",     "Sidekick body. Charge stages step up. Enter opens the grid." },
 	{ "Body Frames",     "Body animation frames. 1 is static." },
 	{ "Frame Step",      "Sprite gap between body animation frames." },
 	{ "Animate",         "Animate the body always or once per shot." },
@@ -158,7 +161,7 @@ static const struct { const char *label, *help; } cwFields[CWF_COUNT] =
 	{ "Target Y",        "How high the targets sit. Drag them too." },
 	{ "Target X",        "Slide the target row. Drag it too." },
 	{ "Target Armor",    "Target toughness. Higher drains slower." },
-	{ "Ship",            "The ship flying the preview. Equipped is your own." },
+	{ "Ship",            "The ship flying the preview. Enter opens the grid." },
 	{ "Ship X",          "Move the ship. Drag it too." },
 	{ "Ship Y",          "Move the ship. Drag it too." },
 	{ "Spread",          "How Auto-Scale lays out bullets. Auto picks at random." },
@@ -414,6 +417,7 @@ enum
 	CW_BAR_TOP = 144, CW_BAR_BOT = 159,
 	CW_BAR_NUM_Y = 163,
 	CW_STATS_Y = 172,
+	CW_LOUPE_X0 = CW_BOX_X0 + 3, CW_LOUPE_Y1 = CW_RANGE_Y1 - 3, CW_LOUPE_W = 34,
 };
 
 enum
@@ -433,8 +437,6 @@ enum
 	CW_BG_CLAMP = 0x55, CW_BG_SELECT = 0x5a, CW_BG_WELL = 0x60,
 	CW_STAR_COUNT = 28,
 };
-
-enum { C_PANEL = 0xF1, C_WELL = 0xF0, C_DIV = 0xF6, C_HI = 0xFB, C_SEL = 0xF5 };
 
 enum
 {
@@ -466,17 +468,65 @@ static int cwImportSrc = 0;
 static int cwImportPwr = 1;
 static int cwBulletSel = 0;
 
-static bool cwShowStats    = true;
-static int  cwTargetCount  = 3;
-static int  cwTargetSize   = 8;
-static int  cwTargetSpread = 32;
-static int  cwTargetY      = 36;
-static int  cwTargetX      = 76;
-static int  cwTargetArmor  = 120;
-static int  cwShipX = 70;
-static int  cwShipY = 116;
-static int  cwTickShipX = 70;
-static int  cwTickShipY = 116;
+typedef struct
+{
+	bool stats;
+	int targets, targetSize, targetSpread, targetY, targetX, targetArmor;
+	int ship, shipX, shipY;
+} CwRange;
+
+#define CW_RANGE_DEFAULTS                                                                         \
+	{ .stats = true, .targets = 3, .targetSize = 8, .targetSpread = 32, .targetY = 36,             \
+	  .targetX = 76, .targetArmor = 120, .ship = SHIP_GENCORE_II, .shipX = 70, .shipY = 116 }
+
+enum { CW_RANGE_SHIPS_MAX = SHIP_DRAGONWING + EXTRA_SHIP_SLOTS };
+
+static const CwRange cwRangeDefaults = CW_RANGE_DEFAULTS;
+static CwRange cwRange = CW_RANGE_DEFAULTS;
+static int cwTickShipX, cwTickShipY;
+
+static const struct { const char *key; int *value; } cwRangeKeys[] =
+{
+	{ "weapon_editor_targets",       &cwRange.targets },
+	{ "weapon_editor_target_size",   &cwRange.targetSize },
+	{ "weapon_editor_target_spread", &cwRange.targetSpread },
+	{ "weapon_editor_target_y",      &cwRange.targetY },
+	{ "weapon_editor_target_x",      &cwRange.targetX },
+	{ "weapon_editor_target_armor",  &cwRange.targetArmor },
+	{ "weapon_editor_ship",          &cwRange.ship },
+	{ "weapon_editor_ship_x",        &cwRange.shipX },
+	{ "weapon_editor_ship_y",        &cwRange.shipY },
+};
+
+void weaponEditorConfigLoad(const ConfigSection *section)
+{
+	config_get_bool_option(section, "weapon_editor_stats", &cwRange.stats);
+	for (size_t i = 0; i < COUNTOF(cwRangeKeys); ++i)
+		config_get_int_option(section, cwRangeKeys[i].key, cwRangeKeys[i].value);
+}
+
+void weaponEditorConfigSave(ConfigSection *section)
+{
+	config_set_bool_option(section, "weapon_editor_stats", cwRange.stats, ZERO_ONE);
+	for (size_t i = 0; i < COUNTOF(cwRangeKeys); ++i)
+		config_set_int_option(section, cwRangeKeys[i].key, *cwRangeKeys[i].value);
+}
+
+static int cwRangeNumeric(int f)
+{
+	switch (f)
+	{
+	case CWF_SHOW_TARGETS:  return cwRange.targets;
+	case CWF_TARGET_SIZE:   return 2 * cwRange.targetSize + 1;
+	case CWF_TARGET_SPREAD: return cwRange.targetSpread;
+	case CWF_TARGET_Y:      return cwRange.targetY;
+	case CWF_TARGET_X:      return cwRange.targetX;
+	case CWF_TARGET_ARMOR:  return cwRange.targetArmor;
+	case CWF_SHIP_X:        return cwRange.shipX;
+	case CWF_SHIP_Y:        return cwRange.shipY;
+	default:                return 0;
+	}
+}
 
 static JE_WeaponType cwLevelClipboard;
 static bool cwLevelClipboardSet = false;
@@ -491,30 +541,10 @@ static bool cwDirty;
 static Uint8 *cwRevertBuf;
 static size_t cwRevertLen;
 
-static int cwClamp(int v, int lo, int hi)
-{
-	return (v < lo) ? lo : (v > hi) ? hi : v;
-}
-
 static void cwSetNotice(const char *text)
 {
 	SDL_strlcpy(cwNotice, text, sizeof(cwNotice));
 	cwNoticeTicks = 40;
-}
-
-static const char *cwFitText(const char *text, int maxWidth, char *buf, size_t n)
-{
-	if (JE_textWidth(text, small_font) <= maxWidth)
-		return text;
-	for (int len = (int)strlen(text) - 1; len > 0; --len)
-	{
-		while (len > 0 && text[len - 1] == ' ')
-			--len;
-		snprintf(buf, n, "%.*s..", len, text);
-		if (JE_textWidth(buf, small_font) <= maxWidth)
-			return buf;
-	}
-	return "";
 }
 
 static bool cwIsSidekickSlot(void)
@@ -531,14 +561,14 @@ static bool cwLevelUsed(int level)
 
 static JE_WeaponType *cwCur(void)
 {
-	const int m = cwClamp(customWeaponEditMode,  0, CUSTOM_WEAPON_MODES - 1);
-	const int p = cwClamp(customWeaponEditLevel, 0, CUSTOM_POWER_LEVELS - 1);
+	const int m = clampi(customWeaponEditMode,  0, CUSTOM_WEAPON_MODES - 1);
+	const int p = clampi(customWeaponEditLevel, 0, CUSTOM_POWER_LEVELS - 1);
 	return &customWeaponRaw[m][p];
 }
 
 static int cwBulletIndex(void)
 {
-	return cwClamp(cwBulletSel, 0, cwClamp(cwCur()->multi, 1, CUSTOM_BULLETS_MAX) - 1);
+	return clampi(cwBulletSel, 0, clampi(cwCur()->multi, 1, CUSTOM_BULLETS_MAX) - 1);
 }
 
 typedef struct { int cx, cy, armor, hit, ice, dead, idle; } CwDummy;
@@ -548,12 +578,12 @@ static int cwDummyCount = 0;
 
 static int cwTargetYMin(void)
 {
-	return CW_BOX_Y0 + cwTargetSize + 3;
+	return CW_BOX_Y0 + cwRange.targetSize + 3;
 }
 
 static int cwTargetYMax(void)
 {
-	return CW_RANGE_Y1 - cwTargetSize - 6;
+	return CW_RANGE_Y1 - cwRange.targetSize - 6;
 }
 
 static void cwPlaceDummies(void)
@@ -561,18 +591,19 @@ static void cwPlaceDummies(void)
 	for (int i = 0; i < cwDummyCount; ++i)
 	{
 		const int off = 2 * i - (cwDummyCount - 1);
-		cwDummies[i].cx = cwClamp(cwTargetX + off * cwTargetSpread / 2,
-		                          CW_BOX_X0 + cwTargetSize + 2, CW_BOX_X1 - cwTargetSize - 2);
-		cwDummies[i].cy = cwClamp(cwTargetY, cwTargetYMin(), cwTargetYMax());
+		cwDummies[i].cx = clampi(cwRange.targetX + off * cwRange.targetSpread / 2,
+		                         CW_BOX_X0 + cwRange.targetSize + 2,
+		                         CW_BOX_X1 - cwRange.targetSize - 2);
+		cwDummies[i].cy = clampi(cwRange.targetY, cwTargetYMin(), cwTargetYMax());
 	}
 }
 
 static void cwLayoutDummies(void)
 {
-	cwDummyCount = cwClamp(cwTargetCount, 0, CW_DUMMY_MAX);
+	cwDummyCount = clampi(cwRange.targets, 0, CW_DUMMY_MAX);
 	for (int i = 0; i < cwDummyCount; ++i)
 	{
-		cwDummies[i].armor = cwTargetArmor;
+		cwDummies[i].armor = cwRange.targetArmor;
 		cwDummies[i].hit = cwDummies[i].ice = cwDummies[i].dead = cwDummies[i].idle = 0;
 	}
 	cwPlaceDummies();
@@ -647,7 +678,7 @@ static void cwRestoreWorking(const CustomWeaponSlot *s)
 	customSidekickAnimate    = s->sidekickAnimate;
 	memcpy(customWeaponRaw, s->raw, sizeof(customWeaponRaw));
 
-	customWeaponEditMode = cwClamp(customWeaponEditMode, 0, customWeaponModes - 1);
+	customWeaponEditMode = clampi(customWeaponEditMode, 0, customWeaponModes - 1);
 	customWeaponMaterialize();
 	cwClearPreviewShots();
 }
@@ -778,6 +809,28 @@ static JE_word cwToggleSparks(JE_word sg)
 	return (JE_word)(((bank > 0) ? bank : CW_SPARK_GREY) * 1000 + sg);
 }
 
+static const char *cwShipName(int ship, char *buf, size_t n)
+{
+	if (extraShipIdIsCustom(ship))
+		return shop_ship_name((JE_word)ship, buf, n);
+	return JE_shipShortName((JE_word)ship, buf, n);
+}
+
+static int cwRangeShipOrder(int *order, int *inGame)
+{
+	JE_byte hulls[SHIP_DRAGONWING];
+	const int hullCount = JE_distinctShipHulls(hulls, COUNTOF(hulls), NULL);
+	int count = 0;
+	for (int i = 0; i < hullCount; ++i)
+		order[count++] = hulls[i];
+	if (inGame != NULL)
+		*inGame = count;
+	if (extraAvailFor((uint)customWeaponLocalOwner()))
+		for (int slot = 1; slot <= EXTRA_SHIP_SLOTS; ++slot)
+			order[count++] = EXTRA_SHIP_ID_BASE + slot;
+	return count;
+}
+
 static void cwFieldValue(int f, char *buf, size_t n)
 {
 	const JE_WeaponType *w = cwCur();
@@ -792,7 +845,7 @@ static void cwFieldValue(int f, char *buf, size_t n)
 		break;
 	case CWF_EQUIP_SLOT:
 		snprintf(buf, n, "%s",
-		         cwSlotNames[cwClamp(customWeaponEquipSlot, 0, CUSTOM_EQUIP_COUNT - 1)]);
+		         cwSlotNames[clampi(customWeaponEquipSlot, 0, CUSTOM_EQUIP_COUNT - 1)]);
 		break;
 	case CWF_ICON:
 		snprintf(buf, n, "%d", customWeaponItemGraphic);
@@ -870,7 +923,7 @@ static void cwFieldValue(int f, char *buf, size_t n)
 		snprintf(buf, n, "%d", w->shipblastfilter);
 		break;
 	case CWF_BULLET_SEL:
-		snprintf(buf, n, "%d of %d", b + 1, cwClamp(w->multi, 1, CUSTOM_BULLETS_MAX));
+		snprintf(buf, n, "%d of %d", b + 1, clampi(w->multi, 1, CUSTOM_BULLETS_MAX));
 		break;
 	case CWF_B_SPRITE:
 		snprintf(buf, n, "%d", cwSpriteFrame(w->sg[b]));
@@ -908,7 +961,7 @@ static void cwFieldValue(int f, char *buf, size_t n)
 	case CWF_IMPORT_SRC:
 		if (customBulletPresetCount > 0)
 			snprintf(buf, n, "%s",
-			         customBulletPreset[cwClamp(cwImportSrc, 0, customBulletPresetCount - 1)].name);
+			         customBulletPreset[clampi(cwImportSrc, 0, customBulletPresetCount - 1)].name);
 		else
 			snprintf(buf, n, "None");
 		break;
@@ -916,14 +969,14 @@ static void cwFieldValue(int f, char *buf, size_t n)
 	{
 		const int mp = customBulletMaxPower(cwImportSrc);
 		if (mp > 1)
-			snprintf(buf, n, "%d of %d", cwClamp(cwImportPwr, 1, mp), mp);
+			snprintf(buf, n, "%d of %d", clampi(cwImportPwr, 1, mp), mp);
 		else
 			snprintf(buf, n, "Only one");
 		break;
 	}
 	case CWF_SK_MOUNT:
 		snprintf(buf, n, "%s",
-		         cwMountNames[cwClamp(customSidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1)]);
+		         cwMountNames[clampi(customSidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1)]);
 		break;
 	case CWF_SK_SPRITE:
 		snprintf(buf, n, "%d", customSidekickSprite);
@@ -944,52 +997,31 @@ static void cwFieldValue(int f, char *buf, size_t n)
 			snprintf(buf, n, "Off");
 		break;
 	case CWF_SHOW_TARGETS:
-		if (cwTargetCount > 0)
-			snprintf(buf, n, "%d", cwTargetCount);
+		if (cwRange.targets > 0)
+			snprintf(buf, n, "%d", cwRange.targets);
 		else
 			snprintf(buf, n, "Off");
 		break;
 	case CWF_SHOW_STATS:
-		snprintf(buf, n, "%s", cwShowStats ? "On" : "Off");
+		snprintf(buf, n, "%s", cwRange.stats ? "On" : "Off");
 		break;
 	case CWF_STARS:
 		snprintf(buf, n, "%s", shipEditorStars ? "On" : "Off");
 		break;
 	case CWF_TARGET_SIZE:
-		snprintf(buf, n, "%d", 2 * cwTargetSize + 1);
-		break;
 	case CWF_TARGET_SPREAD:
-		snprintf(buf, n, "%d", cwTargetSpread);
-		break;
 	case CWF_TARGET_Y:
-		snprintf(buf, n, "%d", cwTargetY);
-		break;
 	case CWF_TARGET_X:
-		snprintf(buf, n, "%d", cwTargetX);
-		break;
 	case CWF_TARGET_ARMOR:
-		snprintf(buf, n, "%d", cwTargetArmor);
+	case CWF_SHIP_X:
+	case CWF_SHIP_Y:
+		snprintf(buf, n, "%d", cwRangeNumeric(f));
 		break;
 	case CWF_SPREAD:
 		snprintf(buf, n, "%s", customWeaponSpreadName(customWeaponSpread));
 		break;
 	case CWF_PREVIEW_SHIP:
-		if (weaponEditorShip > 0 && weaponEditorShip <= SHIP_DRAGONWING)
-		{
-			snprintf(buf, n, "%s", ships[weaponEditorShip].name);
-			for (size_t len = strlen(buf); len > 0 && buf[len - 1] == ' '; --len)
-				buf[len - 1] = '\0';
-		}
-		else
-		{
-			snprintf(buf, n, "Equipped");
-		}
-		break;
-	case CWF_SHIP_X:
-		snprintf(buf, n, "%d", cwShipX);
-		break;
-	case CWF_SHIP_Y:
-		snprintf(buf, n, "%d", cwShipY);
+		cwShipName(cwRange.ship, buf, n);
 		break;
 	default:
 		buf[0] = '\0';
@@ -1051,7 +1083,7 @@ static bool cwNumericRange(int f, int *lo, int *hi)
 	switch (f)
 	{
 	case CWF_COST:          *lo = 0;    *hi = 64000;              return true;
-	case CWF_ICON:          *lo = 1;    *hi = 237;                return true;
+	case CWF_ICON:          *lo = 1;    *hi = CUSTOM_ICON_MAX;    return true;
 	case CWF_POWER_USE:     *lo = 0;    *hi = 255;                return true;
 	case CWF_SK_SPRITE:
 	{
@@ -1099,7 +1131,7 @@ static bool cwNumericRange(int f, int *lo, int *hi)
 
 static void cwSelectLevel(int level)
 {
-	level = cwClamp(level, 0, CUSTOM_POWER_LEVELS - 1);
+	level = clampi(level, 0, CUSTOM_POWER_LEVELS - 1);
 	if (level == customWeaponEditLevel)
 		return;
 	customWeaponSelectLevel(level);
@@ -1109,7 +1141,7 @@ static void cwSelectLevel(int level)
 
 static void cwStepBullet(int dir)
 {
-	const int count = cwClamp(cwCur()->multi, 1, CUSTOM_BULLETS_MAX);
+	const int count = clampi(cwCur()->multi, 1, CUSTOM_BULLETS_MAX);
 	cwBulletSel = (cwBulletIndex() + count + dir) % count;
 	cwHistoryMerge = -1;
 }
@@ -1135,12 +1167,12 @@ static void cwFieldAdjust(int f, int dir)
 		cwSelectLevel(customWeaponEditLevel + one);
 		return;
 	case CWF_FIRE_MODE:
-		customWeaponSelectMode(cwClamp(customWeaponEditMode + one, 0, customWeaponModes - 1));
+		customWeaponSelectMode(clampi(customWeaponEditMode + one, 0, customWeaponModes - 1));
 		cwHistoryMerge = -1;
 		cwClearPreviewShots();
 		return;
 	case CWF_BULLET_SEL:
-		cwBulletSel = cwClamp(b + dir, 0, cwClamp(w->multi, 1, CUSTOM_BULLETS_MAX) - 1);
+		cwBulletSel = clampi(b + dir, 0, clampi(w->multi, 1, CUSTOM_BULLETS_MAX) - 1);
 		cwHistoryMerge = -1;
 		return;
 	case CWF_IMPORT_SRC:
@@ -1153,54 +1185,58 @@ static void cwFieldAdjust(int f, int dir)
 		}
 		return;
 	case CWF_IMPORT_PWR:
-		cwImportPwr = cwClamp(cwImportPwr + dir, 1, customBulletMaxPower(cwImportSrc));
+		cwImportPwr = clampi(cwImportPwr + dir, 1, customBulletMaxPower(cwImportSrc));
 		return;
 	case CWF_SHOW_TARGETS:
-		cwTargetCount = cwClamp(cwTargetCount + dir, 0, CW_DUMMY_MAX);
+		cwRange.targets = clampi(cwRange.targets + dir, 0, CW_DUMMY_MAX);
 		cwLayoutDummies();
 		return;
 	case CWF_SHOW_STATS:
-		cwShowStats = !cwShowStats;
+		cwRange.stats = !cwRange.stats;
 		return;
 	case CWF_STARS:
 		shipEditorStars = !shipEditorStars;
 		return;
 	case CWF_TARGET_SIZE:
-		cwTargetSize = cwClamp(cwTargetSize + dir, CW_TARGET_SIZE_MIN, CW_TARGET_SIZE_MAX);
-		cwTargetY = cwClamp(cwTargetY, cwTargetYMin(), cwTargetYMax());
+		cwRange.targetSize =
+		    clampi(cwRange.targetSize + dir, CW_TARGET_SIZE_MIN, CW_TARGET_SIZE_MAX);
+		cwRange.targetY = clampi(cwRange.targetY, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 		return;
 	case CWF_TARGET_SPREAD:
-		cwTargetSpread = cwClamp(cwTargetSpread + dir * 4, 6, 60);
+		cwRange.targetSpread = clampi(cwRange.targetSpread + dir * 4, 6, 60);
 		cwPlaceDummies();
 		return;
 	case CWF_TARGET_Y:
-		cwTargetY = cwClamp(cwTargetY + dir * 4, cwTargetYMin(), cwTargetYMax());
+		cwRange.targetY = clampi(cwRange.targetY + dir * 4, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 		return;
 	case CWF_TARGET_X:
-		cwTargetX = cwClamp(cwTargetX + dir * 4, CW_TARGET_X_MIN, CW_TARGET_X_MAX);
+		cwRange.targetX = clampi(cwRange.targetX + dir * 4, CW_TARGET_X_MIN, CW_TARGET_X_MAX);
 		cwPlaceDummies();
 		return;
 	case CWF_TARGET_ARMOR:
-		cwTargetArmor = cwClamp(cwTargetArmor + dir * 20, 20, 600);
+		cwRange.targetArmor = clampi(cwRange.targetArmor + dir * 20, 20, 600);
 		cwLayoutDummies();
 		return;
 	case CWF_PREVIEW_SHIP:
-		weaponEditorShip = (weaponEditorShip + SHIP_DRAGONWING + 1 + one) % (SHIP_DRAGONWING + 1);
+	{
+		int order[CW_RANGE_SHIPS_MAX];
+		cwRange.ship = spritePickerCycle(order, cwRangeShipOrder(order, NULL), cwRange.ship, one);
 		return;
+	}
 	case CWF_SPREAD:
 		customWeaponSpread = (customWeaponSpread + CUSTOM_SPREAD_COUNT + one) % CUSTOM_SPREAD_COUNT;
 		return;
 	case CWF_SHIP_X:
-		cwShipX = cwClamp(cwShipX + dir * 2, CW_SHIP_X_MIN, CW_SHIP_X_MAX);
+		cwRange.shipX = clampi(cwRange.shipX + dir * 2, CW_SHIP_X_MIN, CW_SHIP_X_MAX);
 		return;
 	case CWF_SHIP_Y:
-		cwShipY = cwClamp(cwShipY + dir * 2, CW_SHIP_Y_MIN, CW_SHIP_Y_MAX);
+		cwRange.shipY = clampi(cwRange.shipY + dir * 2, CW_SHIP_Y_MIN, CW_SHIP_Y_MAX);
 		return;
 
 	case CWF_TWO_MODES:
-		customWeaponModes = cwClamp(customWeaponModes + one, 1, CUSTOM_WEAPON_MODES);
+		customWeaponModes = clampi(customWeaponModes + one, 1, CUSTOM_WEAPON_MODES);
 		if (customWeaponModes < 2)
 			customWeaponEditMode = 0;
 		break;
@@ -1211,13 +1247,13 @@ static void cwFieldAdjust(int f, int dir)
 			customWeaponEditMode = 0;
 		break;
 	case CWF_COST:
-		customWeaponCost = cwClamp(customWeaponCost + dir * 500, 0, 64000);
+		customWeaponCost = clampi(customWeaponCost + dir * 500, 0, 64000);
 		break;
 	case CWF_ICON:
-		customWeaponItemGraphic = cwClamp(customWeaponItemGraphic + dir, 1, 237);
+		customWeaponItemGraphic = clampi(customWeaponItemGraphic + dir, 1, CUSTOM_ICON_MAX);
 		break;
 	case CWF_POWER_USE:
-		customWeaponPowerUse = cwClamp(customWeaponPowerUse + dir, 0, 255);
+		customWeaponPowerUse = clampi(customWeaponPowerUse + dir, 0, 255);
 		break;
 	case CWF_CHARGE:
 		for (int i = 0; i < abs(dir); ++i)
@@ -1230,20 +1266,20 @@ static void cwFieldAdjust(int f, int dir)
 		    (customSidekickMount + CUSTOM_SIDEKICK_MOUNTS + one) % CUSTOM_SIDEKICK_MOUNTS;
 		const int cnt = customSidekickSpriteCount(customSidekickMount);
 		if (cnt > 0)
-			customSidekickSprite = cwClamp(customSidekickSprite, 1, cnt);
+			customSidekickSprite = clampi(customSidekickSprite, 1, cnt);
 		break;
 	}
 	case CWF_SK_SPRITE:
 	{
 		const int cnt = customSidekickSpriteCount(customSidekickMount);
-		customSidekickSprite = cwClamp(customSidekickSprite + dir, 1, (cnt > 0) ? cnt : 65535);
+		customSidekickSprite = clampi(customSidekickSprite + dir, 1, (cnt > 0) ? cnt : 65535);
 		break;
 	}
 	case CWF_SK_FRAMES:
-		customSidekickFrames = cwClamp(customSidekickFrames + dir, 1, 20);
+		customSidekickFrames = clampi(customSidekickFrames + dir, 1, 20);
 		break;
 	case CWF_SK_STEP:
-		customSidekickFrameStep = cwClamp(customSidekickFrameStep + dir, 0, 40);
+		customSidekickFrameStep = clampi(customSidekickFrameStep + dir, 0, 40);
 		break;
 	case CWF_SK_ANIMATE:
 		customSidekickAnimate = (customSidekickAnimate == 1) ? 2 : 1;
@@ -1251,46 +1287,46 @@ static void cwFieldAdjust(int f, int dir)
 
 	// Ranges span each field's full valid range so any imported value stays reachable.
 	case CWF_FIRE_RATE:
-		w->shotrepeat = (JE_byte)cwClamp(w->shotrepeat + dir, 0, 255);
+		w->shotrepeat = (JE_byte)clampi(w->shotrepeat + dir, 0, 255);
 		break;
 	case CWF_BULLETS:
-		w->multi = (JE_byte)cwClamp(w->multi + dir, 1, CUSTOM_BULLETS_MAX);
+		w->multi = (JE_byte)clampi(w->multi + dir, 1, CUSTOM_BULLETS_MAX);
 		if (w->max < w->multi)
 			w->max = w->multi;
 		break;
 	case CWF_PATTERN:
-		w->max = (JE_byte)cwClamp(w->max + dir, 1, CUSTOM_BULLETS_MAX);
+		w->max = (JE_byte)clampi(w->max + dir, 1, CUSTOM_BULLETS_MAX);
 		break;
 	case CWF_ANIM:
-		w->weapani = (JE_word)cwClamp((int)w->weapani + dir, 0, 255);
+		w->weapani = (JE_word)clampi((int)w->weapani + dir, 0, 255);
 		break;
 	case CWF_HOMING:
-		w->aim = (JE_byte)cwClamp(w->aim + dir, 0, 255);
+		w->aim = (JE_byte)clampi(w->aim + dir, 0, 255);
 		break;
 	case CWF_ACCEL_Y:
-		w->acceleration = (JE_shortint)cwClamp(w->acceleration + dir, -128, 127);
+		w->acceleration = (JE_shortint)clampi(w->acceleration + dir, -128, 127);
 		break;
 	case CWF_ACCEL_X:
-		w->accelerationx = (JE_shortint)cwClamp(w->accelerationx + dir, -128, 127);
+		w->accelerationx = (JE_shortint)clampi(w->accelerationx + dir, -128, 127);
 		break;
 	case CWF_SPIRAL:
-		w->circlesize = (JE_byte)cwClamp(w->circlesize + dir, 0, 255);
+		w->circlesize = (JE_byte)clampi(w->circlesize + dir, 0, 255);
 		break;
 	case CWF_SOUND:
-		w->sound = (JE_byte)cwClamp(w->sound + dir, 0, CUSTOM_SOUND_MAX);
+		w->sound = (JE_byte)clampi(w->sound + dir, 0, CUSTOM_SOUND_MAX);
 		break;
 	case CWF_TRAIL:
-		w->trail = (JE_byte)cwClamp(w->trail + dir, 0, 255);
+		w->trail = (JE_byte)clampi(w->trail + dir, 0, 255);
 		break;
 	case CWF_BLAST:
-		w->shipblastfilter = (JE_byte)cwClamp(w->shipblastfilter + dir, 0, 255);
+		w->shipblastfilter = (JE_byte)clampi(w->shipblastfilter + dir, 0, 255);
 		break;
 	case CWF_B_SPRITE:
 	{
 		const int bank = cwSparkBank(w->sg[b]);
 		w->sg[b] = (bank > 0)
-		         ? (JE_word)(bank * 1000 + cwClamp(cwSpriteFrame(w->sg[b]) + dir, 1, 999))
-		         : (JE_word)cwClamp((int)w->sg[b] + dir, 0, 65535);
+		         ? (JE_word)(bank * 1000 + clampi(cwSpriteFrame(w->sg[b]) + dir, 1, 999))
+		         : (JE_word)clampi((int)w->sg[b] + dir, 0, 65535);
 		break;
 	}
 	case CWF_B_SPARKS:
@@ -1299,30 +1335,30 @@ static void cwFieldAdjust(int f, int dir)
 	case CWF_B_DAMAGE:
 	{
 		const int dmg = (w->attack[b] <= 99) ? w->attack[b] : 10;
-		w->attack[b] = (JE_byte)cwClamp(dmg + dir, 0, 99);
+		w->attack[b] = (JE_byte)clampi(dmg + dir, 0, 99);
 		break;
 	}
 	case CWF_B_CHAIN:
 	{
 		const int tgt = (w->attack[b] >= 101 && w->attack[b] <= 249) ? w->attack[b] - 100 : 0;
-		const int nt = cwClamp(tgt + dir, 0, 149);
+		const int nt = clampi(tgt + dir, 0, 149);
 		w->attack[b] = (JE_byte)(nt == 0 ? 10 : 100 + nt);
 		break;
 	}
 	case CWF_B_LIFE:
-		w->del[b] = (JE_byte)cwClamp(w->del[b] + dir, 0, 255);
+		w->del[b] = (JE_byte)clampi(w->del[b] + dir, 0, 255);
 		break;
 	case CWF_B_VELX:
-		w->sx[b] = (JE_shortint)cwClamp(w->sx[b] + dir, -128, 127);
+		w->sx[b] = (JE_shortint)clampi(w->sx[b] + dir, -128, 127);
 		break;
 	case CWF_B_VELY:
-		w->sy[b] = (JE_shortint)cwClamp(w->sy[b] + dir, -128, 127);
+		w->sy[b] = (JE_shortint)clampi(w->sy[b] + dir, -128, 127);
 		break;
 	case CWF_B_OFFX:
-		w->bx[b] = (JE_shortint)cwClamp(w->bx[b] + dir, -128, 127);
+		w->bx[b] = (JE_shortint)clampi(w->bx[b] + dir, -128, 127);
 		break;
 	case CWF_B_OFFY:
-		w->by[b] = (JE_shortint)cwClamp(w->by[b] + dir, -128, 127);
+		w->by[b] = (JE_shortint)clampi(w->by[b] + dir, -128, 127);
 		break;
 	default:
 		return;
@@ -1339,7 +1375,7 @@ static void cwSetNumeric(int f, int v)
 	int lo, hi;
 	if (!cwNumericRange(f, &lo, &hi))
 		return;
-	v = cwClamp(v, lo, hi);
+	v = clampi(v, lo, hi);
 
 	JE_WeaponType *w = cwCur();
 	const int b = cwBulletIndex();
@@ -1375,21 +1411,37 @@ static void cwSetNumeric(int f, int v)
 	case CWF_B_VELY:        w->sy[b]           = (JE_shortint)v;   break;
 	case CWF_B_OFFX:        w->bx[b]           = (JE_shortint)v;   break;
 	case CWF_B_OFFY:        w->by[b]           = (JE_shortint)v;   break;
-	case CWF_SHOW_TARGETS:  cwTargetCount  = v; cwLayoutDummies(); return;
+	case CWF_SHOW_TARGETS:  cwRange.targets  = v; cwLayoutDummies(); return;
 	case CWF_TARGET_SIZE:
-		cwTargetSize = cwClamp((v - 1) / 2, CW_TARGET_SIZE_MIN, CW_TARGET_SIZE_MAX);
-		cwTargetY = cwClamp(cwTargetY, cwTargetYMin(), cwTargetYMax());
+		cwRange.targetSize = clampi((v - 1) / 2, CW_TARGET_SIZE_MIN, CW_TARGET_SIZE_MAX);
+		cwRange.targetY = clampi(cwRange.targetY, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 		return;
-	case CWF_TARGET_SPREAD: cwTargetSpread = v; cwPlaceDummies();  return;
-	case CWF_TARGET_Y:      cwTargetY      = v; cwPlaceDummies();  return;
-	case CWF_TARGET_X:      cwTargetX      = v; cwPlaceDummies();  return;
-	case CWF_TARGET_ARMOR:  cwTargetArmor  = v; cwLayoutDummies(); return;
-	case CWF_SHIP_X:        cwShipX = v; return;
-	case CWF_SHIP_Y:        cwShipY = v; return;
+	case CWF_TARGET_SPREAD: cwRange.targetSpread = v; cwPlaceDummies();  return;
+	case CWF_TARGET_Y:      cwRange.targetY      = v; cwPlaceDummies();  return;
+	case CWF_TARGET_X:      cwRange.targetX      = v; cwPlaceDummies();  return;
+	case CWF_TARGET_ARMOR:  cwRange.targetArmor  = v; cwLayoutDummies(); return;
+	case CWF_SHIP_X:        cwRange.shipX = v; return;
+	case CWF_SHIP_Y:        cwRange.shipY = v; return;
 	default:                return;
 	}
 	customWeaponMaterialize();
+}
+
+static void cwRangeSanitize(void)
+{
+	for (const CwLine *line = cwRangeLines; line->kind != CWL_END; ++line)
+	{
+		int lo, hi;
+		if (line->kind == CWL_FIELD && cwNumericRange(line->id[0], &lo, &hi))
+			cwSetNumeric(line->id[0], cwRangeNumeric(line->id[0]));
+	}
+
+	int order[CW_RANGE_SHIPS_MAX];
+	if (spritePickerIndexOf(order, cwRangeShipOrder(order, NULL), cwRange.ship) < 0)
+		cwRange.ship = cwRangeDefaults.ship;
+	cwTickShipX = cwRange.shipX;
+	cwTickShipY = cwRange.shipY;
 }
 
 // Finalize any in-progress typed value to its field and leave typing mode. An empty
@@ -1617,16 +1669,7 @@ static void cwPerformAction(int a, bool *done, bool *equipped)
 		changed = true;
 		break;
 	case CWA_RANGE_RESET:
-		cwShowStats = true;
-		cwTargetCount = 3;
-		cwTargetSize = 8;
-		cwTargetSpread = 32;
-		cwTargetY = 36;
-		cwTargetX = 76;
-		cwTargetArmor = 120;
-		cwShipX = 70;
-		cwShipY = 116;
-		weaponEditorShip = SHIP_GENCORE_II;
+		cwRange = cwRangeDefaults;
 		cwLayoutDummies();
 		cwSetNotice("Range reset");
 		break;
@@ -1648,14 +1691,6 @@ static void cwPerformAction(int a, bool *done, bool *equipped)
 	}
 }
 
-// A Sprite2 sheet's first offset is the byte length of its JE_word offset table.
-static int cwSprite2Count(Sprite2_array s)
-{
-	if (s.data == NULL || s.size < 2)
-		return 0;
-	return SDL_SwapLE16(((const Uint16 *)s.data)[0]) / 2;
-}
-
 // Resolve raw shot graphics to Sprite2 sheet 8 or 12; blended graphics return false.
 static bool cwResolveShotSprite(JE_word sg, Sprite2_array *sheet, int *index)
 {
@@ -1666,7 +1701,7 @@ static bool cwResolveShotSprite(JE_word sg, Sprite2_array *sheet, int *index)
 		af %= 1000;
 	Sprite2_array s = (af > 500) ? spriteSheet12 : spriteSheet8;
 	int idx = (af > 500) ? (af - 500) : af;
-	if (idx < 1 || idx > cwSprite2Count(s))
+	if (idx < 1 || idx > sprite2_count(&s))
 		return false;
 	*sheet = s;
 	*index = idx;
@@ -1714,6 +1749,120 @@ static bool cwSpriteExtent(JE_word sg, int *ox, int *oy, int *ow, int *oh)
 	return true;
 }
 
+static bool cwFieldHasPicker(int f)
+{
+	return f == CWF_B_SPRITE || f == CWF_ICON || f == CWF_SK_SPRITE || f == CWF_PREVIEW_SHIP;
+}
+
+static void cwServiceNetwork(void)
+{
+	NETWORK_KEEP_ALIVE();
+	while (network_shop_pump())
+		;
+}
+
+static SpritePickerPage cwSheetPage(const char *name, const Sprite2_array *sheet, bool big,
+                                    int count, int valueBase)
+{
+	const SpritePickerPage page = { .name = name, .kind = SPRITE_PICKER_SHEET, .sheet = sheet,
+	                                .big = big, .first = 1, .count = count,
+	                                .valueBase = valueBase };
+	return page;
+}
+
+static void cwPickShipDraw(int value, int px, int py, int w, int h)
+{
+	Sprite2_array *sheet;
+	const JE_word gr = shop_ship_hull((JE_word)value, &sheet);
+	spritePickerDrawHull(sheet, gr, px, py, w, h);
+}
+
+static void cwOpenPicker(int f)
+{
+	if (!cwFieldActive(f))
+	{
+		JE_playSampleNum(S_SPRING);
+		return;
+	}
+	cwCommitNumeric();
+
+	JE_WeaponType *const w = cwCur();
+	const int bullet = cwBulletIndex();
+	SpritePickerPage pages[3];
+	SpritePickerSpec spec = { .pages = pages, .idle = cwServiceNetwork,
+	                          .tick = shipEditorServiceMusic };
+	int rangeShips[CW_RANGE_SHIPS_MAX], rangeCount = 0, value = 0;
+	switch (f)
+	{
+	case CWF_B_SPRITE:
+	{
+		const SpritePickerPage big = { .name = "Misc Sprites", .kind = SPRITE_PICKER_TABLE,
+		                               .table = OPTION_SHAPES,
+		                               .count = (int)sprite_table[OPTION_SHAPES].count,
+		                               .valueBase = 60001, .cellW = 38, .cellH = 38 };
+		spec.title = "Bullet Sprite";
+		pages[spec.pageCount++] =
+		    cwSheetPage("Shots", &spriteSheet8, false, sprite2_count(&spriteSheet8), 0);
+		pages[spec.pageCount++] =
+		    cwSheetPage("More Shots", &spriteSheet12, false, sprite2_count(&spriteSheet12), 500);
+		pages[spec.pageCount++] = big;
+		value = cwSpriteFrame(w->sg[bullet]);
+		break;
+	}
+	case CWF_ICON:
+		spec.title = "Shop Icon";
+		pages[spec.pageCount++] = cwSheetPage("Icons", &shopSpriteSheet, true, CUSTOM_ICON_MAX, 0);
+		value = customWeaponItemGraphic;
+		break;
+	case CWF_SK_SPRITE:
+	{
+		const bool big = (customSidekickMount == 1 || customSidekickMount == 2);
+		spec.title = "Sidekick Body";
+		pages[spec.pageCount++] =
+		    cwSheetPage("Bodies", big ? &spriteSheet10 : &spriteSheet9, big,
+		                customSidekickSpriteCount(customSidekickMount), 0);
+		value = customSidekickSprite;
+		break;
+	}
+	case CWF_PREVIEW_SHIP:
+	{
+		int inGame;
+		rangeCount = cwRangeShipOrder(rangeShips, &inGame);
+		spec.title = "Range Ship";
+		pages[spec.pageCount++] =
+		    spritePickerHullPage("In-Game", rangeShips, inGame, cwPickShipDraw, cwShipName);
+		if (rangeCount > inGame)
+			pages[spec.pageCount++] = spritePickerHullPage("Custom", rangeShips + inGame,
+			                                               rangeCount - inGame, cwPickShipDraw,
+			                                               cwShipName);
+		value = cwRange.ship;
+		break;
+	}
+	default:
+		return;
+	}
+
+	if (!spritePickerRun(&spec, &value))
+		return;
+	if (f == CWF_PREVIEW_SHIP)
+	{
+		if (spritePickerIndexOf(rangeShips, rangeCount, value) >= 0)
+			cwRange.ship = value;
+		return;
+	}
+	if (f == CWF_B_SPRITE && value >= 60000)
+	{
+		w->sg[bullet] = (JE_word)clampi(value, 0, 65535);
+		customWeaponMaterialize();
+	}
+	else
+	{
+		cwSetNumeric(f, value);
+	}
+	if (cwHistoryRecord(-1))
+		cwClearPreviewShots();
+}
+
 static bool cwPreviewingSource(void)
 {
 	if (cwPage != CWP_IMPORT || customBulletPresetCount <= 0 || cwSelRow >= cwNavCount)
@@ -1726,7 +1875,7 @@ static const CustomBulletPreset *cwSource(void)
 {
 	if (customBulletPresetCount <= 0)
 		return NULL;
-	return &customBulletPreset[cwClamp(cwImportSrc, 0, customBulletPresetCount - 1)];
+	return &customBulletPreset[clampi(cwImportSrc, 0, customBulletPresetCount - 1)];
 }
 
 static int cwSlotDamage(const JE_WeaponType *w, int slots, bool *ice, int depth)
@@ -1744,7 +1893,7 @@ static int cwSlotDamage(const JE_WeaponType *w, int slots, bool *ice, int depth)
 			dmg += 1;
 			if (depth > 0 && a - 100 <= WEAP_NUM)
 				dmg += cwSlotDamage(&weapons[a - 100],
-				                    cwClamp(weapons[a - 100].multi, 1, CUSTOM_BULLETS_MAX), ice,
+				                    clampi(weapons[a - 100].multi, 1, CUSTOM_BULLETS_MAX), ice,
 				                    depth - 1);
 		}
 		else
@@ -1757,38 +1906,26 @@ static int cwSlotDamage(const JE_WeaponType *w, int slots, bool *ice, int depth)
 
 static int cwVolleyDamage(const JE_WeaponType *w, bool *ice, int depth)
 {
-	return cwSlotDamage(w, cwClamp(w->multi, 1, CUSTOM_BULLETS_MAX), ice, depth);
+	return cwSlotDamage(w, clampi(w->multi, 1, CUSTOM_BULLETS_MAX), ice, depth);
 }
 
 static int cwDps(const JE_WeaponType *w)
 {
 	bool ice = false;
-	const int multi = cwClamp(w->multi, 1, CUSTOM_BULLETS_MAX);
-	const int slots = MAX(multi, cwClamp(w->max, 1, CUSTOM_BULLETS_MAX));
+	const int multi = clampi(w->multi, 1, CUSTOM_BULLETS_MAX);
+	const int slots = MAX(multi, clampi(w->max, 1, CUSTOM_BULLETS_MAX));
 	return cwSlotDamage(w, slots, &ice, 2) * multi * 35 / (slots * (w->shotrepeat + 1));
-}
-
-static void cwDrawClamp(int x0, int y0, int x1, int y1, int arm, Uint8 c)
-{
-	fill_rectangle_xy(VGAScreen, x0, y0, x0 + arm, y0, c);
-	fill_rectangle_xy(VGAScreen, x1 - arm, y0, x1, y0, c);
-	fill_rectangle_xy(VGAScreen, x0, y1, x0 + arm, y1, c);
-	fill_rectangle_xy(VGAScreen, x1 - arm, y1, x1, y1, c);
-	fill_rectangle_xy(VGAScreen, x0, y0, x0, y0 + arm, c);
-	fill_rectangle_xy(VGAScreen, x1, y0, x1, y0 + arm, c);
-	fill_rectangle_xy(VGAScreen, x0, y1 - arm, x0, y1, c);
-	fill_rectangle_xy(VGAScreen, x1, y1 - arm, x1, y1, c);
 }
 
 static void cwDrawDummy(const CwDummy *t)
 {
-	const int x0 = t->cx - cwTargetSize, y0 = t->cy - cwTargetSize;
-	const int x1 = t->cx + cwTargetSize, y1 = t->cy + cwTargetSize;
+	const int x0 = t->cx - cwRange.targetSize, y0 = t->cy - cwRange.targetSize;
+	const int x1 = t->cx + cwRange.targetSize, y1 = t->cy + cwRange.targetSize;
 
 	if (t->dead > 0)
 	{
 		if ((t->dead / 2) % 2 == 0)
-			cwDrawClamp(x0 - 2, y0 - 2, x1 + 2, y1 + 2, 3, CW_BG_SELECT);
+			draw_corner_clamps(VGAScreen, x0 - 2, y0 - 2, x1 + 2, y1 + 2, 3, CW_BG_SELECT);
 		return;
 	}
 
@@ -1807,7 +1944,7 @@ static void cwDrawDummy(const CwDummy *t)
 
 	fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, body);
 	JE_rectangle(VGAScreen, x0, y0, x1, y1, rim);
-	cwDrawClamp(x0 - 2, y0 - 2, x1 + 2, y1 + 2, 3, CW_BG_CLAMP);
+	draw_corner_clamps(VGAScreen, x0 - 2, y0 - 2, x1 + 2, y1 + 2, 3, CW_BG_CLAMP);
 	fill_rectangle_xy(VGAScreen, x0 + 3, t->cy, t->cx - 2, t->cy, mark);
 	fill_rectangle_xy(VGAScreen, t->cx + 2, t->cy, x1 - 3, t->cy, mark);
 	fill_rectangle_xy(VGAScreen, t->cx, y0 + 3, t->cx, t->cy - 2, mark);
@@ -1820,11 +1957,12 @@ static void cwDrawDummyBars(void)
 	for (int d = 0; d < cwDummyCount; ++d)
 	{
 		const CwDummy *t = &cwDummies[d];
-		if (t->dead > 0 || t->armor >= cwTargetArmor || cwTargetArmor <= 0)
+		if (t->dead > 0 || t->armor >= cwRange.targetArmor || cwRange.targetArmor <= 0)
 			continue;
-		draw_enemy_hp_bar_box(RL_ID_ENEMYBAR_BASE + d, t->cx - cwTargetSize, t->cx + cwTargetSize,
-		                      t->cy - cwTargetSize, t->cy + cwTargetSize + 1,
-		                      (float)t->armor / (float)cwTargetArmor);
+		draw_enemy_hp_bar_box(RL_ID_ENEMYBAR_BASE + d, t->cx - cwRange.targetSize,
+		                      t->cx + cwRange.targetSize, t->cy - cwRange.targetSize,
+		                      t->cy + cwRange.targetSize + 1,
+		                      (float)t->armor / (float)cwRange.targetArmor);
 	}
 }
 
@@ -1836,8 +1974,8 @@ static void cwTickDummies(void)
 		CwDummy *t = &cwDummies[d];
 		if (t->idle < CW_DUMMY_REST_TICKS)
 			++t->idle;
-		else if (t->armor < cwTargetArmor)
-			t->armor = MIN(cwTargetArmor, t->armor + MAX(1, cwTargetArmor / 12));
+		else if (t->armor < cwRange.targetArmor)
+			t->armor = MIN(cwRange.targetArmor, t->armor + MAX(1, cwRange.targetArmor / 12));
 		if (t->hit > 0)
 			--t->hit;
 		if (t->ice > 0)
@@ -1947,8 +2085,8 @@ static void cwCollideShots(void)
 			CwDummy *const t = &cwDummies[d];
 			if (t->dead > 0)
 				continue;
-			const int tx0 = t->cx - cwTargetSize, ty0 = t->cy - cwTargetSize;
-			const int tx1 = t->cx + cwTargetSize, ty1 = t->cy + cwTargetSize;
+			const int tx0 = t->cx - cwRange.targetSize, ty0 = t->cy - cwRange.targetSize;
+			const int tx1 = t->cx + cwRange.targetSize, ty1 = t->cy + cwRange.targetSize;
 			if (sx1 < tx0 || sx0 > tx1 || sy1 < ty0 || sy0 > ty1)
 				continue;
 
@@ -1981,7 +2119,7 @@ static void cwCollideShots(void)
 					t->hit = 3;
 					if (t->armor <= 0)
 					{
-						t->armor = cwTargetArmor;
+						t->armor = cwRange.targetArmor;
 						t->dead = 10;
 						JE_setupExplosion(t->cx - 6, t->cy - 7, 0, 1, false, false);
 					}
@@ -2019,30 +2157,30 @@ static void cwPodPos(const JE_OptionType *o, int side, bool both, int *x, int *y
 	switch (o->tr)
 	{
 	case 2:
-		*x = both ? cwShipX + dir * FRONT_OPTION_SPREAD : cwShipX;
-		*y = cwShipY - 20;
+		*x = both ? cwRange.shipX + dir * FRONT_OPTION_SPREAD : cwRange.shipX;
+		*y = cwRange.shipY - 20;
 		break;
 	case 4:
 	{
 		const int dx = (int)roundf(sinf(cwOrbit) * 20), dy = (int)roundf(cosf(cwOrbit) * 20);
-		*x = cwShipX + (side == 0 ? dx : -dx);
-		*y = cwShipY + (side == 0 ? dy : -dy);
+		*x = cwRange.shipX + (side == 0 ? dx : -dx);
+		*y = cwRange.shipY + (side == 0 ? dy : -dy);
 		break;
 	}
 	case 1:
 	case 3:
-		*x = cwShipX + dir * 15;
-		*y = cwShipY + 10;
+		*x = cwRange.shipX + dir * 15;
+		*y = cwRange.shipY + 10;
 		break;
 	default:
-		*x = cwShipX + (side == 0 ? -14 : 16);
-		*y = cwShipY;
+		*x = cwRange.shipX + (side == 0 ? -14 : 16);
+		*y = cwRange.shipY;
 		break;
 	}
 
 	const bool big = (o->tr == 1 || o->tr == 2);
-	*x = cwClamp(*x, CW_BOX_X0 + (big ? 6 : 0), CW_BOX_X1 - (big ? 18 : 12));
-	*y = cwClamp(*y, CW_BOX_Y0, CW_RANGE_Y1 - (big ? 28 : 14));
+	*x = clampi(*x, CW_BOX_X0 + (big ? 6 : 0), CW_BOX_X1 - (big ? 18 : 12));
+	*y = clampi(*y, CW_BOX_Y0, CW_RANGE_Y1 - (big ? 28 : 14));
 }
 
 typedef struct
@@ -2066,7 +2204,7 @@ static bool cwPreviewPods(CwPods *pods)
 		pods->side[0] = true;
 		pods->port = pods->option->wport;
 		pods->weapon = customBulletPresetWeapon(cwImportSrc, 0, cwImportPwr);
-		pods->charge = cwClamp(cwImportPwr - 1, 0, pods->option->pwr);
+		pods->charge = clampi(cwImportPwr - 1, 0, pods->option->pwr);
 		return pods->weapon > 0;
 	}
 
@@ -2113,7 +2251,7 @@ static void cwFireAndDrawPods(const CwPods *pods)
 			continue;
 
 		CwPodAnim *const anim = &cwPodAnim[side];
-		const unsigned int frames = (unsigned int)cwClamp(o->ani, 1, 20);
+		const unsigned int frames = (unsigned int)clampi(o->ani, 1, 20);
 		if (anim->frame >= frames)
 			anim->frame = 0;
 		if (anim->animating && ++anim->frame >= frames)
@@ -2140,14 +2278,6 @@ static void cwFireAndDrawPods(const CwPods *pods)
 		rl_shot_attach = 0;
 		rl_current_sub_x = rl_current_sub_y = 0.0f;
 	}
-}
-
-static int cwPreviewShip(void)
-{
-	if (weaponEditorShip > 0 && weaponEditorShip <= SHIP_DRAGONWING)
-		return weaponEditorShip;
-	const int ship = player[customWeaponLocalOwner()].items.ship;
-	return (ship != 0) ? ship : 1;
 }
 
 static int cwPreviewSubjectKey(void)
@@ -2206,11 +2336,11 @@ static void cwSimTick(void)
 	rl_mark_residual_base(VGAScreenSeg);
 
 	power = lastPower = 900;
-	rl_set_ship_vel(0, cwShipX - cwTickShipX, cwShipY - cwTickShipY);
-	cwTickShipX = cwShipX;
-	cwTickShipY = cwShipY;
-	player[0].x = cwShipX;
-	player[0].y = cwShipY;
+	rl_set_ship_vel(0, cwRange.shipX - cwTickShipX, cwRange.shipY - cwTickShipY);
+	cwTickShipX = cwRange.shipX;
+	cwTickShipY = cwRange.shipY;
+	player[0].x = cwRange.shipX;
+	player[0].y = cwRange.shipY;
 	mouseX = player[0].x;
 	mouseY = player[0].y;
 
@@ -2244,7 +2374,7 @@ static void cwSimTick(void)
 	JE_clearSPClip();
 
 	rl_current_id = RL_ID_SHIP_BASE + 1;
-	JE_drawItem(1, (JE_word)cwPreviewShip(), player[0].x - 5, player[0].y - 7);
+	JE_drawItem(1, (JE_word)cwRange.ship, player[0].x - 5, player[0].y - 7);
 	rl_current_id = 0;
 	if (usePods)
 		cwFireAndDrawPods(&pods);
@@ -2282,8 +2412,8 @@ static void cwDrawCaption(void)
 	}
 	char fit[48];
 	draw_font_hv_shadow(VGAScreen, CW_BOX_MID, CW_BOX_Y0 + 5,
-	                    cwFitText(caption, CW_BOX_W - 8, fit, sizeof(fit)), small_font, centered,
-	                    hue, value, true, 1);
+	                    font_fit_text(caption, small_font, CW_BOX_W - 8, fit, sizeof(fit)),
+	                    small_font, centered, hue, value, true, 1);
 }
 
 static int cwBarX(int level)
@@ -2317,7 +2447,7 @@ static void cwDrawTray(void)
 	fill_rectangle_xy(VGAScreen, CW_BOX_X0, CW_TRAY_Y0, CW_BOX_X1, CW_BOX_Y1, CW_BG_BAND);
 	fill_rectangle_xy(VGAScreen, CW_BOX_X0, CW_TRAY_Y0, CW_BOX_X1, CW_TRAY_Y0, CW_BG_RIM);
 
-	const int mode = cwClamp(customWeaponEditMode, 0, CUSTOM_WEAPON_MODES - 1);
+	const int mode = clampi(customWeaponEditMode, 0, CUSTOM_WEAPON_MODES - 1);
 	int dps[CUSTOM_POWER_LEVELS], maxDps = 1;
 	for (int i = 0; i < CUSTOM_POWER_LEVELS; ++i)
 	{
@@ -2326,7 +2456,7 @@ static void cwDrawTray(void)
 			maxDps = dps[i];
 	}
 
-	const int sel = cwClamp(customWeaponEditLevel, 0, CUSTOM_POWER_LEVELS - 1);
+	const int sel = clampi(customWeaponEditLevel, 0, CUSTOM_POWER_LEVELS - 1);
 	const int hover = mouseInactive ? -1 : cwChartHover();
 	const int span = CW_BAR_BOT - CW_BAR_TOP + 1;
 	for (int i = 0; i < CUSTOM_POWER_LEVELS; ++i)
@@ -2335,11 +2465,12 @@ static void cwDrawTray(void)
 		const bool used = cwLevelUsed(i);
 		fill_rectangle_xy(VGAScreen, x0, CW_BAR_TOP, x1, CW_BAR_BOT, CW_BG_BAND + 1);
 
-		const int h = MAX(2, (cwClamp(dps[i], 0, maxDps) * span + maxDps / 2) / maxDps);
+		const int h = MAX(2, (clampi(dps[i], 0, maxDps) * span + maxDps / 2) / maxDps);
 		const int shade = !used ? 2 : (i == sel) ? 8 : (i == hover) ? 6 : 4;
 		cwDrawLevelBar(x0, CW_BAR_BOT - h + 1, shade);
 		if (i == sel)
-			cwDrawClamp(x0 - 2, CW_BAR_TOP - 2, x1 + 2, CW_BAR_BOT + 2, 2, CW_BG_SELECT);
+			draw_corner_clamps(VGAScreen, x0 - 2, CW_BAR_TOP - 2, x1 + 2, CW_BAR_BOT + 2, 2,
+			                   CW_BG_SELECT);
 
 		char num[4];
 		snprintf(num, sizeof(num), "%d", i + 1);
@@ -2347,7 +2478,7 @@ static void cwDrawTray(void)
 		                    5, (i == sel) ? 8 : (i == hover) ? 6 : (used ? 3 : 0), true, 1);
 	}
 
-	if (!cwShowStats)
+	if (!cwRange.stats)
 		return;
 
 	const JE_WeaponType *w = cwCur();
@@ -2523,18 +2654,22 @@ static void cwDrawSegmentCorners(int x0, int y0, int x1, int y1)
 		y1 = CW_RANGE_Y1;
 	if (x1 - x0 < 2 || y1 - y0 < 2)
 		return;
-	cwDrawClamp(x0, y0, x1, y1, 1, 0x9C);
+	draw_corner_clamps(VGAScreen, x0, y0, x1, y1, 1, 0x9C);
+}
+
+static bool cwLoupeHit(int mx, int my)
+{
+	return mx >= CW_LOUPE_X0 - 1 && mx <= CW_LOUPE_X0 + CW_LOUPE_W &&
+	       my >= CW_LOUPE_Y1 - CW_LOUPE_W && my <= CW_LOUPE_Y1 + 1;
 }
 
 static void cwDrawLoupe(JE_word sg)
 {
-	enum { LX0 = CW_BOX_X0 + 3, LY1 = CW_RANGE_Y1 - 3, LW = 34 };
-	const int x0 = LX0, y0 = LY1 - LW + 1, x1 = LX0 + LW - 1;
-	fill_rectangle_xy(VGAScreen, x0, y0, x1, LY1, CW_BG_WELL);
-	JE_rectangle(VGAScreen, x0, y0, x1, LY1, CW_BG_SOCKET);
-	cwDrawClamp(x0 - 1, y0 - 1, x1 + 1, LY1 + 1, 3, CW_BG_SELECT);
+	const int x0 = CW_LOUPE_X0, x1 = CW_LOUPE_X0 + CW_LOUPE_W - 1;
+	const int y0 = CW_LOUPE_Y1 - CW_LOUPE_W + 1;
+	editorDrawWell(x0, y0, x1, CW_LOUPE_Y1, CW_BG_WELL, CW_BG_SOCKET, CW_BG_SELECT);
 
-	const int cx = (x0 + x1 + 1) / 2, cy = (y0 + LY1 + 1) / 2;
+	const int cx = (x0 + x1 + 1) / 2, cy = (y0 + CW_LOUPE_Y1 + 1) / 2;
 	Sprite2_array sheet;
 	int index, sx, sy, sw, sh;
 	if (cwResolveShotSprite(sg, &sheet, &index))
@@ -2548,15 +2683,17 @@ static void cwDrawLoupe(JE_word sg)
 		blit_sprite2_scaled(VGAScreen, cx - (sx + sw / 2) * 2, cy - (sy + sh / 2) * 2, sheet, index,
 		                    2, BLIT2_COPY, 0);
 	}
-	else if (sg >= 60000)
+	else if (sg > 60000)
 	{
-		blit_sprite_blend(VGAScreen, cx - 6, cy - 6, OPTION_SHAPES, sg - 60001);
+		spritePickerDrawFit(VGAScreen, OPTION_SHAPES, sg - 60001u, x0 + 2, y0 + 2, CW_LOUPE_W - 4,
+		                    CW_LOUPE_W - 4, 2);
 	}
 }
 
 static bool cwShipHit(int x, int y)
 {
-	return x >= cwShipX - 5 && x <= cwShipX + 18 && y >= cwShipY - 7 && y <= cwShipY + 20;
+	return x >= cwRange.shipX - 5 && x <= cwRange.shipX + 18 && y >= cwRange.shipY - 7 &&
+	       y <= cwRange.shipY + 20;
 }
 
 static int cwDummyHit(int x, int y)
@@ -2564,8 +2701,8 @@ static int cwDummyHit(int x, int y)
 	if (cwDummyCount == 0)
 		return -1;
 	for (int d = 0; d < cwDummyCount; ++d)
-		if (abs(x - cwDummies[d].cx) <= cwTargetSize + 2 &&
-		    abs(y - cwDummies[d].cy) <= cwTargetSize + 2)
+		if (abs(x - cwDummies[d].cx) <= cwRange.targetSize + 2 &&
+		    abs(y - cwDummies[d].cy) <= cwRange.targetSize + 2)
 			return d;
 	return -1;
 }
@@ -2601,14 +2738,16 @@ static void cwDrawOverlay(float alpha)
 	if (overTargets)
 	{
 		for (int d = 0; d < cwDummyCount; ++d)
-			cwDrawClamp(cwDummies[d].cx - cwTargetSize - 4, cwDummies[d].cy - cwTargetSize - 4,
-			            cwDummies[d].cx + cwTargetSize + 4, cwDummies[d].cy + cwTargetSize + 4, 2,
-			            cwDrag == CW_DRAG_TARGETS ? C_HI : CW_BG_SELECT);
+			draw_corner_clamps(VGAScreen, cwDummies[d].cx - cwRange.targetSize - 4,
+			                   cwDummies[d].cy - cwRange.targetSize - 4,
+			                   cwDummies[d].cx + cwRange.targetSize + 4,
+			                   cwDummies[d].cy + cwRange.targetSize + 4, 2,
+			                   cwDrag == CW_DRAG_TARGETS ? C_HI : CW_BG_SELECT);
 	}
 	else if (overShip)
 	{
-		cwDrawClamp(cwShipX - 7, cwShipY - 9, cwShipX + 20, cwShipY + 22, 3,
-		            cwDrag == CW_DRAG_SHIP ? C_HI : CW_BG_SELECT);
+		draw_corner_clamps(VGAScreen, cwRange.shipX - 7, cwRange.shipY - 9, cwRange.shipX + 20,
+		                   cwRange.shipY + 22, 3, cwDrag == CW_DRAG_SHIP ? C_HI : CW_BG_SELECT);
 	}
 }
 
@@ -2722,10 +2861,10 @@ static void cwBuildNav(void)
 		n->id[n->count++] = CWA_EQUIP;
 	n->id[n->count++] = CWA_DONE;
 
-	cwSelRow = cwClamp(cwSelRow, 0, cwNavCount - 1);
+	cwSelRow = clampi(cwSelRow, 0, cwNavCount - 1);
 	if (cwNav[cwSelRow].kind == CWN_TABS)
 		cwSelCell = cwPage;
-	cwSelCell = cwClamp(cwSelCell, 0, cwNav[cwSelRow].count - 1);
+	cwSelCell = clampi(cwSelCell, 0, cwNav[cwSelRow].count - 1);
 }
 
 static void cwCellRect(const CwNav *n, int cell, int *x0, int *y0, int *x1, int *y1)
@@ -2792,7 +2931,7 @@ static void cwDrawField(const CwNav *n, bool sel, Uint32 clock_ms)
 	}
 	else
 	{
-		shown = cwFitText(value, room, fit, sizeof(fit));
+		shown = font_fit_text(value, small_font, room, fit, sizeof(fit));
 	}
 	const int vw = JE_textWidth(shown, small_font);
 	const int left = right - vw - (arrows ? 6 : 0);
@@ -2933,26 +3072,43 @@ static void cwDrawCardArt(int y0, Sprite2_array sheet, unsigned int index, bool 
 static void cwDrawCard(int y0, const char *line1, const char *line2, const char *line3)
 {
 	const int x0 = CW_CARD_X0, x1 = x0 + CW_CARD_W - 1, y1 = y0 + CW_CARD_H - 1;
-	fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, C_WELL);
-	JE_rectangle(VGAScreen, x0, y0, x1, y1, C_DIV);
-	cwDrawClamp(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 3, C_HI);
+	editorDrawWell(x0, y0, x1, y1, C_WELL, C_DIV, C_HI);
 
 	const int tx = x1 + 6, room = CW_INNER_X1 - 2 - tx;
 	char fit[48];
-	draw_font_hv_shadow(VGAScreen, tx, y0 + 4, cwFitText(line1, room, fit, sizeof(fit)), small_font,
+	draw_font_hv_shadow(VGAScreen, tx, y0 + 4,
+	                    font_fit_text(line1, small_font, room, fit, sizeof(fit)), small_font,
 	                    left_aligned, 15, 6, false, 1);
-	draw_font_hv_shadow(VGAScreen, tx, y0 + 14, cwFitText(line2, room, fit, sizeof(fit)),
-	                    small_font, left_aligned, 15, 3, false, 1);
-	draw_font_hv_shadow(VGAScreen, tx, y0 + 24, cwFitText(line3, room, fit, sizeof(fit)),
-	                    small_font, left_aligned, 15, 3, false, 1);
+	draw_font_hv_shadow(VGAScreen, tx, y0 + 14,
+	                    font_fit_text(line2, small_font, room, fit, sizeof(fit)), small_font,
+	                    left_aligned, 15, 3, false, 1);
+	draw_font_hv_shadow(VGAScreen, tx, y0 + 24,
+	                    font_fit_text(line3, small_font, room, fit, sizeof(fit)), small_font,
+	                    left_aligned, 15, 3, false, 1);
+}
+
+static int cwCardY(void)
+{
+	int x0, y0, x1, top;
+	cwCellRect(&cwNav[cwNavCount - 2], 0, &x0, &y0, &x1, &top);
+	return (top + CW_ACTIONS_Y - 4 + 2 - CW_CARD_H) / 2;
+}
+
+static int cwCardPicker(int mx, int my)
+{
+	const int cardY = cwCardY();
+	if (mx < CW_CARD_X0 || mx >= CW_CARD_X0 + CW_CARD_W || my < cardY || my >= cardY + CW_CARD_H)
+		return -1;
+	if (cwPage == CWP_WEAPON)
+		return CWF_ICON;
+	if (cwPage == CWP_SIDEKICK && cwFieldActive(CWF_SK_SPRITE))
+		return CWF_SK_SPRITE;
+	return -1;
 }
 
 static void cwDrawPageExtras(void)
 {
-	int x0, y0, x1, top;
-	cwCellRect(&cwNav[cwNavCount - 2], 0, &x0, &y0, &x1, &top);
-	const int bottom = CW_ACTIONS_Y - 4;
-	const int cardY = (top + bottom + 2 - CW_CARD_H) / 2;
+	const int cardY = cwCardY();
 	switch (cwPage)
 	{
 	case CWP_WEAPON:
@@ -2960,11 +3116,11 @@ static void cwDrawPageExtras(void)
 		char price[32], mount[48];
 		snprintf(price, sizeof(price), "Price %d", customWeaponCost);
 		snprintf(mount, sizeof(mount), "%s, power %d",
-		         cwSlotNames[cwClamp(customWeaponEquipSlot, 0, CUSTOM_EQUIP_COUNT - 1)],
+		         cwSlotNames[clampi(customWeaponEquipSlot, 0, CUSTOM_EQUIP_COUNT - 1)],
 		         customWeaponPowerUse);
 		cwDrawCard(cardY, customWeaponName, mount, price);
 		cwDrawCardArt(cardY, shopSpriteSheet,
-		              (unsigned int)cwClamp(customWeaponItemGraphic, 1, 237), true, 1);
+		              (unsigned int)clampi(customWeaponItemGraphic, 1, CUSTOM_ICON_MAX), true, 1);
 		break;
 	}
 	case CWP_LEVELS:
@@ -3034,7 +3190,7 @@ static void cwDrawPageExtras(void)
 			snprintf(charge, sizeof(charge), "%d charge stages", customWeaponChargeStages);
 		else
 			snprintf(charge, sizeof(charge), "Charge off");
-		cwDrawCard(cardY, cwMountNames[cwClamp(customSidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1)],
+		cwDrawCard(cardY, cwMountNames[clampi(customSidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1)],
 		           frames, charge);
 		const unsigned int sprite =
 		    o->gr[0] + (cwLevelUsed(customWeaponEditLevel) ? customWeaponEditLevel : 0);
@@ -3061,8 +3217,7 @@ static void cwDrawPageExtras(void)
 
 static void cwDrawPanel(Uint32 clock_ms)
 {
-	fill_rectangle_xy(VGAScreen, CW_PAN_X0, CW_PAN_Y0, CW_PAN_X1, CW_PAN_Y1, C_PANEL);
-	JE_rectangle(VGAScreen, CW_PAN_X0, CW_PAN_Y0, CW_PAN_X1, CW_PAN_Y1, C_HI);
+	editorDrawPanel(CW_PAN_X0, CW_PAN_Y0, CW_PAN_X1, CW_PAN_Y1);
 	draw_font_hv_shadow(VGAScreen, CW_PAN_MID, CW_PAN_Y0 + 2, "WEAPON EDITOR", small_font,
 	                    centered, 15, 3, false, 1);
 	fill_rectangle_xy(VGAScreen, CW_INNER_X0, CW_PAN_Y0 + 10, CW_INNER_X1, CW_PAN_Y0 + 10, C_DIV);
@@ -3129,7 +3284,7 @@ static const char *cwHintText(char *buf, size_t n)
 	}
 	default:
 	{
-		const int a = nav->id[cwClamp(cwSelCell, 0, nav->count - 1)];
+		const int a = nav->id[clampi(cwSelCell, 0, nav->count - 1)];
 		if (cwArmed == a)
 		{
 			snprintf(buf, n, "Choose %s again to confirm.", cwActs[a].label);
@@ -3152,7 +3307,7 @@ static void cwSwitchPage(int page, bool intoContent)
 
 	if ((intoContent || wasContent) && cwNavCount > 2)
 	{
-		cwSelRow = cwClamp(cwPageRow[cwPage], 1, cwNavCount - 2);
+		cwSelRow = clampi(cwPageRow[cwPage], 1, cwNavCount - 2);
 		cwSelCell = 0;
 	}
 	else if (wasContent)
@@ -3310,6 +3465,10 @@ static void cwActivate(bool *done, bool *equipped)
 			cwRenameWithKeyboard();
 		}
 #endif
+		else if (cwFieldHasPicker(f))
+		{
+			cwOpenPicker(f);
+		}
 		else if (cwFieldCyclesOnEnter(f))
 		{
 			if (f == CWF_POWER_LEVEL && customWeaponEditLevel == CUSTOM_POWER_LEVELS - 1)
@@ -3520,18 +3679,23 @@ static void cwHandleBoxPress(void)
 	if (mouse_y > CW_RANGE_Y1)
 		return;
 
+	if (cwSelectedField() == CWF_B_SPRITE && cwLoupeHit(mouse_x, mouse_y))
+	{
+		cwOpenPicker(CWF_B_SPRITE);
+		return;
+	}
 	if (cwDummyHit(mouse_x, mouse_y) >= 0)
 	{
 		cwDrag = CW_DRAG_TARGETS;
-		cwDragDx = mouse_x - cwTargetX;
-		cwDragDy = mouse_y - cwTargetY;
+		cwDragDx = mouse_x - cwRange.targetX;
+		cwDragDy = mouse_y - cwRange.targetY;
 		JE_playSampleNum(S_CLICK);
 	}
 	else if (cwShipHit(mouse_x, mouse_y))
 	{
 		cwDrag = CW_DRAG_SHIP;
-		cwDragDx = mouse_x - cwShipX;
-		cwDragDy = mouse_y - cwShipY;
+		cwDragDx = mouse_x - cwRange.shipX;
+		cwDragDy = mouse_y - cwRange.shipY;
 		JE_playSampleNum(S_CLICK);
 	}
 }
@@ -3547,13 +3711,13 @@ static void cwUpdateDrag(void)
 	}
 	if (cwDrag == CW_DRAG_SHIP)
 	{
-		cwShipX = cwClamp(mouse_x - cwDragDx, CW_SHIP_X_MIN, CW_SHIP_X_MAX);
-		cwShipY = cwClamp(mouse_y - cwDragDy, CW_SHIP_Y_MIN, CW_SHIP_Y_MAX);
+		cwRange.shipX = clampi(mouse_x - cwDragDx, CW_SHIP_X_MIN, CW_SHIP_X_MAX);
+		cwRange.shipY = clampi(mouse_y - cwDragDy, CW_SHIP_Y_MIN, CW_SHIP_Y_MAX);
 	}
 	else
 	{
-		cwTargetX = cwClamp(mouse_x - cwDragDx, CW_TARGET_X_MIN, CW_TARGET_X_MAX);
-		cwTargetY = cwClamp(mouse_y - cwDragDy, cwTargetYMin(), cwTargetYMax());
+		cwRange.targetX = clampi(mouse_x - cwDragDx, CW_TARGET_X_MIN, CW_TARGET_X_MAX);
+		cwRange.targetY = clampi(mouse_y - cwDragDy, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 	}
 }
@@ -3568,7 +3732,7 @@ static void cwHandleMouse(int *prev_mx, int *prev_my, bool *done, bool *equipped
 		if (inBox)
 		{
 			const int level =
-			    cwClamp(customWeaponEditLevel - mouse_scroll, 0, CUSTOM_POWER_LEVELS - 1);
+			    clampi(customWeaponEditLevel - mouse_scroll, 0, CUSTOM_POWER_LEVELS - 1);
 			if (level != customWeaponEditLevel)
 			{
 				cwSelectLevel(level);
@@ -3623,6 +3787,11 @@ static void cwHandleMouse(int *prev_mx, int *prev_my, bool *done, bool *equipped
 #endif
 			return;
 		}
+		if (!rightButton && cwFieldHasPicker(f))
+		{
+			cwOpenPicker(f);
+			return;
+		}
 		const int click = rightButton ? -1 : 1;
 		cwAdjustSelected(f, (mouse_x < CW_PAN_MID) ? -click : click);
 		return;
@@ -3652,6 +3821,12 @@ static void cwHandleMouse(int *prev_mx, int *prev_my, bool *done, bool *equipped
 		return;
 	}
 
+	const int cardField = cwCardPicker(mouse_x, mouse_y);
+	if (cardField >= 0)
+	{
+		cwOpenPicker(cardField);
+		return;
+	}
 	if (inBox)
 		cwHandleBoxPress();
 }
@@ -3676,7 +3851,7 @@ bool JE_weaponEditor(bool canEquip)
 	customWeaponMaterialize();
 
 	cwImportSrc =
-	    cwClamp(cwImportSrc, 0, (customBulletPresetCount > 0) ? customBulletPresetCount - 1 : 0);
+	    clampi(cwImportSrc, 0, (customBulletPresetCount > 0) ? customBulletPresetCount - 1 : 0);
 	cwImportPwr = customBulletMaxPower(cwImportSrc);
 	cwBulletSel = 0;
 	cwCanEquip = canEquip;
@@ -3699,6 +3874,7 @@ bool JE_weaponEditor(bool canEquip)
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
 
 	cwClearPreviewShots();
+	cwRangeSanitize();
 	cwLayoutDummies();
 	cwPreviewKey = -1;
 	cwDrag = CW_DRAG_NONE;
@@ -3716,7 +3892,7 @@ bool JE_weaponEditor(bool canEquip)
 	mouse_scroll = 0;
 	mouseTwoFingerRightClick = true;
 
-	const double tick_ms = 3.0 * get_delay_period();
+	const double tick_ms = editorTickMs();
 	double nextTick_ms = SDL_GetTicks();
 	Uint32 clock_ms = 0, clockLast_ms = SDL_GetTicks();
 	int prev_mx = mouse_x, prev_my = mouse_y;
@@ -3726,15 +3902,11 @@ bool JE_weaponEditor(bool canEquip)
 	{
 		// A design session lasts minutes. The peer needs the keep-alives, and this machine
 		// still owes acknowledgements and adoption for whatever the partner does meanwhile.
-		NETWORK_KEEP_ALIVE();
-		while (network_shop_pump())
-			;
+		cwServiceNetwork();
 
 		Uint32 now = SDL_GetTicks();
-		if ((double)now >= nextTick_ms)
+		if (tick_schedule_due(&nextTick_ms, tick_ms, now))
 		{
-			nextTick_ms =
-			    ((double)now - nextTick_ms > 4.0 * tick_ms) ? now + tick_ms : nextTick_ms + tick_ms;
 			cwSimTick();
 			shipEditorServiceMusic();
 		}
@@ -3747,9 +3919,7 @@ bool JE_weaponEditor(bool canEquip)
 		cwDrawPanel(clock_ms);
 		{
 			char hintBuf[96];
-			draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
-			                    cwHintText(hintBuf, sizeof(hintBuf)), small_font, centered, 15, 2,
-			                    false, 1);
+			editorDrawHint(cwHintText(hintBuf, sizeof(hintBuf)));
 		}
 		cwDrawBoxBase();
 		cwCaptureBoxBase();
@@ -3759,7 +3929,8 @@ bool JE_weaponEditor(bool canEquip)
 		service_SDL_events(false);
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
-		rl_set_ship_override(0, (float)(cwShipX - cwTickShipX), (float)(cwShipY - cwTickShipY));
+		rl_set_ship_override(0, (float)(cwRange.shipX - cwTickShipX),
+		                     (float)(cwRange.shipY - cwTickShipY));
 		now = SDL_GetTicks();
 		float alpha = 1.0f;
 		if (smoothMotion && tick_ms > 0.0)

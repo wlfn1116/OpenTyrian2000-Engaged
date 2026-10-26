@@ -22,6 +22,7 @@
 #include "custom_weapon.h"
 #include "debug_menu.h"
 #include "draw.h"
+#include "editor_ui.h"
 #include "episodes.h"
 #include "extra_ships.h"
 #include "file.h"
@@ -43,6 +44,7 @@
 #include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "sprite_picker.h"
 #include "timing.h"
 #include "touch_ui.h"
 #include "video.h"
@@ -88,7 +90,7 @@ enum
 
 static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
 	{ "Ship",           "Choose one of ten custom ships. In flight, hold Tab + its number." },
-	{ "Graphic",        "Choose built-in hull artwork or one of your eight custom banks." },
+	{ "Graphic",        "Hull artwork or a custom bank. Enter or click opens the grid." },
 	{ "Front Weapon",   "The main gun this ship flies with." },
 	{ "Rear Weapon",    "The rear gun, or None." },
 	{ "Special",        "The special weapon, or None." },
@@ -182,9 +184,8 @@ static bool seValueOffered(int row, int v)
 }
 
 // Keep stored IDs stable while placing the two wide hulls together in the picker.
-static int seNextGraphic(int current, int dir)
+static int seGraphicOrder(int *order)
 {
-	JE_byte order[256];
 	const int max = extraShipGraphicMax();
 	int count = 0, nort = 0;
 	for (int graphic = 1; graphic <= max; ++graphic)
@@ -195,19 +196,19 @@ static int seNextGraphic(int current, int dir)
 		}
 
 	for (int graphic = 1; graphic <= MIN(6, max); ++graphic)
-		order[count++] = (JE_byte)graphic;
+		order[count++] = graphic;
 	if (nort != 0)
-		order[count++] = (JE_byte)nort;
+		order[count++] = nort;
 	for (int graphic = 7; graphic <= max; ++graphic)
 		if (graphic != nort)
-			order[count++] = (JE_byte)graphic;
+			order[count++] = graphic;
+	return count;
+}
 
-	if (count == 0)
-		return current;
-	for (int i = 0; i < count; ++i)
-		if (order[i] == current)
-			return order[(i + (dir < 0 ? count - 1 : 1)) % count];
-	return order[dir < 0 ? count - 1 : 0];
+static int seNextGraphic(int current, int dir)
+{
+	int order[256];
+	return spritePickerCycle(order, seGraphicOrder(order), current, dir);
 }
 
 static void seStepField(int slot, int row, int dir)
@@ -242,18 +243,16 @@ bool JE_shipEditorGraphicCycleSelfTest(void)
 	       seNextGraphic(7, -1) == nort && seNextGraphic(nort, -1) == 6;
 }
 
-// Item tables pad names with spaces; layout needs the visible width.
-static const char *seTrimName(const char *name, char *buf, size_t bufSize)
+static const char *seGraphicName(int v, char *buf, size_t bufSize)
 {
-	while (*name == ' ')
-		++name;
-	size_t n = strlen(name);
-	while (n > 0 && name[n - 1] == ' ')
-		--n;
-	if (n >= bufSize)
-		n = bufSize - 1;
-	memcpy(buf, name, n);
-	buf[n] = '\0';
+	if (extraShipGraphicIsCustom(v))
+	{
+		snprintf(buf, bufSize, "Custom Bank %d", v - 7);
+		return buf;
+	}
+	if (extraShipEditorGraphicName(v, buf, bufSize) != NULL)
+		return buf;
+	snprintf(buf, bufSize, "Built-in Hull %d", v);
 	return buf;
 }
 
@@ -266,16 +265,7 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 		snprintf(buf, bufSize, "%d of 10", v);
 		return buf;
 	case SE_ROW_GRAPHIC:
-		if (extraShipGraphicIsCustom(v))
-			snprintf(buf, bufSize, "Custom Bank %d", v - 7);
-		else
-		{
-			const char *const name = extraShipEditorGraphicName(v);
-			if (name != NULL)
-				return seTrimName(name, buf, bufSize);
-			snprintf(buf, bufSize, "Built-in Hull %d", v);
-		}
-		return buf;
+		return seGraphicName(v, buf, bufSize);
 	case SE_ROW_FRONT:
 	case SE_ROW_REAR:
 		if (v == EXTRA_SHIP_CUSTOM_PORT)
@@ -283,19 +273,21 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 			snprintf(buf, bufSize, "%s", customWeaponName[0] != '\0' ? customWeaponName : "Custom Weapon");
 			return buf;
 		}
-		return (v == 0 || v > PORT_NUM) ? "None" : seTrimName(weaponPort[v].name, buf, bufSize);
+		return (v == 0 || v > PORT_NUM) ? "None"
+		                                : JE_trimItemName(weaponPort[v].name, buf, bufSize);
 	case SE_ROW_SPECIAL:
-		return (v == 0 || v > SPECIAL_NUM) ? "None" : seTrimName(special[v].name, buf, bufSize);
+		return (v == 0 || v > SPECIAL_NUM) ? "None"
+		                                   : JE_trimItemName(special[v].name, buf, bufSize);
 	case SE_ROW_LEFT:
 	case SE_ROW_RIGHT:
-		return (v == 0 || v > OPTION_NUM) ? "None" : seTrimName(options[v].name, buf, bufSize);
+		return (v == 0 || v > OPTION_NUM) ? "None" : JE_trimItemName(options[v].name, buf, bufSize);
 	case SE_ROW_GENERATOR:
-		return (v > POWER_NUM) ? "None" : seTrimName(powerSys[v].name, buf, bufSize);
+		return (v > POWER_NUM) ? "None" : JE_trimItemName(powerSys[v].name, buf, bufSize);
 	case SE_ROW_ARMOR:
 		snprintf(buf, bufSize, "%d", v);
 		return buf;
 	case SE_ROW_SHIELD:
-		return (v > SHIELD_NUM) ? "None" : seTrimName(shields[v].name, buf, bufSize);
+		return (v > SHIELD_NUM) ? "None" : JE_trimItemName(shields[v].name, buf, bufSize);
 	}
 	return "";
 }
@@ -328,6 +320,40 @@ static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr, int bank
 	}
 	else
 		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr + pose);
+}
+
+static void sePickDraw(int graphic, int px, int py, int w, int h)
+{
+	Sprite2_array *sheet = &spriteSheet9;
+	const JE_word gr = extraShipGraphicSprite(0, graphic, &sheet);
+	spritePickerDrawHull(sheet, gr, px, py, w, h);
+}
+
+static bool sePickGraphic(int slot)
+{
+	int order[256], hulls[256], banks[256];
+	const int count = seGraphicOrder(order);
+	int hullCount = 0, bankCount = 0;
+	for (int i = 0; i < count; ++i)
+	{
+		if (extraShipGraphicIsCustom(order[i]))
+			banks[bankCount++] = order[i];
+		else
+			hulls[hullCount++] = order[i];
+	}
+
+	const SpritePickerPage pages[2] =
+	{
+		spritePickerHullPage("In-Game", hulls, hullCount, sePickDraw, seGraphicName),
+		spritePickerHullPage("Custom", banks, bankCount, sePickDraw, seGraphicName),
+	};
+	const SpritePickerSpec spec = { .title = "Ship Graphic", .pages = pages, .pageCount = 2,
+	                                .tick = shipEditorServiceMusic };
+	int value = *seField(slot, SE_ROW_GRAPHIC);
+	if (!spritePickerRun(&spec, &value) || !seValueOk(SE_ROW_GRAPHIC, value))
+		return false;
+	*seField(slot, SE_ROW_GRAPHIC) = (JE_byte)value;
+	return true;
 }
 
 enum
@@ -625,13 +651,7 @@ static void seDrawMountBody(SDL_Surface *dst, int scale, int x_offset, bool righ
 	const int hx = (int)((fx + (float)x_offset) * (float)scale + 0.5f);
 	const int hy = (int)(fy * (float)scale + 0.5f);
 	if (big)
-	{
-		blit_sprite2_scaled(dst, hx, hy, spriteSheet10, sprite, scale, BLIT2_COPY, 0);
-		blit_sprite2_scaled(dst, hx + 12 * scale, hy, spriteSheet10, sprite + 1, scale, BLIT2_COPY, 0);
-		blit_sprite2_scaled(dst, hx, hy + 14 * scale, spriteSheet10, sprite + 19, scale, BLIT2_COPY, 0);
-		blit_sprite2_scaled(dst, hx + 12 * scale, hy + 14 * scale, spriteSheet10, sprite + 20,
-		                    scale, BLIT2_COPY, 0);
-	}
+		blit_sprite2x2_scaled(dst, hx, hy, spriteSheet10, sprite, scale, BLIT2_COPY, 0);
 	else
 		blit_sprite2_scaled(dst, hx, hy, spriteSheet9, sprite, scale, BLIT2_COPY, 0);
 
@@ -648,18 +668,6 @@ static void seDrawMountBody(SDL_Surface *dst, int scale, int x_offset, bool righ
 			for (int k = 0; k < scale; ++k, row += dst->pitch)
 				memset(row, p, (size_t)scale);
 		}
-}
-
-static void seDrawDockClamp(int x0, int y0, int x1, int y1, int arm, JE_byte c)
-{
-	fill_rectangle_xy(VGAScreen, x0, y0, x0 + arm, y0, c);
-	fill_rectangle_xy(VGAScreen, x1 - arm, y0, x1, y0, c);
-	fill_rectangle_xy(VGAScreen, x0, y1, x0 + arm, y1, c);
-	fill_rectangle_xy(VGAScreen, x1 - arm, y1, x1, y1, c);
-	fill_rectangle_xy(VGAScreen, x0, y0, x0, y0 + arm, c);
-	fill_rectangle_xy(VGAScreen, x1, y0, x1, y0 + arm, c);
-	fill_rectangle_xy(VGAScreen, x0, y1 - arm, x0, y1, c);
-	fill_rectangle_xy(VGAScreen, x1, y1 - arm, x1, y1, c);
 }
 
 static void seDrawPreviewBackdrop(void)
@@ -687,8 +695,10 @@ static void seDrawPreviewBackdrop(void)
 	                  SE_KICK_L_X + 24, SE_CENTER_Y + 28, SE_BG_WELL);
 	fill_rectangle_xy(VGAScreen, SE_KICK_R_X - 1, SE_CENTER_Y - 1,
 	                  SE_KICK_R_X + 24, SE_CENTER_Y + 28, SE_BG_WELL);
-	seDrawDockClamp(SE_KICK_L_X - 2, SE_CENTER_Y - 2, SE_KICK_L_X + 25, SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
-	seDrawDockClamp(SE_KICK_R_X - 2, SE_CENTER_Y - 2, SE_KICK_R_X + 25, SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
+	draw_corner_clamps(VGAScreen, SE_KICK_L_X - 2, SE_CENTER_Y - 2, SE_KICK_L_X + 25,
+	                   SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
+	draw_corner_clamps(VGAScreen, SE_KICK_R_X - 2, SE_CENTER_Y - 2, SE_KICK_R_X + 25,
+	                   SE_CENTER_Y + 29, 4, SE_BG_CLAMP);
 }
 
 enum { SE_FLASH_MS = 200 };
@@ -1098,43 +1108,21 @@ static bool seCaptureHullInfo(int ship, Sprite2_array **sheet, JE_word *base)
 	return true;
 }
 
-static int seCaptureHullList(JE_byte *list, size_t capacity)
+static bool seCaptureHullOk(int ship)
 {
-	int count = 0;
-	for (int ship = 1; ship <= SHIP_DRAGONWING; ++ship)
-	{
-		Sprite2_array *sheet;
-		JE_word base;
-		if (!seCaptureHullInfo(ship, &sheet, &base))
-			continue;
-
-		bool duplicate = false;
-		for (int i = 0; i < count; ++i)
-			if (ships[list[i]].shipgraphic == ships[ship].shipgraphic)
-			{
-				duplicate = true;
-				break;
-			}
-		if (!duplicate && (size_t)count < capacity)
-			list[count++] = (JE_byte)ship;
-	}
-	return count;
-}
-
-// Keep the stock data-file name in shops and gameplay; only the editor uses the short label.
-static const char *seCaptureHullName(int ship)
-{
-	return ship == 1 ? "USP Talon" : ships[ship].name;
+	Sprite2_array *sheet;
+	JE_word base;
+	return seCaptureHullInfo(ship, &sheet, &base);
 }
 
 bool JE_captureHullListSelfTest(void)
 {
 	char trimmed[16];
-	if (strcmp(seTrimName("  Rum Bottle   ", trimmed, sizeof(trimmed)), "Rum Bottle") != 0)
+	if (strcmp(JE_trimItemName("  Rum Bottle   ", trimmed, sizeof(trimmed)), "Rum Bottle") != 0)
 		return false;
 
 	JE_byte list[SHIP_DRAGONWING];
-	const int count = seCaptureHullList(list, COUNTOF(list));
+	const int count = JE_distinctShipHulls(list, COUNTOF(list), seCaptureHullOk);
 	if (count <= 0)
 		return false;
 
@@ -1736,10 +1724,10 @@ static void seSpriteEditor(int bank)
 	const int act_h = 10;
 	const int panMidX = (panX0 + panX1) / 2;
 	const int labelX = panX0 + 5, valueX = panX1 - 5;
-	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_GUIDE = 0xF8, C_HI = 0xFB, C_SEL = 0xF5 };
 
 	JE_byte captureHulls[SHIP_DRAGONWING];
-	const int captureHullCount = seCaptureHullList(captureHulls, COUNTOF(captureHulls));
+	const int captureHullCount =
+	    JE_distinctShipHulls(captureHulls, COUNTOF(captureHulls), seCaptureHullOk);
 	const int sourceCount = captureHullCount + SE_BANKS - 1;
 	int frame = 3, copyPose = 3, color = 15, source = 0, tool = SES_TOOL_PAINT;
 	static int background = C_PANEL;
@@ -1777,7 +1765,7 @@ static void seSpriteEditor(int bank)
 
 	while (!done)
 	{
-		setDelay(3);
+		setDelay(EDITOR_TICK_DELAY);
 		shipEditorServiceMusic();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
@@ -1873,8 +1861,9 @@ static void seSpriteEditor(int bank)
 			                  SE_FRAME_W, SE_FRAME_H, (Uint8)background);
 			seDrawFramePx(STRIP_X + f * 26, STRIP_Y, bank, f + 1);
 			if (f + 1 == frame)
-				seDrawDockClamp(STRIP_X + f * 26 - 1, STRIP_Y - 1,
-				                STRIP_X + f * 26 + SE_FRAME_W, STRIP_Y + SE_FRAME_H, 4, SE_BG_SELECT);
+				draw_corner_clamps(VGAScreen, STRIP_X + f * 26 - 1, STRIP_Y - 1,
+				                   STRIP_X + f * 26 + SE_FRAME_W, STRIP_Y + SE_FRAME_H, 4,
+				                   SE_BG_SELECT);
 		}
 
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
@@ -1902,7 +1891,7 @@ static void seSpriteEditor(int bank)
 					snprintf(raw, sizeof(raw), "Custom %d",
 					         seCustomSourceBank(source - captureHullCount, bank));
 				else if (captureHullCount > 0)
-					seTrimName(seCaptureHullName(captureHulls[source]), raw, sizeof(raw));
+					JE_shipShortName(captureHulls[source], raw, sizeof(raw));
 				else
 					SDL_strlcpy(raw, "None", sizeof(raw));
 				break;
@@ -2013,9 +2002,7 @@ static void seSpriteEditor(int bank)
 		                       : selected < SES_NUDGE_LEFT ? sesPaletteHelp[selected - SES_PAL_COLOR]
 		                       : selected < SES_ACT_CAPTURE ? sesNudgeHelp[selected - SES_NUDGE_LEFT]
 		                       : sesActs[selected - SES_ACT_CAPTURE].help;
-		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
-		                    notice[0] != '\0' ? notice : help,
-		                    small_font, centered, 15, 2, false, 1);
+		editorDrawHint(notice[0] != '\0' ? notice : help);
 
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
@@ -2419,7 +2406,7 @@ static void seSpriteEditor(int bank)
 			}
 			else if (captureHullCount > 0 && seCaptureHull(bank, captureHulls[source], first, last))
 			{
-				seTrimName(seCaptureHullName(captureHulls[source]), name, sizeof(name));
+				JE_shipShortName(captureHulls[source], name, sizeof(name));
 				taken = true;
 			}
 			if (taken)
@@ -2556,7 +2543,6 @@ void JE_shipEditor(void)
 	const int boxMid = (SE_BOX_X0 + SE_BOX_X1 + 1) / 2;
 	const int sideLabelsY = SE_BOX_Y0 + 104;
 	const int itemLabelsY = SE_BOX_Y0 + 153, hpBarsY = SE_BOX_Y0 + 166;
-	enum { C_PANEL = 0xF1, C_DIV = 0xF6, C_HI = 0xFB, C_SEL = 0xF5 };
 
 	int slot = 1;
 	int selected = 0;
@@ -2580,7 +2566,7 @@ void JE_shipEditor(void)
 
 	while (!done)
 	{
-		setDelay(3);
+		setDelay(EDITOR_TICK_DELAY);
 		shipEditorServiceMusic();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
@@ -2658,8 +2644,8 @@ void JE_shipEditor(void)
 			for (int s = 1; s <= SHIELD_NUM; ++s)
 				if (shields[s].mpwr > shieldMax)
 					shieldMax = shields[s].mpwr;
-			seDrawDockClamp(SE_BOX_X0 + 9, hpBarsY - 3,
-			                SE_BOX_X0 + 12 + 112 + 2, hpBarsY + 2 * ENEMY_BAR_THICK + 1, 2, SE_BG_CLAMP);
+			draw_corner_clamps(VGAScreen, SE_BOX_X0 + 9, hpBarsY - 3, SE_BOX_X0 + 12 + 112 + 2,
+			                   hpBarsY + 2 * ENEMY_BAR_THICK + 1, 2, SE_BG_CLAMP);
 			hud_draw_ship_hp_bars_preview(SE_BOX_X0 + 12, hpBarsY, 112,
 			                              shields[*seField(slot, SE_ROW_SHIELD)].mpwr, (uint)shieldMax,
 			                              *seField(slot, SE_ROW_ARMOR), 30);
@@ -2745,9 +2731,7 @@ void JE_shipEditor(void)
 		                         : selected == SE_TOGGLE_STARS              ? seStarsHelp
 		                         : selected == SE_ACT_REVERT && revertArmed ? seRevertConfirmHelp
 		                         : seActs[selected - SE_ACT_SPRITES].help;
-		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12,
-		                    notice[0] != '\0' ? notice : help,
-		                    small_font, centered, 15, 2, false, 1);
+		editorDrawHint(notice[0] != '\0' ? notice : help);
 
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
@@ -2852,6 +2836,11 @@ void JE_shipEditor(void)
 				seFlashRegion(fx0, fy0, fx1, fy1);
 				JE_playSampleNum(S_CURSOR);
 			}
+			else if (boxRow == SE_ROW_GRAPHIC && dir > 0)
+			{
+				selected = boxRow;
+				sePickGraphic(slot);
+			}
 			else if (boxRow >= 0)
 			{
 				seStepField(slot, boxRow, dir);
@@ -2867,6 +2856,10 @@ void JE_shipEditor(void)
 					const int step = (mouse_x < panMidX) ? -dir : dir;
 					slot += (step < 0) ? (slot > 1 ? -1 : 9) : (slot < 10 ? 1 : -9);
 					JE_playSampleNum(S_CURSOR);
+				}
+				else if (hover == SE_ROW_GRAPHIC && dir > 0)
+				{
+					sePickGraphic(slot);
 				}
 				else if (hover < SE_ROW_COUNT)
 				{
@@ -2953,6 +2946,8 @@ void JE_shipEditor(void)
 					revert = true;
 				else if (selected == SE_ACT_DONE)
 					leave = true;
+				else if (selected == SE_ROW_GRAPHIC)
+					sePickGraphic(slot);
 				else
 					dir = 1;  // Enter cycles a field forward
 				break;

@@ -201,6 +201,7 @@
     <ClCompile Include="..\src\menus\credits.c" />
     <ClCompile Include="..\src\menus\debug_levels.c" />
     <ClCompile Include="..\src\menus\debug_menu.c" />
+    <ClCompile Include="..\src\menus\editor_ui.c" />
     <ClCompile Include="..\src\menus\game_menu.c" />
     <ClCompile Include="..\src\menus\help.c" />
     <ClCompile Include="..\src\menus\high_scores.c" />
@@ -210,6 +211,7 @@
     <ClCompile Include="..\src\menus\save_menu.c" />
     <ClCompile Include="..\src\menus\setup_menu.c" />
     <ClCompile Include="..\src\menus\ship_editor.c" />
+    <ClCompile Include="..\src\menus\sprite_picker.c" />
     <ClCompile Include="..\src\menus\sprite_viewer.c" />
     <ClCompile Include="..\src\menus\title.c" />
     <ClCompile Include="..\src\menus\weapon_editor.c" />
@@ -420,6 +422,7 @@
     <ClInclude Include="..\src\menus\credits.h" />
     <ClInclude Include="..\src\menus\debug_levels.h" />
     <ClInclude Include="..\src\menus\debug_menu.h" />
+    <ClInclude Include="..\src\menus\editor_ui.h" />
     <ClInclude Include="..\src\menus\game_menu.h" />
     <ClInclude Include="..\src\menus\help.h" />
     <ClInclude Include="..\src\menus\high_scores.h" />
@@ -429,6 +432,7 @@
     <ClInclude Include="..\src\menus\save_menu.h" />
     <ClInclude Include="..\src\menus\setup_menu.h" />
     <ClInclude Include="..\src\menus\ship_editor.h" />
+    <ClInclude Include="..\src\menus\sprite_picker.h" />
     <ClInclude Include="..\src\menus\sprite_viewer.h" />
     <ClInclude Include="..\src\menus\title.h" />
     <ClInclude Include="..\src\menus\weapon_editor.h" />
