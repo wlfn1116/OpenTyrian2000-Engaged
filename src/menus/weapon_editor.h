@@ -15,11 +15,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef WEAPON_CREATOR_H
-#define WEAPON_CREATOR_H
+#ifndef WEAPON_EDITOR_H
+#define WEAPON_EDITOR_H
 
 #include "opentyr.h"
 
-bool JE_customWeaponCreator(bool canEquip);
+bool JE_weaponEditor(bool canEquip);
 
-#endif // WEAPON_CREATOR_H
+#endif // WEAPON_EDITOR_H

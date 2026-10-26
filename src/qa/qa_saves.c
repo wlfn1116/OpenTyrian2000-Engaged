@@ -18,6 +18,7 @@
 #include "save_menu.h"
 #include "savegame.h"
 #include "shots.h"
+#include "sprite.h"
 
 #include "SDL.h"
 
@@ -49,6 +50,22 @@ void qa_test_config_option_removal(void)
 
 	config_deinit(&config);
 	qa_check(config.sections_count == 0 && config.sections == NULL, "config teardown resets section ownership");
+}
+
+static int qa_shot_sway2(JE_byte circlesize)
+{
+	const int size = (circlesize > 19) ? circlesize % 20 : circlesize;
+	int dev = size / 2, dir = 1, pos = 0, lo = 0, hi = 0;
+	for (int tick = 0; size > 0 && tick < 4 * size; ++tick)
+	{
+		dev += dir;
+		pos += dev;
+		if (abs(dev) == size)
+			dir = -dir;
+		lo = MIN(lo, pos);
+		hi = MAX(hi, pos);
+	}
+	return lo + hi;
 }
 
 void qa_test_weapon_editor(void)
@@ -132,34 +149,119 @@ void qa_test_weapon_editor(void)
 	qa_check(customWeaponChargeStages == 1,
 	         "weapon editor charge pool keeps one valid stage");
 
-	customWeaponResetAllLevels();
-	customWeaponSelectMode(0);
-	for (int anchor = 0; anchor < CUSTOM_POWER_LEVELS; anchor += CUSTOM_POWER_LEVELS - 1)
+	int widePreset = -1, stockPreset = -1, beamPreset = -1;
+	for (int i = 0; i < customBulletPresetCount; ++i)
 	{
-		customWeaponSelectLevel(anchor);
-		customWeaponAutoScaleLevels();
-		bool mirrored = true, bounded = true;
-		int dps[CUSTOM_POWER_LEVELS];
-		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
-		{
-			const JE_WeaponType *const w = &customWeaponRaw[0][p];
-			int bx[CUSTOM_BULLETS_MAX], volley = 0;
-			for (int i = 0; i < w->multi; ++i)
-			{
-				int j = i;
-				for (; j > 0 && bx[j - 1] > w->bx[i]; --j)
-					bx[j] = bx[j - 1];
-				bx[j] = w->bx[i];
-				volley += w->attack[i];
-			}
-			for (int i = 0; i < w->multi; ++i)
-				mirrored &= bx[i] == -bx[w->multi - 1 - i];
-			bounded &= w->multi >= 1 && w->multi <= 8 && w->max == w->multi;
-			dps[p] = volley * 35 / (w->shotrepeat + 1);
-		}
-		qa_check(mirrored && bounded && dps[CUSTOM_POWER_LEVELS - 1] > dps[0] * 4,
-		         "auto-scale builds centred, bounded, rising levels from either end");
+		if (strcmp(customBulletPreset[i].name, "Plasma Storm") == 0)
+			widePreset = i;
+		if (strcmp(customBulletPreset[i].name, "HotDog Front") == 0)
+			stockPreset = i;
+		if (strcmp(customBulletPreset[i].name, "Zica Laser") == 0)
+			beamPreset = i;
 	}
+	Uint32 beamLayout[CUSTOM_SPREAD_COUNT];
+	int beamLayouts = 0;
+	for (int spread = CUSTOM_SPREAD_ARROW; spread < CUSTOM_SPREAD_COUNT; ++spread)
+	{
+		customWeaponSpread = spread;
+		bool mirrored = true, bounded = true, rising = true, stacked = false;
+		for (int pass = 0; pass < 3; ++pass)
+		{
+			const int source = (pass == 0) ? -1 : (pass == 1) ? widePreset : beamPreset;
+			if (pass > 0 && source < 0)
+				continue;
+			if (source < 0)
+				customWeaponResetAllLevels();
+			else
+				customWeaponImportAllLevels(source);
+			customWeaponSelectMode(0);
+			for (int anchor = 0; anchor < CUSTOM_POWER_LEVELS; anchor += CUSTOM_POWER_LEVELS - 1)
+			{
+				customWeaponSelectLevel(anchor);
+				customWeaponAutoScaleLevels();
+				int dps[CUSTOM_POWER_LEVELS];
+				for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
+				{
+					const JE_WeaponType *const w = &customWeaponRaw[0][p];
+					const int slots = (w->max > w->multi) ? w->max : w->multi;
+					const int sway2 = qa_shot_sway2(w->circlesize);
+					int centre[CUSTOM_BULLETS_MAX], cycle = 0, left = 999, right = -999;
+					for (int i = 0; i < slots && i < CUSTOM_BULLETS_MAX; ++i)
+					{
+						const int width = (w->sg[i] > 60000)
+						                ? get_sprite_width(OPTION_SHAPES, w->sg[i] - 60001)
+						                : 12;
+						const int c = 2 * w->bx[i] + sway2;
+						int j = i;
+						for (; j > 0 && centre[j - 1] > c; --j)
+							centre[j] = centre[j - 1];
+						centre[j] = c;
+						left = MIN(left, w->bx[i] + 1);
+						right = MAX(right, w->bx[i] + width);
+						cycle += w->attack[i];
+					}
+					if (pass == 1)
+						mirrored &= p == anchor || abs(left + right + sway2 - 13) <= 2;
+					else if (source < 0 || p != anchor)
+						for (int i = 0; i < slots && i < CUSTOM_BULLETS_MAX; ++i)
+							mirrored &= abs(centre[i] + centre[slots - 1 - i]) <= (sway2 & 1) * 2;
+					bounded &= w->multi >= 1 && slots <= CUSTOM_BULLETS_MAX &&
+					           slots % w->multi == 0;
+					dps[p] = cycle * w->multi * 35 / (slots * (w->shotrepeat + 1));
+					const int multi = MAX(w->multi, 1), last = MIN(slots, CUSTOM_BULLETS_MAX);
+					for (int i = 0; i < last && p != anchor; ++i)
+						for (int j = i + 1; j < MIN((i / multi + 1) * multi, last); ++j)
+							stacked |= w->sg[i] == w->sg[j] && w->bx[i] == w->bx[j] &&
+							           w->by[i] == w->by[j] && w->sx[i] == w->sx[j] &&
+							           w->sy[i] == w->sy[j];
+				}
+				if (source < 0)
+					rising &= dps[CUSTOM_POWER_LEVELS - 1] > dps[0] * 4;
+				if (pass == 2 && anchor == 0)
+				{
+					const JE_WeaponType *const top = &customWeaponRaw[0][CUSTOM_POWER_LEVELS - 1];
+					const int topSlots = (top->max > top->multi) ? top->max : top->multi;
+					Uint32 layout = 0;
+					for (int i = 0; i < topSlots && i < CUSTOM_BULLETS_MAX; ++i)
+						layout += (Uint32)((top->bx[i] + 128) * 2654435761u) ^
+						          (Uint32)((top->by[i] + 128) * 40503u) ^
+						          (Uint32)((top->sx[i] + 128) * 97u + (top->sy[i] + 128));
+					bool seen = false;
+					for (int k = 0; k < beamLayouts && !seen; ++k)
+						seen = beamLayout[k] == layout;
+					if (!seen)
+						beamLayout[beamLayouts++] = layout;
+				}
+			}
+		}
+		qa_check(mirrored && bounded && rising && !stacked,
+		         "auto-scale builds centred, bounded, rising, unstacked levels with every spread");
+	}
+	qa_check(beamPreset < 0 || beamLayouts >= 10,
+	         "auto-scale spreads give a ship-locked laser distinct layouts");
+	if (stockPreset >= 0)
+	{
+		customWeaponImportAllLevels(stockPreset);
+		customWeaponSelectMode(0);
+		customWeaponSelectLevel(0);
+		customWeaponSpread = CUSTOM_SPREAD_STOCK;
+		customWeaponAutoScaleLevels();
+		const bool followed = customWeaponLastSpread == CUSTOM_SPREAD_STOCK;
+		customWeaponSpread = CUSTOM_SPREAD_FAN;
+		customWeaponAutoScaleLevels();
+		const bool chosen = customWeaponLastSpread == CUSTOM_SPREAD_FAN;
+		customWeaponSpread = CUSTOM_SPREAD_AUTO;
+		bool varied = true;
+		for (int press = 0; press < 8; ++press)
+		{
+			const int before = customWeaponLastSpread;
+			customWeaponAutoScaleLevels();
+			varied &= customWeaponLastSpread != before;
+		}
+		qa_check(followed && chosen && varied,
+		         "auto-scale uses a chosen spread on stock weapons and Auto changes each press");
+	}
+	customWeaponSpread = CUSTOM_SPREAD_AUTO;
 
 	customWeaponModes = 999;
 	customWeaponCost = 1000000;

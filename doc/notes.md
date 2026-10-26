@@ -140,19 +140,72 @@ through cursor wraps and rewinds.
 
 ### CRT filter
 
-Every present path goes through `present_frame`, which draws the frame and then
-the filter's layers over `dst`, before the touch controls. Scanlines are a
-1 x 400 strip (light, then dark, per game row) multiplied over the frame, so
-they follow the game's rows at any window size. Full then adds the glow, a
-3-column mask at output resolution and a vignette, in that order; the glow is
-added after the scanlines so it fills their gaps where the picture is bright.
+Every present path goes through `present_frame`. It draws the frame and the CRT
+layers; the caller then draws the touch controls unfiltered. The layers belong
+to `main_window_renderer` and are released before it is destroyed. A CPU
+renderer hides the CRT Filter submenu, whose settings are display preferences
+outside the enhancement presets. Tuning lives in `crt_looks[]` (per Strength)
+and `crt_bends[]` (per Curvature).
 
-The glow halves the frame through render targets until it is under 3/8 of the
-game's height. SDL2 reads a texture's scale mode when its command queue runs,
-so `crt_glow_from` flushes before it restores the frame's own mode. The layers
-belong to `main_window_renderer` and are released before it is destroyed. A
-CPU renderer, or one that refuses multiply blending, hides the setting. The CRT
-Filter is a display preference and stays outside the enhancement presets.
+Every layer uses SDL's standard blend modes. The Vita's GXM renderer has no
+custom ones.
+
+Lines:
+
+- `crt_line_weights` gives every output row a weight, snapped to the rows the
+  frame lands on (`crt_game_row`: the GPU's nearest mapping, or the Native
+  scaler's floor mapping when the frame texture is 1:1). The gap sits at each
+  game row's bottom edge.
+- No lines under 400 output rows. Weights under 26 of 255 become 0, which keeps
+  the redraw to the gap and shoulder rows.
+- Those rows are drawn again from the frame with `SDL_BLENDMODE_MUL` and per-row
+  vertex colours (`SDL_RenderGeometry`): c * (m + fill * (1 - m) * c), so bright
+  channels fill their own gap.
+- Without geometry (it fails, or SDL is older than 2.0.18) a 1 x H MOD strip
+  draws plain lines.
+
+Glow (Full):
+
+- Halve the frame to at most 400 rows, copy it to 356x200, and cube it with two
+  MOD draws so only bright pixels glow.
+- Shrink to 178x100 and 89x50 with a [1 3 3 1] kernel: a half-weight center draw
+  plus four diagonal ADD draws at alpha 32.
+- Blend 89x50 back into 178x100 and upsample to 356x200. Handheld screens stop
+  at 89x50.
+- SDL2 reads a texture's scale mode when its command queue runs, so
+  `crt_glow_from` flushes before it restores the frame's own mode.
+
+Mask and vignette (Full):
+
+- The mask is an RGB aperture grille drawn with MUL. Each channel's multiplier
+  is rgb + 1 - alpha, so lit and unlit columns average 1.
+- A phosphor is round(output pixels per game pixel / 5) wide. The mask is
+  skipped under 3 output pixels per game pixel.
+- The vignette is crtemu's falloff, flattened.
+
+Curvature:
+
+- `crt_curve_begin` renders the frame, lines and glow into a target the size of
+  `dst`. With the filter on and `dst` under 1000 rows, the target is scaled by
+  the smallest whole factor that reaches 1000 rows, so 1-pixel lines survive
+  the resample.
+- `crt_curve_end` draws that target through a 64x36 mesh built in picture space,
+  each vertex placed with the inverse bend. The mask and vignette are drawn
+  flat afterwards.
+- The bend maps screen point p to picture point p * (1 + b * q^2) per axis, with
+  q the other axis, in -1..1 coordinates. Edge midpoints stay put and the whole
+  picture stays visible.
+- `mapWindowPointToScreen` and its float variant apply the forward bend
+  (`crt_curve_source`) with the last present's bend (`crt_curve_shown`).
+  Relative motion is not bent.
+- Curvature also runs with the filter off, at 1x.
+
+`crt_on_handheld_screen` (the Vita, phones and tablets always, the Switch below
+1080 output rows) skips the mask, the second glow scale and curvature.
+`crt_curvature_available` hides the Curvature row where it can never run.
+`video_test_crt_rows` and `video_test_crt_curve`, run from
+`qa_test_present_paths`, cover the snapping, mask balance, phosphor widths, bend
+inverse, supersample factor and pointer mapping.
 
 ### Coordinates
 
@@ -167,7 +220,9 @@ The frame is 356x200. The playfield is 299x184 and the HUD is 57 pixels wide.
 
 SDL window events use points; renderers use output pixels on high-DPI backends.
 Size render rectangles from `video_output_size`, and convert input with
-`video_output_pixel_scale`.
+`video_output_pixel_scale`. Pointer positions must go through
+`mapWindowPointToScreen` or its float variant, which also follow the CRT
+Curvature bend.
 
 Validate every `Sprite2_array` index. A 2x2 sprite reads the base index plus 1,
 19, and 20.
@@ -954,7 +1009,7 @@ Use `extraShipsFor(seat)` for simulation lookups.
 
 Weapon byte 255 refers to the custom weapon owned by the same seat. Resolve it at
 equip time because reserved ports differ by player. The reference works even
-when the local Weapon Creator setting is off.
+when the local Custom Weapons setting is off.
 
 ### Custom weapons
 

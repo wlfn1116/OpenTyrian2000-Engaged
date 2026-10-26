@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include "weapon_creator.h"
+#include "weapon_editor.h"
 
 #include "config.h"
 #include "console_platform.h"
@@ -37,6 +37,7 @@
 #include "player.h"
 #include "render_list.h"
 #include "sfx.h"
+#include "ship_editor.h"
 #include "shots.h"
 #include "sndmast.h"
 #include "sparks.h"
@@ -51,7 +52,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Custom Weapon Creator: live firing preview on the left, editor on the right.
+/* Weapon Editor: live firing preview on the left, edit panel on the right.
  * Every edit materializes the weapon again so the preview stays current. */
 
 enum
@@ -78,6 +79,7 @@ enum
 	CWF_BLAST,
 	CWF_BULLET_SEL,
 	CWF_B_SPRITE,
+	CWF_B_SPARKS,
 	CWF_B_DAMAGE,
 	CWF_B_CHAIN,
 	CWF_B_LIFE,
@@ -96,14 +98,15 @@ enum
 	CWF_SHOW_TARGETS,
 	CWF_SHOW_STATS,
 	CWF_STARS,
-	CWF_TARGET_COUNT,
 	CWF_TARGET_SIZE,
 	CWF_TARGET_SPREAD,
-	CWF_TARGET_HEIGHT,
+	CWF_TARGET_Y,
 	CWF_TARGET_X,
 	CWF_TARGET_ARMOR,
+	CWF_PREVIEW_SHIP,
 	CWF_SHIP_X,
 	CWF_SHIP_Y,
+	CWF_SPREAD,
 	CWF_COUNT
 };
 
@@ -131,6 +134,7 @@ static const struct { const char *label, *help; } cwFields[CWF_COUNT] =
 	{ "Blast FX",        "Palette filter of the impact flash." },
 	{ "Bullet",          "Which bullet the rows below edit." },
 	{ "Sprite",          "Bullet sprite number." },
+	{ "Sparks",          "Trail sparks in the bullet's own colour." },
 	{ "Damage",          "Damage per hit. 99 freezes as Ice." },
 	{ "Explode To",      "On a hit, burst into another weapon instead." },
 	{ "Life",            "Lifetime in ticks, or an aim or animation code." },
@@ -146,17 +150,18 @@ static const struct { const char *label, *help; } cwFields[CWF_COUNT] =
 	{ "Frame Step",      "Sprite gap between body animation frames." },
 	{ "Animate",         "Animate the body always or once per shot." },
 	{ "Charge Stages",   "Charge shots. Each stage is a level to edit." },
-	{ "Targets",         "Practice targets show hits, ice, chains and homing." },
+	{ "Targets",         "Practice targets that show hits, ice and homing." },
 	{ "Stats",           "Damage and fire rate under the level chart." },
 	{ "Star Background", "Show the drifting stars behind the preview." },
-	{ "Target Count",    "How many practice targets. 0 hides them." },
 	{ "Target Size",     "Width of the practice targets." },
 	{ "Target Spread",   "Space between the targets." },
-	{ "Target Height",   "How high the targets sit. Drag them too." },
+	{ "Target Y",        "How high the targets sit. Drag them too." },
 	{ "Target X",        "Slide the target row. Drag it too." },
 	{ "Target Armor",    "Target toughness. Higher drains slower." },
+	{ "Ship",            "The ship flying the preview. Equipped is your own." },
 	{ "Ship X",          "Move the ship. Drag it too." },
 	{ "Ship Y",          "Move the ship. Drag it too." },
+	{ "Spread",          "How Auto-Scale lays out bullets. Auto picks at random." },
 };
 
 enum
@@ -284,6 +289,7 @@ static const CwLine cwBulletLines[] =
 	{ CWL_FIELD, 1, { CWF_BULLET_SEL } },
 	{ CWL_BUTTONS, 2, { CWA_ADD_BULLET, CWA_REMOVE_BULLET } },
 	{ CWL_FIELD, 1, { CWF_B_SPRITE } },
+	{ CWL_FIELD, 1, { CWF_B_SPARKS } },
 	{ CWL_FIELD, 1, { CWF_B_DAMAGE } },
 	{ CWL_FIELD, 1, { CWF_B_CHAIN } },
 	{ CWL_FIELD, 1, { CWF_B_LIFE } },
@@ -299,6 +305,7 @@ static const CwLine cwLevelsLines[] =
 	{ CWL_FIELD, 1, { CWF_POWER_LEVEL } },
 	{ CWL_FIELD, 1, { CWF_TWO_MODES } },
 	{ CWL_FIELD, 1, { CWF_FIRE_MODE } },
+	{ CWL_FIELD, 1, { CWF_SPREAD } },
 	{ CWL_GAP, 0, { 0 } },
 	{ CWL_BUTTONS, 2, { CWA_AUTOSCALE, CWA_COPY_ALL } },
 	{ CWL_BUTTONS, 2, { CWA_COPY_LEVEL, CWA_PASTE_LEVEL } },
@@ -335,12 +342,12 @@ static const CwLine cwRangeLines[] =
 	{ CWL_FIELD, 1, { CWF_SHOW_TARGETS } },
 	{ CWL_FIELD, 1, { CWF_SHOW_STATS } },
 	{ CWL_FIELD, 1, { CWF_STARS } },
-	{ CWL_FIELD, 1, { CWF_TARGET_COUNT } },
 	{ CWL_FIELD, 1, { CWF_TARGET_SIZE } },
 	{ CWL_FIELD, 1, { CWF_TARGET_SPREAD } },
-	{ CWL_FIELD, 1, { CWF_TARGET_HEIGHT } },
+	{ CWL_FIELD, 1, { CWF_TARGET_Y } },
 	{ CWL_FIELD, 1, { CWF_TARGET_X } },
 	{ CWL_FIELD, 1, { CWF_TARGET_ARMOR } },
+	{ CWL_FIELD, 1, { CWF_PREVIEW_SHIP } },
 	{ CWL_FIELD, 1, { CWF_SHIP_X } },
 	{ CWL_FIELD, 1, { CWF_SHIP_Y } },
 	{ CWL_BUTTONS, 1, { CWA_RANGE_RESET } },
@@ -459,16 +466,17 @@ static int cwImportSrc = 0;
 static int cwImportPwr = 1;
 static int cwBulletSel = 0;
 
-static bool cwShowTargets  = true;
 static bool cwShowStats    = true;
 static int  cwTargetCount  = 3;
 static int  cwTargetSize   = 8;
 static int  cwTargetSpread = 32;
-static int  cwTargetHeight = 48;
+static int  cwTargetY      = 36;
 static int  cwTargetX      = 76;
 static int  cwTargetArmor  = 120;
 static int  cwShipX = 70;
-static int  cwShipY = 110;
+static int  cwShipY = 116;
+static int  cwTickShipX = 70;
+static int  cwTickShipY = 116;
 
 static JE_WeaponType cwLevelClipboard;
 static bool cwLevelClipboardSet = false;
@@ -555,7 +563,7 @@ static void cwPlaceDummies(void)
 		const int off = 2 * i - (cwDummyCount - 1);
 		cwDummies[i].cx = cwClamp(cwTargetX + off * cwTargetSpread / 2,
 		                          CW_BOX_X0 + cwTargetSize + 2, CW_BOX_X1 - cwTargetSize - 2);
-		cwDummies[i].cy = cwClamp(cwTargetHeight, cwTargetYMin(), cwTargetYMax());
+		cwDummies[i].cy = cwClamp(cwTargetY, cwTargetYMin(), cwTargetYMax());
 	}
 }
 
@@ -741,6 +749,35 @@ static void cwFmtTrail(int t, char *b, size_t n)
 	else                    snprintf(b, n, "%d", t);
 }
 
+enum { CW_SPARK_GREY = 6 };
+
+static int cwSparkBank(JE_word sg)
+{
+	return (sg > 1000 && sg < 60000) ? sg / 1000 : 0;
+}
+
+static int cwSpriteFrame(JE_word sg)
+{
+	return (cwSparkBank(sg) > 0) ? sg % 1000 : sg;
+}
+
+static bool cwCanSpark(JE_word sg)
+{
+	const int frame = cwSpriteFrame(sg);
+	return frame >= 1 && frame <= 999;
+}
+
+static JE_word cwToggleSparks(JE_word sg)
+{
+	if (cwSparkBank(sg) > 0)
+		return (JE_word)cwSpriteFrame(sg);
+	if (!cwCanSpark(sg))
+		return sg;
+	const int bank = sprite2_dominant_bank((sg > 500) ? spriteSheet12 : spriteSheet8,
+	                                       (sg > 500) ? sg - 500u : sg);
+	return (JE_word)(((bank > 0) ? bank : CW_SPARK_GREY) * 1000 + sg);
+}
+
 static void cwFieldValue(int f, char *buf, size_t n)
 {
 	const JE_WeaponType *w = cwCur();
@@ -836,7 +873,10 @@ static void cwFieldValue(int f, char *buf, size_t n)
 		snprintf(buf, n, "%d of %d", b + 1, cwClamp(w->multi, 1, CUSTOM_BULLETS_MAX));
 		break;
 	case CWF_B_SPRITE:
-		snprintf(buf, n, "%d", w->sg[b]);
+		snprintf(buf, n, "%d", cwSpriteFrame(w->sg[b]));
+		break;
+	case CWF_B_SPARKS:
+		snprintf(buf, n, "%s", (cwSparkBank(w->sg[b]) > 0) ? "On" : "Off");
 		break;
 	case CWF_B_DAMAGE:
 		if (w->attack[b] >= 101 && w->attack[b] <= 249)
@@ -904,7 +944,10 @@ static void cwFieldValue(int f, char *buf, size_t n)
 			snprintf(buf, n, "Off");
 		break;
 	case CWF_SHOW_TARGETS:
-		snprintf(buf, n, "%s", cwShowTargets ? "On" : "Off");
+		if (cwTargetCount > 0)
+			snprintf(buf, n, "%d", cwTargetCount);
+		else
+			snprintf(buf, n, "Off");
 		break;
 	case CWF_SHOW_STATS:
 		snprintf(buf, n, "%s", cwShowStats ? "On" : "Off");
@@ -912,23 +955,35 @@ static void cwFieldValue(int f, char *buf, size_t n)
 	case CWF_STARS:
 		snprintf(buf, n, "%s", shipEditorStars ? "On" : "Off");
 		break;
-	case CWF_TARGET_COUNT:
-		snprintf(buf, n, "%d", cwTargetCount);
-		break;
 	case CWF_TARGET_SIZE:
 		snprintf(buf, n, "%d", 2 * cwTargetSize + 1);
 		break;
 	case CWF_TARGET_SPREAD:
 		snprintf(buf, n, "%d", cwTargetSpread);
 		break;
-	case CWF_TARGET_HEIGHT:
-		snprintf(buf, n, "%d", cwTargetHeight);
+	case CWF_TARGET_Y:
+		snprintf(buf, n, "%d", cwTargetY);
 		break;
 	case CWF_TARGET_X:
 		snprintf(buf, n, "%d", cwTargetX);
 		break;
 	case CWF_TARGET_ARMOR:
 		snprintf(buf, n, "%d", cwTargetArmor);
+		break;
+	case CWF_SPREAD:
+		snprintf(buf, n, "%s", customWeaponSpreadName(customWeaponSpread));
+		break;
+	case CWF_PREVIEW_SHIP:
+		if (weaponEditorShip > 0 && weaponEditorShip <= SHIP_DRAGONWING)
+		{
+			snprintf(buf, n, "%s", ships[weaponEditorShip].name);
+			for (size_t len = strlen(buf); len > 0 && buf[len - 1] == ' '; --len)
+				buf[len - 1] = '\0';
+		}
+		else
+		{
+			snprintf(buf, n, "Equipped");
+		}
 		break;
 	case CWF_SHIP_X:
 		snprintf(buf, n, "%d", cwShipX);
@@ -961,6 +1016,8 @@ static bool cwFieldActive(int f)
 		return customBulletPresetCount > 0;
 	case CWF_IMPORT_PWR:
 		return customBulletMaxPower(cwImportSrc) > 1;
+	case CWF_B_SPARKS:
+		return cwCanSpark(cwCur()->sg[cwBulletIndex()]);
 	default:
 		return true;
 	}
@@ -980,6 +1037,8 @@ static const char *cwFieldInactiveReason(int f)
 		return "No stock weapons are loaded.";
 	case CWF_IMPORT_PWR:
 		return "This source has a single level.";
+	case CWF_B_SPARKS:
+		return "Only bullet sprites 1 to 999 can trail sparks.";
 	default:
 		return "Only used on a sidekick. Change Equip To.";
 	}
@@ -1015,7 +1074,10 @@ static bool cwNumericRange(int f, int *lo, int *hi)
 	case CWF_SOUND:         *lo = 0;    *hi = CUSTOM_SOUND_MAX;   return true;
 	case CWF_TRAIL:         *lo = 0;    *hi = 255;                return true;
 	case CWF_BLAST:         *lo = 0;    *hi = 255;                return true;
-	case CWF_B_SPRITE:      *lo = 0;    *hi = 65535;              return true;
+	case CWF_B_SPRITE:
+		*lo = (cwSparkBank(cwCur()->sg[cwBulletIndex()]) > 0) ? 1 : 0;
+		*hi = (*lo > 0) ? 999 : 65535;
+		return true;
 	case CWF_B_DAMAGE:      *lo = 0;    *hi = 99;                 return true;
 	case CWF_B_CHAIN:       *lo = 0;    *hi = 149;                return true;
 	case CWF_B_LIFE:        *lo = 0;    *hi = 255;                return true;
@@ -1023,10 +1085,10 @@ static bool cwNumericRange(int f, int *lo, int *hi)
 	case CWF_B_VELY:        *lo = -128; *hi = 127;                return true;
 	case CWF_B_OFFX:        *lo = -128; *hi = 127;                return true;
 	case CWF_B_OFFY:        *lo = -128; *hi = 127;                return true;
-	case CWF_TARGET_COUNT:  *lo = 0;    *hi = CW_DUMMY_MAX;       return true;
+	case CWF_SHOW_TARGETS:  *lo = 0;    *hi = CW_DUMMY_MAX;       return true;
 	case CWF_TARGET_SPREAD: *lo = 6;    *hi = 60;                 return true;
 	case CWF_TARGET_SIZE:   *lo = 2 * CW_TARGET_SIZE_MIN + 1; *hi = 2 * CW_TARGET_SIZE_MAX + 1; return true;
-	case CWF_TARGET_HEIGHT: *lo = cwTargetYMin(); *hi = cwTargetYMax(); return true;
+	case CWF_TARGET_Y:      *lo = cwTargetYMin(); *hi = cwTargetYMax(); return true;
 	case CWF_TARGET_X:      *lo = CW_TARGET_X_MIN; *hi = CW_TARGET_X_MAX; return true;
 	case CWF_TARGET_ARMOR:  *lo = 20;   *hi = 600;                return true;
 	case CWF_SHIP_X:        *lo = CW_SHIP_X_MIN;   *hi = CW_SHIP_X_MAX;   return true;
@@ -1094,7 +1156,8 @@ static void cwFieldAdjust(int f, int dir)
 		cwImportPwr = cwClamp(cwImportPwr + dir, 1, customBulletMaxPower(cwImportSrc));
 		return;
 	case CWF_SHOW_TARGETS:
-		cwShowTargets = !cwShowTargets;
+		cwTargetCount = cwClamp(cwTargetCount + dir, 0, CW_DUMMY_MAX);
+		cwLayoutDummies();
 		return;
 	case CWF_SHOW_STATS:
 		cwShowStats = !cwShowStats;
@@ -1102,21 +1165,17 @@ static void cwFieldAdjust(int f, int dir)
 	case CWF_STARS:
 		shipEditorStars = !shipEditorStars;
 		return;
-	case CWF_TARGET_COUNT:
-		cwTargetCount = cwClamp(cwTargetCount + dir, 0, CW_DUMMY_MAX);
-		cwLayoutDummies();
-		return;
 	case CWF_TARGET_SIZE:
 		cwTargetSize = cwClamp(cwTargetSize + dir, CW_TARGET_SIZE_MIN, CW_TARGET_SIZE_MAX);
-		cwTargetHeight = cwClamp(cwTargetHeight, cwTargetYMin(), cwTargetYMax());
+		cwTargetY = cwClamp(cwTargetY, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 		return;
 	case CWF_TARGET_SPREAD:
 		cwTargetSpread = cwClamp(cwTargetSpread + dir * 4, 6, 60);
 		cwPlaceDummies();
 		return;
-	case CWF_TARGET_HEIGHT:
-		cwTargetHeight = cwClamp(cwTargetHeight + dir * 4, cwTargetYMin(), cwTargetYMax());
+	case CWF_TARGET_Y:
+		cwTargetY = cwClamp(cwTargetY + dir * 4, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 		return;
 	case CWF_TARGET_X:
@@ -1126,6 +1185,12 @@ static void cwFieldAdjust(int f, int dir)
 	case CWF_TARGET_ARMOR:
 		cwTargetArmor = cwClamp(cwTargetArmor + dir * 20, 20, 600);
 		cwLayoutDummies();
+		return;
+	case CWF_PREVIEW_SHIP:
+		weaponEditorShip = (weaponEditorShip + SHIP_DRAGONWING + 1 + one) % (SHIP_DRAGONWING + 1);
+		return;
+	case CWF_SPREAD:
+		customWeaponSpread = (customWeaponSpread + CUSTOM_SPREAD_COUNT + one) % CUSTOM_SPREAD_COUNT;
 		return;
 	case CWF_SHIP_X:
 		cwShipX = cwClamp(cwShipX + dir * 2, CW_SHIP_X_MIN, CW_SHIP_X_MAX);
@@ -1221,7 +1286,15 @@ static void cwFieldAdjust(int f, int dir)
 		w->shipblastfilter = (JE_byte)cwClamp(w->shipblastfilter + dir, 0, 255);
 		break;
 	case CWF_B_SPRITE:
-		w->sg[b] = (JE_word)cwClamp((int)w->sg[b] + dir, 0, 65535);
+	{
+		const int bank = cwSparkBank(w->sg[b]);
+		w->sg[b] = (bank > 0)
+		         ? (JE_word)(bank * 1000 + cwClamp(cwSpriteFrame(w->sg[b]) + dir, 1, 999))
+		         : (JE_word)cwClamp((int)w->sg[b] + dir, 0, 65535);
+		break;
+	}
+	case CWF_B_SPARKS:
+		w->sg[b] = cwToggleSparks(w->sg[b]);
 		break;
 	case CWF_B_DAMAGE:
 	{
@@ -1294,7 +1367,7 @@ static void cwSetNumeric(int f, int v)
 	case CWF_SOUND:         w->sound           = (JE_byte)v;       break;
 	case CWF_TRAIL:         w->trail           = (JE_byte)v;       break;
 	case CWF_BLAST:         w->shipblastfilter = (JE_byte)v;       break;
-	case CWF_B_SPRITE:      w->sg[b]           = (JE_word)v;       break;
+	case CWF_B_SPRITE:      w->sg[b]           = (JE_word)(cwSparkBank(w->sg[b]) * 1000 + v); break;
 	case CWF_B_DAMAGE:      w->attack[b]       = (JE_byte)v;       break;
 	case CWF_B_CHAIN:       w->attack[b]       = (JE_byte)(v == 0 ? 10 : 100 + v); break;
 	case CWF_B_LIFE:        w->del[b]          = (JE_byte)v;       break;
@@ -1302,14 +1375,14 @@ static void cwSetNumeric(int f, int v)
 	case CWF_B_VELY:        w->sy[b]           = (JE_shortint)v;   break;
 	case CWF_B_OFFX:        w->bx[b]           = (JE_shortint)v;   break;
 	case CWF_B_OFFY:        w->by[b]           = (JE_shortint)v;   break;
-	case CWF_TARGET_COUNT:  cwTargetCount  = v; cwLayoutDummies(); return;
+	case CWF_SHOW_TARGETS:  cwTargetCount  = v; cwLayoutDummies(); return;
 	case CWF_TARGET_SIZE:
 		cwTargetSize = cwClamp((v - 1) / 2, CW_TARGET_SIZE_MIN, CW_TARGET_SIZE_MAX);
-		cwTargetHeight = cwClamp(cwTargetHeight, cwTargetYMin(), cwTargetYMax());
+		cwTargetY = cwClamp(cwTargetY, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 		return;
 	case CWF_TARGET_SPREAD: cwTargetSpread = v; cwPlaceDummies();  return;
-	case CWF_TARGET_HEIGHT: cwTargetHeight = v; cwPlaceDummies();  return;
+	case CWF_TARGET_Y:      cwTargetY      = v; cwPlaceDummies();  return;
 	case CWF_TARGET_X:      cwTargetX      = v; cwPlaceDummies();  return;
 	case CWF_TARGET_ARMOR:  cwTargetArmor  = v; cwLayoutDummies(); return;
 	case CWF_SHIP_X:        cwShipX = v; return;
@@ -1472,11 +1545,19 @@ static void cwPerformAction(int a, bool *done, bool *equipped)
 		break;
 	}
 	case CWA_AUTOSCALE:
+	{
 		customWeaponAutoScaleLevels();
 		customWeaponMaterialize();
-		cwSetNotice("Other levels rebuilt from this one");
+		char notice[48];
+		if (customWeaponLastSpread == CUSTOM_SPREAD_STOCK)
+			snprintf(notice, sizeof(notice), "Rebuilt from the stock weapon");
+		else
+			snprintf(notice, sizeof(notice), "Rebuilt with the %s spread",
+			         customWeaponSpreadName(customWeaponLastSpread));
+		cwSetNotice(notice);
 		changed = true;
 		break;
+	}
 	case CWA_COPY_ALL:
 		customWeaponCopyToAllLevels();
 		customWeaponMaterialize();
@@ -1536,16 +1617,16 @@ static void cwPerformAction(int a, bool *done, bool *equipped)
 		changed = true;
 		break;
 	case CWA_RANGE_RESET:
-		cwShowTargets = true;
 		cwShowStats = true;
 		cwTargetCount = 3;
 		cwTargetSize = 8;
 		cwTargetSpread = 32;
-		cwTargetHeight = 48;
+		cwTargetY = 36;
 		cwTargetX = 76;
 		cwTargetArmor = 120;
 		cwShipX = 70;
-		cwShipY = 110;
+		cwShipY = 116;
+		weaponEditorShip = SHIP_GENCORE_II;
 		cwLayoutDummies();
 		cwSetNotice("Range reset");
 		break;
@@ -2043,6 +2124,7 @@ static void cwFireAndDrawPods(const CwPods *pods)
 
 		const unsigned int sprite = o->gr[anim->frame] + (unsigned int)pods->charge;
 		rl_current_id = RL_ID_SIDEKICK_BASE + 2 + side;
+		rl_shot_attach = 3;
 		if (o->tr == 4)
 		{
 			const float ox = sinf(cwOrbit) * 20, oy = cosf(cwOrbit) * 20;
@@ -2055,12 +2137,15 @@ static void cwFireAndDrawPods(const CwPods *pods)
 		else
 			blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
 		rl_current_id = 0;
+		rl_shot_attach = 0;
 		rl_current_sub_x = rl_current_sub_y = 0.0f;
 	}
 }
 
 static int cwPreviewShip(void)
 {
+	if (weaponEditorShip > 0 && weaponEditorShip <= SHIP_DRAGONWING)
+		return weaponEditorShip;
 	const int ship = player[customWeaponLocalOwner()].items.ship;
 	return (ship != 0) ? ship : 1;
 }
@@ -2121,6 +2206,9 @@ static void cwSimTick(void)
 	rl_mark_residual_base(VGAScreenSeg);
 
 	power = lastPower = 900;
+	rl_set_ship_vel(0, cwShipX - cwTickShipX, cwShipY - cwTickShipY);
+	cwTickShipX = cwShipX;
+	cwTickShipY = cwShipY;
 	player[0].x = cwShipX;
 	player[0].y = cwShipY;
 	mouseX = player[0].x;
@@ -2145,7 +2233,7 @@ static void cwSimTick(void)
 			                   (JE_word)weapon, 1);
 	}
 
-	if (cwShowTargets)
+	if (cwDummyCount > 0)
 	{
 		cwHomeShots();
 		cwCollideShots();
@@ -2155,10 +2243,12 @@ static void cwSimTick(void)
 	JE_drawSP();
 	JE_clearSPClip();
 
+	rl_current_id = RL_ID_SHIP_BASE + 1;
 	JE_drawItem(1, (JE_word)cwPreviewShip(), player[0].x - 5, player[0].y - 7);
+	rl_current_id = 0;
 	if (usePods)
 		cwFireAndDrawPods(&pods);
-	if (cwShowTargets)
+	if (cwDummyCount > 0)
 	{
 		cwPumpExplosions();
 		cwDrawDummyBars();
@@ -2291,7 +2381,7 @@ static void cwDrawBoxBase(void)
 {
 	fill_rectangle_xy(VGAScreen, CW_BOX_X0, CW_BOX_Y0, CW_BOX_X1, CW_RANGE_Y1, CW_BG_SPACE);
 	cwDrawCaption();
-	if (cwShowTargets)
+	if (cwDummyCount > 0)
 		for (int d = 0; d < cwDummyCount; ++d)
 			cwDrawDummy(&cwDummies[d]);
 	cwDrawTray();
@@ -2471,7 +2561,7 @@ static bool cwShipHit(int x, int y)
 
 static int cwDummyHit(int x, int y)
 {
-	if (!cwShowTargets)
+	if (cwDummyCount == 0)
 		return -1;
 	for (int d = 0; d < cwDummyCount; ++d)
 		if (abs(x - cwDummies[d].cx) <= cwTargetSize + 2 &&
@@ -2747,18 +2837,34 @@ static void cwDrawButtons(const CwNav *n, bool rowSel)
 	}
 }
 
+static int cwTabUnderMouse(void)
+{
+	if (mouseInactive)
+		return -1;
+	for (int p = 0; p < CWP_COUNT; ++p)
+	{
+		int x0, y0, x1, y1;
+		cwCellRect(&cwNav[0], p, &x0, &y0, &x1, &y1);
+		if (mouse_x >= x0 && mouse_x <= x1 && mouse_y >= y0 && mouse_y <= y1)
+			return p;
+	}
+	return -1;
+}
+
 static void cwDrawTabs(const CwNav *n, bool rowSel)
 {
+	const int hover = cwTabUnderMouse();
 	for (int p = 0; p < CWP_COUNT; ++p)
 	{
 		int x0, y0, x1, y1;
 		cwCellRect(n, p, &x0, &y0, &x1, &y1);
 		const bool cur = (p == cwPage);
-		fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, cur ? C_SEL : C_DIV);
+		const Uint8 fill = cur ? C_SEL : C_DIV;
+		fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, (Uint8)(p == hover ? fill - 1 : fill));
 		const bool dim = (p == CWP_SIDEKICK && !cwIsSidekickSlot());
 		draw_font_hv_shadow(VGAScreen, (x0 + x1 + 1) / 2, y0 + 2, cwPageInfo[p].name, small_font,
-		                    centered, 15, cur ? 6 : (dim ? 1 : 4), false, 1);
-		if (cur && rowSel)
+		                    centered, 15, cur ? 6 : (dim ? 1 : (p == hover ? 6 : 4)), false, 1);
+		if (cur && rowSel && mouseInactive)
 			JE_rectangle(VGAScreen, x0, y0, x1, y1, C_HI);
 	}
 }
@@ -2957,7 +3063,7 @@ static void cwDrawPanel(Uint32 clock_ms)
 {
 	fill_rectangle_xy(VGAScreen, CW_PAN_X0, CW_PAN_Y0, CW_PAN_X1, CW_PAN_Y1, C_PANEL);
 	JE_rectangle(VGAScreen, CW_PAN_X0, CW_PAN_Y0, CW_PAN_X1, CW_PAN_Y1, C_HI);
-	draw_font_hv_shadow(VGAScreen, CW_PAN_MID, CW_PAN_Y0 + 2, "WEAPON CREATOR", small_font,
+	draw_font_hv_shadow(VGAScreen, CW_PAN_MID, CW_PAN_Y0 + 2, "WEAPON EDITOR", small_font,
 	                    centered, 15, 3, false, 1);
 	fill_rectangle_xy(VGAScreen, CW_INNER_X0, CW_PAN_Y0 + 10, CW_INNER_X1, CW_PAN_Y0 + 10, C_DIV);
 
@@ -2997,7 +3103,10 @@ static const char *cwHintText(char *buf, size_t n)
 	switch (nav->kind)
 	{
 	case CWN_TABS:
-		return cwPageInfo[cwPage].help;
+	{
+		const int hover = cwTabUnderMouse();
+		return cwPageInfo[hover >= 0 ? hover : cwPage].help;
+	}
 	case CWN_FIELD:
 	{
 		const int f = nav->id[0];
@@ -3130,9 +3239,11 @@ static bool cwFieldCyclesOnEnter(int f)
 	case CWF_BULLET_SEL:
 	case CWF_SK_MOUNT:
 	case CWF_SK_ANIMATE:
-	case CWF_SHOW_TARGETS:
+	case CWF_PREVIEW_SHIP:
+	case CWF_SPREAD:
 	case CWF_SHOW_STATS:
 	case CWF_STARS:
+	case CWF_B_SPARKS:
 		return true;
 	default:
 		return false;
@@ -3413,7 +3524,7 @@ static void cwHandleBoxPress(void)
 	{
 		cwDrag = CW_DRAG_TARGETS;
 		cwDragDx = mouse_x - cwTargetX;
-		cwDragDy = mouse_y - cwTargetHeight;
+		cwDragDy = mouse_y - cwTargetY;
 		JE_playSampleNum(S_CLICK);
 	}
 	else if (cwShipHit(mouse_x, mouse_y))
@@ -3442,7 +3553,7 @@ static void cwUpdateDrag(void)
 	else
 	{
 		cwTargetX = cwClamp(mouse_x - cwDragDx, CW_TARGET_X_MIN, CW_TARGET_X_MAX);
-		cwTargetHeight = cwClamp(mouse_y - cwDragDy, cwTargetYMin(), cwTargetYMax());
+		cwTargetY = cwClamp(mouse_y - cwDragDy, cwTargetYMin(), cwTargetYMax());
 		cwPlaceDummies();
 	}
 }
@@ -3478,8 +3589,12 @@ static void cwHandleMouse(int *prev_mx, int *prev_my, bool *done, bool *equipped
 	const bool moved = (mouse_x != *prev_mx || mouse_y != *prev_my);
 	if (hoverRow >= 0 && moved && cwDrag == CW_DRAG_NONE)
 	{
-		const int cell = (cwNav[hoverRow].kind == CWN_TABS) ? cwPage : hoverCell;
-		if (hoverRow != cwSelRow || cell != cwSelCell)
+		const bool tabs = (cwNav[hoverRow].kind == CWN_TABS);
+		const int cell = tabs ? cwPage : hoverCell;
+		int prevRow, prevCell;
+		cwHitTestPanel(*prev_mx, *prev_my, &prevRow, &prevCell);
+		const bool newTab = tabs && (prevRow != hoverRow || prevCell != hoverCell);
+		if (hoverRow != cwSelRow || cell != cwSelCell || newTab)
 		{
 			cwSelect(hoverRow, cell);
 			JE_playSampleNum(S_CURSOR);
@@ -3541,7 +3656,7 @@ static void cwHandleMouse(int *prev_mx, int *prev_my, bool *done, bool *equipped
 		cwHandleBoxPress();
 }
 
-bool JE_customWeaponCreator(bool canEquip)
+bool JE_weaponEditor(bool canEquip)
 {
 	// The title-screen Setup menu can reach this before item data is loaded.
 	if (weaponPort[1].name[0] == '\0')
@@ -3550,7 +3665,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		customWeaponInit();
 
 	// The impact explosions need the explosion sprite sheet, which the game only loads lazily at
-	// level start; it can be NULL here (creator opened from Setup, or the between-levels shop).
+	// level start; it can be NULL here (editor opened from Setup, or the between-levels shop).
 	if (explosionSpriteSheet.data == NULL)
 		JE_loadCompShapes(&explosionSpriteSheet, '6');
 	if (shopSpriteSheet.data == NULL)
@@ -3621,6 +3736,7 @@ bool JE_customWeaponCreator(bool canEquip)
 			nextTick_ms =
 			    ((double)now - nextTick_ms > 4.0 * tick_ms) ? now + tick_ms : nextTick_ms + tick_ms;
 			cwSimTick();
+			shipEditorServiceMusic();
 		}
 		clock_ms += now - clockLast_ms;
 		clockLast_ms = now;
@@ -3643,6 +3759,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		service_SDL_events(false);
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
+		rl_set_ship_override(0, (float)(cwShipX - cwTickShipX), (float)(cwShipY - cwTickShipY));
 		now = SDL_GetTicks();
 		float alpha = 1.0f;
 		if (smoothMotion && tick_ms > 0.0)
@@ -3668,6 +3785,9 @@ bool JE_customWeaponCreator(bool canEquip)
 
 	for (int j = 0; j < MAX_EXPLOSIONS; ++j)
 		explosions[j].ttl = 0;
+	rl_set_ship_override(0, 0.0f, 0.0f);
+	rl_set_ship_vel(0, 0, 0);
+	shipEditorEndMusicFade();
 	rl_forget_previous();
 	mouseTwoFingerRightClick = false;
 	touch_ui_clear_layout();

@@ -212,7 +212,7 @@
     <ClCompile Include="..\src\menus\ship_editor.c" />
     <ClCompile Include="..\src\menus\sprite_viewer.c" />
     <ClCompile Include="..\src\menus\title.c" />
-    <ClCompile Include="..\src\menus\weapon_creator.c" />
+    <ClCompile Include="..\src\menus\weapon_editor.c" />
     <ClCompile Include="..\src\net\net_lobby.c" />
     <ClCompile Include="..\src\net\net_rollback.c" />
     <ClCompile Include="..\src\net\net_savexfer.c" />
@@ -431,7 +431,7 @@
     <ClInclude Include="..\src\menus\ship_editor.h" />
     <ClInclude Include="..\src\menus\sprite_viewer.h" />
     <ClInclude Include="..\src\menus\title.h" />
-    <ClInclude Include="..\src\menus\weapon_creator.h" />
+    <ClInclude Include="..\src\menus\weapon_editor.h" />
     <ClInclude Include="..\src\net\net_internal.h" />
     <ClInclude Include="..\src\net\net_lobby.h" />
     <ClInclude Include="..\src\net\net_rollback.h" />

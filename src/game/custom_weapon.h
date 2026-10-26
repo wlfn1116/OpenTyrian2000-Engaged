@@ -162,6 +162,29 @@ void customWeaponResetAllLevels(void);
 // Generate the other ten power levels around the level currently being edited.
 void customWeaponAutoScaleLevels(void);
 
+enum
+{
+	CUSTOM_SPREAD_AUTO,
+	CUSTOM_SPREAD_STOCK,
+	CUSTOM_SPREAD_ARROW,
+	CUSTOM_SPREAD_FAN,
+	CUSTOM_SPREAD_WALL,
+	CUSTOM_SPREAD_CRESCENT,
+	CUSTOM_SPREAD_CONVERGE,
+	CUSTOM_SPREAD_WAVE,
+	CUSTOM_SPREAD_TWIN,
+	CUSTOM_SPREAD_BURST,
+	CUSTOM_SPREAD_NOVA,
+	CUSTOM_SPREAD_LOB,
+	CUSTOM_SPREAD_SPIRAL,
+	CUSTOM_SPREAD_WEAVE,
+	CUSTOM_SPREAD_COUNT
+};
+
+extern int customWeaponSpread;
+extern int customWeaponLastSpread;
+const char *customWeaponSpreadName(int spread);
+
 // Persistence helpers (used by config.c). One (mode, level) design serializes to a
 // compact, whitespace-free comma-separated list of integers (safe for the parser).
 void customWeaponSerializeLevel(int mode, int level, char *buf, size_t bufSize);

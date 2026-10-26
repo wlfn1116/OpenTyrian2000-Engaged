@@ -50,7 +50,7 @@
 #include "touch_ui.h"
 #include "video.h"
 #include "video_scale.h"
-#include "weapon_creator.h"
+#include "weapon_editor.h"
 #include "xmas.h"
 
 #include "SDL.h"
@@ -195,11 +195,15 @@ static const char *const sfxCopyLimitNames[] = { "Off", "1", "2", "3" };
 static const char *const rumbleNames[] = { "Off", "Light", "Strong" };
 // Indexed by CrtFilter (video.h).
 static const char *const crtFilterNames[] = { "Off", "Scanlines", "Full" };
+static const char *const crtStrengthNames[] = { "Light", "Medium", "Strong" };
+static const char *const crtCurvatureNames[] = { "Off", "Subtle", "Strong" };
 
 SDL_COMPILE_TIME_ASSERT(sfx_filter_names, COUNTOF(sfxFilterNames) == SFX_FILTER_COUNT);
 SDL_COMPILE_TIME_ASSERT(sfx_copy_names, COUNTOF(sfxCopyLimitNames) == SFX_COPY_LIMIT_MAX + 1);
 SDL_COMPILE_TIME_ASSERT(rumble_names, COUNTOF(rumbleNames) == RUMBLE_COUNT);
 SDL_COMPILE_TIME_ASSERT(crt_filter_names, COUNTOF(crtFilterNames) == CRT_FILTER_COUNT);
+SDL_COMPILE_TIME_ASSERT(crt_strength_names, COUNTOF(crtStrengthNames) == CRT_STRENGTH_COUNT);
+SDL_COMPILE_TIME_ASSERT(crt_curvature_names, COUNTOF(crtCurvatureNames) == CRT_CURVATURE_COUNT);
 
 NAME_PICKER(bossBarStyle, bossBarStyleNames)
 NAME_PICKER(bossBarLayout, bossBarLayoutNames)
@@ -216,6 +220,8 @@ NAME_PICKER(sfxFilter, sfxFilterNames)
 NAME_PICKER(sfxCopyLimit, sfxCopyLimitNames)
 NAME_PICKER(rumble, rumbleNames)
 NAME_PICKER(crtFilter, crtFilterNames)
+NAME_PICKER(crtStrength, crtStrengthNames)
+NAME_PICKER(crtCurvature, crtCurvatureNames)
 
 /* The preset picker shows Custom but does not let the user apply it. */
 static size_t enhPresetCount(void)
@@ -336,6 +342,8 @@ typedef enum
 	MENU_ITEM_SPECIAL_TINT,         // flare specials grade the whole screen their colour
 	MENU_ITEM_UNUSED_SPRITES,       // spend the shop sheet's unreferenced icons (episodes.c)
 	MENU_ITEM_CRT_FILTER,           // scanline / full CRT layers over the presented frame
+	MENU_ITEM_CRT_STRENGTH,
+	MENU_ITEM_CRT_CURVATURE,
 
 	/* Enhancements -> Heads-Up Display. */
 	MENU_ITEM_ENEMY_BARS,
@@ -387,7 +395,7 @@ typedef enum
 	MENU_ITEM_SUPERTYRIAN,
 	MENU_ITEM_SHIP_EDITOR,
 	MENU_ITEM_CUSTOM_WEAPONS,
-	MENU_ITEM_CUSTOM_CREATOR,
+	MENU_ITEM_WEAPON_EDITOR,
 	MENU_ITEM_TRANSFER_SAVE_UPLOAD,
 	MENU_ITEM_TRANSFER_SAVE_DOWNLOAD,
 	MENU_ITEM_TRANSFER_SAVES_UPLOAD,
@@ -422,6 +430,7 @@ typedef enum
 	MENU_SOUND,
 	MENU_ENHANCEMENTS,
 	MENU_VISUALS,
+	MENU_CRT,
 	MENU_HUD,
 	MENU_ENEMY_BARS,
 	MENU_BOSS_BARS,
@@ -471,8 +480,11 @@ static bool isMenuItemVisible(const MenuItem *item)
 		return customEpisodeAnyPresent();
 	if (item->id == MENU_ITEM_RUMBLE)
 		return joystick_can_rumble();
-	if (item->id == MENU_ITEM_CRT_FILTER)
+	if ((item->id == MENU_ITEM_SUBMENU && item->submenu == MENU_CRT) ||
+	    item->id == MENU_ITEM_CRT_FILTER || item->id == MENU_ITEM_CRT_STRENGTH)
 		return crt_filter_available();
+	if (item->id == MENU_ITEM_CRT_CURVATURE)
+		return crt_curvature_available();
 	return true;
 }
 
@@ -519,6 +531,8 @@ static int *menuItemIntSetting(MenuItemId id)
 	case MENU_ITEM_SFX_COPY_LIMIT:   return &sfx_copy_limit;
 	case MENU_ITEM_RUMBLE:           return &rumble_strength;
 	case MENU_ITEM_CRT_FILTER:       return &crt_filter;
+	case MENU_ITEM_CRT_STRENGTH:     return &crt_strength;
+	case MENU_ITEM_CRT_CURVATURE:    return &crt_curvature;
 	default:                         return NULL;
 	}
 }
@@ -724,6 +738,53 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 	}
 }
 
+static const Uint8 menuUnusedBanks[] = { 1, 5, 9, 11, 12, 13 };
+
+static void drawArcadeShip(unsigned int i, int xCenter, int yTop, Palette shown)
+{
+	enum { SCALE = 2, HULL_W = 24, HULL_H = 28 };
+
+	const JE_word gr = ships[SAShip[i]].shipgraphic;
+	Sprite2_array *sheet = &spriteSheet9;
+	unsigned int hull[2] = { gr, 0 };
+	unsigned int hulls = 1;
+	if (gr == 0 || gr == 1)
+	{
+		hull[0] = (gr == 0) ? 13 : 220;
+		hull[1] = (gr == 0) ? 51 : 222;
+		hulls = 2;
+	}
+	else if (gr > 500)
+	{
+		sheet = &spriteSheetT2000;
+		hull[0] = gr - 500;
+	}
+
+	Uint8 slot[256] = { 0 };
+	unsigned int slotsUsed = 0;
+	const int xLeft = xCenter - (int)hulls * HULL_W * SCALE / 2;
+	for (unsigned int h = 0; h < hulls; ++h)
+	{
+		for (int row = 0; row < HULL_H; ++row)
+		{
+			for (int col = 0; col < HULL_W; ++col)
+			{
+				const Uint8 c = sprite2x2_pixel(*sheet, hull[h], col, row);
+				if (c == 0)
+					continue;
+				if (slot[c] == 0 && slotsUsed < COUNTOF(menuUnusedBanks) * 16)
+				{
+					slot[c] = (Uint8)(menuUnusedBanks[slotsUsed / 16] * 16 + slotsUsed % 16);
+					shown[slot[c]] = palettes[0][c];
+					++slotsUsed;
+				}
+				fill_rectangle_wh(VGAScreen, xLeft + ((int)h * HULL_W + col) * SCALE,
+				                  yTop + row * SCALE, SCALE, SCALE, (slot[c] != 0) ? slot[c] : c);
+			}
+		}
+	}
+}
+
 // Run an options tree; true means the menu launched a full game.
 static bool runOptionsMenu(MenuId startMenu);
 
@@ -841,9 +902,20 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_EXTRA_SPARKS, "Extra Sparks:", "Denser, longer-lasting explosion spark showers." },
 				{ MENU_ITEM_SPECIAL_TINT, "Special Tint:", "Flare specials wash the screen in their colour." },
 				{ MENU_ITEM_UNUSED_SPRITES, "Unused Sprites:", "Give spare shop icons to look-alike weapons." },
-				{ MENU_ITEM_CRT_FILTER, "CRT Filter:",
-				  "Scanlines, or add a phosphor mask, glow and vignette.",
+				{ MENU_ITEM_SUBMENU, "CRT Filter...", "Scanlines, phosphor mask, glow and screen curvature.",
+				  MENU_CRT },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_CRT] = {
+			.header = "CRT Filter",
+			.items = {
+				{ MENU_ITEM_CRT_FILTER, "Filter:", "Scanlines, or add a phosphor mask, glow and vignette.",
 				  .getPickerItemsCount = crtFilterCount, .getPickerItem = crtFilterItem },
+				{ MENU_ITEM_CRT_STRENGTH, "Strength:", "Depth of the scanlines, glow and phosphor mask.",
+				  .getPickerItemsCount = crtStrengthCount, .getPickerItem = crtStrengthItem },
+				{ MENU_ITEM_CRT_CURVATURE, "Curvature:", "Bend the picture like a curved tube screen.",
+				  .getPickerItemsCount = crtCurvatureCount, .getPickerItem = crtCurvatureItem },
 				MENU_DONE_ROW
 			},
 		},
@@ -1041,7 +1113,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_JUKEBOX, "Jukebox", "Listen to the music of Tyrian." },
 				{ MENU_ITEM_SUBMENU, "Secret Modes...", "Play Destruct, SuperTyrian, or Super Arcade.", MENU_SECRET_MODES },
 				{ MENU_ITEM_SHIP_EDITOR, "Ship Editor...", "Design the Tab+Number custom ships." },
-				{ MENU_ITEM_CUSTOM_CREATOR, "Weapon Creator...", "Design your own weapon with a live preview." },
+				{ MENU_ITEM_WEAPON_EDITOR, "Weapon Editor...", "Design your own weapon with a live preview." },
 				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable custom weapons and their buy/sell slot." },
 				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
 				{ MENU_ITEM_SUBMENU, "Transfer...", "Copy saves or custom creations to another device.", MENU_TRANSFER },
@@ -1261,7 +1333,9 @@ static bool runOptionsMenu(MenuId startMenu)
 			const bool selected = i == *selectedMenuItemIndex;
 			const bool disabled = (currentPicker != MENU_ITEM_NONE && !selected)
 			                   || (menuItem->id == MENU_ITEM_SUPERSAMPLE && !smoothMotion)
-			                   || (menuItem->id == MENU_ITEM_SUBPIXEL_FX && !subpixelFxAvailable());
+			                   || (menuItem->id == MENU_ITEM_SUBPIXEL_FX && !subpixelFxAvailable())
+			                   || (menuItem->id == MENU_ITEM_CRT_STRENGTH
+			                       && crt_filter == CRT_FILTER_OFF);
 
 			if (selected)
 				yPicker = y;
@@ -1432,6 +1506,20 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, value, normal_font, left_aligned, 15, shade, false, 2);
 		}
 
+		Palette shown;
+		memcpy(shown, colors, sizeof(shown));
+		const MenuItemId hovered = menuItems[*selectedMenuItemIndex].id;
+		if (currentMenu == MENU_ARCADE && hovered >= MENU_ITEM_ARCADE_SHIP_BASE &&
+		    hovered < MENU_ITEM_ARCADE_SHIP_BASE + SA)
+		{
+			if (weaponPort[1].name[0] == '\0')
+				JE_loadItemDat();
+			const int yList =
+			    yMenuItems + (dyMenuItems * (int)(menuItemsCount - 1) + hMenuItem) / 2;
+			drawArcadeShip((unsigned int)(hovered - MENU_ITEM_ARCADE_SHIP_BASE),
+			               xMenuItemValue + wMenuItemValue / 2, yList - 28, shown);
+		}
+
 		// Draw status text. The Music Synth row shows live SoundFont status so the
 		// user can confirm FluidSynth actually picked up their .sf2 (see audio.c).
 		const char *statusText = menuItems[*selectedMenuItemIndex].description;
@@ -1518,10 +1606,12 @@ static bool runOptionsMenu(MenuId startMenu)
 		{
 			mouseCursor = MOUSE_POINTER_NORMAL;
 
-			fade_palette(colors, 10, 0, 255);
+			fade_palette(shown, 10, 0, 255);
 
 			restart = false;
 		}
+		else
+			set_palette(shown, 0, 255);
 
 		service_SDL_events(true);
 
@@ -1829,10 +1919,10 @@ static bool runOptionsMenu(MenuId startMenu)
 					restart = true;
 					break;
 				}
-				case MENU_ITEM_CUSTOM_CREATOR:
+				case MENU_ITEM_WEAPON_EDITOR:
 				{
 					JE_playSampleNum(S_SELECT);
-					JE_customWeaponCreator(false);  // Setup context: design only (no active ship to equip)
+					JE_weaponEditor(false);  // Setup context: design only (no active ship to equip)
 					restart = true;
 					break;
 				}

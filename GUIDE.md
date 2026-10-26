@@ -11,7 +11,7 @@ online play, editors, restored content, and smoother rendering.
 | Play online | Main menu > Online Multiplayer |
 | Transfer saves or custom data | Title screen > Extra > Transfer |
 | Edit ships | Title screen > Extra > Ship Editor |
-| Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
+| Design a weapon | Title screen > Extra > Weapon Editor |
 | Change graphics | Setup > Graphics |
 | Soften sound effects | Setup > Sound |
 | Turn on gamepad rumble | Setup > Rumble, with a rumble controller connected |
@@ -329,9 +329,9 @@ Linked Arcade sides remain as saved, even if the other machine hosts.
 Enable network logging under **Setup > Diagnostics**. Attach the matching log
 from both machines; each contains its local state for the disputed frame.
 
-## Weapon Creator
+## Weapon Editor
 
-Open **Setup > Enhancements > Weapons > Weapon Creator**. The library holds 32
+Open **Title screen > Extra > Weapon Editor**. The library holds 32
 weapons with 11 power levels. A design can be equipped as a front gun, rear gun,
 or sidekick.
 
@@ -361,7 +361,7 @@ also sends designs referenced by custom ships.
 | --- | --- |
 | Visuals | Parallax, mirrored layers, sparks, tint, shop sprites, CRT filter |
 | Heads-Up Display | Enemy bars, boss bars, gauges, touch buttons |
-| Weapons | Weapon Creator, Charge-Laser, autofire, spark trails |
+| Weapons | Charge-Laser, autofire, spark trails |
 | Gameplay | Hitboxes, Guided Aim, Ice Base Shots, Arcade options |
 | Episode Versions | Data choices that differ between episode sets |
 
@@ -374,7 +374,7 @@ also sends designs referenced by custom ships.
 | Custom | Most recent hand-edited set |
 
 Changing an enhancement stores the result as Custom. Sidekick Autofire, touch
-button settings, and the CRT Filter stay outside presets.
+button settings, and the CRT Filter settings stay outside presets.
 
 Episode Versions rows accept Auto, Ep 1-3, or Ep 4+. Auto follows the current
 episode. Online sessions use the host's choices.
@@ -385,10 +385,6 @@ Useful individual settings:
 - **Unused Sprites** gives distinct shipped icons to items that share or lack
   one.
 - **Special Tint** controls the full-screen wash from flare specials.
-- **CRT Filter** draws scanlines over the picture. **Full** adds a phosphor
-  mask, a glow around bright areas, and darker edges. It is off by default,
-  looks best with the None scaler or a plain 2x to 5x one, and is missing from
-  the menu when the graphics driver cannot draw it.
 - **Vulnerable Cue** greys invulnerable boss bars and flashes enemies when they
   become damageable.
 - **Shot Hitboxes** chooses classic top-left or centered sprite anchors.
@@ -396,6 +392,33 @@ Useful individual settings:
 
 The special-weapon HUD light is a charge meter. It drains during use, fills
 during recharge, and flashes when ready.
+
+### CRT Filter
+
+**Setup > Enhancements > Visuals > CRT Filter** holds three settings:
+
+| Setting | Choices |
+| --- | --- |
+| Filter | Off (default), Scanlines, Full |
+| Strength | Light, Medium (default), Strong |
+| Curvature | Off (default), Subtle, Strong |
+
+- **Filter**: Scanlines draws a dark line under every game row. Full adds a
+  phosphor mask, a glow around bright objects, and darker edges. Bright colors
+  fill in their own lines, so shots, explosions and white text keep their
+  brightness while dark areas show deep lines.
+- **Strength** sets the depth of the lines, glow and mask. It is dimmed while
+  Filter is Off.
+- **Curvature** bends the picture like a curved tube, with Filter on or off.
+  The whole picture stays on screen: the edges bow and the corners pull in,
+  with black behind them. Clicks and touches follow the bend; touch buttons
+  stay flat.
+- Lines appear once the picture is at least 2x the game's size, the phosphor
+  mask from 3x.
+- The Vita, phones and tablets, and the Switch in handheld mode, skip the
+  phosphor mask, use a lighter glow, and never bend the picture. The Vita,
+  phones and tablets hide the Curvature row.
+- The submenu is missing when the graphics driver cannot draw it.
 
 ## Diagnostics
 
@@ -603,7 +626,7 @@ files in private storage that is deleted on uninstall.
 | --- | --- |
 | `opentyrian.cfg` | Settings and records |
 | `opentyrian.sav` | Saves, Endless runs, and high scores |
-| `custom_weapons.cfg` | Weapon Creator library |
+| `custom_weapons.cfg` | Weapon Editor library |
 | `custom_ships.shp` | Compiled custom ships |
 | `User.shp` | Optional DOS ShipEdit source |
 | `log/opentyrian_log_<time>.log` | Windows crash report |

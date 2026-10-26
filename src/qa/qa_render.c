@@ -111,6 +111,20 @@ void qa_test_present_paths(void)
 	         detail[0] ? ": " : "", detail);
 	qa_check(nnRows, label);
 
+	detail[0] = '\0';
+	const bool crtRows = video_test_crt_rows(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "CRT lines snap to the frame's game rows and the phosphor mask keeps brightness%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(crtRows, label);
+
+	detail[0] = '\0';
+	const bool crtCurve = video_test_crt_curve(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "CRT curvature keeps the whole picture on screen and the pointer on the mesh%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(crtCurve, label);
+
 	memcpy(rgb_palette, savedPalette, sizeof(savedPalette));
 }
 

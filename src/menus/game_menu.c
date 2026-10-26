@@ -62,7 +62,7 @@
 #include "timing.h"
 #include "touch_ui.h"
 #include "video.h"
-#include "weapon_creator.h"
+#include "weapon_editor.h"
 
 #include <assert.h>
 #include <math.h>
@@ -592,7 +592,7 @@ static bool JE_weaponSimPresentHi(float alpha, int scale)
 	}
 
 	// The copy above erased whatever the caller drew onto the box after the 1x replay: the
-	// generator gauge's left columns, the weapon creator's overlay.
+	// generator gauge's left columns, the weapon editor's overlay.
 	for (int y = SIM_BOX_Y0; y <= SIM_BOX_Y1; ++y)
 	{
 		const Uint8 *const ref = (const Uint8 *)game_screen->pixels + y * game_screen->pitch;
@@ -1746,7 +1746,7 @@ static bool shopCampaignRendezvous(void)
 		// Both machines are now in this loop draining packets, which is the one window wide
 		// enough for a custom weapon design. It is a no-op unless the design changed.
 		network_custom_weapon_publish();
-		// A ship record may require the design while the local Weapon Creator is off.
+		// A ship record may require the design while the local Custom Weapons setting is off.
 		if (extraShipsUseCustomWeapon())
 			network_custom_weapon_publish_resume();
 		network_extra_ships_publish();
@@ -6259,9 +6259,9 @@ void JE_menuFunction(JE_byte select)
 		{
 			curMenu = MENU_FULL_GAME;
 		}
-		else if (customWeaponEnabled && select == 9) // Custom: open the creator, equip from there
+		else if (customWeaponEnabled && select == 9) // Custom: open the editor, equip from there
 		{
-			const bool equipped = JE_customWeaponCreator(true);
+			const bool equipped = JE_weaponEditor(true);
 			if (equipped)
 			{
 				// Equipped: reflect the new loadout so the shop keeps it and the custom

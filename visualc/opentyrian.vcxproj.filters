@@ -277,7 +277,7 @@
     <ClCompile Include="..\src\menus\title.c">
       <Filter>menus</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\menus\weapon_creator.c">
+    <ClCompile Include="..\src\menus\weapon_editor.c">
       <Filter>menus</Filter>
     </ClCompile>
     <ClCompile Include="..\src\net\net_lobby.c">
@@ -644,7 +644,7 @@
     <ClInclude Include="..\src\menus\title.h">
       <Filter>menus</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\menus\weapon_creator.h">
+    <ClInclude Include="..\src\menus\weapon_editor.h">
       <Filter>menus</Filter>
     </ClInclude>
     <ClInclude Include="..\src\net\net_internal.h">

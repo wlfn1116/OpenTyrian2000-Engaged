@@ -590,7 +590,7 @@ bool JE_saveExtraShapes(void)
 	return ok;
 }
 
-// Resolve the sentinel independently of the machine-local Weapon Creator toggle.
+// Resolve the sentinel independently of the machine-local Custom Weapons setting.
 JE_byte extraShipResolvePort(uint seat, JE_byte port)
 {
 	if (port != EXTRA_SHIP_CUSTOM_PORT)

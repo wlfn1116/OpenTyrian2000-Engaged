@@ -85,9 +85,28 @@ typedef enum
 	CRT_FILTER_COUNT
 } CrtFilter;
 
+typedef enum
+{
+	CRT_STRENGTH_LIGHT = 0,
+	CRT_STRENGTH_MEDIUM,
+	CRT_STRENGTH_STRONG,
+	CRT_STRENGTH_COUNT
+} CrtStrength;
+
+typedef enum
+{
+	CRT_CURVATURE_OFF = 0,
+	CRT_CURVATURE_SUBTLE,
+	CRT_CURVATURE_STRONG,
+	CRT_CURVATURE_COUNT
+} CrtCurvature;
+
 extern int crt_filter;  // CrtFilter
+extern int crt_strength;
+extern int crt_curvature;
 // False when the renderer cannot draw the filter (no multiply blending, or CPU rendering).
 bool crt_filter_available(void);
+bool crt_curvature_available(void);
 
 extern bool show_fps;          // draw the FPS counter during gameplay
 extern int current_fps;        // presented frames during the last sampled second
@@ -166,6 +185,8 @@ bool video_test_rows_stats(char *detail, size_t detailSize);
 bool video_test_rows_rounds(char *detail, size_t detailSize);
 bool video_test_rows_pick(char *detail, size_t detailSize);
 bool video_test_rows_watch(char *detail, size_t detailSize);
+bool video_test_crt_rows(char *detail, size_t detailSize);
+bool video_test_crt_curve(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.

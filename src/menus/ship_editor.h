@@ -21,6 +21,8 @@
 #include "opentyr.h"
 
 void JE_shipEditor(void);
+void shipEditorServiceMusic(void);
+void shipEditorEndMusicFade(void);
 bool JE_shapeCodecSelfTest(void);
 bool JE_legacyUserShapeSelfTest(void);
 bool JE_captureHullListSelfTest(void);

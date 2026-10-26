@@ -1,4 +1,4 @@
-/* Custom Weapon Creator implementation. See custom_weapon.h. */
+/* Custom weapons designed in the Weapon Editor. See custom_weapon.h. */
 
 #include "custom_weapon.h"
 
@@ -148,7 +148,7 @@ static void sanitizeRawWeapon(JE_WeaponType *w)
 }
 
 // A blank one-bullet design (fires nothing until edited); what a fresh install
-// starts with, matching a blank creator canvas.
+// starts with, matching a blank editor canvas.
 static void makeBlankWeapon(JE_WeaponType *w)
 {
 	memset(w, 0, sizeof(*w));
@@ -479,13 +479,13 @@ typedef struct
 typedef struct
 {
 	AutoScaleUnit unit[AUTO_SCALE_UNITS];
-	int count, frames, cx2, csx, fwd, stride;
+	int count, frames, cx2, csx, fwd, stride, axis2;
 	double reach;
 } AutoScaleShape;
 
 typedef struct
 {
-	int left, right, frame, side, ring, stepX, stepY;
+	int left, right, frame, side, ring, stepX, stepY, room;
 	double lean, turn;
 } AutoScaleSeed;
 
@@ -507,6 +507,21 @@ static const double AUTO_SCALE_DEGREE = 0.017453292519943295;
 static AutoScaleShape autoScaleAnchor, autoScaleStock, autoScaleLevel, autoScaleTrial;
 static AutoScaleHeld autoScaleHeld[AUTO_SCALE_HELD];
 static int autoScaleHeldCount;
+static int autoScaleStyle = CUSTOM_SPREAD_ARROW;
+
+int customWeaponSpread = CUSTOM_SPREAD_AUTO;
+int customWeaponLastSpread = CUSTOM_SPREAD_AUTO;
+
+static const char *const customSpreadNames[CUSTOM_SPREAD_COUNT] =
+{
+	"Auto", "Stock", "Arrow", "Fan", "Wall", "Crescent", "Converge", "Wave", "Twin", "Burst",
+	"Nova", "Lob", "Spiral", "Weave"
+};
+
+const char *customWeaponSpreadName(int spread)
+{
+	return customSpreadNames[clampi(spread, 0, CUSTOM_SPREAD_COUNT - 1)];
+}
 
 static AutoScaleBullet autoScaleGet(const JE_WeaponType *w, int i)
 {
@@ -533,6 +548,16 @@ static int autoScaleRound(double v)
 static bool autoScaleSteerable(const AutoScaleBullet *b)
 {
 	return abs(b->sx) <= 30 && abs(b->sy) <= 30 && (b->sx != 0 || b->sy != 0);
+}
+
+static bool autoScaleAimable(const AutoScaleBullet *b)
+{
+	return autoScaleSteerable(b) || (b->sx > 100 && b->sy != 0 && abs(b->sy) <= 30);
+}
+
+static int autoScaleDriftX(const AutoScaleBullet *b, int csx)
+{
+	return (b->sx > 100) ? csx : b->sx;
 }
 
 static int autoScaleTileDamage(JE_byte attack)
@@ -670,13 +695,39 @@ static JE_word autoScaleFamilyStep(JE_word sg, int step)
 	return (JE_word)(offset + pick);
 }
 
+static int autoScaleOverhang(JE_word sg)
+{
+	if (sg <= 60000 || (unsigned int)(sg - 60001) >= COUNTOF(sprite_table[0].sprite))
+		return 0;
+	const int width = get_sprite_width(OPTION_SHAPES, sg - 60001);
+	return (width > 0) ? width - 12 : 0;
+}
+
+static int autoScaleSway2(JE_byte circlesize)
+{
+	const int size = (circlesize > 19) ? circlesize % 20 : circlesize;
+	if (size == 0)
+		return 0;
+	int dev = size >> 1, dir = 1, x = 0, lo = 0, hi = 0;
+	for (int tick = 0; tick < 8 * size + 8; ++tick)
+	{
+		dev += dir;
+		x += dev;
+		if (abs(dev) == size)
+			dir = -dir;
+		lo = MIN(lo, x);
+		hi = MAX(hi, x);
+	}
+	return lo + hi;
+}
+
 static int autoScaleUnitX2(const AutoScaleUnit *u)
 {
-	int lo = u->tile[0].bx, hi = lo;
+	int lo = u->tile[0].bx, hi = lo + autoScaleOverhang(u->tile[0].sg);
 	for (int i = 1; i < u->count; ++i)
 	{
 		lo = MIN(lo, u->tile[i].bx);
-		hi = MAX(hi, u->tile[i].bx);
+		hi = MAX(hi, u->tile[i].bx + autoScaleOverhang(u->tile[i].sg));
 	}
 	return lo + hi;
 }
@@ -731,10 +782,11 @@ static bool autoScaleUnitWide(const AutoScaleUnit *u)
 	bool wide = false;
 	for (int i = 0; i < u->count; ++i)
 	{
-		const int rel = 2 * u->tile[i].bx - x2;
+		const int rel = 2 * u->tile[i].bx + autoScaleOverhang(u->tile[i].sg) - x2;
 		bool mirrored = false;
 		for (int j = 0; j < u->count && !mirrored; ++j)
-			mirrored = 2 * u->tile[j].bx - x2 == -rel && u->tile[j].by == u->tile[i].by;
+			mirrored = 2 * u->tile[j].bx + autoScaleOverhang(u->tile[j].sg) - x2 == -rel &&
+			           u->tile[j].by == u->tile[i].by;
 		if (!mirrored)
 			return false;
 		wide |= rel != 0;
@@ -765,7 +817,9 @@ static bool autoScaleUnitColumn(const AutoScaleUnit *u)
 static void autoScaleUnitMirror(const AutoScaleUnit *u, int cx2, int csx, AutoScaleUnit *out)
 {
 	*out = *u;
-	const bool translate = autoScaleUnitWide(u);
+	bool translate = autoScaleUnitWide(u);
+	for (int i = 0; i < u->count && !translate; ++i)
+		translate = u->tile[i].sg > 60000;
 	const int shift = cx2 - autoScaleUnitX2(u);
 	for (int i = 0; i < out->count; ++i)
 	{
@@ -776,7 +830,7 @@ static void autoScaleUnitMirror(const AutoScaleUnit *u, int cx2, int csx, AutoSc
 		}
 		else
 		{
-			t->bx = (JE_shortint)clampi(cx2 - t->bx, -128, 127);
+			t->bx = (JE_shortint)clampi(cx2 - t->bx - autoScaleOverhang(t->sg), -128, 127);
 			t->sg = autoScaleMirrorSprite(t->sg);
 		}
 		if (abs(t->sx) <= 100)
@@ -814,44 +868,46 @@ static void autoScaleAdoptSprites(AutoScaleUnit *mirrored, const AutoScaleUnit *
 static double autoScaleLean(const AutoScaleUnit *u, int side, int csx, int fwd)
 {
 	const AutoScaleBullet *const t = &u->tile[0];
-	if (!autoScaleSteerable(t))
+	if (!autoScaleAimable(t))
 		return 0.0;
-	return atan2((double)((side < 0) ? csx - t->sx : t->sx - csx), (double)(fwd * t->sy));
+	const int sx = autoScaleDriftX(t, csx);
+	return atan2((double)((side < 0) ? csx - sx : sx - csx), (double)(fwd * t->sy));
 }
 
 static void autoScaleTurn(AutoScaleUnit *u, int side, int csx, int fwd, double lean)
 {
-	const AutoScaleBullet *const t = &u->tile[0];
-	if (!autoScaleSteerable(t))
-		return;
-	const double vx = t->sx - csx, vy = t->sy;
-	const double speed = sqrt(vx * vx + vy * vy);
-	const int sx = clampi(autoScaleRound(csx + side * speed * sin(lean)), -30, 30);
-	const int sy = clampi(autoScaleRound(fwd * speed * cos(lean)), -30, 30);
-	if (sx == 0 && sy == 0)
+	if (!autoScaleAimable(&u->tile[0]))
 		return;
 	for (int i = 0; i < u->count; ++i)
 	{
-		u->tile[i].sx = (JE_shortint)sx;
-		u->tile[i].sy = (JE_shortint)sy;
+		AutoScaleBullet *const t = &u->tile[i];
+		const double vx = autoScaleDriftX(t, csx) - csx, vy = t->sy;
+		const double speed = sqrt(vx * vx + vy * vy);
+		const int sx = clampi(autoScaleRound(csx + side * speed * sin(lean)), -30, 30);
+		const int sy = clampi(autoScaleRound(fwd * speed * cos(lean)), -30, 30);
+		if (sx == 0 && sy == 0)
+			continue;
+		t->sx = (JE_shortint)sx;
+		t->sy = (JE_shortint)sy;
 	}
 }
 
 static void autoScaleSpin(AutoScaleUnit *u, double angle)
 {
-	const AutoScaleBullet *const t = &u->tile[0];
-	if (!autoScaleSteerable(t))
-		return;
-	const double speed = sqrt((double)t->sx * t->sx + (double)t->sy * t->sy);
-	const double heading = atan2((double)t->sx, (double)t->sy) + angle;
-	const int sx = clampi(autoScaleRound(speed * sin(heading)), -30, 30);
-	const int sy = clampi(autoScaleRound(speed * cos(heading)), -30, 30);
-	if (sx == 0 && sy == 0)
+	if (!autoScaleAimable(&u->tile[0]))
 		return;
 	for (int i = 0; i < u->count; ++i)
 	{
-		u->tile[i].sx = (JE_shortint)sx;
-		u->tile[i].sy = (JE_shortint)sy;
+		AutoScaleBullet *const t = &u->tile[i];
+		const int drift = autoScaleDriftX(t, 0);
+		const double speed = sqrt((double)drift * drift + (double)t->sy * t->sy);
+		const double heading = atan2((double)drift, (double)t->sy) + angle;
+		const int sx = clampi(autoScaleRound(speed * sin(heading)), -30, 30);
+		const int sy = clampi(autoScaleRound(speed * cos(heading)), -30, 30);
+		if (sx == 0 && sy == 0)
+			continue;
+		t->sx = (JE_shortint)sx;
+		t->sy = (JE_shortint)sy;
 	}
 }
 
@@ -1001,6 +1057,32 @@ static int autoScaleCoreUnit(const AutoScaleShape *s, int f)
 	return best;
 }
 
+static int autoScaleShapeSide(const AutoScaleShape *s)
+{
+	int side = 0;
+	for (int i = 0; i < s->count; ++i)
+	{
+		const int x2 = autoScaleUnitX2(&s->unit[i]);
+		const int clear = MAX(16, autoScaleUnitWidth(&s->unit[i]));
+		const int spawn = (x2 <= -clear) ? -1 : (x2 >= clear) ? 1 : 0;
+		const int seen = (x2 - s->axis2 <= -clear) ? -1 : (x2 - s->axis2 >= clear) ? 1 : 0;
+		if (spawn == 0 || seen != spawn || (side != 0 && spawn != side))
+			return 0;
+		side = spawn;
+	}
+	return side;
+}
+
+static void autoScaleCentre(AutoScaleShape *s)
+{
+	const int dx = (s->cx2 - s->axis2) / 2;
+	if (dx == 0 || autoScaleShapeSide(s) != 0)
+		return;
+	for (int i = 0; i < s->count; ++i)
+		autoScaleUnitShift(&s->unit[i], -dx, 0);
+	s->cx2 -= 2 * dx;
+}
+
 static bool autoScaleAddUnit(AutoScaleShape *s, const AutoScaleUnit *u)
 {
 	if (s->count == AUTO_SCALE_UNITS)
@@ -1081,6 +1163,7 @@ static bool autoScaleDecompose(const JE_WeaponType *w, AutoScaleShape *shape)
 			sySum += t->sy;
 	}
 	shape->cx2 = autoScaleRound((double)x2Sum / units);
+	shape->axis2 = -autoScaleSway2(w->circlesize);
 	shape->csx = (sxCount > 0) ? autoScaleRound((double)sxSum / sxCount) : 0;
 	shape->fwd = (sySum < 0) ? -1 : 1;
 	shape->reach = 0.0;
@@ -1188,6 +1271,7 @@ static bool autoScaleDecompose(const JE_WeaponType *w, AutoScaleShape *shape)
 		shape->reach = MAX(shape->reach, autoScaleLean(&solo, solo.side, shape->csx, shape->fwd));
 	}
 
+	autoScaleCentre(shape);
 	int tiles = 0;
 	for (int f = 0; f < shape->frames; ++f)
 		tiles += autoScaleFrameTiles(shape, f);
@@ -1384,6 +1468,68 @@ static int autoScaleGap(const AutoScaleUnit *u)
 	return MAX(autoScaleUnitWidth(u) + 3, gap);
 }
 
+static void autoScaleStyleSeed(AutoScaleSeed *s, const AutoScaleUnit *t, int fwd)
+{
+	const int gap = autoScaleGap(t);
+	const bool steer = autoScaleAimable(&t->tile[0]);
+	switch (autoScaleStyle)
+	{
+	case CUSTOM_SPREAD_FAN:
+		s->stepX = gap;
+		s->stepY = 0;
+		s->turn = steer ? MAX(s->turn, 9.0 * AUTO_SCALE_DEGREE) : 0.0;
+		break;
+	case CUSTOM_SPREAD_WALL:
+		s->stepX = MIN(MAX(s->stepX, gap + 4), MAX(gap, s->room / 2));
+		s->stepY = 0;
+		s->turn = 0.0;
+		break;
+	case CUSTOM_SPREAD_CRESCENT:
+		s->stepX = MAX(s->stepX, gap);
+		s->stepY = steer ? -3 * fwd : 0;
+		s->turn = 0.0;
+		break;
+	case CUSTOM_SPREAD_CONVERGE:
+		s->stepX = MIN(MAX(s->stepX, gap + 3), MAX(gap, s->room / 2));
+		s->stepY = steer ? 2 * fwd : 0;
+		s->turn = 0.0;
+		break;
+	case CUSTOM_SPREAD_WAVE:
+		s->stepX = MAX(s->stepX, gap);
+		s->stepY = steer ? 5 * fwd : 0;
+		s->turn = 0.0;
+		break;
+	case CUSTOM_SPREAD_TWIN:
+		s->stepX = MAX(s->stepX, gap);
+		s->stepY = steer ? 2 * fwd : 0;
+		s->turn = 0.0;
+		break;
+	case CUSTOM_SPREAD_BURST:
+		s->stepX = 0;
+		s->stepY = 0;
+		s->turn = steer ? 14.0 * AUTO_SCALE_DEGREE : 0.0;
+		break;
+	case CUSTOM_SPREAD_NOVA:
+		s->stepX = 0;
+		s->stepY = 0;
+		s->turn = steer ? 24.0 * AUTO_SCALE_DEGREE : 0.0;
+		break;
+	case CUSTOM_SPREAD_LOB:
+		s->stepX = MAX(s->stepX, gap);
+		s->stepY = 0;
+		s->turn = 0.0;
+		break;
+	default:
+		if (s->turn < 3.0 * AUTO_SCALE_DEGREE)
+		{
+			s->stepX = MAX(s->stepX, gap);
+			if (s->stepY == 0 && steer)
+				s->stepY = 3 * fwd;
+		}
+		break;
+	}
+}
+
 static int autoScaleSeeds(const AutoScaleShape *src, AutoScaleSeed *seed)
 {
 	int n = 0;
@@ -1411,11 +1557,8 @@ static int autoScaleSeeds(const AutoScaleShape *src, AutoScaleSeed *seed)
 			s->turn = (fan > 0.0) ? MIN(fan, 20.0 * AUTO_SCALE_DEGREE) : 0.0;
 			s->stepX = clampi((prevX2 - autoScaleUnitX2(t)) / 2, 0, 24);
 			s->stepY = clampi((autoScaleUnitY2(t) - prevY2) / 2, -8, 8);
-			if (s->stepX < 4 && s->turn < 3.0 * AUTO_SCALE_DEGREE)
-			{
-				s->stepX = autoScaleGap(t);
-				s->stepY = 3 * src->fwd;
-			}
+			s->room = AUTO_SCALE_REACH_PX - abs(autoScaleUnitX2(t) - src->cx2) / 2;
+			autoScaleStyleSeed(s, t, src->fwd);
 		}
 		else if (core >= 0)
 		{
@@ -1426,9 +1569,11 @@ static int autoScaleSeeds(const AutoScaleShape *src, AutoScaleSeed *seed)
 			s->left = core;
 			s->right = -1;
 			s->lean = 0.0;
-			s->turn = autoScaleSteerable(&src->unit[core].tile[0]) ? 7.0 * AUTO_SCALE_DEGREE : 0.0;
+			s->turn = autoScaleAimable(&src->unit[core].tile[0]) ? 7.0 * AUTO_SCALE_DEGREE : 0.0;
 			s->stepX = autoScaleGap(&src->unit[core]);
 			s->stepY = 3 * src->fwd;
+			s->room = AUTO_SCALE_REACH_PX;
+			autoScaleStyleSeed(s, &src->unit[core], src->fwd);
 		}
 		for (int i = 0; i < src->count; ++i)
 		{
@@ -1442,12 +1587,100 @@ static int autoScaleSeeds(const AutoScaleShape *src, AutoScaleSeed *seed)
 			s->left = i;
 			s->right = -1;
 			s->lean = autoScaleLean(u, u->side, src->csx, src->fwd);
-			s->turn = autoScaleSteerable(&u->tile[0]) ? 7.0 * AUTO_SCALE_DEGREE : 0.0;
+			s->turn = autoScaleAimable(&u->tile[0]) ? 7.0 * AUTO_SCALE_DEGREE : 0.0;
 			s->stepX = autoScaleGap(u);
 			s->stepY = 3 * src->fwd;
+			s->room = AUTO_SCALE_REACH_PX - abs(autoScaleUnitX2(u) - src->cx2) / 2;
+			autoScaleStyleSeed(s, u, src->fwd);
 		}
 	}
 	return n;
+}
+
+static void autoScaleRetime(AutoScaleUnit *u, double fraction)
+{
+	if (!autoScaleAimable(&u->tile[0]) || u->tile[0].sy == 0)
+		return;
+	for (int i = 0; i < u->count; ++i)
+	{
+		const int speed = abs(u->tile[i].sy);
+		if (speed == 0)
+			continue;
+		const int retimed = clampi(speed - autoScaleRound(speed * fraction), (speed + 1) / 2, 30);
+		u->tile[i].sy = (JE_shortint)((u->tile[i].sy > 0) ? retimed : -retimed);
+	}
+}
+
+static void autoScaleRingOffset(const AutoScaleSeed *s, double at, int *dx, int *dy)
+{
+	double x = at * s->stepX, y = at * s->stepY;
+	switch (autoScaleStyle)
+	{
+	case CUSTOM_SPREAD_ARROW:
+	case CUSTOM_SPREAD_CRESCENT:
+	case CUSTOM_SPREAD_CONVERGE:
+	case CUSTOM_SPREAD_SPIRAL:
+	case CUSTOM_SPREAD_WEAVE:
+		x += 2.0 * MAX(at - 1.0, 0.0);
+		break;
+	case CUSTOM_SPREAD_WAVE:
+		x += 2.0 * MAX(at - 1.0, 0.0);
+		y = ((int)ceil(at) % 2 == 1) ? s->stepY : 0.0;
+		break;
+	case CUSTOM_SPREAD_TWIN:
+	{
+		const double first =
+		    clampi(autoScaleRound(2.5 * s->stepX), s->stepX, MAX(s->room - s->stepX, s->stepX));
+		x = (at <= 1.0) ? at * first : first + (at - 1.0) * s->stepX;
+		break;
+	}
+	default:
+		break;
+	}
+	*dx = autoScaleRound(x);
+	*dy = autoScaleRound(y);
+}
+
+static void autoScaleLob(AutoScaleUnit *u, double at, int side)
+{
+	if (!autoScaleAimable(&u->tile[0]) || u->tile[0].sy == 0)
+		return;
+	const int lead = abs(u->tile[0].sy);
+	const int back = clampi(autoScaleRound(lead * (0.3 + 0.1 * at)), 2, 12);
+	const int push = side * clampi(autoScaleRound(1.0 + at), 1, 6);
+	const bool ahead = u->tile[0].sy > 0;
+	for (int i = 0; i < u->count; ++i)
+	{
+		AutoScaleBullet *const t = &u->tile[i];
+		const int lag = clampi(back + lead - abs(t->sy), 2, 12);
+		t->sx = (JE_shortint)clampi(autoScaleDriftX(t, 0) + push, -30, 30);
+		t->sy = (JE_shortint)(ahead ? -lag : lag);
+	}
+}
+
+static void autoScaleRingMotion(AutoScaleUnit *u, double at, int side, int fwd)
+{
+	const int outward = side * fwd;
+	switch (autoScaleStyle)
+	{
+	case CUSTOM_SPREAD_ARROW:
+	case CUSTOM_SPREAD_WEAVE:
+		autoScaleRetime(u, 0.05 * at);
+		if (at >= 3.0)
+			autoScaleSpin(u, outward * (at - 2.0) * 6.0 * AUTO_SCALE_DEGREE);
+		break;
+	case CUSTOM_SPREAD_LOB:
+		autoScaleLob(u, at, side);
+		break;
+	case CUSTOM_SPREAD_CRESCENT:
+		autoScaleRetime(u, -0.05 * at);
+		break;
+	case CUSTOM_SPREAD_CONVERGE:
+		autoScaleSpin(u, -outward * at * 4.0 * AUTO_SCALE_DEGREE);
+		break;
+	default:
+		break;
+	}
 }
 
 static bool autoScaleGrowRing(const AutoScaleShape *src, const AutoScaleSeed *s, int j, bool half,
@@ -1463,12 +1696,16 @@ static bool autoScaleGrowRing(const AutoScaleShape *src, const AutoScaleSeed *s,
 		for (int w = 0; w < 2; ++w)
 		{
 			const int side = (w == 0) ? -1 : 1;
+			int dx, dy;
+			autoScaleRingOffset(s, j, &dx, &dy);
 			wing[w] = *t;
-			autoScaleUnitShift(&wing[w], side * j * s->stepX, j * s->stepY);
+			autoScaleUnitShift(&wing[w], side * dx, dy);
 			if (abs(autoScaleUnitX2(&wing[w]) - src->cx2) / 2 > AUTO_SCALE_REACH_PX)
 				return false;
 			if (s->turn > 0.0)
-				autoScaleSpin(&wing[w], side * j * s->turn);
+				autoScaleSpin(&wing[w], side * src->fwd * j * s->turn);
+			else
+				autoScaleRingMotion(&wing[w], j, side, src->fwd);
 			wing[w].weight = t->weight * pow(0.75, j);
 			wing[w].grown = j;
 			wing[w].ring = j;
@@ -1482,12 +1719,16 @@ static bool autoScaleGrowRing(const AutoScaleShape *src, const AutoScaleSeed *s,
 		return autoScaleAddUnit(out, &wing[0]) && autoScaleAddUnit(out, &wing[1]);
 	}
 
+	int dx, dy;
+	autoScaleRingOffset(s, at, &dx, &dy);
 	AutoScaleUnit u = *t;
-	autoScaleUnitShift(&u, -autoScaleRound(at * s->stepX), autoScaleRound(at * s->stepY));
+	autoScaleUnitShift(&u, -dx, dy);
 	if (abs(autoScaleUnitX2(&u) - src->cx2) / 2 > AUTO_SCALE_REACH_PX)
 		return false;
 	if (s->turn > 0.0)
 		autoScaleTurn(&u, -1, src->csx, src->fwd, MIN(s->lean + at * s->turn, leanCap));
+	else
+		autoScaleRingMotion(&u, at, -1, src->fwd);
 	u.weight = t->weight * pow(0.75, half ? j - 1 : j);
 	u.grown = half ? j - 1 : j;
 	u.ring = s->ring + j;
@@ -1509,20 +1750,14 @@ static bool autoScaleGrowRing(const AutoScaleShape *src, const AutoScaleSeed *s,
 
 static bool autoScaleFlank(const AutoScaleShape *src, AutoScaleShape *out)
 {
-	int side = 0;
-	for (int i = 0; i < src->count; ++i)
-	{
-		const int x2 = autoScaleUnitX2(&src->unit[i]);
-		const int unitSide = (x2 <= -16) ? -1 : (x2 >= 16) ? 1 : 0;
-		if (unitSide == 0 || (side != 0 && unitSide != side))
-			return false;
-		side = unitSide;
-	}
+	const int side = autoScaleShapeSide(src);
+	if (side == 0)
+		return false;
 
 	for (int i = 0; i < src->count; ++i)
 	{
 		AutoScaleUnit u;
-		autoScaleUnitMirror(&src->unit[i], 0, 0, &u);
+		autoScaleUnitMirror(&src->unit[i], src->axis2, 0, &u);
 		u.kind = AUTO_SCALE_SOLO;
 		u.side = -side;
 		u.ring = 0;
@@ -1554,7 +1789,9 @@ static bool autoScaleGrow(const AutoScaleShape *src, int extra, AutoScaleShape *
 	if (autoScaleLattice(src))
 		extra = (extra + 1) / 2;
 	const int seeds = autoScaleSeeds(src, seed);
-	const double leanCap = MIN(MAX(60.0 * AUTO_SCALE_DEGREE, src->reach + 30.0 * AUTO_SCALE_DEGREE),
+	const double leanCap = (autoScaleStyle == CUSTOM_SPREAD_NOVA)
+	                     ? 120.0 * AUTO_SCALE_DEGREE
+	                     : MIN(MAX(60.0 * AUTO_SCALE_DEGREE, src->reach + 30.0 * AUTO_SCALE_DEGREE),
 	                           150.0 * AUTO_SCALE_DEGREE);
 	int wide = 0, cap = AUTO_SCALE_VOLLEY;
 	for (int i = 0; i < src->count; ++i)
@@ -1723,6 +1960,14 @@ static void autoScaleHold(const AutoScaleShape *s)
 		}
 }
 
+static JE_shortint autoScaleStretch(int lead, int speed, int base)
+{
+	if (lead == 0 || base == 0 || abs(lead) > 30 || abs(speed) > 30 || abs(base) > 30)
+		return (JE_shortint)lead;
+	const int value = lead + (((lead > 0) == (base > 0)) ? speed - base : base - speed);
+	return (JE_shortint)((lead > 0) ? clampi(value, 1, 30) : clampi(value, -30, -1));
+}
+
 static void autoScaleRatchet(AutoScaleUnit *u, bool up)
 {
 	AutoScaleUnit held = *u;
@@ -1746,13 +1991,14 @@ static void autoScaleRatchet(AutoScaleUnit *u, bool up)
 	const int dx = (autoScaleUnitX2(u) - autoScaleUnitX2(&held)) / 2,
 	          dy = (autoScaleUnitY2(u) - autoScaleUnitY2(&held)) / 2;
 	const AutoScaleBullet lead = u->tile[0];
+	const int heldLead = held.tile[0].sy;
 	for (int k = 0; k < held.count; ++k)
 	{
 		AutoScaleBullet *const t = &held.tile[k];
 		t->bx = (JE_shortint)clampi(t->bx + dx, -128, 127);
 		t->by = (JE_shortint)clampi(t->by + dy, -128, 127);
 		t->sx = lead.sx;
-		t->sy = lead.sy;
+		t->sy = autoScaleStretch(lead.sy, t->sy, heldLead);
 		t->del = lead.del;
 	}
 	*u = held;
@@ -1888,6 +2134,7 @@ static void autoScaleSwapCore(AutoScaleUnit *u, const AutoScaleUnit *s)
 	const int dx = (autoScaleUnitX2(u) - autoScaleUnitX2(s)) / 2,
 	          dy = (autoScaleUnitY2(u) - autoScaleUnitY2(s)) / 2;
 	const AutoScaleBullet lead = u->tile[0];
+	const int stockLead = s->tile[0].sy;
 	u->count = s->count;
 	for (int k = 0; k < s->count; ++k)
 	{
@@ -1896,7 +2143,7 @@ static void autoScaleSwapCore(AutoScaleUnit *u, const AutoScaleUnit *s)
 		t->bx = (JE_shortint)clampi(s->tile[k].bx + dx, -128, 127);
 		t->by = (JE_shortint)clampi(s->tile[k].by + dy, -128, 127);
 		t->sx = lead.sx;
-		t->sy = lead.sy;
+		t->sy = autoScaleStretch(lead.sy, t->sy, stockLead);
 		t->del = lead.del;
 		t->sg = autoScaleBase(s->tile[k].sg);
 		if (lead.sg < 60000 && t->sg < 60000)
@@ -2247,6 +2494,33 @@ static int autoScaleRingCap(int period)
 	return (period <= 2) ? 1 : (period <= 4) ? 2 : 3;
 }
 
+static bool autoScaleWeave(AutoScaleShape *s)
+{
+	bool sided = false;
+	for (int i = 0; i < s->count; ++i)
+		sided |= (s->unit[i].kind == AUTO_SCALE_RING || s->unit[i].kind == AUTO_SCALE_FLANK) &&
+		         s->unit[i].side != 0;
+	if (s->frames != 1 || !sided)
+		return true;
+
+	const int count = s->count;
+	for (int i = 0; i < count; ++i)
+	{
+		AutoScaleUnit *const u = &s->unit[i];
+		if ((u->kind == AUTO_SCALE_RING || u->kind == AUTO_SCALE_FLANK) && u->side != 0)
+		{
+			u->frame = (u->side > 0) ? 1 : 0;
+			continue;
+		}
+		AutoScaleUnit twin = *u;
+		twin.frame = 1;
+		if (!autoScaleAddUnit(s, &twin))
+			return false;
+	}
+	s->frames = 2;
+	return autoScaleFramesEven(s) && 2 * autoScaleFrameTiles(s, 0) <= CUSTOM_BULLETS_MAX;
+}
+
 static bool autoScaleForm(const AutoScaleShape *src, int p, int a, int plan,
                           const AutoScaleShape *stock, bool animated, AutoScaleShape *out)
 {
@@ -2254,7 +2528,32 @@ static bool autoScaleForm(const AutoScaleShape *src, int p, int a, int plan,
 	    (p < a) ? autoScaleShrink(src, (double)plan / a, out) : autoScaleGrow(src, plan, out);
 	if (ok)
 		autoScaleRestyle(out, stock, autoScaleLevelStep(p, a), animated, p > a);
-	return ok;
+	return ok && (autoScaleStyle != CUSTOM_SPREAD_WEAVE || autoScaleWeave(out));
+}
+
+static int autoScaleShapeTiles(const AutoScaleShape *s)
+{
+	int tiles = 0;
+	for (int i = 0; i < s->count; ++i)
+		tiles += s->unit[i].count;
+	return tiles;
+}
+
+static void autoScaleFlair(const AutoScaleShape *s, const JE_WeaponType *anchor, int p,
+                           JE_WeaponType *w)
+{
+	bool grown = false;
+	for (int i = 0; i < s->count; ++i)
+		grown |= s->unit[i].grown > 0;
+	if (autoScaleStyle == CUSTOM_SPREAD_LOB && anchor->acceleration == 0 && grown)
+		w->acceleration = (JE_shortint)s->fwd;
+	if (autoScaleStyle == CUSTOM_SPREAD_SPIRAL && anchor->circlesize == 0)
+	{
+		w->circlesize = (JE_byte)(2 + p / 3);
+		const int dx = autoScaleSway2(w->circlesize) / 2;
+		for (int i = 0; i < autoScaleSlots(w); ++i)
+			w->bx[i] = (JE_shortint)clampi(w->bx[i] - dx, -128, 127);
+	}
 }
 
 static bool autoScaleSameLook(const JE_WeaponType *x, const JE_WeaponType *y)
@@ -2274,21 +2573,120 @@ static bool autoScaleSameLook(const JE_WeaponType *x, const JE_WeaponType *y)
 	return true;
 }
 
-static bool autoScaleLineVaried(int line)
+static bool autoScaleLineFits(int line, int lineLevel, int a)
 {
-	int looks = 0;
-	for (int l = 0; l < CUSTOM_POWER_LEVELS; ++l)
+	const int top = (line > 0) ? CUSTOM_POWER_LEVELS - 1
+	              : clampi(options[-line].pwr, 0, CUSTOM_POWER_LEVELS - 1);
+	int looks = 0, clamped = 0;
+	for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
 	{
-		const int wn = autoScaleLineWeapon(line, l);
+		const int at = lineLevel + p - a;
+		clamped += at > top;
+		const int wn = autoScaleLineWeapon(line, clampi(at, 0, top));
 		bool seen = wn <= 0;
-		for (int k = 0; k < l && !seen; ++k)
+		for (int k = 0; k < p && !seen; ++k)
 		{
-			const int other = autoScaleLineWeapon(line, k);
+			const int other = autoScaleLineWeapon(line, clampi(lineLevel + k - a, 0, top));
 			seen = other > 0 && autoScaleSameLook(&weapons[other], &weapons[wn]);
 		}
 		looks += !seen;
 	}
-	return looks >= 5;
+	return looks >= 5 && clamped <= 1;
+}
+
+static int autoScaleLooks(const JE_WeaponType *levels)
+{
+	int looks = 0;
+	for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
+	{
+		bool seen = false;
+		for (int k = 0; k < p && !seen; ++k)
+			seen = autoScaleSameLook(&levels[k], &levels[p]);
+		looks += !seen;
+	}
+	return looks;
+}
+
+static bool autoScaleSameSlot(const JE_WeaponType *w, int i, int j, bool mirror)
+{
+	const JE_word sg = mirror ? autoScaleMirrorSprite(w->sg[j]) : w->sg[j];
+	const int sx = (mirror && abs(w->sx[j]) <= 100) ? -w->sx[j] : w->sx[j];
+	const int bx = mirror ? -w->bx[j] - autoScaleOverhang(w->sg[j]) : w->bx[j];
+	return w->bx[i] == bx && w->by[i] == w->by[j] && w->sx[i] == sx && w->sy[i] == w->sy[j] &&
+	       w->sg[i] == sg && w->attack[i] == w->attack[j] && w->del[i] == w->del[j];
+}
+
+static void autoScaleUnweave(JE_WeaponType *w)
+{
+	const int multi = clampi(w->multi, 1, CUSTOM_BULLETS_MAX);
+	if (w->max != 2 * multi)
+		return;
+	bool echo[CUSTOM_BULLETS_MAX] = { false };
+	for (int i = multi; i < 2 * multi; ++i)
+	{
+		bool mirrored = false;
+		for (int j = 0; j < multi && !mirrored && !echo[i]; ++j)
+		{
+			echo[i] = autoScaleSameSlot(w, i, j, false);
+			mirrored = autoScaleSameSlot(w, i, j, true);
+		}
+		if (!mirrored && !echo[i])
+			return;
+	}
+	int n = multi;
+	for (int i = multi; i < 2 * multi; ++i)
+		if (!echo[i])
+		{
+			w->sg[n] = w->sg[i];
+			w->attack[n] = w->attack[i];
+			w->del[n] = w->del[i];
+			w->sx[n] = w->sx[i];
+			w->sy[n] = w->sy[i];
+			w->bx[n] = w->bx[i];
+			w->by[n] = w->by[i];
+			++n;
+		}
+	w->multi = w->max = (JE_byte)n;
+}
+
+static int autoScaleUsableStyle(int style, bool steer)
+{
+	if (!steer && (style == CUSTOM_SPREAD_FAN || style == CUSTOM_SPREAD_BURST ||
+	               style == CUSTOM_SPREAD_LOB || style == CUSTOM_SPREAD_SPIRAL))
+		return CUSTOM_SPREAD_ARROW;
+	if (!steer && (style == CUSTOM_SPREAD_CONVERGE || style == CUSTOM_SPREAD_NOVA))
+		return CUSTOM_SPREAD_WALL;
+	return style;
+}
+
+static int autoScaleRolled = CUSTOM_SPREAD_AUTO;
+
+static int autoScalePickStyle(const JE_WeaponType *anchor, bool chosen)
+{
+	bool steer = false;
+	for (int i = 0; i < autoScaleSlots(anchor); ++i)
+	{
+		const AutoScaleBullet b = autoScaleGet(anchor, i);
+		steer |= b.sg != 0 && autoScaleAimable(&b);
+	}
+	if (chosen)
+	{
+		autoScaleRolled = autoScaleUsableStyle(customWeaponSpread, steer);
+		return autoScaleRolled;
+	}
+
+	int pool[CUSTOM_SPREAD_COUNT], n = 0;
+	for (int style = CUSTOM_SPREAD_ARROW; style < CUSTOM_SPREAD_COUNT; ++style)
+	{
+		const int usable = autoScaleUsableStyle(style, steer);
+		bool seen = usable == autoScaleRolled;
+		for (int k = 0; k < n && !seen; ++k)
+			seen = pool[k] == usable;
+		if (!seen)
+			pool[n++] = usable;
+	}
+	autoScaleRolled = pool[((Uint32)customRand(65536) + SDL_GetTicks()) % (Uint32)n];
+	return autoScaleRolled;
 }
 
 static const int autoScaleCurve[CUSTOM_POWER_LEVELS] = { 100, 140, 180, 220, 260, 300, 350, 400, 460, 530, 600 };
@@ -2469,18 +2867,32 @@ void customWeaponAutoScaleLevels(void)
 	const int a = clampi(customWeaponEditLevel, 0, CUSTOM_POWER_LEVELS - 1);
 	const JE_WeaponType anchor = customWeaponRaw[m][a];
 	const int basePeriod = anchor.shotrepeat + 1;
-	const bool shaped = autoScaleDecompose(&anchor, &autoScaleAnchor);
+	JE_WeaponType source = anchor;
+	autoScaleUnweave(&source);
+	const bool shaped = autoScaleDecompose(&source, &autoScaleAnchor);
 	const bool animated = anchor.weapani > 0;
 
 	int lineLevel = 0;
 	const int line = shaped ? autoScaleLineage(&anchor, a, &lineLevel) : 0;
-	if (line != 0 &&
-	    autoScaleLikeness(&anchor, &weapons[autoScaleLineWeapon(line, lineLevel)]) >= 500 &&
-	    autoScaleLineVaried(line))
+	static JE_WeaponType followed[CUSTOM_POWER_LEVELS];
+	const int lineWn = (line != 0) ? autoScaleLineWeapon(line, lineLevel) : 0;
+	const bool stockLine = lineWn > 0 && autoScaleLikeness(&anchor, &weapons[lineWn]) >= 500;
+	const bool stockFits = stockLine && autoScaleLineFits(line, lineLevel, a);
+	const bool chosen =
+	    customWeaponSpread >= (stockLine ? CUSTOM_SPREAD_STOCK : CUSTOM_SPREAD_ARROW) &&
+	    customWeaponSpread < CUSTOM_SPREAD_COUNT;
+	autoScaleStyle = autoScalePickStyle(&anchor, chosen);
+	const bool follow = autoScaleStyle == CUSTOM_SPREAD_STOCK;
+	if (follow)
 	{
 		autoScaleFollowLine(&anchor, m, a, line, lineLevel);
-		return;
+		customWeaponLastSpread = CUSTOM_SPREAD_STOCK;
+		if (stockFits)
+			return;
+		memcpy(followed, customWeaponRaw[m], sizeof(followed));
+		autoScaleStyle = CUSTOM_SPREAD_ARROW;
 	}
+	customWeaponLastSpread = autoScaleStyle;
 	const bool lattice = shaped && autoScaleLattice(&autoScaleAnchor);
 	const double anchorDps = autoScaleWeaponDps(&anchor);
 	const bool damaging = anchorDps > 0.0;
@@ -2492,7 +2904,10 @@ void customWeaponAutoScaleLevels(void)
 	for (int dir = -1; dir <= 1; dir += 2)
 	{
 		double limit = anchorDps;
-		int trend = basePeriod, volley = clampi(anchor.multi, 1, CUSTOM_BULLETS_MAX);
+		int trend = basePeriod;
+		int volley = clampi(anchor.multi, 1, CUSTOM_BULLETS_MAX);
+		if (shaped)
+			volley = autoScaleShapeTiles(&autoScaleAnchor);
 		autoScaleHeldCount = 0;
 		if (shaped)
 			autoScaleHold(&autoScaleAnchor);
@@ -2534,7 +2949,7 @@ void customWeaponAutoScaleLevels(void)
 				if (!autoScaleForm(&autoScaleAnchor, p, a, plan, stockShape, animated,
 				                   &autoScaleLevel))
 					continue;
-				const int tiles = autoScaleFrameTiles(&autoScaleLevel, 0);
+				const int tiles = autoScaleShapeTiles(&autoScaleLevel);
 				if ((dir > 0) ? tiles < volley : tiles > volley)
 					continue;
 				const int area = autoScaleVolleyArea(&autoScaleLevel);
@@ -2595,12 +3010,18 @@ void customWeaponAutoScaleLevels(void)
 			if (bestPush)
 				autoScaleNudge(&autoScaleLevel, dir);
 			autoScaleWrite(&autoScaleLevel, &anchor, period, &customWeaponRaw[m][p]);
+			autoScaleFlair(&autoScaleLevel, &anchor, p, &customWeaponRaw[m][p]);
 			autoScaleHold(&autoScaleLevel);
 			limit = autoScaleShapeDps(&autoScaleLevel, period);
 			trend = period;
-			volley = autoScaleFrameTiles(&autoScaleLevel, 0);
+			volley = autoScaleShapeTiles(&autoScaleLevel);
 			heft = autoScaleVolleyArea(&autoScaleLevel);
 		}
+	}
+	if (follow && autoScaleLooks(followed) > autoScaleLooks(customWeaponRaw[m]))
+	{
+		memcpy(customWeaponRaw[m], followed, sizeof(followed));
+		customWeaponLastSpread = CUSTOM_SPREAD_STOCK;
 	}
 }
 

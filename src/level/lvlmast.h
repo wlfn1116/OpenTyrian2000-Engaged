@@ -37,6 +37,8 @@
 // Endless shop can sell it. ships[] is sized to hold it; SHIP_NUM stays the data-file count.
 #define SHIP_DRAGONWING (SHIP_NUM + 1)
 
+#define SHIP_GENCORE_II 16
+
 #define ENEMY_END1    850
 #define ENEMY_START2 1001
 #define ENEMY_NUM    1850

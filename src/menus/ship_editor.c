@@ -1682,7 +1682,7 @@ static void sePlayRandomSong(void)
 }
 
 // Both editor loops run on setDelay(3) frames, so one call steps three classic ticks.
-static void seServiceMusic(void)
+void shipEditorServiceMusic(void)
 {
 	if (audio_disabled || music_disabled)
 		return;
@@ -1710,6 +1710,14 @@ static void seServiceMusic(void)
 
 	if (!playing || (songlooped && !seFadingSong))
 		sePlayRandomSong();
+}
+
+void shipEditorEndMusicFade(void)
+{
+	if (!seFadingSong)
+		return;
+	seFadingSong = false;
+	set_volume(tyrMusicVolume, fxVolume);
 }
 
 static void seSpriteEditor(int bank)
@@ -1770,7 +1778,7 @@ static void seSpriteEditor(int bank)
 	while (!done)
 	{
 		setDelay(3);
-		seServiceMusic();
+		shipEditorServiceMusic();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
@@ -2573,7 +2581,7 @@ void JE_shipEditor(void)
 	while (!done)
 	{
 		setDelay(3);
-		seServiceMusic();
+		shipEditorServiceMusic();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
@@ -3111,11 +3119,7 @@ void JE_shipEditor(void)
 	touch_ui_clear_layout();
 	wait_noinput(false, false, true);
 
-	if (seFadingSong)
-	{
-		seFadingSong = false;
-		set_volume(tyrMusicVolume, fxVolume);
-	}
+	shipEditorEndMusicFade();
 
 	VGAScreen = temp_surface;
 	set_menu_centered(prevCentered);

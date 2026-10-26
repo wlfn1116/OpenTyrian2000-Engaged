@@ -399,6 +399,7 @@ bool arcadeRearGunScale = true;
 /* Give unused sheet icons to items that otherwise reuse an icon or have none. */
 bool unusedShopSprites = true;
 bool shipEditorStars = true;
+int weaponEditorShip = SHIP_GENCORE_II;
 /* Use sprite centres as projectile and target hit-test anchors. */
 bool centeredShotHitboxes = true;
 /* Steer a weapon-table guided shot toward the enemy's screen x (ex + mapoffset), where the
@@ -703,6 +704,12 @@ static bool load_opentyrian_config(void)
 		config_get_int_option(section, "crt_filter", &crt_filter);
 		if (crt_filter < CRT_FILTER_OFF || crt_filter >= CRT_FILTER_COUNT)
 			crt_filter = CRT_FILTER_OFF;
+		config_get_int_option(section, "crt_strength", &crt_strength);
+		if (crt_strength < CRT_STRENGTH_LIGHT || crt_strength >= CRT_STRENGTH_COUNT)
+			crt_strength = CRT_STRENGTH_MEDIUM;
+		config_get_int_option(section, "crt_curvature", &crt_curvature);
+		if (crt_curvature < CRT_CURVATURE_OFF || crt_curvature >= CRT_CURVATURE_COUNT)
+			crt_curvature = CRT_CURVATURE_OFF;
 
 		// Ship-control sensitivity slider: touch on the handheld ports, mouse on desktop.
 		config_get_int_option(section, SHIP_SENS_CFG, &ship_sensitivity);
@@ -978,6 +985,9 @@ static bool load_opentyrian_config(void)
 		load_int_flag(section, "centered_shot_hitboxes", &centeredShotHitboxes);
 		load_int_flag(section, "guided_shot_screen_aim", &guidedShotScreenAim);
 		load_int_flag(section, "ship_editor_stars", &shipEditorStars);
+		config_get_int_option(section, "weapon_editor_ship", &weaponEditorShip);
+		if (weaponEditorShip < 0 || weaponEditorShip > SHIP_DRAGONWING)
+			weaponEditorShip = SHIP_GENCORE_II;
 
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
@@ -1091,6 +1101,8 @@ bool save_opentyrian_config(void)
 
 	config_set_int_option(section, "show_fps", show_fps ? 1 : 0);
 	config_set_int_option(section, "crt_filter", crt_filter);
+	config_set_int_option(section, "crt_strength", crt_strength);
+	config_set_int_option(section, "crt_curvature", crt_curvature);
 
 	config_set_int_option(section, SHIP_SENS_CFG, ship_sensitivity);
 
@@ -1209,6 +1221,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "centered_shot_hitboxes", centeredShotHitboxes ? 1 : 0);
 	config_set_int_option(section, "guided_shot_screen_aim", guidedShotScreenAim ? 1 : 0);
 	config_set_int_option(section, "ship_editor_stars", shipEditorStars ? 1 : 0);
+	config_set_int_option(section, "weapon_editor_ship", weaponEditorShip);
 	enhancementSaveCustomSet(section);
 	config_set_int_option(section, "xmas", xmasMode);
 
