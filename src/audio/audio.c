@@ -19,6 +19,7 @@
 
 #include "file.h"
 #include "lds_play.h"
+#include "musmast.h"
 #include "opentyr.h"
 #include "sfx.h"
 
@@ -741,6 +742,11 @@ static void load_song(unsigned int song_num)  // FKA NortSong.loadSong
 	{
 		fprintf(stderr, "warning: failed to load song %d\n", song_num + 1);
 	}
+}
+
+void play_random_song(void)
+{
+	play_song((unsigned int)rand() % MUSIC_NUM);
 }
 
 void play_song(unsigned int song_num)  // FKA NortSong.playSong

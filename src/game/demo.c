@@ -26,6 +26,7 @@
 #include "opentyr.h"
 #include "player.h"
 #include "player_ship.h"
+#include "qa.h"
 
 #include <stdio.h>
 
@@ -63,7 +64,20 @@ bool load_next_demo(void)
 
 	char demo_filename[9];
 	snprintf(demo_filename, sizeof(demo_filename), "demo.%d", demo_num);
-	demo_file = dir_fopen_die(data_dir(), demo_filename, "rb"); // shipped demo files are required
+	if (qa_replay_file != NULL)
+	{
+		demo_file = fopen(qa_replay_file, "rb");
+		if (demo_file == NULL)
+		{
+			fprintf(stderr, "error: cannot open demo %s\n", qa_replay_file);
+			JE_tyrianHalt(1);
+		}
+	}
+	else
+	{
+		// shipped demo files are required
+		demo_file = dir_fopen_die(data_dir(), demo_filename, "rb");
+	}
 
 	difficultyLevel = DIFFICULTY_NORMAL;
 	bonusLevelCurrent = false;
@@ -77,6 +91,7 @@ bool load_next_demo(void)
 
 	for (size_t i = 0; i < COUNTOF(demo_header_fields); ++i)
 		fread_u8_die(demo_header_fields[i], 1, demo_file);
+	qa_replay_coop_arm();
 
 	Uint8 unused[3];
 	fread_u8_die(unused, 3, demo_file);

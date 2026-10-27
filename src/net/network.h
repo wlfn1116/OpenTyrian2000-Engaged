@@ -465,14 +465,17 @@ typedef struct
 {
 	Sint32 x, y, armor, shield, alive;
 	Sint64 cash;
+	Uint8  ship, generator, shieldItem, special;
+	Uint8  weapon[2], power[2], sidekick[2];
+	Uint32 weaponMode, superbombs, invulnerable, exploding;
 }
 NetSimPlayerRow;
 
 typedef struct
 {
-	Uint8  idx, avail;
-	Uint16 type;
-	Sint32 ex, ey, armorleft;
+	Uint8  idx, avail, link, elite;
+	Uint16 type, die;
+	Sint32 ex, ey, armorleft, value;
 }
 NetSimEnemyRow;
 

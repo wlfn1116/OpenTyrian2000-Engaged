@@ -29,6 +29,9 @@ It covers:
 - modifier, perk, course, and economy invariants
 - Arcade lives, hull, rear-gun, and HUD geometry
 - online mode flags, ownership, and lobby settings
+- desync guards: canary coverage, draw paths that must leave the simulation
+  alone, skipped background layers, online debug keys, and recovery relocation
+  for every two-ship layout
 - both-player Endless perks, shops, drives, deaths, and course choices
 - deterministic generation across 768 course seeds
 - every shipped level's event script through the loader, its data corrections,
@@ -59,6 +62,22 @@ python3 testing/run_replay_fixtures.py \
 
 Destruct has no demo corpus. Its test runs a scripted headless battle and
 compares each tick with a replay from that tick's snapshot.
+
+Four co-op flights write synthetic demos at run time. Player one follows the
+demo's key stream; player two flies a seeded random walk through the rollback
+input tuples. Each flight runs 1,500 ticks, and every tick is replayed from a
+snapshot up to ten frames back. A fifth flight runs at detail levels 4 and 3,
+hashes every registry item on each verified frame, and fails when any
+simulation item differs.
+
+| Option | Effect |
+| --- | --- |
+| `--test-replay-file FILE` | Play FILE in place of the shipped demo |
+| `--test-replay-coop` | Add player two as a co-op Campaign ship scripted through input tuples |
+| `--test-replay-depth N` | Replay from up to N frames back, cycling 1 to N |
+| `--test-replay-trace FILE` | Write each registry item's hash for every verified frame |
+| `--test-replay-seed N` | Seed player two's scripted input |
+| `--test-replay-detail N` | Run at detail level N (1 to 6) |
 
 Replay hashes are compatibility fixtures. Change them only after reviewing an
 intentional simulation change on every desktop CI platform.

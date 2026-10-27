@@ -408,7 +408,7 @@ static void qa_separate_arcade_lives(void)
 	{
 		player[p].items.weapon[FRONT_WEAPON].power = 4;
 		player[p].items.weapon[REAR_WEAPON].power = 7;
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		player[p].lives = player_lives_counter(p);
 	}
 	--(*player[0].lives);
 	qa_check(player[0].items.weapon[FRONT_WEAPON].power == 3
@@ -742,7 +742,7 @@ static void qa_downed_ship_hud(void)
 	{
 		player[p].items.weapon[FRONT_WEAPON].power = 1;
 		player[p].items.weapon[REAR_WEAPON].power = 1;
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		player[p].lives = player_lives_counter(p);
 		player[p].is_alive = true;
 		player[p].exploding_ticks = 0;
 	}
@@ -782,8 +782,7 @@ static void qa_downed_ship_hud(void)
 	 * way through the other binding. */
 	*player[1].lives = 1;
 	arcadeSeparateMode = true;
-	for (uint p = 0; p < COUNTOF(player); ++p)
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	player_bind_lives();
 	qa_check(player_is_out(1) && hud_lives_count(1) == 0,
 	         "a Separate arcade ship reads out the same way off its own front-gun counter");
 
@@ -1423,8 +1422,7 @@ static void qa_debug_block_roundtrip(void)
 	isNetworkGame = true;
 
 	// JE_getShipInfo runs inside the adopt and reads both hull ceilings through this.
-	for (uint p = 0; p < COUNTOF(player); ++p)
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	player_bind_lives();
 
 	difficultyLevel        = DIFFICULTY_HARD;
 	cheatInfiniteShields   = true;
@@ -1841,8 +1839,7 @@ static void qa_dual_arcade_save_roundtrip(void)
 		player[1].items.weapon[REAR_WEAPON].power = 7;
 		player[0].weapon_mode = 3;
 		player[1].weapon_mode = 4;
-		for (uint p = 0; p < COUNTOF(player); ++p)
-			player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		player_bind_lives();
 		const PlayerItems wrote[2] = { player[0].items, player[1].items };
 		const JE_byte wroteSkins[2] = { (JE_byte)(16 + mode), (JE_byte)(3 + mode) };
 		shipSkinSet(0, wroteSkins[0]);
@@ -1931,7 +1928,7 @@ static void qa_dual_arcade_save_roundtrip(void)
 	{
 		player[p].items.ship = p == 0 ? 11 : 12;
 		player[p].items.super_arcade_mode = SA_NONE;
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		player[p].lives = player_lives_counter(p);
 	}
 	player[1].items.weapon[REAR_WEAPON].power = 6;   // the Dragonwing's lives
 	JE_saveGame(QA_SAVE_SLOT, "QA LINKED PAIR");
@@ -1950,8 +1947,7 @@ static void qa_dual_arcade_save_roundtrip(void)
 	saveLevel = savedLevel;
 	player[0].items = savedItems[0];
 	player[1].items = savedItems[1];
-	for (uint p = 0; p < COUNTOF(player); ++p)
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	player_bind_lives();
 	superArcadeMode = SA_NONE;   // the loads above adopted the records' rulesets
 	shipSkinSet(0, savedSkins[0]);
 	shipSkinSet(1, savedSkins[1]);

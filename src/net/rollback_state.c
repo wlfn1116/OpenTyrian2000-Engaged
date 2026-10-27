@@ -43,16 +43,9 @@
 #include "sprite.h"
 #include "timing.h"
 
-/* Rebind player[].lives after restore instead of trusting its copied interior
- * pointer. player_lives_port preserves the original weapon-bay ownership. */
-static void rb_fixup_player_lives(void)
-{
-	for (uint i = 0; i < COUNTOF(player); ++i)
-		player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
-}
-
 #define REG(var)       rollback_register(#var, &(var), sizeof(var))
 #define REG_ARR(var)   rollback_register(#var, (var), sizeof(var))
+#define REG_LOCAL(var) rollback_register_local(#var, &(var), sizeof(var))
 
 void rollback_state_register_globals(void)
 {
@@ -61,7 +54,9 @@ void rollback_state_register_globals(void)
 
 	/* Players. */
 	REG_ARR(player);
-	rollback_register_fixup(rb_fixup_player_lives);
+	/* Rebind player[].lives after restore instead of trusting its copied interior
+	 * pointer. player_lives_port preserves the original weapon-bay ownership. */
+	rollback_register_fixup(player_bind_lives);
 	REG_ARR(button);
 	REG(constantLastX);
 	REG(mouseX);  REG(mouseY);  REG(mouseXB);  REG(mouseYB);
@@ -91,6 +86,7 @@ void rollback_state_register_globals(void)
 	REG_ARR(enemy);
 	REG_ARR(enemyAvail);
 	REG_ARR(enemySpriteSheetIds);
+	rollback_register_fixup(enemy_sprite_sheets_sync);
 	REG(enemyOffset);
 	REG(enemyOnScreen);
 	REG(enemyParkedAbove);
@@ -138,11 +134,11 @@ void rollback_state_register_globals(void)
 	REG(specialWeaponWpn);
 	REG(linkToPlayer);
 	REG(fireButtonHeld);
-	REG(debugTwiddleTrigger);      /* one-shot, cleared inside the tick      */
-	REG(debugToggleFireActive);    /* latch that overwrites button[0]        */
+	REG(debugTwiddleTrigger);             /* one-shot, cleared inside the tick      */
+	REG_LOCAL(debugToggleFireActive);     /* latch that overwrites button[0]        */
 	REG(chargeWait);  REG(chargeLevel);  REG(chargeMax);
 	REG(chargeGr);    REG(chargeGrWait);
-	REG(neat);
+	REG_LOCAL(neat);
 	REG(optionSatelliteRotate);
 	REG_ARR(optionAttachmentMove);
 	REG_ARR(optionAttachmentLinked);
@@ -213,7 +209,7 @@ void rollback_state_register_globals(void)
 	REG(filterFadeStart);
 	REG(background2over);
 	REG(background3over);
-	REG(background2);
+	REG_LOCAL(background2);
 	REG(starActive);
 	REG(topEnemyOver);
 	REG(skyEnemyOverAll);
@@ -225,11 +221,11 @@ void rollback_state_register_globals(void)
 	REG(shieldWait);
 	// Gauge flashes are presentation state and do not belong in rollback snapshots.
 	REG(armorShipDelay);
-	REG(warningSoundDelay);
-	REG(warningCol);
-	REG(warningColChange);
-	REG(musicFade);
-	REG(tempVolume);
+	REG_LOCAL(warningSoundDelay);
+	REG_LOCAL(warningCol);
+	REG_LOCAL(warningColChange);
+	REG_LOCAL(musicFade);
+	REG_LOCAL(tempVolume);
 	REG(frameCountMax);   /* pentiumMode toggles it 2<->3 inside the tick */
 
 	/* Background scroll state. */
@@ -264,7 +260,7 @@ void rollback_state_register_globals(void)
 	REG(bg_smooth_y_active);
 	REG_ARR(bg_layer_yfrac_now);  REG_ARR(bg_layer_dy_now);
 	REG(background_advance);
-	REG(anySmoothies);
+	REG_LOCAL(anySmoothies);
 	REG(BKwrap1);  REG(BKwrap2);  REG(BKwrap3);
 	REG(BKwrap1to);  REG(BKwrap2to);  REG(BKwrap3to);
 

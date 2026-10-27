@@ -3,6 +3,7 @@
 #define QA_H
 
 #include "opentyr.h"
+#include "rollback.h"
 
 #include <stdbool.h>
 
@@ -18,6 +19,12 @@ extern Uint32 qa_replay_expect;
 /* Endless replay mode: 1 grants full Chain Reaction; 2 is the no-perk control. The failure count
  * is authoritative; its state hash is not a fixture. */
 extern int qa_replay_chain;
+extern const char *qa_replay_file;
+extern bool qa_replay_coop;
+extern unsigned int qa_replay_depth;
+extern const char *qa_replay_trace;
+extern Uint32 qa_replay_seed;
+extern int qa_replay_detail;
 extern int qa_net_rounds;
 // Which two-peer wire scenario to run: 0 base, 1 online campaign, 2 online Endless,
 // 3 barrier storm.
@@ -87,6 +94,8 @@ extern bool qa_fast_forward;
 int qa_run_unit_suite(void);
 int qa_run_replay_fixture(void);
 int qa_run_destruct_selftest(void);
+void qa_replay_coop_arm(void);
+bool qa_replay_coop_input(uint player_index, int x, int y, RbInput *in);
 
 // Shared check primitive, so a suite can live in its own translation unit.
 void qa_check(bool okay, const char *what);

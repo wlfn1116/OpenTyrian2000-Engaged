@@ -27,7 +27,6 @@
 #include "endless.h"
 #include "episodes.h"
 #include "extra_ships.h"
-#include "file.h"
 #include "game_loop.h"
 #include "game_menu.h"
 #include "game_state.h"
@@ -246,7 +245,7 @@ int main(int argc, char *argv[])
 	init_joysticks();
 	printf("assuming mouse detected\n"); // SDL can't tell us if there isn't one
 
-	if (xmas && (!dir_file_exists(data_dir(), "tyrianc.shp") || !dir_file_exists(data_dir(), "voicesc.snd")))
+	if (xmas && !xmas_data_present())
 	{
 		xmas = false;
 

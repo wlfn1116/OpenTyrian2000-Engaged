@@ -610,6 +610,8 @@ static bool JE_extraMenu(void)
 				enabled = skinRowAllowed;
 			else if (page == PAGE_CHEATS && i < 3)
 				enabled = cheatsAllowed;
+			else if (page == PAGE_DEBUG && (i == 1 || i == 2))
+				enabled = !isNetworkGame;
 
 			if (sel)
 				fill_rectangle_xy(VGAScreen, px0 + 3, ry - 1, px1 - 3, ry + row_h - 3,
@@ -823,6 +825,10 @@ static bool JE_extraMenu(void)
 				debugHist = 1; debugHistCount = 1; lastDebugTime = SDL_GetTicks();
 				JE_playSampleNum(S_CURSOR);
 			}
+			else if (page == PAGE_DEBUG && (selected == 1 || selected == 2) && isNetworkGame)
+			{
+				JE_playSampleNum(S_SPRING);
+			}
 			else if (page == PAGE_DEBUG && selected == 1)
 			{
 				fastPlay = (fastPlay + (adjustDir > 0 ? 1 : 2)) % 3;
@@ -936,6 +942,10 @@ static bool JE_extraMenu(void)
 				closeMenu = true;
 			}
 		}
+		else if ((selected == 1 || selected == 2) && isNetworkGame)
+		{
+			JE_playSampleNum(S_SPRING);
+		}
 		else  // PAGE_DEBUG
 		{
 			JE_playSampleNum(S_SELECT);
@@ -954,7 +964,7 @@ static bool JE_extraMenu(void)
 				else { levelFilter++; if (levelFilter == 16) levelFilter = -99; }
 				break;
 			case 3:  // Random Music
-				play_song(mt_rand() % MUSIC_NUM);
+				play_random_song();
 				break;
 			case 4:  // Screenshot Pause
 				superPause = !superPause;

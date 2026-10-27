@@ -878,10 +878,21 @@ static void nrb_check_canary(const NrbCanary *const peer)
 				              "  --- local frame %lu, hashed fields (diff against the peer's log) ---\n",
 				              (unsigned long)peer->tag);
 				for (int i = 0; i < 2; ++i)
+				{
+					const NetSimPlayerRow *const p = &d->p[i];
 					off = nrb_apf(detail, sizeof(detail), off,
-					              "  P%d: x=%ld y=%ld armor=%ld shield=%ld alive=%ld cash=%ld\n",
-					              i + 1, (long)d->p[i].x, (long)d->p[i].y, (long)d->p[i].armor,
-					              (long)d->p[i].shield, (long)d->p[i].alive, (long)d->p[i].cash);
+					              "  P%d: x=%ld y=%ld armor=%ld shield=%ld alive=%ld cash=%ld\n"
+					              "      ship=%u gen=%u shield=%u special=%u "
+					              "front=%u/%u rear=%u/%u sidekicks=%u,%u "
+					              "mode=%lu bombs=%lu invuln=%lu expl=%lu\n",
+					              i + 1, (long)p->x, (long)p->y, (long)p->armor,
+					              (long)p->shield, (long)p->alive, (long)p->cash,
+					              p->ship, p->generator, p->shieldItem, p->special,
+					              p->weapon[0], p->power[0], p->weapon[1], p->power[1],
+					              p->sidekick[0], p->sidekick[1], (unsigned long)p->weaponMode,
+					              (unsigned long)p->superbombs, (unsigned long)p->invulnerable,
+					              (unsigned long)p->exploding);
+				}
 				/* Print bounded pool detail before the potentially long enemy table. */
 				const NetSimPools *x = &canary_pools[peer->tag % NRB_HIST];
 				off = nrb_apf(detail, sizeof(detail), off,
@@ -913,14 +924,17 @@ static void nrb_check_canary(const NrbCanary *const peer)
 				}
 
 				off = nrb_apf(detail, sizeof(detail), off,
-				              "  enemies: %u live (idx: ex,ey armor avail type)\n",
+				              "  enemies: %u live "
+				              "(idx: ex,ey armor avail type die value link elite)\n",
 				              (unsigned)d->enemy_count);
 				for (Uint16 i = 0; i < d->enemy_count && i < NET_SIM_DETAIL_ENEMIES; ++i)
 					off = nrb_apf(detail, sizeof(detail), off,
-					              "  %3u: %5ld,%-5ld a%-5ld v%u t%u\n",
+					              "  %3u: %5ld,%-5ld a%-5ld v%u t%u d%u $%ld L%u e%u\n",
 					              (unsigned)d->e[i].idx, (long)d->e[i].ex, (long)d->e[i].ey,
 					              (long)d->e[i].armorleft, (unsigned)d->e[i].avail,
-					              (unsigned)d->e[i].type);
+					              (unsigned)d->e[i].type, (unsigned)d->e[i].die,
+					              (long)d->e[i].value, (unsigned)d->e[i].link,
+					              (unsigned)d->e[i].elite);
 			}
 
 			/* Show sent, received, and consumed input through the disputed frame. */

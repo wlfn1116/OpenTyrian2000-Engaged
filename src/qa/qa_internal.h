@@ -82,6 +82,7 @@ void qa_test_modifier_online_parity(void);
 void qa_test_online_ship_style(void);
 void qa_test_partner_hp_bars(void);
 void qa_test_network_settings(void);
+void qa_test_desync_guards(void);
 void qa_test_network_endless_lobby(void);
 void qa_test_discover_reply(void);
 void qa_test_endless_coop(void);

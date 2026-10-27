@@ -480,8 +480,8 @@ static void vt_ship_tick_player(int p)
 	vt_vx[p] += (float)(player[p].x_velocity - vt_wrote_vx[p]);
 	vt_vy[p] += (float)(player[p].y_velocity - vt_wrote_vy[p]);
 
-	// Rollback applies positions mid-tick, where the normal history update already runs.
-	if (!nrb_active())
+	// Online peers apply positions mid-tick, where the normal history update already runs.
+	if (!isNetworkGame)
 		vt_refresh_position_history(p);
 }
 
@@ -494,12 +494,7 @@ void vt_ship_tick(void)  // once per 35Hz tick, before vt_ship_pred_tick()
 	for (int p = 0; p < players; ++p)
 	{
 		if (vt_player_is_net_remote(p))
-		{
-			// Maintain remote trailing-sidekick history unless rollback or docking already did so.
-			if (!nrb_active() && !(p == 1 && twoPlayerLinked))
-				vt_refresh_position_history(p);
 			continue;
-		}
 
 		if (vt_player_is_sim_driven(p))
 			continue;

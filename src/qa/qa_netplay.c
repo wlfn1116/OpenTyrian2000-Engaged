@@ -4,6 +4,7 @@
 #include "qa.h"
 #include "qa_internal.h"
 
+#include "background.h"
 #include "config.h"
 #include "crashlog.h"
 #include "debug_flags.h"
@@ -12,20 +13,27 @@
 #include "font.h"
 #include "game_loop.h"
 #include "game_state.h"
+#include "health_bars.h"
 #include "hud.h"
+#include "keyboard.h"
+#include "lvlmast.h"
+#include "mtrand.h"
 #include "net_rollback.h"
 #include "net_style.h"
 #include "network.h"
 #include "params.h"
 #include "player.h"
+#include "player_ship.h"
 #include "rollback.h"
 #include "sprite.h"
 #include "video.h"
 #include "vt_ship.h"
+#include "xmas.h"
 
 #include "SDL.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Online Endless: the block each machine publishes for its own player, the way two players'
@@ -835,6 +843,9 @@ void qa_test_network_settings(void)
 	const bool savedLifeBoost = arcadeLifeBoost, savedRandomBalls = arcadeRandomBalls;
 	const bool savedRearScale = arcadeRearGunScale;
 	const bool savedCenteredHitboxes = centeredShotHitboxes, savedGuidedAim = guidedShotScreenAim;
+	const bool savedParallax = extraParallax;
+	EndlessScalingOverride savedPins[ESO_COUNT];
+	memcpy(savedPins, endlessScalingOverride, sizeof(savedPins));
 	const int savedXmas = xmasMode;
 	const JE_byte savedSpeed = gameSpeed;
 	const bool savedRollbackConfig = net_rollback, savedRecoveryConfig = net_desync_recovery;
@@ -894,8 +905,8 @@ void qa_test_network_settings(void)
 	zicaLaserLock = true; zicaLaserBuff = false; wallopSecondBolt = SUPER_SPARKS_ON;
 	chargeLaserCannon = true; restoreBaseDispensers = false;
 	arcadeLifeBoost = true; arcadeRandomBalls = false; arcadeRearGunScale = true;
-	centeredShotHitboxes = true; guidedShotScreenAim = true;
-	xmasMode = 1; gameSpeed = 2;
+	centeredShotHitboxes = true; guidedShotScreenAim = true; extraParallax = true;
+	xmas = true; gameSpeed = 2;
 	net_rollback = true; net_desync_recovery = true;
 	coopSharedCredit = true;
 	coopDoubleEarnings = true;
@@ -933,8 +944,10 @@ void qa_test_network_settings(void)
 	zicaLaserLock = false; zicaLaserBuff = true; wallopSecondBolt = SUPER_SPARKS_OFF;
 	chargeLaserCannon = false; restoreBaseDispensers = true;
 	arcadeLifeBoost = false; arcadeRandomBalls = true; arcadeRearGunScale = false;
-	centeredShotHitboxes = false; guidedShotScreenAim = false;
-	xmasMode = 0; gameSpeed = 5;
+	centeredShotHitboxes = false; guidedShotScreenAim = false; extraParallax = false;
+	xmas = false; xmasMode = -1; gameSpeed = 5;
+	endlessScalingOverride[ESO_ARMOR].active = true;
+	endlessScalingOverride[ESO_ARMOR].value = 150;
 	expertMode = false;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = expertSettings[i].def;
@@ -965,7 +978,8 @@ void qa_test_network_settings(void)
 	         && zicaLaserLock && !zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_ON
 	         && chargeLaserCannon && !restoreBaseDispensers && arcadeLifeBoost
 	         && !arcadeRandomBalls && arcadeRearGunScale && centeredShotHitboxes && guidedShotScreenAim
-	         && xmasMode == 1 && gameSpeed == 2
+	         && extraParallax && xmasMode == 1 && xmas && gameSpeed == 2
+	         && endlessScalingOverrideCount() == 0
 	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery()
 	         && coop_credit_is_shared(),
 	         "joiner adopts every host-authoritative simulation setting");
@@ -994,7 +1008,9 @@ void qa_test_network_settings(void)
 	         && !zicaLaserLock && zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_OFF
 	         && !chargeLaserCannon && restoreBaseDispensers && !arcadeLifeBoost
 	         && arcadeRandomBalls && !arcadeRearGunScale && !centeredShotHitboxes && !guidedShotScreenAim
-	         && xmasMode == 0 && gameSpeed == 5,
+	         && !extraParallax && xmasMode == -1 && !xmas && gameSpeed == 5
+	         && endlessScalingOverride[ESO_ARMOR].active
+	         && endlessScalingOverride[ESO_ARMOR].value == 150,
 	         "leaving a network session restores every local simulation preference");
 	expertMatch = !expertMode;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
@@ -1040,7 +1056,7 @@ void qa_test_network_settings(void)
 		malformedClamped &= *expertSettings[i].value == expertSettings[i].hi;
 	qa_check(malformedClamped && zicaLaserBase == ZICA_BASE_AUTO
 	         && zicaLaserLength == ZICA_LEN_SHORT && wallopSecondBolt == SUPER_SPARKS_AUTO
-	         && xmasMode == -1 && gameSpeed == 4 && noclipMode < NOCLIP_NUM
+	         && xmasMode == 0 && !xmas && gameSpeed == 4 && noclipMode < NOCLIP_NUM
 	         && chargeSidekickAutofire < CHARGE_AUTOFIRE_NUM
 	         && debugTwiddleSpecial <= SPECIAL_NUM,
 	         "hostile network settings are clamped before any array can be indexed"
@@ -1054,7 +1070,8 @@ void qa_test_network_settings(void)
 	chargeLaserCannon = savedCharge; restoreBaseDispensers = savedDispensers;
 	arcadeLifeBoost = savedLifeBoost; arcadeRandomBalls = savedRandomBalls;
 	arcadeRearGunScale = savedRearScale; centeredShotHitboxes = savedCenteredHitboxes;
-	guidedShotScreenAim = savedGuidedAim;
+	guidedShotScreenAim = savedGuidedAim; extraParallax = savedParallax;
+	memcpy(endlessScalingOverride, savedPins, sizeof(savedPins));
 	xmasMode = savedXmas; gameSpeed = savedSpeed;
 	net_rollback = savedRollbackConfig; net_desync_recovery = savedRecoveryConfig;
 	vt_ship = savedVt; smoothMotion = savedMotion; smoothScroll = savedScroll;
@@ -1428,4 +1445,240 @@ void qa_test_discover_reply(void)
 	         "an overlong discovery reply name is cut to fit");
 
 	network_set_player_name(savedName);
+}
+
+void qa_test_desync_guards(void)
+{
+	{
+		const Player savedPlayer = player[1];
+		const struct JE_SingleEnemyType savedEnemy = enemy[0];
+		const JE_byte savedAvail = enemyAvail[0];
+		Uint32 rand0, ph0, eh0, rand1, ph1, eh1;
+
+		enemyAvail[0] = 0;
+		network_sim_state(&rand0, &ph0, &eh0);
+		player[1].items.special ^= 1;
+		network_sim_state(&rand1, &ph1, &eh1);
+		const bool specialSeen = ph1 != ph0;
+		player[1].items.special ^= 1;
+		player[1].items.weapon[FRONT_WEAPON].power ^= 1;
+		network_sim_state(&rand1, &ph1, &eh1);
+		const bool powerSeen = ph1 != ph0;
+		player[1] = savedPlayer;
+		enemy[0].enemydie ^= 1;
+		network_sim_state(&rand1, &ph1, &eh1);
+		const bool dropSeen = eh1 != eh0;
+		enemy[0].enemydie ^= 1;
+		enemy[0].eliteState ^= 1;
+		network_sim_state(&rand1, &ph1, &eh1);
+		const bool tierSeen = eh1 != eh0;
+		enemy[0] = savedEnemy;
+		enemyAvail[0] = savedAvail;
+		qa_check(specialSeen && powerSeen && dropSeen && tierSeen,
+		         "the desync canary sees a ship's loadout and an enemy's drop and tier");
+	}
+
+	{
+		const boss_bar_t savedBars[2] = { boss_bar[0], boss_bar[1] };
+		JE_byte savedAvail[COUNTOF(enemyAvail)];
+		memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+		memset(enemyAvail, 1, sizeof(enemyAvail));
+		SDL_Surface *const savedScreen = VGAScreen;
+		VGAScreen = game_screen;
+
+		boss_bar[0].link_num = 77;
+		boss_bar[0].fill = 100;
+		boss_bar[0].color = 5;
+		boss_bar[1].link_num = 0;
+		draw_boss_bar();
+		const bool drawInert = boss_bar[0].link_num == 77 && boss_bar[0].color == 5;
+		boss_bar_fade_flash();
+		const bool fades = boss_bar[0].color == 4;
+		boss_bar_tick();
+		qa_check(drawInert && fades && boss_bar[0].link_num == 0,
+		         "a dead boss's bar retires in the simulated tick, never in the draw");
+
+		VGAScreen = savedScreen;
+		memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+		boss_bar[0] = savedBars[0];
+		boss_bar[1] = savedBars[1];
+	}
+
+	{
+		const bool savedAdvance = background_advance, savedLayer = background2;
+		const JE_byte savedDelay = map2YDelay, savedDelayMax = map2YDelayMax;
+		const JE_word savedPos = backPos2, savedMove = backMove2, savedY = mapY2;
+		JE_byte **const savedYPos = mapY2Pos;
+		const int savedExtra = endlessScrollExtraPx2;
+
+		bool same = true;
+		for (int tick = 0; tick < 12; ++tick)
+		{
+			background_advance = true;
+			background2 = false;
+			map2YDelayMax = 2;
+			map2YDelay = (JE_byte)(1 + tick % 2);
+			backMove2 = (JE_word)(tick % 3);
+			backPos2 = (JE_word)(20 + tick);
+			mapY2 = 200;
+			mapY2Pos = &megaData2.mainmap[mapY2][0] - 1;
+			endlessScrollExtraPx2 = tick % 2;
+			draw_background_2(game_screen);
+			const JE_word drawnPos = backPos2, drawnMove = backMove2, drawnY = mapY2;
+			const JE_byte drawnDelay = map2YDelay;
+			JE_byte **const drawnYPos = mapY2Pos;
+
+			map2YDelay = (JE_byte)(1 + tick % 2);
+			backMove2 = (JE_word)(tick % 3);
+			backPos2 = (JE_word)(20 + tick);
+			mapY2 = 200;
+			mapY2Pos = &megaData2.mainmap[mapY2][0] - 1;
+			skip_background_2();
+			same = same && backPos2 == drawnPos && backMove2 == drawnMove && mapY2 == drawnY
+			    && map2YDelay == drawnDelay && mapY2Pos == drawnYPos;
+		}
+		qa_check(same, "a hidden background layer 2 advances exactly as a drawn one");
+
+		background_advance = savedAdvance;
+		background2 = savedLayer;
+		map2YDelay = savedDelay;
+		map2YDelayMax = savedDelayMax;
+		backPos2 = savedPos;
+		backMove2 = savedMove;
+		mapY2 = savedY;
+		mapY2Pos = savedYPos;
+		endlessScrollExtraPx2 = savedExtra;
+	}
+
+	{
+		const uint savedArmor = player[0].armor;
+		const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+		endlessMode = false;
+		endlessCampaignMods = false;
+		player[0].armor = 30;
+		JE_repaintShieldArmorBars();
+		const bool repaintInert = player[0].armor == 30;
+		JE_drawArmor();
+		qa_check(repaintInert && player[0].armor == 28,
+		         "a gauge repaint leaves armor alone while the simulation's draw still caps it");
+		player[0].armor = savedArmor;
+		endlessMode = savedEndless;
+		endlessCampaignMods = savedMods;
+	}
+
+	{
+		const unsigned int slot = 3;
+		const Uint8 savedId = enemySpriteSheetIds[slot];
+		Sprite2_array expect = { 0 };
+		JE_loadCompShapes(&expect, shapeFile[1]);
+
+		rollback_register_all();
+		enemy_sprite_sheet_load(slot, 2);
+		rollback_snapshot(0x5142u);
+		enemy_sprite_sheet_load(slot, 1);
+		const bool restored = rollback_restore(0x5142u);
+		qa_check(restored && enemySpriteSheetIds[slot] == 2 && expect.data != NULL
+		         && enemySpriteSheets[slot].size == expect.size
+		         && memcmp(enemySpriteSheets[slot].data, expect.data, expect.size) == 0,
+		         "a rollback across an enemy bank swap reloads the bank the restored id names");
+
+		free_sprite2s(&expect);
+		enemy_sprite_sheet_load(slot, savedId);
+	}
+
+	{
+		rollback_register_all();
+		const size_t size = rollback_state_size();
+		Uint8 *wire = malloc(size);
+		const bool savedLayer = background2;
+		const int savedX = player[0].x;
+		if (wire != NULL)
+		{
+			background2 = true;
+			player[0].x = 123;
+			const bool exported = rollback_wire_export(wire);
+			background2 = false;
+			player[0].x = 45;
+			const bool adopted = exported && rollback_wire_adopt(wire);
+			qa_check(adopted && player[0].x == 123 && !background2,
+			         "desync recovery adopts shared state and leaves local presentation alone");
+			free(wire);
+		}
+		background2 = savedLayer;
+		player[0].x = savedX;
+	}
+
+	{
+		const bool savedNet = isNetworkGame;
+		JE_boolean savedSmoothies[COUNTOF(smoothies)];
+		memcpy(savedSmoothies, smoothies, sizeof(savedSmoothies));
+		const JE_byte savedFast = fastPlay;
+		const JE_shortint savedFilter = levelFilter;
+		static const SDL_Scancode combo[] =
+		{
+			SDL_SCANCODE_BACKSPACE, SDL_SCANCODE_F12, SDL_SCANCODE_SCROLLLOCK, SDL_SCANCODE_2,
+			SDL_SCANCODE_MINUS, SDL_SCANCODE_1,
+		};
+
+		bool inert = true;
+		for (int online = 1; online >= 0; --online)
+		{
+			isNetworkGame = online != 0;
+			smoothies[0] = 0;
+			for (size_t k = 0; k < COUNTOF(combo); ++k)
+				keysactive[combo[k]] = true;
+			const uint32_t draws = mt_rand_count;
+			JE_mainKeyboardInput();
+			for (size_t k = 0; k < COUNTOF(combo); ++k)
+				keysactive[combo[k]] = false;
+			inert = inert && mt_rand_count == draws;
+			if (online)
+				inert = inert && smoothies[0] == 0 && fastPlay == savedFast
+				     && levelFilter == savedFilter;
+			else
+				inert = inert && smoothies[0] != 0;
+		}
+		qa_check(inert,
+		         "online debug key codes leave the simulation alone; offline they still work");
+
+		isNetworkGame = savedNet;
+		memcpy(smoothies, savedSmoothies, sizeof(savedSmoothies));
+		fastPlay = savedFast;
+		JE_setNewGameSpeed();
+		levelFilter = savedFilter;
+	}
+
+	{
+		const bool savedNet = isNetworkGame;
+		const JE_boolean savedMods = endlessCampaignMods, savedEndless = endlessMode;
+		const Uint64 savedActive = endlessActiveMods;
+		const bool savedVt = vt_ship;
+		const int savedY = player[0].y;
+
+		endlessMode = false;
+		endlessCampaignMods = true;
+		endlessActiveMods = ENDLESS_MOD_GRAVITY;
+		endlessRollGravityDir();
+		vt_ship = false;
+
+		int moved[2] = { 0, 0 };
+		for (int online = 0; online < 2; ++online)
+		{
+			isNetworkGame = online != 0;
+			player[0].y = 100;
+			for (int tick = 0; tick < 40; ++tick)
+				endlessPerShipTick(&player[0]);
+			moved[online] = player[0].y - 100;
+		}
+		qa_check(moved[0] > 0 && moved[1] == 0,
+		         "online, the simulation leaves gravity to the owning machine's input");
+
+		isNetworkGame = savedNet;
+		endlessCampaignMods = savedMods;
+		endlessMode = savedEndless;
+		endlessActiveMods = savedActive;
+		endlessRollGravityDir();
+		vt_ship = savedVt;
+		player[0].y = savedY;
+	}
 }

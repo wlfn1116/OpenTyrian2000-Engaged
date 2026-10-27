@@ -19,6 +19,7 @@
 
 #include "draw.h"
 #include "file.h"
+#include "lvlmast.h"
 #include "opentyr.h"
 #include "render_list.h"
 #include "rollback.h"
@@ -2363,8 +2364,31 @@ void free_main_shape_tables(void)
 	                                   // or JE_loadCompShapesB's assert(data==NULL) aborts on reload
 }
 
+static Uint8 enemySpriteSheetLoaded[COUNTOF(enemySpriteSheets)];
+
 void free_enemy_sprite_sheets(void)
 {
 	for (uint i = 0; i < COUNTOF(enemySpriteSheets); ++i)
+	{
 		free_sprite2s(&enemySpriteSheets[i]);
+		enemySpriteSheetLoaded[i] = 0;
+	}
+}
+
+void enemy_sprite_sheet_load(uint slot, Uint8 id)
+{
+	if (id > 0 && id <= COUNTOF(shapeFile))
+		JE_loadCompShapes(&enemySpriteSheets[slot], shapeFile[id - 1]);
+	else
+		free_sprite2s(&enemySpriteSheets[slot]);
+
+	enemySpriteSheetIds[slot] = id;
+	enemySpriteSheetLoaded[slot] = id;
+}
+
+void enemy_sprite_sheets_sync(void)
+{
+	for (uint i = 0; i < COUNTOF(enemySpriteSheets); ++i)
+		if (enemySpriteSheetLoaded[i] != enemySpriteSheetIds[i])
+			enemy_sprite_sheet_load(i, enemySpriteSheetIds[i]);
 }

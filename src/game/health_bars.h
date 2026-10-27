@@ -52,6 +52,8 @@ void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *ou
 /* Update an enemy's full-armour baseline after direct armour writes, never damage. */
 void enemy_note_full_armor(struct JE_SingleEnemyType *enemy);
 
+void boss_bar_tick(void);
+void boss_bar_fade_flash(void);
 void draw_boss_bar(void);
 
 // Offsets used to keep the Endless kill-fire HUD clear of a boss bar.

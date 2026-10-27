@@ -1581,13 +1581,22 @@ static void customWeaponClaimSlots(void)
 	customSidekickSlot = customSidekickOwnerSlot[owner];
 }
 
+static bool customWeaponLocalWithheld = false;
+
+void customWeaponWithholdLocal(bool withheld)
+{
+	customWeaponLocalWithheld = withheld;
+}
+
 /* Item-data reloads clear reserved slots, so rebuild local and peer designs together. */
 static void customWeaponMaterializeAll(void)
 {
 	const int local = customWeaponLocalOwner();
-	customWeaponMaterialize();
+	const bool online = isNetworkGame && custom_ships_multiplayer_mode();
+	if (!(online && customWeaponLocalWithheld))
+		customWeaponMaterialize();
 
-	if (!isNetworkGame || !custom_ships_multiplayer_mode())
+	if (!online)
 		return;
 
 	for (int owner = 0; owner < CUSTOM_WEAPON_OWNERS; ++owner)

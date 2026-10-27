@@ -736,6 +736,7 @@ int endlessPerkSpecialCooldownDecrements(void);
 // the velocity-based path. Drift values are pixels per 35 Hz tick.
 int   endlessGravityPullX(uint p);
 int   endlessGravityPullY(uint p);
+void  endlessGravityInputPull(uint p, int *dx, int *dy);
 float endlessGravityDrift(void);
 float endlessGravityDriftX(void);
 float endlessGravityDriftY(void);

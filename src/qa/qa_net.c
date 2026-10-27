@@ -241,8 +241,7 @@ int qa_net_campaign_phases(void)
 
 	/* Arcade lives live in a weapon-power slot, and everything that re-derives a hull ceiling
 	 * reads through this pointer. */
-	for (uint p = 0; p < COUNTOF(player); ++p)
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	player_bind_lives();
 
 	/* Two distinct complete loadouts exercise every synchronized field. */
 	qa_net_phase("campaign loadout publish");
@@ -478,7 +477,7 @@ int qa_net_endless_phases(void)
 	/* Start with both ships alive and the arcade lives alias initialized. */
 	for (uint p = 0; p < COUNTOF(player); ++p)
 	{
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		player[p].lives = player_lives_counter(p);
 		player[p].is_alive = true;
 		player[p].exploding_ticks = 0;
 		player[p].initial_armor = 20;

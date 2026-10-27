@@ -81,6 +81,7 @@
 #include "touch_ui.h"
 #include "video.h"
 #include "vt_ship.h"
+#include "xmas.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -125,7 +126,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       98           /* Afterburners perk and full-step Endless move scaling. */
+#define NET_VERSION       99           /* Co-op desync fixes, synced parallax and Christmas. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.
@@ -142,7 +143,8 @@ bool network_interface_carries_lan(unsigned int flags)
 #define NET_CONNECT_CUSTOM    (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
 // Name[64], u32 size, u32 hash, mode byte, and three reserved bytes.
 #define NET_CONNECT_CUSTOM_SIZE (CUSTOM_EPISODE_FILE_LEN + 12)
-#define NET_CONNECT_NAME      (NET_CONNECT_CUSTOM + NET_CONNECT_CUSTOM_SIZE)
+#define NET_CONNECT_DEBUG     (NET_CONNECT_CUSTOM + NET_CONNECT_CUSTOM_SIZE)
+#define NET_CONNECT_NAME      (NET_CONNECT_DEBUG + ENDLESS_DEBUG_BLOCK_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
@@ -1268,9 +1270,23 @@ static void send_connect_packet(Uint16 episodes_local)
 	}
 	packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 8] =
 		(Uint8)network_host_custom_endless;
+	endlessPackDebugBlock(&packet_out_temp->data[NET_CONNECT_DEBUG]);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
 	network_send(NET_CONNECT_NAME + name_len + 1);
+}
+
+static Uint8 campaign_mods_local[ENDLESS_DEBUG_BLOCK_SIZE];
+static bool  campaign_mods_stashed = false;
+
+static void network_campaign_mods_adopt(const Uint8 *block)
+{
+	if (!campaign_mods_stashed)
+	{
+		endlessPackDebugBlock(campaign_mods_local);
+		campaign_mods_stashed = true;
+	}
+	endlessUnpackDebugBlock(block);
 }
 
 // attempt to punch through firewall by firing off UDP packets at the opponent
@@ -1432,6 +1448,8 @@ connect_again:
 
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
 			network_endless_adopt(&packet_in[0]->data[NET_CONNECT_ENDLESS]);
+			if (endlessCampaignMods && network_game_type != NETWORK_GAME_ENDLESS)
+				network_campaign_mods_adopt(&packet_in[0]->data[NET_CONNECT_DEBUG]);
 
 			// Reject path-like names before storing the host's selection.
 			{
@@ -1772,9 +1790,10 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 #define NET_SET_DEBUG_FLAGS 42 /* Uint16: simulation-affecting Debug Mode toggles                  */
 #define NET_SET_NOCLIP      44 /* Uint8: noclipMode                                                 */
 #define NET_SET_CHARGE_AF   45 /* Uint8: chargeSidekickAutofire                                    */
-#define NET_SET_TWIDDLE     46 /* Uint8: debugTwiddleSpecial; byte 47 reserved                      */
+#define NET_SET_TWIDDLE     46 /* Uint8: debugTwiddleSpecial                                        */
+#define NET_SET_FLAGS3      47
 COMPILE_TIME_ASSERT(net_settings_block_fits,
-                    NET_SET_TWIDDLE + 2 == NETWORK_SETTINGS_SIZE);
+                    NET_SET_FLAGS3 + 1 == NETWORK_SETTINGS_SIZE);
 
 // The epdiff word holds eight two-bit entries. Later entries use flags2; keep
 // the split in sync when extending the table.
@@ -1856,8 +1875,9 @@ static struct
 	bool zicaLaserLock, zicaLaserBuff;
 	int  wallopSecondBolt;
 	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
-	bool arcadeRearGunScale, centeredShotHitboxes, guidedShotScreenAim;
+	bool arcadeRearGunScale, centeredShotHitboxes, guidedShotScreenAim, extraParallax;
 	int  xmasMode;
+	bool xmas;
 	JE_byte gameSpeed;
 	JE_boolean arcadeSeparateMode;
 	bool timedBattle;
@@ -1880,6 +1900,7 @@ static struct
 	JE_byte noclipMode;
 	JE_byte chargeSidekickAutofire;
 	JE_byte debugTwiddleSpecial;
+	EndlessScalingOverride endlessPins[ESO_COUNT];
 }
 settings_local;
 
@@ -1924,7 +1945,7 @@ int network_settings_pack(Uint8 *buf)
 	SDLNet_Write16(zicaLaserBase,            &buf[6]);
 	SDLNet_Write16(zicaLaserLength,          &buf[8]);
 	SDLNet_Write16(wallopSecondBolt,         &buf[10]);
-	SDLNet_Write16((Uint16)(xmasMode + 1),   &buf[12]);  // xmasMode is -1..1; bias to 0..2
+	SDLNet_Write16((Uint16)(xmas ? 2 : 1),   &buf[12]);  // live xmas as xmasMode 0..1; bias to 1..2
 	SDLNet_Write16(gameSpeed,                &buf[14]);
 
 	// Not a setting: our snapshot layout, for the peer to compare against its own.
@@ -1947,7 +1968,7 @@ int network_settings_pack(Uint8 *buf)
 	buf[NET_SET_NOCLIP]    = noclipMode;
 	buf[NET_SET_CHARGE_AF] = chargeSidekickAutofire;
 	buf[NET_SET_TWIDDLE]   = debugTwiddleSpecial;
-	buf[NET_SET_TWIDDLE + 1] = 0;
+	buf[NET_SET_FLAGS3]    = extraParallax ? 1 : 0;
 
 	return NETWORK_SETTINGS_SIZE;
 }
@@ -1995,7 +2016,9 @@ static void network_settings_stash(void)
 	settings_local.arcadeRearGunScale   = arcadeRearGunScale;
 	settings_local.centeredShotHitboxes = centeredShotHitboxes;
 	settings_local.guidedShotScreenAim  = guidedShotScreenAim;
+	settings_local.extraParallax        = extraParallax;
 	settings_local.xmasMode             = xmasMode;
+	settings_local.xmas                 = xmas;
 	settings_local.gameSpeed            = gameSpeed;
 	// Session-scoped, so leaving a session has to put it back: a leftover Separate flag would
 	// otherwise reshape the next LOCAL two-player arcade, which never armed it.
@@ -2025,6 +2048,8 @@ static void network_settings_stash(void)
 	settings_local.noclipMode                = noclipMode;
 	settings_local.chargeSidekickAutofire    = chargeSidekickAutofire;
 	settings_local.debugTwiddleSpecial       = debugTwiddleSpecial;
+	memcpy(settings_local.endlessPins, endlessScalingOverride, sizeof(endlessScalingOverride));
+	endlessScalingOverridesClear();
 	settings_stashed = true;
 }
 
@@ -2117,8 +2142,11 @@ int network_settings_adopt(const Uint8 *buf)
 		zicaLaserLength = ZICA_LEN_SHORT;
 	if (wallopSecondBolt < 0 || wallopSecondBolt >= SUPER_SPARKS_COUNT)
 		wallopSecondBolt = SUPER_SPARKS_AUTO;
-	if (xmasMode < -1 || xmasMode > 1)
-		xmasMode = -1;
+	if (xmasMode < 0 || xmasMode > 1)
+		xmasMode = 0;
+	if (!xmas_set(xmasMode == 1))
+		crashlog_netlog_line("NETWORK SETTINGS",
+		                     "host plays with Christmas data this install lacks");
 	if (gameSpeed < 1 || gameSpeed > 5)
 		gameSpeed = 4;
 
@@ -2141,6 +2169,7 @@ int network_settings_adopt(const Uint8 *buf)
 	noclipMode = buf[NET_SET_NOCLIP] % NOCLIP_NUM;
 	chargeSidekickAutofire = buf[NET_SET_CHARGE_AF] % CHARGE_AUTOFIRE_NUM;
 	debugTwiddleSpecial = (buf[NET_SET_TWIDDLE] <= SPECIAL_NUM) ? buf[NET_SET_TWIDDLE] : 0;
+	extraParallax = (buf[NET_SET_FLAGS3] & 1) != 0;
 
 	return NETWORK_SETTINGS_SIZE;
 }
@@ -3376,7 +3405,9 @@ void network_settings_restore(void)
 	arcadeRearGunScale    = settings_local.arcadeRearGunScale;
 	centeredShotHitboxes  = settings_local.centeredShotHitboxes;
 	guidedShotScreenAim   = settings_local.guidedShotScreenAim;
+	extraParallax         = settings_local.extraParallax;
 	xmasMode              = settings_local.xmasMode;
+	xmas_set(settings_local.xmas);
 	gameSpeed             = settings_local.gameSpeed;
 	arcadeSeparateMode    = settings_local.arcadeSeparateMode;
 	network_host_timed_battle = settings_local.timedBattle;
@@ -3400,6 +3431,12 @@ void network_settings_restore(void)
 	noclipMode                = settings_local.noclipMode;
 	chargeSidekickAutofire    = settings_local.chargeSidekickAutofire;
 	debugTwiddleSpecial       = settings_local.debugTwiddleSpecial;
+	memcpy(endlessScalingOverride, settings_local.endlessPins, sizeof(endlessScalingOverride));
+	if (campaign_mods_stashed)
+	{
+		endlessUnpackDebugBlock(campaign_mods_local);
+		campaign_mods_stashed = false;
+	}
 
 	settings_stashed = false;
 }
@@ -3557,6 +3594,75 @@ bool network_debug_sync_pump(bool in_level)
  * Compare RNG draw count plus player and enemy state. Network levels share a fixed RNG seed. */
 bool networkDesyncHalt = false;
 
+static void network_sim_player_row(const Player *p, NetSimPlayerRow *r)
+{
+	r->x          = (Sint32)p->x;
+	r->y          = (Sint32)p->y;
+	r->armor      = (Sint32)p->armor;
+	r->shield     = (Sint32)p->shield;
+	r->alive      = p->is_alive ? 1 : 0;
+	r->cash       = p->cash;
+	r->ship       = p->items.ship;
+	r->generator  = p->items.generator;
+	r->shieldItem = p->items.shield;
+	r->special    = p->items.special;
+	for (uint w = 0; w < 2; ++w)
+	{
+		r->weapon[w]   = p->items.weapon[w].id;
+		r->power[w]    = p->items.weapon[w].power;
+		r->sidekick[w] = p->items.sidekick[w];
+	}
+	r->weaponMode   = (Uint32)p->weapon_mode;
+	r->superbombs   = (Uint32)p->superbombs;
+	r->invulnerable = (Uint32)p->invulnerable_ticks;
+	r->exploding    = (Uint32)p->exploding_ticks;
+}
+
+static Uint32 network_sim_player_hash(Uint32 h, const NetSimPlayerRow *r)
+{
+	h = fnv1a32_u32(h, (Uint32)r->x);
+	h = fnv1a32_u32(h, (Uint32)r->y);
+	h = fnv1a32_u32(h, (Uint32)r->armor);
+	h = fnv1a32_u32(h, (Uint32)r->shield);
+	h = fnv1a32_u32(h, (Uint32)r->alive);
+	h = fnv1a32_u32(h, (Uint32)r->cash);
+	h = fnv1a32_u32(h, (Uint32)((Uint64)r->cash >> 32));
+	h = fnv1a32_u32(h, (Uint32)r->ship << 24 | (Uint32)r->generator << 16
+	                   | (Uint32)r->shieldItem << 8 | r->special);
+	for (uint w = 0; w < 2; ++w)
+		h = fnv1a32_u32(h, (Uint32)r->weapon[w] << 16 | (Uint32)r->power[w] << 8 | r->sidekick[w]);
+	h = fnv1a32_u32(h, r->weaponMode);
+	h = fnv1a32_u32(h, r->superbombs);
+	h = fnv1a32_u32(h, r->invulnerable);
+	return fnv1a32_u32(h, r->exploding);
+}
+
+static void network_sim_enemy_row(uint i, NetSimEnemyRow *r)
+{
+	r->idx       = (Uint8)i;
+	r->avail     = enemyAvail[i];
+	r->link      = enemy[i].linknum;
+	r->elite     = enemy[i].eliteState;
+	r->type      = (Uint16)enemy[i].enemytype;
+	r->die       = (Uint16)enemy[i].enemydie;
+	r->ex        = (Sint32)enemy[i].ex;
+	r->ey        = (Sint32)enemy[i].ey;
+	r->armorleft = (Sint32)enemy[i].armorleft;
+	r->value     = (Sint32)enemy[i].evalue;
+}
+
+static Uint32 network_sim_enemy_hash(Uint32 h, const NetSimEnemyRow *r)
+{
+	h = fnv1a32_u32(h, r->idx);
+	h = fnv1a32_u32(h, r->avail);
+	h = fnv1a32_u32(h, (Uint32)r->ex);
+	h = fnv1a32_u32(h, (Uint32)r->ey);
+	h = fnv1a32_u32(h, (Uint32)r->armorleft);
+	h = fnv1a32_u32(h, (Uint32)r->type << 16 | r->die);
+	h = fnv1a32_u32(h, (Uint32)r->value);
+	return fnv1a32_u32(h, (Uint32)r->link << 8 | r->elite);
+}
+
 void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_hash)
 {
 	// FNV-1a, chosen for being short enough to read and good enough to spot a single bit.
@@ -3568,13 +3674,9 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
-		h = fnv1a32_u32(h, player[i].x);
-		h = fnv1a32_u32(h, player[i].y);
-		h = fnv1a32_u32(h, player[i].armor);
-		h = fnv1a32_u32(h, player[i].shield);
-		h = fnv1a32_u32(h, player[i].is_alive ? 1 : 0);
-		h = fnv1a32_u32(h, (Uint32)player[i].cash);
-		h = fnv1a32_u32(h, (Uint32)((Uint64)player[i].cash >> 32));
+		NetSimPlayerRow row;
+		network_sim_player_row(&player[i], &row);
+		h = network_sim_player_hash(h, &row);
 	}
 	/* Hash linked turret direction by its exact wire-quantized IEEE bytes. */
 	Uint32 link_direction_bits = 0;
@@ -3584,21 +3686,17 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 	h = fnv1a32_u32(h, twoPlayerLinked ? link_direction_bits : 0);
 	*player_hash = h;
 
-	// Enemies dominate the simulation, so sample the whole table; position and remaining armor are
-	// enough to catch a divergence without hashing every field.
+	// Enemies dominate the simulation, so sample the whole table.
 	h = FNV1A32_INIT;
 	for (uint i = 0; i < COUNTOF(enemy); ++i)
 	{
 		if (enemyAvail[i] == 1)
 			continue;
-		h = fnv1a32_u32(h, i);
-		h = fnv1a32_u32(h, enemyAvail[i]);
-		h = fnv1a32_u32(h, enemy[i].ex);
-		h = fnv1a32_u32(h, enemy[i].ey);
-		h = fnv1a32_u32(h, enemy[i].armorleft);
+		NetSimEnemyRow row;
+		network_sim_enemy_row(i, &row);
+		h = network_sim_enemy_hash(h, &row);
 	}
 	*enemy_hash = h;
-
 }
 
 Uint32 network_sim_pools(NetSimPools *detail)
@@ -3721,27 +3819,14 @@ void network_sim_detail(NetSimDetail *out)
 	SDL_COMPILE_TIME_ASSERT(sim_detail_enemies, NET_SIM_DETAIL_ENEMIES == COUNTOF(enemy));
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
-	{
-		out->p[i].x      = (Sint32)player[i].x;
-		out->p[i].y      = (Sint32)player[i].y;
-		out->p[i].armor  = (Sint32)player[i].armor;
-		out->p[i].shield = (Sint32)player[i].shield;
-		out->p[i].alive  = player[i].is_alive ? 1 : 0;
-		out->p[i].cash   = player[i].cash;
-	}
+		network_sim_player_row(&player[i], &out->p[i]);
 
 	out->enemy_count = 0;
 	for (uint i = 0; i < COUNTOF(enemy); ++i)
 	{
 		if (enemyAvail[i] == 1)
 			continue;
-		NetSimEnemyRow *r = &out->e[out->enemy_count++];
-		r->idx       = (Uint8)i;
-		r->avail     = enemyAvail[i];
-		r->type      = (Uint16)enemy[i].enemytype;
-		r->ex        = (Sint32)enemy[i].ex;
-		r->ey        = (Sint32)enemy[i].ey;
-		r->armorleft = (Sint32)enemy[i].armorleft;
+		network_sim_enemy_row(i, &out->e[out->enemy_count++]);
 	}
 }
 

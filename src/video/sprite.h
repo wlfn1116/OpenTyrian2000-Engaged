@@ -210,5 +210,7 @@ void blit_sprite2x2_scaled(SDL_Surface *, int x, int y, Sprite2_array, unsigned 
 void JE_loadMainShapeTables(const char *shpfile);
 void free_main_shape_tables(void);
 void free_enemy_sprite_sheets(void);
+void enemy_sprite_sheet_load(uint slot, Uint8 id);
+void enemy_sprite_sheets_sync(void);
 
 #endif // SPRITE_H

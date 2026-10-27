@@ -81,6 +81,17 @@ uint player_lives_port(uint p)
 	return (p < COUNTOF(player)) ? p : FRONT_WEAPON;
 }
 
+Uint8 *player_lives_counter(uint p)
+{
+	return &player[p].items.weapon[player_lives_port(p)].power;
+}
+
+void player_bind_lives(void)
+{
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].lives = player_lives_counter(p);
+}
+
 /* Arcade life scaling derives its ceilings from each ship's stock hull and shield. SuperTyrian is
  * excluded; network games use the host's arcadeLifeBoost setting. */
 bool arcade_life_scaling_active(void)
@@ -452,7 +463,7 @@ void JE_initPlayerData(void)
 		player[p].armor = player[p].hull_armor = ships[player[p].items.ship].dmg;
 
 		player[p].is_dragonwing = (p == 1);
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		player[p].lives = player_lives_counter(p);
 
 	}
 

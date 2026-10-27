@@ -78,10 +78,7 @@ void endlessPreloadBanks(void)
 		{
 			const int b = banks[s];
 			if (b > 0 && b <= 36 && enemySpriteSheetIds[s] != (Uint8)b)
-			{
-				JE_loadCompShapes(&enemySpriteSheets[s], shapeFile[b - 1]);
-				enemySpriteSheetIds[s] = (Uint8)b;
-			}
+				enemy_sprite_sheet_load((uint)s, (Uint8)b);
 		}
 		break;
 	}

@@ -1002,11 +1002,11 @@ void endless_register_rollback(void)
 
 	/* Roll the run ledger back with the wallet. Otherwise speculative income is
 	 * booked again during re-simulation and peer summaries diverge. */
-	rollback_register("endless.cashEarned", &endlessRunCashEarned, sizeof(endlessRunCashEarned));
-	rollback_register("endless.cashSpent", &endlessRunCashSpent, sizeof(endlessRunCashSpent));
-	rollback_register("endless.cashBySource", endlessCashBySource, sizeof(endlessCashBySource));
-	rollback_register("endless.cashBySink", endlessCashBySink, sizeof(endlessCashBySink));
-	rollback_register("endless.cashMark", &endlessCashMark, sizeof(endlessCashMark));
+	rollback_register_local("endless.cashEarned", &endlessRunCashEarned, sizeof(endlessRunCashEarned));
+	rollback_register_local("endless.cashSpent", &endlessRunCashSpent, sizeof(endlessRunCashSpent));
+	rollback_register_local("endless.cashBySource", endlessCashBySource, sizeof(endlessCashBySource));
+	rollback_register_local("endless.cashBySink", endlessCashBySink, sizeof(endlessCashBySink));
+	rollback_register_local("endless.cashMark", &endlessCashMark, sizeof(endlessCashMark));
 	rollback_register("endless.perkFireAccum", endlessPerkFireAccum, sizeof(endlessPerkFireAccum));
 	rollback_register("endless.perkCdAccum", endlessPerkSpecialCdAccum, sizeof(endlessPerkSpecialCdAccum));
 	rollback_register("endless.kineticAccum", endlessPerkKineticAmmoAccum, sizeof(endlessPerkKineticAmmoAccum));

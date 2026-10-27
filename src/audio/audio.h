@@ -59,6 +59,7 @@ void music_deinit(void);
 
 void load_music(void);
 void play_song(unsigned int song_num);
+void play_random_song(void);
 void restart_song(void);
 void stop_song(void);
 void fade_song(void);

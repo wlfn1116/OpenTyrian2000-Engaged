@@ -95,6 +95,15 @@
 # old 30-perk rows only, every other edit in the change kept: all three hashes came back at the
 # previous line's values. That also covers the Smooth-Motion-off momentum step, which the demos
 # fly and which now runs through the helper the Endless move scale predicts with.
-1 180 e86072a0
-2 180 01eb4985
-3 180 7e1c91c4
+# Regenerated 2026-10-27, for one real simulation change and one snapshot-shape change.
+# - A level now starts each ship's explosion-follow anchor at its spawn point, so the first tick
+#   no longer moves player-following explosions by the distance from a stale anchor (the outpost
+#   preview's, or zero in a demo). Online, that stale anchor could belong to the other machine's
+#   seat. Verified by building with only those two assignments removed: the hashes came back at
+#   the previous line's values once the registry change below was also undone.
+# - The last special each ship was handed (endless.lastSpecial, 62 bytes) joined the registry.
+#   Verified the same way: with both changes undone all three hashes match the previous line.
+#   The hashes below come back identically from a working directory with no opentyrian.cfg.
+1 180 a9b0280a
+2 180 572d6d3b
+3 180 5a5b08de

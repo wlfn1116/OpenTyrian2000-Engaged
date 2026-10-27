@@ -266,25 +266,11 @@ static const char* getMusicDeviceItem(size_t i, char* buffer, size_t bufferSize)
 // Enabling fails when either Christmas data file is missing.
 static bool toggle_xmas_mode(void)
 {
-	const bool want = !xmas;
-
-	if (want && (!dir_file_exists(data_dir(), "tyrianc.shp") || !dir_file_exists(data_dir(), "voicesc.snd")))
+	if (!xmas_set(!xmas))
 		return false;  // can't enable Christmas without its data files
 
-	xmas = want;
 	override_xmas = true;      // honour this explicit choice over date auto-detection
 	xmasMode = xmas ? 1 : 0;   // persist the choice
-
-	free_main_shape_tables();
-	JE_loadMainShapeTables(xmas ? "tyrianc.shp" : "tyrian.shp");
-
-	if (!audio_disabled)
-	{
-		// loadSndFile frees/reallocs the sample buffers the audio callback reads via
-		// the channel pointers, so silence the channels first (see stop_sample_channels).
-		stop_sample_channels();
-		loadSndFile(xmas);
-	}
 
 	return true;
 }

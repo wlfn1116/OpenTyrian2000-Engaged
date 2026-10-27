@@ -768,6 +768,7 @@ void JE_inGameDisplays(void)
 	// Show the local ship's Endless kill buff in the bottom-right. Shift it up or
 	// left when a boss bar occupies that corner.
 	bool killfire_drawn = false;
+	const uint fxSaved = endlessFxPlayer();
 	endlessSetFxPlayer(gameplay_local_player_index());
 	if (endlessFxActive() && endlessTurbodriveActive())
 	{
@@ -855,6 +856,7 @@ void JE_inGameDisplays(void)
 				fill_rectangle_xy(VGAScreen, barX, y, barX + fillw, y, bank * 16 + shade);
 			}
 	}
+	endlessSetFxPlayer(fxSaved);
 	if (!rollback_resim_silent)
 		hud_killfire_shown = killfire_drawn;
 
@@ -1126,6 +1128,8 @@ static bool gauge_flash_any(void)
 // Silent replay defers raw gauge painting and requests one live repaint.
 bool hud_bars_dirty = false;
 
+static void JE_paintArmor(void);
+
 // Draw-only repaint of both gauges from current state onto the HUD surface.
 void JE_repaintShieldArmorBars(void)
 {
@@ -1133,7 +1137,7 @@ void JE_repaintShieldArmorBars(void)
 	SDL_Surface *saved = VGAScreen;
 	VGAScreen = VGAScreenSeg;
 	JE_drawShield();
-	JE_drawArmor();
+	JE_paintArmor();
 	VGAScreen = saved;
 }
 
@@ -1536,6 +1540,11 @@ void JE_drawArmor(void)
 			if (player[i].armor > 28)
 				player[i].armor = 28;
 
+	JE_paintArmor();
+}
+
+static void JE_paintArmor(void)
+{
 	if (rollback_resim_silent)
 	{
 		hud_bars_dirty = true;

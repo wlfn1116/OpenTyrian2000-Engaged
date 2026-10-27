@@ -574,14 +574,19 @@ void extraShipsNetInstallLocal(uint seat)
 	extraNetAvail[seat] = extraAvail;
 }
 
+void extraShipsNetWithdraw(uint seat)
+{
+	if (seat >= COUNTOF(extraShipsNet))
+		return;
+	memset(extraShipsNet[seat], 0, sizeof(JE_ShipsType));
+	free_sprite2s(&extraShapesNet[seat]);
+	extraNetAvail[seat] = false;
+}
+
 void extraShipsNetReset(void)
 {
 	for (uint seat = 0; seat < COUNTOF(extraShipsNet); ++seat)
-	{
-		memset(extraShipsNet[seat], 0, sizeof(JE_ShipsType));
-		free_sprite2s(&extraShapesNet[seat]);
-		extraNetAvail[seat] = false;
-	}
+		extraShipsNetWithdraw(seat);
 }
 
 // Write the SHIPEDIT layout: sprite blob, then encrypted ship table.

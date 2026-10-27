@@ -24,6 +24,8 @@ extern bool xmas;
 extern bool override_xmas;
 
 bool xmas_time(void);
+bool xmas_data_present(void);
 bool xmas_prompt(void);
+bool xmas_set(bool on);
 
 #endif /* XMAS_H */

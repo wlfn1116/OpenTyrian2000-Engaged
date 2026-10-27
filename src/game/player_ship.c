@@ -478,7 +478,7 @@ void JE_mainKeyboardInput(void)
 			superPause = !superPause;
 
 		/* {SMOOTHIES} */
-		if (keysactive[SDL_SCANCODE_F12] && keysactive[SDL_SCANCODE_SCROLLLOCK])
+		if (!isNetworkGame && keysactive[SDL_SCANCODE_F12] && keysactive[SDL_SCANCODE_SCROLLLOCK])
 		{
 			rollback_taint("smoothies-key");
 			for (temp = SDL_SCANCODE_2; temp <= SDL_SCANCODE_9; temp++)
@@ -490,7 +490,7 @@ void JE_mainKeyboardInput(void)
 		else
 
 		/* {CYCLE THROUGH FILTER COLORS} */
-		if (keysactive[SDL_SCANCODE_MINUS])
+		if (!isNetworkGame && keysactive[SDL_SCANCODE_MINUS])
 		{
 			rollback_taint("filter-key");
 			if (levelFilter == -99)
@@ -507,7 +507,7 @@ void JE_mainKeyboardInput(void)
 		else
 
 		/* {HYPER-SPEED} */
-		if (keysactive[SDL_SCANCODE_1])
+		if (!isNetworkGame && keysactive[SDL_SCANCODE_1])
 		{
 			rollback_taint("hyper-speed");
 			fastPlay++;
@@ -519,11 +519,7 @@ void JE_mainKeyboardInput(void)
 
 		/* {IN-GAME RANDOM MUSIC SELECTION} */
 		if (keysactive[SDL_SCANCODE_SCROLLLOCK])
-		{
-			// Draws mt_rand outside the recorded input path; taints the tick.
-			rollback_taint("random-music");
-			play_song(mt_rand() % MUSIC_NUM);
-		}
+			play_random_song();
 	}
 }
 
@@ -857,12 +853,18 @@ static void JE_drawSidekickAmmoGauge(JE_byte playerNum, uint slot, int ammo, int
 
 /* Apply ship-owned Endless effects. Co-op calls this for both ships; other modes keep the
  * player-one effect owner. */
+static bool endless_ship_effects_apply(const Player *this_player)
+{
+	return endlessFxActive() && (coopEndlessMode || this_player == &player[0]);
+}
+
 void endlessPerShipTick(Player *this_player)
 {
-	if (!endlessFxActive() || !(coopEndlessMode || this_player == &player[0]))
+	if (!endless_ship_effects_apply(this_player))
 		return;
 
-	if (!vt_ship_owns())  // the VT ship (normal play) applies gravity in vt_ship_step
+	// the VT ship (normal play) applies gravity in vt_ship_step
+	if (!vt_ship_owns() && !isNetworkGame)
 	{
 		// X is nonzero only for an omnidirectional well; both axes are clamped to the playfield
 		// at the end of JE_playerMovement, so a sideways/up pull just pins the ship at that edge.
@@ -1024,9 +1026,9 @@ redo:
 	accelXC = 0;
 	accelYC = 0;
 
-	// Select the ship-physics path. Rollback peers use the host's choice; a docked Dragonwing still
+	// Select the ship-physics path. Online peers use the host's choice; a docked Dragonwing still
 	// follows the fixed-tick path that pins it to player 1.
-	const bool vt_sim_owns = (isNetworkGame && nrb_active())
+	const bool vt_sim_owns = isNetworkGame
 	                       ? (nrb_session_vt() && frameCountMax > 0 && !endLevel)
 	                       : vt_ship_owns();
 	const bool vt = vt_sim_owns && !(playerNum_ == 2 && twoPlayerLinked);
@@ -1210,7 +1212,7 @@ redo:
 					inputDevice = 1;  // keyboard is required device for demo recording
 
 				// demo playback input
-				if (play_demo)
+				if (play_demo && playerNum_ == 1)
 				{
 					if (!replay_demo_keys())
 					{
@@ -1426,6 +1428,14 @@ redo:
 					}
 				}
 
+				if (isNetworkGame && !vt_input && endless_ship_effects_apply(this_player))
+				{
+					int pullX, pullY;
+					endlessGravityInputPull((uint)(this_player - player), &pullX, &pullY);
+					this_player->x += pullX;
+					this_player->y += pullY;
+				}
+
 			}   /*endLevel*/
 
 			/* Live-network regression for the delay packet's linked-gun fields. Player two supplies
@@ -1492,8 +1502,8 @@ redo:
 				net_own_state_store(SDLNet_Read16(&packet_state_out[0]->data[2]),
 				                    this_player->x, this_player->y, buttons);
 
-				this_player->x = *mouseX_;
-				this_player->y = *mouseY_;
+				this_player->x = moveStartX;
+				this_player->y = moveStartY;
 
 				button[0] = false;
 				button[1] = false;
@@ -1506,6 +1516,11 @@ redo:
 				link_gun_angle = 0.0f;
 			}
 
+			RbInput scripted;
+			if (qa_replay_coop_input(playerNum_ - 1, this_player->x, this_player->y, &scripted))
+				rb_apply_tuple(&scripted, this_player, &accelXC, &accelYC,
+				               &link_gun_analog, &link_gun_angle);
+
 			// Self-test: capture the effective tuple for BOTH players so a replay
 			// of this tick can reproduce the live-sampled movement exactly.
 			if (rollback_selftest_active())
@@ -1515,6 +1530,9 @@ redo:
 				              accelXC, accelYC, link_gun_analog, link_gun_angle);
 				rollback_st_record(playerNum_ - 1, &in);
 			}
+
+			if (isNetworkGame)
+				*mouseY_ = (JE_word)moveStartY;
 		}  /*isNetworkGame*/
 
 		/* --- Movement Routine Ending --- */

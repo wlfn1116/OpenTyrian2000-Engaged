@@ -79,6 +79,7 @@ bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len);
 bool extraShipsPayloadValid(const Uint8 *buf, size_t len);
 bool extraShipsAdoptLocal(const Uint8 *buf, size_t len);
 void extraShipsNetInstallLocal(uint seat);
+void extraShipsNetWithdraw(uint seat);
 void extraShipsNetReset(void);
 
 #endif /* EXTRA_SHIPS_H */

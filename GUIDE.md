@@ -256,6 +256,8 @@ each other.
 | Desync Recovery | Lets rollback adopt host state after a mismatch |
 
 The host's session settings temporarily replace the joiner's local choices.
+Extra Parallax and Christmas Mode also follow the host because both can affect
+the game.
 
 Rollback applies local input immediately and predicts the peer. Delay-Based
 buffers both players' inputs and adds input lag.
@@ -300,7 +302,8 @@ Both players may shop at once. Rerolls and gambles affect the buyer. Sabotage
 combines because both ships fly the same route.
 
 A destroyed ship spectates until the next outpost. If both ships go down, the
-run mode decides the result; the host chooses in Relaxed.
+run mode decides the result; the host chooses in Relaxed. The wreck animation
+cannot be skipped online.
 
 ### Appearance
 
@@ -363,7 +366,9 @@ Levels can be copied, pasted, spread across the power curve, or generated as a
 curve. The preview uses the real shot simulation.
 
 Online Campaign and Endless exchange one design per player. Separate Arcade
-also sends designs referenced by custom ships.
+also sends designs referenced by custom ships. If a design fails to reach the
+other player, both machines use a placeholder weapon in its place. Campaign and
+Endless send it again at the next outpost.
 
 ## Enhancements
 
@@ -461,9 +466,13 @@ the thread count each drawing stage uses.
 Destruct, SuperTyrian, Super Arcade ships, command-line cheats, and Christmas
 Mode.
 
-**Esc > Extra** exposes solo cheats, the custom-ship picker, and ship skins.
+**Esc > Extra** exposes solo cheats, debug codes, the custom-ship picker, and
+ship skins. Online, **Debug Codes** disables Hyper-Speed and Level Filter.
+
 Custom ships and skins are available in solo Campaign, Endless, and Arcade, plus
-online Campaign, Endless, and Separate Arcade.
+online Campaign, Endless, and Separate Arcade. If a custom ship fails to reach
+the other player, both machines fly the USP Talon instead. Campaign and Endless
+send it again at the next outpost.
 
 ### Edit ships
 

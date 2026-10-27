@@ -23,6 +23,7 @@
 #include "endless.h"
 #include "episodes.h"
 #include "explosions.h"
+#include "extra_ships.h"
 #include "fnv1a.h"
 #include "game_loop.h"
 #include "game_state.h"
@@ -30,6 +31,7 @@
 #include "net_rollback.h"
 #include "network.h"
 #include "opentyr.h"
+#include "player.h"
 #include "shots.h"
 #include "sprite.h"
 
@@ -93,6 +95,7 @@ typedef struct
 	void      (*restore)(const void *src);
 	size_t      size;
 	size_t      offset;                    /* position within a snapshot slot  */
+	bool        local;
 }
 RbItem;
 
@@ -123,7 +126,14 @@ void rollback_register(const char *name, void *ptr, size_t size)
 	it->restore = NULL;
 	it->size = size;
 	it->offset = rb_total_size;
+	it->local = false;
 	rb_total_size += size;
+}
+
+void rollback_register_local(const char *name, void *ptr, size_t size)
+{
+	rollback_register(name, ptr, size);
+	rb_items[rb_item_count - 1].local = true;
 }
 
 void rollback_register_callback(const char *name, size_t size,
@@ -222,11 +232,13 @@ static void rb_save_to(Uint8 *buf)
 	}
 }
 
-static void rb_restore_from(const Uint8 *buf)
+static void rb_restore_from(const Uint8 *buf, bool shared_only)
 {
 	for (int i = 0; i < rb_item_count; ++i)
 	{
 		RbItem *it = &rb_items[i];
+		if (shared_only && it->local)
+			continue;
 		if (it->restore)
 			it->restore(buf + it->offset);
 		else
@@ -265,7 +277,7 @@ bool rollback_restore(Uint32 frame)
 	const int slot = (int)(frame % ROLLBACK_RING);
 	if (!rb_ring_valid[slot] || rb_ring_frame[slot] != frame)
 		return false;
-	rb_restore_from(rb_ring[slot]);
+	rb_restore_from(rb_ring[slot], false);
 	return true;
 }
 
@@ -287,14 +299,11 @@ static bool rb_trace_snapshot(void)
 	return rb_reloc_walk(rb_trace_buf, true);
 }
 
-#if RB_TRACE_ITEMS_TO > 0
-/* FNV-1a over one entry's relocated bytes.  Raw entries only; the single
- * callback entry is the RNG, whose draw count the trace carries verbatim. */
+/* FNV-1a over one entry's relocated bytes. */
 static Uint32 rb_item_hash(const RbItem *it)
 {
 	return fnv1a32(rb_trace_buf + it->offset, it->size);
 }
-#endif
 
 Uint32 rollback_state_hash(void)
 {
@@ -342,7 +351,30 @@ static Sprite2_array *const rb_sheet_tab[] = {
 	&enemySpriteSheets[0], &enemySpriteSheets[1],
 	&enemySpriteSheets[2], &enemySpriteSheets[3],
 };
-static Sprite2_array *const rb_ship_tab[] = { NULL, &spriteSheet9, &spriteSheetT2000 };
+
+enum { RB_SHIP_SHEETS = 5 };
+
+static Sprite2_array *rb_ship_sheet(Uint32 code)
+{
+	switch (code)
+	{
+	case 1:  return &spriteSheet9;
+	case 2:  return &spriteSheetT2000;
+	case 3:  return extraShapesFor(0);
+	case 4:  return extraShapesFor(1);
+	default: return NULL;
+	}
+}
+
+static Sprite2_array *rb_reloc_sheet(int kind, Uint32 code)
+{
+	return kind == RB_RELOC_SHEET ? rb_sheet_tab[code] : rb_ship_sheet(code);
+}
+
+static Uint32 rb_reloc_sheet_count(int kind)
+{
+	return kind == RB_RELOC_SHEET ? (Uint32)COUNTOF(rb_sheet_tab) : RB_SHIP_SHEETS;
+}
 
 typedef struct
 {
@@ -407,13 +439,11 @@ static bool rb_reloc_encode_field(Uint8 *field, int kind)
 	case RB_RELOC_SHEET:
 	case RB_RELOC_SHIP:
 	{
-		Sprite2_array *const *tab = (kind == RB_RELOC_SHEET) ? rb_sheet_tab : rb_ship_tab;
-		const int n = (kind == RB_RELOC_SHEET) ? (int)COUNTOF(rb_sheet_tab) : (int)COUNTOF(rb_ship_tab);
-		for (int i = 0; i < n; ++i)
+		for (Uint32 i = 0; i < rb_reloc_sheet_count(kind); ++i)
 		{
-			if (v == tab[i])
+			if (v == rb_reloc_sheet(kind, i))
 			{
-				rb_field_write_code(field, (Uint32)i);
+				rb_field_write_code(field, i);
 				return true;
 			}
 		}
@@ -439,7 +469,7 @@ static bool rb_reloc_encode_field(Uint8 *field, int kind)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
-			if (v == &player[i].items.weapon[i].power)
+			if (v == player_lives_counter(i))
 			{
 				rb_field_write_code(field, i);
 				return true;
@@ -475,14 +505,10 @@ static bool rb_reloc_decode_field(Uint8 *field, int kind)
 	{
 	case RB_RELOC_SHEET:
 	case RB_RELOC_SHIP:
-	{
-		Sprite2_array *const *tab = (kind == RB_RELOC_SHEET) ? rb_sheet_tab : rb_ship_tab;
-		const Uint32 n = (kind == RB_RELOC_SHEET) ? (Uint32)COUNTOF(rb_sheet_tab) : (Uint32)COUNTOF(rb_ship_tab);
-		if (code >= n)
+		if (code >= rb_reloc_sheet_count(kind))
 			return false;
-		v = tab[code];
+		v = rb_reloc_sheet(kind, code);
 		break;
-	}
 	case RB_RELOC_EDAT:
 		if (code == RB_CODE_NULL)
 			v = NULL;
@@ -494,7 +520,7 @@ static bool rb_reloc_decode_field(Uint8 *field, int kind)
 	case RB_RELOC_LIVES:
 		if (code >= COUNTOF(player))
 			return false;
-		v = &player[code].items.weapon[code].power;
+		v = player_lives_counter(code);
 		break;
 	default:
 	{
@@ -581,7 +607,7 @@ bool rollback_wire_adopt(Uint8 *buf)
 		return false;
 	if (!rb_reloc_walk(buf, false))
 		return false;
-	rb_restore_from(buf);
+	rb_restore_from(buf, true);
 	return true;
 }
 
@@ -707,6 +733,74 @@ static bool   st_tainted = false;
 static char   st_taint_why[64];
 static bool   st_level_active = false;
 
+typedef struct
+{
+	Uint32  frame;
+	RbInput input[2];
+	Uint16  events;
+	bool    tainted;
+}
+StFrame;
+
+static StFrame      st_hist[ROLLBACK_RING];
+static unsigned int st_depth = 1;
+static Uint32       st_replay_first, st_replay_frame;
+static FILE        *st_trace;
+
+void rollback_selftest_set_depth(unsigned int depth)
+{
+	st_depth = depth < 1 ? 1 : depth > ROLLBACK_MAX_PREDICT ? ROLLBACK_MAX_PREDICT : depth;
+}
+
+void rollback_selftest_set_trace(FILE *f)
+{
+	st_trace = f;
+}
+
+static void rb_trace_frame(Uint32 frame)
+{
+	if (st_trace == NULL || !rb_trace_snapshot())
+		return;
+
+	static bool header_written = false;
+	if (!header_written)
+	{
+		header_written = true;
+		fprintf(st_trace, "items %d\n", rb_item_count);
+		for (int i = 0; i < rb_item_count; ++i)
+			fprintf(st_trace, "%s %zu\n", rb_items[i].name, rb_items[i].size);
+	}
+
+	fprintf(st_trace, "f %lu", (unsigned long)frame);
+	for (int i = 0; i < rb_item_count; ++i)
+		fprintf(st_trace, " %08x", (unsigned)rb_item_hash(&rb_items[i]));
+	fputc('\n', st_trace);
+}
+
+static Uint32 rb_replay_start(Uint32 last)
+{
+	const Uint32 want = 1 + last % st_depth;
+	Uint32 first = last;
+	while (last - first + 1 < want && first > 1)
+	{
+		const StFrame *const prev = &st_hist[(first - 1) % ROLLBACK_RING];
+		if (prev->frame != first - 1 || prev->tainted || !rollback_have_frame(first - 1))
+			break;
+		--first;
+	}
+	return first;
+}
+
+static void rb_replay_enter(Uint32 frame)
+{
+	const StFrame *const rec = &st_hist[frame % ROLLBACK_RING];
+	memcpy(st_input, rec->input, sizeof(st_input));
+	st_event_bits = rec->events;
+	st_replay_frame = frame;
+	rollback_resim = true;
+	rollback_resim_silent = frame < st_frame;
+}
+
 /* QA may include Endless effects in the rollback self-test. */
 static bool st_allow_endless = false;
 
@@ -761,6 +855,7 @@ void rollback_level_start(void)
 	rollback_resim_silent = false;
 	memset(st_input, 0, sizeof(st_input));
 	st_event_bits = 0;
+	memset(st_hist, 0, sizeof(st_hist));
 
 	/* Allocate the ring only for rollback or the self-test. Endless effects are not registered, so
 	 * the self-test remains disabled there. */
@@ -824,6 +919,12 @@ bool rollback_selftest_tick(void)
 #endif
 		}
 
+		StFrame *const rec = &st_hist[st_frame % ROLLBACK_RING];
+		rec->frame = st_frame;
+		memcpy(rec->input, st_input, sizeof(st_input));
+		rec->events = st_event_bits;
+		rec->tainted = st_tainted;
+
 		if (st_tainted)
 		{
 			/* A modal UI or live cheat mutated state outside the tuples this
@@ -835,14 +936,22 @@ bool rollback_selftest_tick(void)
 			return false;
 
 		rb_save_to(rb_verify_buf);          /* the answer the replay must hit */
-		rollback_restore(st_frame);
-		rollback_resim = true;              /* replay: no sound/live input    */
+		st_replay_first = rb_replay_start(st_frame);
+		rollback_restore(st_replay_first);
+		rb_replay_enter(st_replay_first);
 		st_verifying = true;
 		return true;                        /* caller: re-run the tick        */
 	}
 
+	if (st_replay_frame < st_frame)
+	{
+		rb_replay_enter(st_replay_frame + 1);
+		return true;
+	}
+
 	/* Replay pass just finished: every registered byte must match. */
 	rollback_resim = false;
+	rollback_resim_silent = false;
 	st_verifying = false;
 	++rollback_selftest_ticks;
 
@@ -854,8 +963,8 @@ bool rollback_selftest_tick(void)
 			++rollback_selftest_failures;
 			char msg[768];
 			snprintf(msg, sizeof(msg),
-			         "tick %lu: %d registered item(s) diverged on replay\n%s",
-			         (unsigned long)st_frame, bad, detail);
+			         "tick %lu (replayed from %lu): %d registered item(s) diverged on replay\n%s",
+			         (unsigned long)st_frame, (unsigned long)st_replay_first, bad, detail);
 			crashlog_note_net("ROLLBACK SELFTEST", msg);
 			rb_log("FAIL %s"
 			       "  ctx: curLoc=%u endLevel=%d levelEnd=%d reallyEnd=%d demo=%d "
@@ -875,6 +984,7 @@ bool rollback_selftest_tick(void)
 			rb_log_flush();
 		}
 	}
+	rb_trace_frame(st_frame);
 
 	if (rollback_selftest_limit != 0 && rollback_selftest_ticks >= rollback_selftest_limit)
 	{

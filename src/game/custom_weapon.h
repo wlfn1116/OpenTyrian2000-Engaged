@@ -248,5 +248,6 @@ bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len);
 // Claim and compile the reserved slots both players need. Idempotent; call when a Campaign
 // session reaches the outpost.
 void customWeaponNetPrepare(void);
+void customWeaponWithholdLocal(bool withheld);
 
 #endif // CUSTOM_WEAPON_H

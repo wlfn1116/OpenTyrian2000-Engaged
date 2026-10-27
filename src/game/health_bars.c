@@ -243,7 +243,7 @@ void boss_bar_vertical_span(bool onLeft, int *top, int *bot)
 
 // Lay out and draw the enhanced boss bars per the player's Enhancements
 // settings (bossBarLayout / bossBarTwoMode). barCount is 1 or 2.
-static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlpha, bool decrement, unsigned int barCount)
+static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlpha, bool tickDraw, unsigned int barCount)
 {
 	// Bars draw into game_screen (playfield space); JE_inGameDisplays draws the corner HUD
 	// indicators in the same space, so keep bars centred on the playfield and clear of them.
@@ -302,7 +302,7 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 				by = botAnchor - THICK + 1
 				   - ((two && !sideBySide) ? (int)(barCount - 1 - b) * (THICK + GAP) : 0);
 
-			if (decrement)  // the authoritative tick draw
+			if (tickDraw)  // the authoritative tick draw
 				boss_bar_mark_overlay(bx, by, bw, THICK);
 
 			int base, lift;
@@ -310,12 +310,9 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 			const int hit = boss_flash_render(boss_bar[b].color, flashAlpha);
 
 			draw_boss_bar_gauge(dst, scale, bx, by, bw, THICK, true,
-			                    decrement ? boss_bar[b].fill / (float)BOSS_BAR_FULL
-			                              : boss_bar_present_fill(b, flashAlpha),
+			                    tickDraw ? boss_bar[b].fill / (float)BOSS_BAR_FULL
+			                             : boss_bar_present_fill(b, flashAlpha),
 			                    (lift > hit) ? lift : hit, base);
-
-			if (decrement && boss_bar[b].color > 0)
-				boss_bar[b].color--;
 		}
 	}
 	else
@@ -357,7 +354,7 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 				}
 			}
 
-			if (decrement)  // see the horizontal branch
+			if (tickDraw)  // see the horizontal branch
 				boss_bar_mark_overlay(bx, vTop, THICK, vBot - vTop + 1);
 
 			int base, lift;
@@ -365,12 +362,9 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 			const int hit = boss_flash_render(boss_bar[b].color, flashAlpha);
 
 			draw_boss_bar_gauge(dst, scale, bx, vTop, THICK, vBot - vTop + 1, false,
-			                    decrement ? boss_bar[b].fill / (float)BOSS_BAR_FULL
-			                              : boss_bar_present_fill(b, flashAlpha),
+			                    tickDraw ? boss_bar[b].fill / (float)BOSS_BAR_FULL
+			                             : boss_bar_present_fill(b, flashAlpha),
 			                    (lift > hit) ? lift : hit, base);
-
-			if (decrement && boss_bar[b].color > 0)
-				boss_bar[b].color--;
 		}
 	}
 }
@@ -399,9 +393,6 @@ static void draw_boss_bars_classic(unsigned int bars)
 		JE_barX(x - 25, y, x + 25, y + 5, base + 3);
 		JE_barX(x - (boss_bar[b].fill / 10), y, x + (boss_bar[b].fill + 5) / 10, y + 5,
 		        base + 6 + flash);
-
-		if (boss_bar[b].color > 0)
-			boss_bar[b].color--;
 	}
 }
 
@@ -563,7 +554,12 @@ void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *ou
 	*out_full = full;
 }
 
-void draw_boss_bar(void)
+static unsigned int boss_bar_count(void)
+{
+	return (boss_bar[0].link_num != 0 ? 1 : 0) + (boss_bar[1].link_num != 0 ? 1 : 0);
+}
+
+void boss_bar_tick(void)
 {
 	for (unsigned int b = 0; b < COUNTOF(boss_bar); b++)
 	{
@@ -588,16 +584,24 @@ void draw_boss_bar(void)
 			boss_bar[b].fill = boss_bar_fill(armor, full);
 	}
 
-	unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
-	                  + (boss_bar[1].link_num != 0 ? 1 : 0);
-
 	// if only one bar left, make it the first one
-	if (bars == 1 && boss_bar[0].link_num == 0)
+	if (boss_bar_count() == 1 && boss_bar[0].link_num == 0)
 	{
 		memcpy(&boss_bar[0], &boss_bar[1], sizeof(boss_bar_t));
 		boss_bar[1].link_num = 0;
 	}
+}
 
+void boss_bar_fade_flash(void)
+{
+	for (unsigned int b = 0; b < boss_bar_count(); b++)
+		if (boss_bar[b].color > 0)
+			boss_bar[b].color--;
+}
+
+void draw_boss_bar(void)
+{
+	const unsigned int bars = boss_bar_count();
 	if (bars == 0)
 		return;
 
@@ -644,8 +648,7 @@ static void draw_boss_bars_classic_present(SDL_Surface *dst, int scale, float al
 // Redraw boss bars with an interpolated fill and hit flash.
 void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
 {
-	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
-	                        + (boss_bar[1].link_num != 0 ? 1 : 0);
+	const unsigned int bars = boss_bar_count();
 	if (bars == 0)
 		return;
 
@@ -659,8 +662,7 @@ void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
 // draw_boss_bars_enhanced.
 int boss_bar_hud_left_shift(int hudRightX)
 {
-	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
-	                         + (boss_bar[1].link_num != 0 ? 1 : 0);
+	const unsigned int bars = boss_bar_count();
 	if (bars == 0 || bossBarStyle != BOSS_BAR_ENHANCED)
 		return 0;
 	if (bossBarLayout != BOSS_BAR_LEFT && bossBarLayout != BOSS_BAR_RIGHT)
@@ -685,16 +687,14 @@ int boss_bar_hud_left_shift(int hudRightX)
 // playfield width and sits close to the bottom edge, unlike TOP which never reaches there.
 static bool boss_bar_hud_needs_up_shift(void)
 {
-	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
-	                        + (boss_bar[1].link_num != 0 ? 1 : 0);
-	return bars > 0 && bossBarStyle == BOSS_BAR_ENHANCED && bossBarLayout == BOSS_BAR_BOTTOM;
+	return boss_bar_count() > 0 && bossBarStyle == BOSS_BAR_ENHANCED
+	    && bossBarLayout == BOSS_BAR_BOTTOM;
 }
 
 // Top row of a bottom Enhanced boss bar, or INT_MAX. Keep in step with draw_boss_bars_enhanced.
 int boss_bar_bottom_band_top(void)
 {
-	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
-	                        + (boss_bar[1].link_num != 0 ? 1 : 0);
+	const unsigned int bars = boss_bar_count();
 	if (!boss_bar_hud_needs_up_shift())
 		return INT_MAX;
 

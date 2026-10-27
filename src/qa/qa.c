@@ -14,18 +14,22 @@
 #include "endless.h"
 #include "episodes.h"
 #include "endless_internal.h"
+#include "extra_ships.h"
 #include "game_loop.h"
 #include "game_state.h"
 #include "keyboard.h"
 #include "level_load.h"
 #include "net_savexfer.h"
+#include "network.h"
 #include "player.h"
 #include "rollback.h"
+#include "video.h"
 
 #include "SDL.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 bool qa_test_suite = false;
 const char *qa_fixture_dir = "testing/fixtures";
@@ -35,6 +39,12 @@ unsigned long qa_destruct_selftest_ticks = 0;
 bool qa_replay_expect_set = false;
 Uint32 qa_replay_expect = 0;
 int qa_replay_chain = 0;
+const char *qa_replay_file = NULL;
+bool qa_replay_coop = false;
+unsigned int qa_replay_depth = 1;
+const char *qa_replay_trace = NULL;
+Uint32 qa_replay_seed = 1;
+int qa_replay_detail = 0;
 int qa_net_rounds = 0;
 int qa_net_scenario = 0;
 int qa_net_version_skew = 0;
@@ -326,6 +336,65 @@ static void qa_test_rollback(void)
 	       (unsigned long)state_size, (unsigned)rollback_layout_fingerprint());
 }
 
+static void qa_test_rollback_wire_seats(void)
+{
+	static const struct
+	{
+		bool campaign, endless, separate;
+		const char *what;
+	}
+	modes[] =
+	{
+		{ false, false, false, "desync recovery rebinds the linked pair's lives and ship banks" },
+		{ true,  false, false, "desync recovery rebinds online Campaign's lives and ship banks" },
+		{ false, true,  false, "desync recovery rebinds online Endless's lives and ship banks" },
+		{ false, false, true,  "desync recovery rebinds Separate arcade's lives and ship banks" },
+	};
+
+	const bool savedNet = isNetworkGame;
+	const JE_boolean savedTwo = twoPlayerMode;
+	const JE_boolean savedCampaign = coopCampaignMode, savedEndless = coopEndlessMode;
+	const JE_boolean savedSeparate = arcadeSeparateMode;
+	Sprite2_array *const savedSheet = shipGrPtr, *const savedSheet2 = shipGr2ptr;
+	const size_t state_size = rollback_state_size();
+	Uint8 *wire = malloc(state_size);
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	for (size_t m = 0; m < COUNTOF(modes) && wire != NULL; ++m)
+	{
+		coopCampaignMode = modes[m].campaign;
+		coopEndlessMode = modes[m].endless;
+		arcadeSeparateMode = modes[m].separate;
+		player_bind_lives();
+		shipGrPtr = extraShapesFor(0);
+		shipGr2ptr = extraShapesFor(1);
+
+		const Uint32 before = rollback_state_hash();
+		const bool exported = rollback_wire_export(wire);
+		player[1].lives = NULL;
+		shipGrPtr = shipGr2ptr = NULL;
+		const bool adopted = exported && rollback_wire_adopt(wire);
+
+		bool bound = before != 0;
+		for (uint i = 0; i < COUNTOF(player); ++i)
+			bound = bound && player[i].lives == player_lives_counter(i);
+		qa_check(adopted && bound && shipGrPtr == extraShapesFor(0)
+		         && shipGr2ptr == extraShapesFor(1) && rollback_state_hash() == before,
+		         modes[m].what);
+	}
+	free(wire);
+
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCampaign;
+	coopEndlessMode = savedEndless;
+	arcadeSeparateMode = savedSeparate;
+	shipGrPtr = savedSheet;
+	shipGr2ptr = savedSheet2;
+	player_bind_lives();
+}
+
 int qa_run_unit_suite(void)
 {
 	qa_checks = qa_failures = 0;
@@ -340,6 +409,7 @@ int qa_run_unit_suite(void)
 	JE_initPlayerData();
 	qa_test_config_option_removal();
 	qa_test_rollback();
+	qa_test_rollback_wire_seats();
 	qa_test_course_tables();
 	qa_test_canonical_mods();
 	qa_test_structural_rng();
@@ -412,6 +482,7 @@ int qa_run_unit_suite(void)
 	qa_test_online_ship_style();
 	qa_test_partner_hp_bars();
 	qa_test_network_settings();
+	qa_test_desync_guards();
 	qa_test_network_endless_lobby();
 	qa_test_discover_reply();
 	qa_test_seeker_tiers();
@@ -460,6 +531,60 @@ int qa_run_unit_suite(void)
 	return qa_failures == 0 ? 0 : 1;
 }
 
+static Uint32 qa_coop_rng;
+static int qa_coop_target_x, qa_coop_target_y, qa_coop_hold;
+
+static Uint32 qa_coop_next(Uint32 range)
+{
+	qa_coop_rng = qa_coop_rng * 1664525u + 1013904223u;
+	return (qa_coop_rng >> 8) % range;
+}
+
+void qa_replay_coop_arm(void)
+{
+	if (!qa_replay_coop)
+		return;
+
+	player[1].items = player[0].items;
+	player[1].last_items = player[0].last_items;
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		player[i].is_dragonwing = false;
+		player[i].lives = player_lives_counter(i);
+	}
+}
+
+bool qa_replay_coop_input(uint player_index, int x, int y, RbInput *in)
+{
+	if (!qa_replay_coop || player_index != 1)
+		return false;
+
+	if (qa_coop_hold-- <= 0)
+	{
+		const int span_x = PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN - SHIP_LEFT_MARGIN + 1;
+		const int span_y = SHIP_BOTTOM_MARGIN - SHIP_TOP_MARGIN + 1;
+		qa_coop_target_x = SHIP_LEFT_MARGIN + (int)qa_coop_next((Uint32)span_x);
+		qa_coop_target_y = SHIP_TOP_MARGIN + (int)qa_coop_next((Uint32)span_y);
+		qa_coop_hold = 10 + (int)qa_coop_next(50);
+	}
+
+	const int dx = MAX(-4, MIN(4, qa_coop_target_x - x));
+	const int dy = MAX(-4, MIN(4, qa_coop_target_y - y));
+
+	memset(in, 0, sizeof(*in));
+	in->x = (Sint16)(x + dx);
+	in->y = (Sint16)(y + dy);
+	in->velX = (Sint16)(dx / 2);
+	in->velY = (Sint16)(dy / 2);
+	in->accelX = (Sint16)((dx > 0) - (dx < 0));
+	in->accelY = (Sint16)((dy > 0) - (dy < 0));
+	in->buttons = (qa_coop_next(10) != 0 ? RB_BTN_FIRE : 0)
+	            | (qa_coop_next(4) == 0 ? RB_BTN_LSIDEKICK : 0)
+	            | (qa_coop_next(4) == 0 ? RB_BTN_RSIDEKICK : 0)
+	            | (qa_coop_next(97) == 0 ? RB_BTN_CHANGEFIRE : 0);
+	return true;
+}
+
 int qa_run_replay_fixture(void)
 {
 	if (qa_replay_demo < 1 || qa_replay_demo > 5 || qa_replay_ticks == 0)
@@ -469,6 +594,18 @@ int qa_run_replay_fixture(void)
 	}
 
 	JE_initPlayerData();
+	if (qa_replay_detail >= 1 && qa_replay_detail <= 6)
+	{
+		processorType = (JE_byte)qa_replay_detail;
+		JE_initProcessorType();
+	}
+	qa_coop_rng = qa_replay_seed;
+	qa_coop_hold = 0;
+	if (qa_replay_coop)
+	{
+		twoPlayerMode = true;
+		coopCampaignMode = true;
+	}
 	gameLoaded = false;
 	jumpSection = false;
 	stopped_demo = false;
@@ -492,12 +629,24 @@ int qa_run_replay_fixture(void)
 		}
 	}
 
+	FILE *const trace = qa_replay_trace != NULL ? fopen(qa_replay_trace, "w") : NULL;
+	if (qa_replay_trace != NULL && trace == NULL)
+	{
+		fprintf(stderr, "cannot write replay trace %s\n", qa_replay_trace);
+		return 2;
+	}
+
 	rollback_selftest_ticks = 0;
 	rollback_selftest_failures = 0;
 	rollback_selftest_set_limit(qa_replay_ticks);
+	rollback_selftest_set_depth(qa_replay_depth);
+	rollback_selftest_set_trace(trace);
 	rollback_selftest_set(true);
 	JE_main();
 	rollback_selftest_set(false);
+	rollback_selftest_set_trace(NULL);
+	if (trace != NULL)
+		fclose(trace);
 
 	const Uint32 hash = rollback_selftest_bounded_hash();
 	printf("REPLAY demo=%d ticks=%lu failures=%lu hash=%08x layout=%08x\n",

@@ -88,6 +88,7 @@ void network_custom_weapon_reset(void)
 	network_custom_out_hash = 0;
 	network_custom_acked = false;
 	network_waiting_pending = false;
+	customWeaponWithholdLocal(false);
 }
 
 static void network_custom_send_ack(Uint16 gen)
@@ -269,14 +270,15 @@ static void network_custom_weapon_publish_internal(bool force)
 	if (!network_custom_acked)
 	{
 		crashlog_netlog_line("CUSTOM WEAPON NOT DELIVERED",
-		                     "the peer never acknowledged the design; its copy of this ship "
-		                     "keeps the placeholder weapon, which the canary reports as a desync.");
+		                     "the peer never acknowledged the design; both machines fly this "
+		                     "ship with the placeholder weapon until the next outpost.");
 		network_custom_out_hash = 0;  // start over at the next publish window
 	}
 	else
 	{
 		network_custom_out_hash = hash;
 	}
+	customWeaponWithholdLocal(!network_custom_acked);
 
 	free(stream);
 }
@@ -492,6 +494,8 @@ void network_extra_ships_publish(void)
 
 	if (network_ships_acked)
 		network_ships_out_hash = hash;
+	else
+		extraShipsNetWithdraw((uint)(thisPlayerNum - 1));
 
 	free(stream);
 }

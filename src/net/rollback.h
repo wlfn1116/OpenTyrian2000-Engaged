@@ -24,6 +24,7 @@
 
 #include "SDL.h"
 #include <stddef.h>
+#include <stdio.h>
 
 /* Deepest re-simulation permitted, in sim ticks.  Netplay stalls (waits for the
  * peer) rather than predicting past this, so it also bounds snapshot memory. */
@@ -38,6 +39,7 @@ extern bool rollback_resim_silent;
 /* State registry. */
 
 void rollback_register(const char *name, void *ptr, size_t size);
+void rollback_register_local(const char *name, void *ptr, size_t size);
 /* For state that cannot be raw-copied (the RNG holds internal pointers). */
 void rollback_register_callback(const char *name, size_t size,
                                 void (*save)(void *dst), void (*restore)(const void *src));
@@ -139,5 +141,7 @@ extern unsigned long rollback_selftest_ticks, rollback_selftest_failures;
 /* Bounded automated replay support; zero disables the bound. */
 void rollback_selftest_set_limit(unsigned long ticks);
 Uint32 rollback_selftest_bounded_hash(void);
+void rollback_selftest_set_depth(unsigned int depth);
+void rollback_selftest_set_trace(FILE *f);
 
 #endif /* ROLLBACK_H */

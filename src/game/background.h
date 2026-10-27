@@ -96,6 +96,7 @@ void bg_publish_layer_1_phase(void);
 void draw_background_1(SDL_Surface *surface);
 void draw_background_2(SDL_Surface *surface);
 void draw_background_2_blend(SDL_Surface *surface);
+void skip_background_2(void);
 void draw_background_3(SDL_Surface *surface);
 
 // Advances the fade/flash ramp by one tick: sim state, call from the tick body only.

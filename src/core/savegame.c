@@ -337,8 +337,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 
 	/* Which weapon bay each ship counts lives on depends on the shape of the session, and this is
 	 * the one path that installs a loadout without going through newGame(). */
-	for (uint p = 0; p < COUNTOF(player); ++p)
-		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	player_bind_lives();
 
 	int episode = rec->episode;
 

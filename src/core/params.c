@@ -71,6 +71,12 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 303, 0,   "test-replay-ticks", true },
 		{ 304, 0,   "test-replay-hash",  true },
 		{ 320, 0,   "test-replay-chain", true },
+		{ 330, 0,   "test-replay-file",  true },
+		{ 331, 0,   "test-replay-coop",  false },
+		{ 332, 0,   "test-replay-depth", true },
+		{ 333, 0,   "test-replay-trace", true },
+		{ 334, 0,   "test-replay-seed",  true },
+		{ 335, 0,   "test-replay-detail", true },
 		{ 305, 0,   "test-net-rounds",   true },
 		{ 306, 0,   "test-net-scenario", true },
 		{ 307, 0,   "test-net-version-skew", true },
@@ -266,6 +272,24 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 320:
 			qa_replay_chain = atoi(option.arg);
+			break;
+		case 330:
+			qa_replay_file = option.arg;
+			break;
+		case 331:
+			qa_replay_coop = true;
+			break;
+		case 332:
+			qa_replay_depth = (unsigned int)strtoul(option.arg, NULL, 10);
+			break;
+		case 333:
+			qa_replay_trace = option.arg;
+			break;
+		case 334:
+			qa_replay_seed = (Uint32)strtoul(option.arg, NULL, 10);
+			break;
+		case 335:
+			qa_replay_detail = atoi(option.arg);
 			break;
 		case 305:
 			qa_net_rounds = atoi(option.arg);

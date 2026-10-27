@@ -805,6 +805,19 @@ do not preserve the indexed pixels used by the software-keyboard backdrop.
 Both peers simulate both ships. Send every simulation-affecting choice before
 either peer resumes. Rendering, audio, and local controls stay local.
 
+Local choices must not reach the simulation:
+
+- A skipped draw still advances simulation state. When the detail level skips
+  background layer 2, `skip_background_2` still paces and scrolls it, because
+  enemies ride that layer.
+- Extra Parallax and Christmas Mode do change the simulation, so the settings
+  block carries them. Christmas travels as the host's effective state; the
+  joiner swaps its shape tables and voices with `xmas_set` and restores its own
+  on leave. Centered shot hitboxes read those sprites.
+- Debug key codes that change the simulation are ignored online.
+- With campaign mods on, `PACKET_CONNECT` carries the host's Endless debug
+  block. Both peers set their Endless scaling pins aside for the session.
+
 `network_is_host` identifies the settings authority.
 `networkHostPlayerNum` identifies the ship flown by the host machine.
 
@@ -878,6 +891,10 @@ Content publication can receive `PACKET_WAITING` before its transfer ack. Carry
 that readiness into the level barrier, but leave a second marker queued for the
 next boundary.
 
+A custom weapon or ship that the peer never acknowledges is dropped on both
+machines until the next publish. The sender withholds its own copy with
+`customWeaponWithholdLocal` or `extraShipsNetWithdraw`.
+
 In online Endless, seed, depth, course, and difficulty are shared. Wallets,
 equipment, shop stock, perks, revive, personal modifiers, and outpost RNG belong
 to a player. Fold the selected course only after both purchase sets are known.
@@ -914,6 +931,9 @@ Deterministic simulation rules:
 - Use precise floating point and disable contraction.
 - Do not use mutable function-local statics in rollback simulation.
 - Register pointer relocations needed by cross-process export.
+- Change registered state only before `nrb_driver`. Code after it runs once per
+  presented frame (see `boss_bar_tick`).
+- Drawing never writes simulation state.
 
 Presentation state stays outside snapshots. Silent replay repaints dirty HUD
 state and suppresses live-only sound and flashes.
@@ -922,6 +942,17 @@ Main-game recovery compares registry size and
 `rollback_layout_fingerprint()` before adopting host state. The joiner
 acknowledges only after a complete generation has been adopted. Limit recovery
 to three attempts per level.
+
+Entries registered with `rollback_register_local` roll back with each snapshot
+but are never adopted from the host; use it for presentation and local settings.
+Restore fixups rebuild state that lives outside the registry:
+`player_bind_lives` and `enemy_sprite_sheets_sync`. `player_lives_counter` is
+the only lives binding, and wire relocation uses it too. Each seat's extra-ship
+sprite bank has its own relocation code.
+
+The desync canary and its detail report share `network_sim_player_row` and
+`network_sim_enemy_row`. New canary fields go into those rows so both stay in
+step.
 
 Destruct recovery snapshots units, terrain, shots, explosions, RNG, and
 `destructTempScreen`. Re-pin its three live pointers after restore and start a
@@ -1406,6 +1437,8 @@ deterministic changes need coverage for:
 
 - old save import and malformed input;
 - rollback save, restore, and pointer relocation;
+- two-ship replays more than one frame deep;
+- a registry trace comparison for any setting meant to stay presentation-only;
 - cross-process hashes;
 - host setup and joiner adoption;
 - both player indices and host roles;

@@ -1070,6 +1070,7 @@ static const float endlessGravityHeadings[16][2] = {
  * shared or unsnapshotted carry makes the two ships drift. */
 static float endlessGravityCarryX[2];
 static float endlessGravityCarryY[2];
+static float endlessGravityInputCarry[2][2];
 
 void endlessRollGravityDir(void)
 {
@@ -1088,6 +1089,7 @@ void endlessRollGravityDir(void)
 	// Zone start: neither ship owes or is owed a fraction from the previous zone.
 	memset(endlessGravityCarryX, 0, sizeof(endlessGravityCarryX));
 	memset(endlessGravityCarryY, 0, sizeof(endlessGravityCarryY));
+	memset(endlessGravityInputCarry, 0, sizeof(endlessGravityInputCarry));
 }
 
 float endlessGravityDrift(void)
@@ -1114,24 +1116,36 @@ static float endlessShipGravityDrift(uint p)
 float endlessShipGravityDriftX(uint p) { return endlessShipGravityDrift(p) * endlessGravityDirX; }
 float endlessShipGravityDriftY(uint p) { return endlessShipGravityDrift(p) * endlessGravityDirY; }
 
+static int endlessGravityStep(float *carry, float drift)
+{
+	*carry += drift;
+	const int step = (int)*carry;
+	*carry -= (float)step;
+	return step;
+}
+
 // Classic movement carries the fractional drift independently per ship and per axis.
 int endlessGravityPullX(uint p)
 {
 	if (p >= COUNTOF(endlessGravityCarryX))
 		return 0;
-	endlessGravityCarryX[p] += endlessShipGravityDriftX(p);
-	const int step = (int)endlessGravityCarryX[p];
-	endlessGravityCarryX[p] -= (float)step;
-	return step;
+	return endlessGravityStep(&endlessGravityCarryX[p], endlessShipGravityDriftX(p));
 }
 int endlessGravityPullY(uint p)
 {
 	if (p >= COUNTOF(endlessGravityCarryY))
 		return 0;
-	endlessGravityCarryY[p] += endlessShipGravityDriftY(p);
-	const int step = (int)endlessGravityCarryY[p];
-	endlessGravityCarryY[p] -= (float)step;
-	return step;
+	return endlessGravityStep(&endlessGravityCarryY[p], endlessShipGravityDriftY(p));
+}
+
+void endlessGravityInputPull(uint p, int *dx, int *dy)
+{
+	*dx = 0;
+	*dy = 0;
+	if (p >= COUNTOF(endlessGravityInputCarry))
+		return;
+	*dx = endlessGravityStep(&endlessGravityInputCarry[p][0], endlessShipGravityDriftX(p));
+	*dy = endlessGravityStep(&endlessGravityInputCarry[p][1], endlessShipGravityDriftY(p));
 }
 
 // Sluggish scale shared by both ship movement paths.
@@ -1702,4 +1716,5 @@ void endless_combat_register_rollback(void)
 	rollback_register("endless.gravityDirY", &endlessGravityDirY, sizeof(endlessGravityDirY));
 	rollback_register("endless.gravityCarryX", endlessGravityCarryX, sizeof(endlessGravityCarryX));
 	rollback_register("endless.gravityCarryY", endlessGravityCarryY, sizeof(endlessGravityCarryY));
+	rollback_register("endless.lastSpecial", endlessLastSpecialName, sizeof(endlessLastSpecialName));
 }

@@ -65,7 +65,7 @@ static void networkEndlessNewRun(void)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		player[i].is_dragonwing = false;
-		player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
+		player[i].lives = player_lives_counter(i);
 		player[i].items = player[0].items;
 		player[i].last_items = player[0].last_items;
 		player[i].cash = 0;
@@ -1014,7 +1014,7 @@ void networkStartScreen(void)
 			{
 				player[i].cash = cash;
 				player[i].is_dragonwing = false;
-				player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
+				player[i].lives = player_lives_counter(i);
 			}
 		}
 		else
@@ -1056,7 +1056,7 @@ void networkStartScreen(void)
 				for (uint i = 0; i < COUNTOF(player); ++i)
 				{
 					player[i].is_dragonwing = false;
-					player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
+					player[i].lives = player_lives_counter(i);
 					player[i].last_items = player[i].items;
 				}
 			}

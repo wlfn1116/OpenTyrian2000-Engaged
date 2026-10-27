@@ -17,12 +17,15 @@
  */
 #include "xmas.h"
 
+#include "audio.h"
 #include "draw.h"
+#include "file.h"
 #include "font.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "palette.h"
+#include "sfx.h"
 #include "sprite.h"
 #include "timing.h"
 #include "video.h"
@@ -36,6 +39,34 @@ bool xmas_time(void)
 {
 	time_t now = time(NULL);
 	return localtime(&now)->tm_mon == 11;
+}
+
+bool xmas_data_present(void)
+{
+	return dir_file_exists(data_dir(), "tyrianc.shp") && dir_file_exists(data_dir(), "voicesc.snd");
+}
+
+bool xmas_set(bool on)
+{
+	if (on && !xmas_data_present())
+		return false;
+	if (on == xmas)
+		return true;
+
+	xmas = on;
+
+	free_main_shape_tables();
+	JE_loadMainShapeTables(xmas ? "tyrianc.shp" : "tyrian.shp");
+
+	if (!audio_disabled)
+	{
+		// loadSndFile frees/reallocs the sample buffers the audio callback reads via
+		// the channel pointers, so silence the channels first (see stop_sample_channels).
+		stop_sample_channels();
+		loadSndFile(xmas);
+	}
+
+	return true;
 }
 
 bool xmas_prompt(void)

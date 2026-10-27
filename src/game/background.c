@@ -569,10 +569,51 @@ void draw_background_1(SDL_Surface *surface)
 	rl_current_id = 0;
 }
 
-void draw_background_2(SDL_Surface *surface)
+static void background_2_pace(void)
 {
 	if (background_advance && map2YDelayMax > 1 && backMove2 < 2)
 		backMove2 = (map2YDelay == 1) ? 1 : 0;
+}
+
+static void background_2_scroll(void)
+{
+	/*Set Movement of background*/
+	if (background_advance && --map2YDelay == 0)
+	{
+		map2YDelay = map2YDelayMax;
+
+		backPos2 += backMove2;
+
+		if (backPos2 >  27)
+		{
+			backPos2 -= 28;
+			mapY2--;
+			mapY2Pos -= 14;  /*Map Width*/
+		}
+	}
+
+	// Apply Endless overclock with fractional carry while preserving layer 2 parallax.
+	if (background_advance)
+	{
+		backPos2 += endlessScrollExtraPx2;
+		while (backPos2 > 27)
+		{
+			backPos2 -= 28;
+			mapY2--;
+			mapY2Pos -= 14;
+		}
+	}
+}
+
+void skip_background_2(void)
+{
+	background_2_pace();
+	background_2_scroll();
+}
+
+void draw_background_2(SDL_Surface *surface)
+{
+	background_2_pace();
 	const int tile_count = BG_TILE_COUNT;
 	if (background2 != 0)
 	{
@@ -603,39 +644,13 @@ void draw_background_2(SDL_Surface *surface)
 		rl_current_id = 0;
 	}
 
-	/*Set Movement of background*/
-	if (background_advance && --map2YDelay == 0)
-	{
-		map2YDelay = map2YDelayMax;
-		
-		backPos2 += backMove2;
-		
-		if (backPos2 >  27)
-		{
-			backPos2 -= 28;
-			mapY2--;
-			mapY2Pos -= 14;  /*Map Width*/
-		}
-	}
-
-	// Apply Endless overclock with fractional carry while preserving layer 2 parallax.
-	if (background_advance)
-	{
-		backPos2 += endlessScrollExtraPx2;
-		while (backPos2 > 27)
-		{
-			backPos2 -= 28;
-			mapY2--;
-			mapY2Pos -= 14;
-		}
-	}
+	background_2_scroll();
 }
 
 void draw_background_2_blend(SDL_Surface *surface)
 {
-	if (background_advance && map2YDelayMax > 1 && backMove2 < 2)
-		backMove2 = (map2YDelay == 1) ? 1 : 0;
-	
+	background_2_pace();
+
 	const int tile_count = BG_TILE_COUNT;
 	Uint8** map = (Uint8**)mapY2Pos + mapX2bpPos - tile_count;
 	int mirror_w = 0, col0 = 0;
@@ -657,33 +672,8 @@ void draw_background_2_blend(SDL_Surface *surface)
 		blit_background_row_blend(surface, mapX2Pos + PLAYFIELD_X_SHIFT, ((7 + m) * 28) + backPos2,
 		                          bg_margin_row(map, m, 14, end), mirror_w, col0);
 	rl_current_id = 0;
-	
-	/*Set Movement of background*/
-	if (background_advance && --map2YDelay == 0)
-	{
-		map2YDelay = map2YDelayMax;
-		
-		backPos2 += backMove2;
-		
-		if (backPos2 >  27)
-		{
-			backPos2 -= 28;
-			mapY2--;
-			mapY2Pos -= 14;  /*Map Width*/
-		}
-	}
 
-	// Endless SMOOTH overclock: extra px to match layer 1 and the event pointer (see draw_background_2).
-	if (background_advance)
-	{
-		backPos2 += endlessScrollExtraPx2;
-		while (backPos2 > 27)
-		{
-			backPos2 -= 28;
-			mapY2--;
-			mapY2Pos -= 14;
-		}
-	}
+	background_2_scroll();
 }
 
 void draw_background_3(SDL_Surface *surface)

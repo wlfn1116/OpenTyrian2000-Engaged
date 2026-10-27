@@ -177,15 +177,8 @@ void JE_eventSystem(void)
 			{
 				if (enemySpriteSheetIds[i] != newEnemyShapeTables[i])
 				{
-					if (newEnemyShapeTables[i] > 0)
-					{
-						assert(newEnemyShapeTables[i] <= COUNTOF(shapeFile));
-						JE_loadCompShapes(&enemySpriteSheets[i], shapeFile[newEnemyShapeTables[i] - 1]);
-					}
-					else
-						free_sprite2s(&enemySpriteSheets[i]);
-
-					enemySpriteSheetIds[i] = newEnemyShapeTables[i];
+					assert(newEnemyShapeTables[i] <= COUNTOF(shapeFile));
+					enemy_sprite_sheet_load(i, newEnemyShapeTables[i]);
 				}
 			}
 		}

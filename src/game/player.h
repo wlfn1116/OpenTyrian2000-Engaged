@@ -183,6 +183,8 @@ static inline void player_set_cash(Player *p, Sint64 amount)
 uint gameplay_local_player_index(void);
 // The weapon bay whose power byte is player p's arcade life counter; bind player[].lives with it.
 uint player_lives_port(uint p);
+Uint8 *player_lives_counter(uint p);
+void player_bind_lives(void);
 // The Super Arcade ship this ship flies (1..SA) or SA_NONE; the two can differ online.
 uint player_sa_ship(const Player *);
 // The front gun a Super Arcade colour ball hands this ship: the ball carries a slot, and the

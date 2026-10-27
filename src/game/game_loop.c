@@ -2508,6 +2508,16 @@ static void warning_bar(int x0, int y0, int x1, int y1, Uint8 col)
 	rl_mark_overlay_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
 }
 
+static void draw_background_2_layer(void)
+{
+	if ((smoothies[2-1] && processorType < 4) || (smoothies[1-1] && processorType == 3))
+		skip_background_2();
+	else if (wild && !background2notTransparent)
+		draw_background_2_blend(VGAScreen);
+	else
+		draw_background_2(VGAScreen);
+}
+
 void JE_main(void)
 {
 	char buffer[256];
@@ -2801,6 +2811,9 @@ start_level_first:
 	if (mainLevel == 0)  // if quit itemscreen
 		return;          // back to titlescreen
 
+	if (isNetworkGame)
+		JE_loadItemDat();
+
 	// A run loaded from the shop resumes at its saved outpost.
 	if (endlessMode && endlessResumePending())
 	{
@@ -2826,7 +2839,11 @@ start_level_first:
 		}
 	}
 	else
+	{
+		if (isNetworkGame)
+			mt_srand(32402394u + mainLevel);
 		endlessCampaignLevelStart();  // debug campaign mods: the effect layer's per-level reset (no-op when off)
+	}
 
 	crashlog_set_phase("playing level");
 
@@ -2862,9 +2879,13 @@ start_level_first:
 			player[i].old_x[j] = player[i].x - (19 - j);
 			player[i].old_y[j] = player[i].y - 18;
 		}
-		
+
 		player[i].last_x_shot_move = player[i].x;
 		player[i].last_y_shot_move = player[i].y;
+		player[i].last_x_explosion_follow = player[i].x;
+		player[i].last_y_explosion_follow = player[i].y;
+		player[i].x_friction_ticks = 0;
+		player[i].y_friction_ticks = 0;
 	}
 	
 	JE_loadPic(VGAScreen, split_arcade_mode() ? 6 : 3, false);
@@ -3125,11 +3146,6 @@ start_level_first:
 	for (uint i = 0; i < COUNTOF(player); ++i)
 		player[i].exploding_ticks = 0;
 
-	if (isNetworkGame)
-	{
-		JE_loadItemDat();
-	}
-
 	// After the last thing that can rewrite enemyDat, so the ball pools match this episode.
 	JE_buildArcadeBallPools();
 
@@ -3247,6 +3263,7 @@ level_loop:
 	JE_beginSPPass();
 
 	JE_deriveStarShowSpecial();
+	boss_bar_fade_flash();
 
 	/*Background Wrapping*/
 	// Preserve whole-row overshoot when boosted scroll crosses a wrap; stop wraps remain pinned.
@@ -3643,15 +3660,7 @@ level_loop:
 	}
 
 	if (background2over == 0)
-	{
-		if (!(smoothies[2-1] && processorType < 4) && !(smoothies[1-1] && processorType == 3))
-		{
-			if (wild && !background2notTransparent)
-				draw_background_2_blend(VGAScreen);
-			else
-				draw_background_2(VGAScreen);
-		}
-	}
+		draw_background_2_layer();
 
 	if (smoothies[0] && processorType > 2 && smoothie_data[0] == 0)
 	{
@@ -3710,17 +3719,8 @@ level_loop:
 	}
 
 	/* Background layer 2. */
-	if (!(smoothies[2-1] && processorType < 4) &&
-	    !(smoothies[1-1] && processorType == 3))
-	{
-		if (background2over == 1)
-		{
-			if (wild && !background2notTransparent)
-				draw_background_2_blend(VGAScreen);
-			else
-				draw_background_2(VGAScreen);
-		}
-	}
+	if (background2over == 1)
+		draw_background_2_layer();
 
 	if (superWild)
 	{
@@ -4540,17 +4540,8 @@ draw_player_shot_loop_end:
 		portConfigDone = true;
 
 	/* Background layer 2. */
-	if (!(smoothies[2-1] && processorType < 4) &&
-	    !(smoothies[1-1] && processorType == 3))
-	{
-		if (background2over == 2)
-		{
-			if (wild && !background2notTransparent)
-				draw_background_2_blend(VGAScreen);
-			else
-				draw_background_2(VGAScreen);
-		}
-	}
+	if (background2over == 2)
+		draw_background_2_layer();
 
 	// Draw sparks before residual capture so replay interpolation owns them. Silent re-simulation
 	// skips this presentation-only state.
@@ -4804,7 +4795,7 @@ draw_player_shot_loop_end:
 				musicFade = true;
 
 				// Fresh non-Esc input skips the Relaxed wreck animation. Held steering must be released first.
-				if (endlessDeathMenuDue() && !play_demo && !rollback_resim)
+				if (endlessDeathMenuDue() && !play_demo && !rollback_resim && !isNetworkGame)
 				{
 					push_joysticks_as_keyboard();
 					service_SDL_events(false);
@@ -5026,6 +5017,7 @@ draw_player_shot_loop_end:
 
 	// Advance level grades with simulation so rollback replays them.
 	JE_advanceLevelFade();
+	boss_bar_tick();
 
 	/* Wire-test scripted events, keyed to the frame counter so re-simulation passes replay them
 	 * exactly. */
