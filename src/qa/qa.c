@@ -368,6 +368,7 @@ int qa_run_unit_suite(void)
 	qa_test_dual_mode_tag();
 	qa_test_weapon_bay_tags();
 	qa_test_ship_editor_file();
+	qa_test_ship_skins();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_twiddle_ships();

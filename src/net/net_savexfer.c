@@ -47,7 +47,7 @@
 #define SAVE_XFER_PORT   1332
 
 // Transfer kinds have independent protocol versions.
-#define SAVE_XFER_VERSION              4
+#define SAVE_XFER_VERSION              5
 #define CUSTOM_XFER_TRANSPORT_VERSION  2
 #define ALL_XFER_TRANSPORT_VERSION     3
 #define SHIPS_XFER_TRANSPORT_VERSION   4
@@ -2016,7 +2016,7 @@ void qa_test_save_transfer(void)
 		         "...nor one that carries no broadcast");
 	}
 
-	qa_check(SX_ENDLESS == 174 && SXR_LEN == 45 && SXC_HDR == 12,
+	qa_check(SX_ENDLESS == 176 && SXR_LEN == 45 && SXC_HDR == 12,
 	         "save-transfer wire offsets retain their protocol widths");
 	qa_check(CX_DATA_V2 == 16 && CX_DATA_V3 == 20 &&
 	         xferPacketType(XFER_CUSTOM, PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK,

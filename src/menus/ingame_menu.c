@@ -45,8 +45,10 @@
 #include "render_list.h"
 #include "rollback.h"
 #include "sfx.h"
+#include "ship_skin.h"
 #include "sndmast.h"
 #include "sprite.h"
+#include "sprite_picker.h"
 #include "timing.h"
 #include "video.h"
 
@@ -318,10 +320,20 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	extraShipLoadoutRefresh(pnum, true);
 }
 
-static void extraMenuDrawShipPreview(uint pnum, int cx, int y, int banking)
+static void extraMenuCycleShipSkin(uint pnum, int dir)
 {
-	Sprite2_array *const sheet = pnum == 1 ? shipGr2ptr : shipGrPtr;
-	const JE_word gr = pnum == 1 ? shipGr2 : shipGr;
+	int order[SHIP_SKIN_ORDER_MAX];
+	const int count = shipSkinOrder(pnum, order, COUNTOF(order));
+	shipSkinSet(pnum, (JE_byte)spritePickerCycle(order, count, shipSkinEffective(pnum), dir));
+	network_player_look_publish();
+}
+
+static void extraMenuDrawShipPreview(uint pnum, int cx, int y, int banking, bool skinned)
+{
+	Sprite2_array *sheet = pnum == 1 ? shipGr2ptr : shipGrPtr;
+	JE_word gr = pnum == 1 ? shipGr2 : shipGr;
+	if (skinned)
+		shipSkinApply(pnum, &sheet, &gr);
 	if (sheet == NULL || sheet->data == NULL)
 		return;
 	const NetShipStyle style = netStyleForSeat(pnum);
@@ -473,6 +485,11 @@ void qa_test_extra_ship_return(void)
 static bool JE_extraMenu(void)
 {
 	enum { PAGE_ROOT, PAGE_CHEATS, PAGE_DEBUG };
+	enum
+	{
+		ROOT_INVINCIBILITY, ROOT_CUSTOM_SHIP, ROOT_SHIP_SKIN, ROOT_CHEATS, ROOT_DEBUG, ROOT_RETURN,
+		ROOT_COUNT
+	};
 
 	// The cheat combos (and invincibility) are only valid in a normal solo game,
 	// matching the guards on the key handlers in JE_mainKeyboardInput.
@@ -483,15 +500,20 @@ static bool JE_extraMenu(void)
 
 	// Footer help is drawn as two short lines (description + key combo) so long
 	// combos never overflow the panel.
-	static const char *const rootLabels[] = { "Invincibility", "Custom Ship", "Cheat Codes...", "Debug Codes...", "Return" };
-	static const char *const rootDesc[] = {
+	static const char *const rootLabels[ROOT_COUNT] = {
+		"Invincibility", "Custom Ship", "Ship Skin", "Cheat Codes...", "Debug Codes...", "Return"
+	};
+	static const char *const rootDesc[ROOT_COUNT] = {
 		"Don't die when armor runs out.",
 		"Cycle editor ships or restore your loadout.",
+		"Wear another hull's look. Stats stay the same.",
 		"Trigger the F-key cheat combos.",
 		"The Backspace debug-key combos.",
 		"Return to the pause menu.",
 	};
-	static const char *const rootCombo[] = { "", "Tab+Number in flight (offline)", "", "", "" };
+	static const char *const rootCombo[ROOT_COUNT] = {
+		"", "Tab+Number in flight (offline)", "", "", "", ""
+	};
 
 	static const char *const cheatLabels[] = { "Nort Ship", "Self-Destruct", "Skip Level", "Return" };
 	static const char *const cheatDesc[] = {
@@ -546,20 +568,22 @@ static bool JE_extraMenu(void)
 	const int mid_x = (px0 + px1) / 2;
 	const int preview_x0 = px1 - 75;
 	const int preview_x1 = px1 - 10;
-	const int preview_y0 = items_top + 2 * row_h + 1;
+	const int preview_y0 = items_top + (ROOT_SHIP_SKIN + 1) * row_h + 1;
 	const int preview_y1 = py1 - footer_h - 5;
 
 	int page = PAGE_ROOT;
 	size_t selected = 0;
 	int prev_mx = mouse_x, prev_my = mouse_y;
 	Uint32 shipPreviewStart = SDL_GetTicks();
-	bool shipPreviewWasShown = false;
+	int shipPreviewRow = -1;
 
 	bool closeMenu = false;
 	bool returnToGame = false;
 
 	while (!closeMenu)
 	{
+		const bool skinRowAllowed = shipSkinWearable(shipSeat);
+
 		// Rows for the current page.
 		const char *const *labels;
 		const char *const *descs;
@@ -570,7 +594,8 @@ static bool JE_extraMenu(void)
 		{
 		case PAGE_CHEATS: labels = cheatLabels; descs = cheatDesc; combos = cheatCombo; count = 4; title = "CHEAT  CODES"; break;
 		case PAGE_DEBUG:  labels = debugLabels; descs = debugDesc; combos = debugCombo; count = 6; title = "DEBUG  CODES"; break;
-		default:          labels = rootLabels;  descs = rootDesc;  combos = rootCombo;  count = 5; title = "EXTRA"; break;
+		default:          labels = rootLabels;  descs = rootDesc;  combos = rootCombo;  count = ROOT_COUNT;
+		                  title = "EXTRA"; break;
 		}
 
 		if ((int)selected >= count)
@@ -585,10 +610,12 @@ static bool JE_extraMenu(void)
 
 			// Grey out cheat rows (and the paths to them) when cheats aren't valid.
 			bool enabled = true;
-			if (page == PAGE_ROOT && (i == 0 || i == 2))
+			if (page == PAGE_ROOT && (i == ROOT_INVINCIBILITY || i == ROOT_CHEATS))
 				enabled = cheatsAllowed;
-			else if (page == PAGE_ROOT && i == 1)
+			else if (page == PAGE_ROOT && i == ROOT_CUSTOM_SHIP)
 				enabled = shipRowAllowed;
+			else if (page == PAGE_ROOT && i == ROOT_SHIP_SKIN)
+				enabled = skinRowAllowed;
 			else if (page == PAGE_CHEATS && i < 3)
 				enabled = cheatsAllowed;
 
@@ -600,11 +627,11 @@ static bool JE_extraMenu(void)
 			draw_font_hv_shadow(VGAScreen, px0 + 14, ry, labels[i], small_font, left_aligned, 15, bright, true, 1);
 
 			// Value column (toggles / cyclers).
-			char valbuf[16];
+			char valbuf[32];
 			const char *value = NULL;
-			if (page == PAGE_ROOT && i == 0)
+			if (page == PAGE_ROOT && i == ROOT_INVINCIBILITY)
 				value = youAreCheating ? "On" : "Off";
-			else if (page == PAGE_ROOT && i == 1)
+			else if (page == PAGE_ROOT && i == ROOT_CUSTOM_SHIP)
 			{
 				if (player[shipSeat].items.ship > 90 && player[shipSeat].items.ship <= 100)
 				{
@@ -614,6 +641,9 @@ static bool JE_extraMenu(void)
 				else
 					value = "Standard";
 			}
+			else if (page == PAGE_ROOT && i == ROOT_SHIP_SKIN)
+				value = shipSkinName(skinRowAllowed ? shipSkinEffective(shipSeat) : SHIP_SKIN_NONE,
+				                     valbuf, sizeof(valbuf));
 			else if (page == PAGE_DEBUG && i == 0)
 				value = debug ? "On" : "Off";
 			else if (page == PAGE_DEBUG && i == 1)
@@ -638,10 +668,13 @@ static bool JE_extraMenu(void)
 				draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 		}
 
-		const bool showShipPreview = page == PAGE_ROOT && selected == 1 && shipRowAllowed;
-		if (showShipPreview && !shipPreviewWasShown)
+		const int previewRow = (page != PAGE_ROOT) ? -1
+		                     : (selected == ROOT_CUSTOM_SHIP && shipRowAllowed) ? ROOT_CUSTOM_SHIP
+		                     : (selected == ROOT_SHIP_SKIN && skinRowAllowed) ? ROOT_SHIP_SKIN : -1;
+		const bool showShipPreview = previewRow >= 0;
+		if (showShipPreview && previewRow != shipPreviewRow)
 			shipPreviewStart = SDL_GetTicks();
-		shipPreviewWasShown = showShipPreview;
+		shipPreviewRow = previewRow;
 		if (showShipPreview)
 		{
 			fill_rectangle_xy(VGAScreen, preview_x0, preview_y0, preview_x1, preview_y1, 0);
@@ -649,14 +682,20 @@ static bool JE_extraMenu(void)
 			// A composed hull is 28 pixels tall; center it in the preview box.
 			extraMenuDrawShipPreview(shipSeat, (preview_x0 + preview_x1) / 2,
 			                         (preview_y0 + preview_y1 - 27) / 2,
-			                         extraShipPreviewBank(SDL_GetTicks() - shipPreviewStart));
+			                         extraShipPreviewBank(SDL_GetTicks() - shipPreviewStart),
+			                         previewRow == ROOT_SHIP_SKIN);
 		}
+
+		const char *desc = descs[selected];
+		if (page == PAGE_ROOT && selected == ROOT_SHIP_SKIN && !skinRowAllowed &&
+		    extraShipsAllowedInGame())
+			desc = "Two-piece hulls keep their own look.";
 
 		// Footer (two lines so long key combos don't overflow the panel): the
 		// selected row's description, then its key combo.
 		fill_rectangle_xy(VGAScreen, px0 + 1, py1 - footer_h, px1 - 1, py1 - footer_h,
 		                  PANEL_DIVIDER);
-		draw_font_hv(VGAScreen, px0 + 6, py1 - footer_h + 4, descs[selected], small_font, left_aligned, 15, -3);
+		draw_font_hv(VGAScreen, px0 + 6, py1 - footer_h + 4, desc, small_font, left_aligned, 15, -3);
 		if (combos[selected][0] != '\0')
 		{
 			char keyline[40];
@@ -759,7 +798,8 @@ static bool JE_extraMenu(void)
 				closeMenu = true;
 			else
 			{
-				selected = (page == PAGE_CHEATS) ? 2 : 3;  // land back on the row that opened it
+				// land back on the row that opened it
+				selected = (page == PAGE_CHEATS) ? ROOT_CHEATS : ROOT_DEBUG;
 				page = PAGE_ROOT;
 			}
 			continue;
@@ -768,14 +808,20 @@ static bool JE_extraMenu(void)
 		// Left/Right adjusts the toggles and cyclers in place.
 		if (adjustDir != 0)
 		{
-			if (page == PAGE_ROOT && selected == 0 && cheatsAllowed)
+			if (page == PAGE_ROOT && selected == ROOT_INVINCIBILITY && cheatsAllowed)
 			{
 				youAreCheating = !youAreCheating;
 				JE_playSampleNum(S_CURSOR);
 			}
-			else if (page == PAGE_ROOT && selected == 1 && shipRowAllowed)
+			else if (page == PAGE_ROOT && selected == ROOT_CUSTOM_SHIP && shipRowAllowed)
 			{
 				extraMenuCycleCustomShip(shipSeat, adjustDir);
+				shipPreviewStart = SDL_GetTicks();
+				JE_playSampleNum(S_CURSOR);
+			}
+			else if (page == PAGE_ROOT && selected == ROOT_SHIP_SKIN && skinRowAllowed)
+			{
+				extraMenuCycleShipSkin(shipSeat, adjustDir);
 				shipPreviewStart = SDL_GetTicks();
 				JE_playSampleNum(S_CURSOR);
 			}
@@ -822,11 +868,11 @@ static bool JE_extraMenu(void)
 		{
 			switch (selected)
 			{
-			case 0:  // Invincibility
+			case ROOT_INVINCIBILITY:
 				if (cheatsAllowed) { youAreCheating = !youAreCheating; JE_playSampleNum(S_SELECT); }
 				else JE_playSampleNum(S_SPRING);
 				break;
-			case 1:  // Custom Ship: a tap cycles forward, so it works without arrow keys
+			case ROOT_CUSTOM_SHIP:  // a tap cycles forward, so it works without arrow keys
 				if (shipRowAllowed)
 				{
 					extraMenuCycleCustomShip(shipSeat, +1);
@@ -835,11 +881,20 @@ static bool JE_extraMenu(void)
 				}
 				else JE_playSampleNum(S_SPRING);
 				break;
-			case 2:  // Cheat Codes...
+			case ROOT_SHIP_SKIN:
+				if (skinRowAllowed)
+				{
+					extraMenuCycleShipSkin(shipSeat, +1);
+					shipPreviewStart = SDL_GetTicks();
+					JE_playSampleNum(S_SELECT);
+				}
+				else JE_playSampleNum(S_SPRING);
+				break;
+			case ROOT_CHEATS:
 				if (cheatsAllowed) { page = PAGE_CHEATS; selected = 0; JE_playSampleNum(S_SELECT); }
 				else JE_playSampleNum(S_SPRING);
 				break;
-			case 3:  // Debug Codes...
+			case ROOT_DEBUG:
 				page = PAGE_DEBUG; selected = 0; JE_playSampleNum(S_SELECT);
 				break;
 			default:  // Return
@@ -853,7 +908,7 @@ static bool JE_extraMenu(void)
 			if (selected == 3)  // Return
 			{
 				JE_playSampleNum(S_SELECT);
-				page = PAGE_ROOT; selected = 2;
+				page = PAGE_ROOT; selected = ROOT_CHEATS;
 			}
 			else if (!cheatsAllowed)
 			{
@@ -913,7 +968,7 @@ static bool JE_extraMenu(void)
 				superPause = !superPause;
 				break;
 			default:  // Return
-				page = PAGE_ROOT; selected = 3;
+				page = PAGE_ROOT; selected = ROOT_DEBUG;
 				break;
 			}
 		}

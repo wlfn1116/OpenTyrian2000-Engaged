@@ -402,6 +402,12 @@ bool extraShipGraphicIsNort(int graphic)
 	return extraShipGraphicRaw(graphic, &raw) && raw == 1;
 }
 
+bool extraShipGraphicIsWide(int graphic)
+{
+	JE_word raw;
+	return extraShipGraphicRaw(graphic, &raw) && raw <= 1;
+}
+
 int extraShipGraphicMax(void)
 {
 	JE_word extended[SHIP_DRAGONWING];
@@ -416,6 +422,19 @@ const char *extraShipEditorGraphicName(int graphic, char *buf, size_t bufSize)
 
 	const int ship = JE_shipHullOwner(raw);
 	return ship != 0 ? JE_shipShortName((JE_word)ship, buf, bufSize) : NULL;
+}
+
+const char *extraShipGraphicLabel(int graphic, char *buf, size_t bufSize)
+{
+	if (extraShipGraphicIsCustom(graphic))
+	{
+		snprintf(buf, bufSize, "Custom Bank %d", graphic - 7);
+		return buf;
+	}
+	if (extraShipEditorGraphicName(graphic, buf, bufSize) != NULL)
+		return buf;
+	snprintf(buf, bufSize, "Built-in Hull %d", graphic);
+	return buf;
 }
 
 // Route online extra-ship graphics through the owning seat's file.

@@ -55,8 +55,10 @@ JE_word JE_SGr(uint seat, JE_word ship, Sprite2_array **ptr);
 JE_word extraShipGraphicSprite(uint seat, int graphic, Sprite2_array **ptr);
 bool extraShipGraphicIsCustom(int graphic);
 bool extraShipGraphicIsNort(int graphic);
+bool extraShipGraphicIsWide(int graphic);
 int extraShipGraphicMax(void);
 const char *extraShipEditorGraphicName(int graphic, char *buf, size_t bufSize);
+const char *extraShipGraphicLabel(int graphic, char *buf, size_t bufSize);
 
 // Byte 255 names the custom weapon owned by the ship's seat. Resolution returns 0 without a port.
 #define EXTRA_SHIP_CUSTOM_PORT 255

@@ -21,6 +21,7 @@
 #include "player_ship.h"
 #include "rollback.h"
 #include "ship_editor.h"
+#include "ship_skin.h"
 #include "specials.h"
 #include "sprite.h"
 #include "video.h"
@@ -661,6 +662,8 @@ void qa_test_ship_editor_file(void)
 	         "the sprite editor offers each compatible hull graphic exactly once");
 	qa_check(JE_shipEditorGraphicCycleSelfTest(),
 	         "the ship editor cycles Nort Ship immediately after Dragonwing");
+	qa_check(JE_shipStripImageSelfTest(),
+	         "a custom bank's pose strip round-trips through indexed, RGB and alpha images");
 	{
 		const unsigned int gr = ships[16].shipgraphic - 500;
 		qa_check(ships[16].shipgraphic == 581 &&
@@ -817,6 +820,130 @@ void qa_test_ship_editor_file(void)
 		extraShipsNetReset();
 		free(stream);
 	}
+}
+
+static JE_byte qa_apply_skin(JE_word gr, Sprite2_array **sheet, JE_word *look)
+{
+	*sheet = &spriteSheet9;
+	*look = gr;
+	return shipSkinApply(0, sheet, look);
+}
+
+void qa_test_ship_skins(void)
+{
+	enum { CELLS = 304 };
+
+	const JE_byte savedSkin[2] = { shipSkinGet(0), shipSkinGet(1) };
+	const JE_word savedGr = shipGr;
+	const Sprite2_array savedShapes = extraShapes;
+	const bool savedAvail = extraAvail, savedNet = isNetworkGame;
+	const JE_boolean savedTwo = twoPlayerMode, savedTimed = timedBattleMode;
+
+	isNetworkGame = false;
+	twoPlayerMode = false;
+	timedBattleMode = false;
+
+	int wide = 0;
+	bool wideRefused = true;
+	for (int graphic = 1; graphic <= extraShipGraphicMax(); ++graphic)
+		if (extraShipGraphicIsWide(graphic))
+		{
+			++wide;
+			wideRefused = wideRefused && !shipSkinOffered(0, graphic);
+		}
+	qa_check(wide == 2 && wideRefused,
+	         "the two-piece Dragonwing and Nort Ship are never offered as skins");
+
+	union
+	{
+		Uint16 align;
+		Uint8 bytes[CELLS * 2 + 4];
+	} sheet;
+	const Uint16 blank = CELLS * 2, ink = CELLS * 2 + 1;
+	for (int i = 0; i < CELLS; ++i)
+		((Uint16 *)sheet.bytes)[i] = SDL_SwapLE16(blank);
+	sheet.bytes[blank] = 0x0f;
+	sheet.bytes[ink] = 0x10;
+	sheet.bytes[ink + 1] = 0x9c;
+	sheet.bytes[ink + 2] = 0x0f;
+	extraShapes = (Sprite2_array){ sizeof(sheet.bytes), sheet.bytes };
+	extraAvail = true;
+
+	Sprite2_array *custom = NULL;
+	const JE_word inked = extraShipGraphicSprite(0, 9, &custom);
+	((Uint16 *)sheet.bytes)[inked - 1] = SDL_SwapLE16(ink);
+	qa_check(custom == &extraShapes && !shipSkinOffered(0, 8) && shipSkinOffered(0, 9),
+	         "a custom bank is offered as a skin only once it has artwork");
+	extraAvail = false;
+	qa_check(!shipSkinOffered(0, 9), "custom bank skins need the seat's ship file");
+	extraAvail = true;
+
+	int order[SHIP_SKIN_ORDER_MAX] = { 0 };
+	const int count = shipSkinOrder(0, order, COUNTOF(order));
+	bool grouped = count > 2 && order[0] == SHIP_SKIN_NONE;
+	bool customSeen = false;
+	int customCount = 0;
+	for (int i = 1; i < count; ++i)
+	{
+		const bool isCustom = extraShipGraphicIsCustom(order[i]);
+		grouped = grouped && (isCustom || !customSeen) && shipSkinOffered(0, order[i]);
+		customSeen = customSeen || isCustom;
+		customCount += isCustom ? 1 : 0;
+	}
+	qa_check(grouped && customCount == 1 && order[count - 1] == 9,
+	         "the skin cycle runs Default, then in-game hulls, then custom banks with artwork");
+
+	shipSkinSet(0, (JE_byte)order[1]);
+	Sprite2_array *expectSheet = NULL;
+	const JE_word expectGr = extraShipGraphicSprite(0, order[1], &expectSheet);
+	Sprite2_array *look;
+	JE_word lookGr;
+	qa_check(qa_apply_skin(233, &look, &lookGr) == order[1] && lookGr == expectGr &&
+	         look == expectSheet,
+	         "a single-piece hull draws the chosen skin's sprite");
+
+	qa_check(qa_apply_skin(0, &look, &lookGr) == SHIP_SKIN_NONE && lookGr == 0 &&
+	         qa_apply_skin(1, &look, &lookGr) == SHIP_SKIN_NONE && lookGr == 1 &&
+	         look == &spriteSheet9,
+	         "the two-piece sentinels keep their own hulls");
+
+	timedBattleMode = true;
+	qa_check(qa_apply_skin(233, &look, &lookGr) == SHIP_SKIN_NONE && lookGr == 233 &&
+	         look == &spriteSheet9,
+	         "modes without custom ships draw the real hull");
+	timedBattleMode = false;
+
+	shipSkinSet(0, 250);
+	qa_check(shipSkinEffective(0) == SHIP_SKIN_NONE &&
+	         qa_apply_skin(233, &look, &lookGr) == SHIP_SKIN_NONE && lookGr == 233,
+	         "a stored skin the data no longer offers draws the real hull");
+
+	shipGr = 0;
+	const bool wideWearer = shipSkinWearable(0);
+	shipGr = 233;
+	qa_check(!wideWearer && shipSkinWearable(0) && !shipSkinWearable(2),
+	         "only a single-piece hull in a custom-ship mode can wear a skin");
+
+	char name[32];
+	qa_check(strcmp(shipSkinName(SHIP_SKIN_NONE, name, sizeof(name)), "Default") == 0 &&
+	         strcmp(shipSkinName(9, name, sizeof(name)), "Custom Bank 2") == 0,
+	         "skin names match the ship editor's graphic labels");
+	qa_check(game_menu_test_skin_row_name(),
+	         "a skinned ship's shop row shows its short name plus (Skin) before the marker");
+
+	shipSkinSet(1, 7);
+	shipSkinReset();
+	qa_check(shipSkinGet(0) == SHIP_SKIN_NONE && shipSkinGet(1) == SHIP_SKIN_NONE,
+	         "a reset clears both seats' skins");
+
+	extraShapes = savedShapes;
+	extraAvail = savedAvail;
+	shipGr = savedGr;
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	timedBattleMode = savedTimed;
+	shipSkinSet(0, savedSkin[0]);
+	shipSkinSet(1, savedSkin[1]);
 }
 
 /* Shield and armor glows are personal presentation state. They advance once per real tick,

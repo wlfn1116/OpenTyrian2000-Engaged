@@ -55,6 +55,7 @@
 #include "render_list.h"
 #include "rollback.h"
 #include "sfx.h"
+#include "ship_skin.h"
 #include "shots.h"
 #include "sim_math.h"
 #include "sndmast.h"
@@ -923,6 +924,10 @@ static void JE_playerMovement(Player *this_player,
 	endlessSetFxPlayer((uint)(this_player - &player[0]));
 	ship_draw_seat = (uint)(this_player - &player[0]);
 
+	Sprite2_array *look_sheet = shipGrPtr_;
+	JE_word look_gr = shipGr_;
+	shipSkinApply(ship_draw_seat, &look_sheet, &look_gr);
+
 	if (playerNum_ == 2 || !twoPlayerMode || dual_ship_mode())
 	{
 		tempW = weaponPort[this_player->items.weapon[REAR_WEAPON].id].opnum;
@@ -1762,7 +1767,7 @@ redo:
 					}
 					else
 					{
-						blit_ship2x2(VGAScreen, this_player->x - 5, trail_y - 7, *shipGrPtr_, shipGr_);
+						blit_ship2x2(VGAScreen, this_player->x - 5, trail_y - 7, *look_sheet, look_gr);
 					}
 				}
 			}
@@ -1949,6 +1954,7 @@ redo:
 		ship_banking = MAX(-2, MIN(ship_banking, 2));
 
 		int ship_sprite = ship_banking * 2 + shipGr_;
+		const int look_sprite = ship_banking * 2 + look_gr;
 
 		explosionFollowAmountX = this_player->x - this_player->last_x_explosion_follow;
 		explosionFollowAmountY = this_player->y - this_player->last_y_explosion_follow;
@@ -1993,10 +1999,10 @@ redo:
 		{
 			if (background2 && ship_draw_casts_shadow())
 			{
-				blit_sprite2x2_darken(VGAScreen, this_player->x - 5 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *shipGrPtr_, ship_sprite);
+				blit_sprite2x2_darken(VGAScreen, this_player->x - 5 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *look_sheet, look_sprite);
 				if (superWild)
 				{
-					blit_sprite2x2_darken(VGAScreen, this_player->x - 4 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *shipGrPtr_, ship_sprite);
+					blit_sprite2x2_darken(VGAScreen, this_player->x - 4 - mapX2Ofs + shadow_light_dx, this_player->y - 7 + shadowYDist, *look_sheet, look_sprite);
 				}
 			}
 		}
@@ -2023,7 +2029,7 @@ redo:
 				blit_ship2x2_blend(VGAScreen, this_player->x + 7 , this_player->y - 7, *shipGrPtr_, 222);
 			}
 			else
-				blit_ship2x2_blend(VGAScreen, this_player->x - 5, this_player->y - 7, *shipGrPtr_, ship_sprite);
+				blit_ship2x2_blend(VGAScreen, this_player->x - 5, this_player->y - 7, *look_sheet, look_sprite);
 		}
 		else
 		{
@@ -2087,7 +2093,7 @@ redo:
 			}
 			else
 			{
-				blit_ship2x2(VGAScreen, this_player->x - 5, this_player->y - 7, *shipGrPtr_, ship_sprite);
+				blit_ship2x2(VGAScreen, this_player->x - 5, this_player->y - 7, *look_sheet, look_sprite);
 			}
 		}
 

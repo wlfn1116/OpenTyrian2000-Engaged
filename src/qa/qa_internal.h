@@ -99,6 +99,7 @@ void qa_test_wide_hull_columns(void);
 void qa_test_dual_mode_tag(void);
 void qa_test_weapon_bay_tags(void);
 void qa_test_ship_editor_file(void);
+void qa_test_ship_skins(void);
 void qa_test_partner_repair_special(void);
 void qa_test_health_bar_scale(void);
 void qa_test_vulnerable_cue(void);

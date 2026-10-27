@@ -185,6 +185,7 @@
     <ClCompile Include="..\src\game\level_end.c" />
     <ClCompile Include="..\src\game\player.c" />
     <ClCompile Include="..\src\game\player_ship.c" />
+    <ClCompile Include="..\src\game\ship_skin.c" />
     <ClCompile Include="..\src\game\shots.c" />
     <ClCompile Include="..\src\game\sparks.c" />
     <ClCompile Include="..\src\game\specials.c" />
@@ -412,6 +413,7 @@
     <ClInclude Include="..\src\game\level_end.h" />
     <ClInclude Include="..\src\game\player.h" />
     <ClInclude Include="..\src\game\player_ship.h" />
+    <ClInclude Include="..\src\game\ship_skin.h" />
     <ClInclude Include="..\src\game\shots.h" />
     <ClInclude Include="..\src\game\sparks.h" />
     <ClInclude Include="..\src\game\specials.h" />

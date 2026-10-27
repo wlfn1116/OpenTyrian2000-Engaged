@@ -64,7 +64,7 @@ void qa_test_fixed_pool_layout(void)
 	         && RL_ID_LINKGUN_BASE + 3 <= RL_ID_SHIP_SHADOW_BASE
 	         && RL_ID_SHIP_SHADOW_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
-	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 162
+	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 164
 	         && NETWORK_SETTINGS_SIZE == 48,
 	         "network wire-layout constants retain their protocol widths");
 }
@@ -102,6 +102,7 @@ void qa_test_save_record_wire(void)
 	src.viewOpacity[0] = NET_OPACITY_MIN; src.viewOpacity[1] = NET_OPACITY_FULL;
 	src.viewShipOpacity[0] = 0; src.viewShipOpacity[1] = 1;
 	src.viewHpBars[0] = NET_HP_BARS_ALWAYS; src.viewHpBars[1] = NET_HP_BARS_ON_HIT;
+	src.shipSkin[0] = 12; src.shipSkin[1] = 200;
 	strcpy(src.customEpFile, "qa_wire.clv");
 
 	memset(guarded, 0xa5, sizeof(guarded));
@@ -126,6 +127,8 @@ void qa_test_save_record_wire(void)
 	         && memcmp(dst.viewShipOpacity, src.viewShipOpacity, sizeof(src.viewShipOpacity)) == 0
 	         && memcmp(dst.viewHpBars, src.viewHpBars, sizeof(src.viewHpBars)) == 0,
 	         "...and both machines' views of the other ship, by seat");
+	qa_check(dst.shipSkin[0] == src.shipSkin[0] && dst.shipSkin[1] == src.shipSkin[1],
+	         "network save record carries both ships' skins");
 	qa_check(dst.gameHasRepeated && dst.autoFireSpecial && dst.difficultyAdjust
 	         && dst.cheatInfiniteSidekickAmmo && !dst.cheatInfiniteShields
 	         && dst.cheatInfiniteArmor && dst.expertMode,
@@ -134,7 +137,9 @@ void qa_test_save_record_wire(void)
 	/* Hostile fixed-width strings still have to become safe C strings on receipt. */
 	memset(packed + 47, 'L', 11);
 	memset(packed + 58, 'N', 15);
-	memset(packed + SAVE_RECORD_PACKED_SIZE - 64, 'C', 64);   // a shapeless custom name
+	const size_t customNameAt =
+		SAVE_RECORD_PACKED_SIZE - sizeof(src.shipSkin) - sizeof(src.customEpFile);
+	memset(packed + customNameAt, 'C', sizeof(src.customEpFile));   // a shapeless custom name
 	save_record_unpack(&dst, packed);
 	qa_check(dst.levelName[sizeof(dst.levelName) - 1] == '\0'
 	         && dst.name[sizeof(dst.name) - 1] == '\0',

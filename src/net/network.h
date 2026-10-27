@@ -114,7 +114,7 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
 #define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
 #define PACKET_ENDLESS_JUMP  0x38    // sender, armed, level pick, len, <Endless debug block>
-#define PACKET_PLAYER_LOOK   0x39    // sender, dye, view; repeated and unacknowledged
+#define PACKET_PLAYER_LOOK   0x39    // sender, dye, view, skin; repeated and unacknowledged
 #define PACKET_EXTRA_SHIPS   0x3A    // owner, generation, chunk idx/count, len, <ship file chunk>
 #define PACKET_CUSTOM_LEVEL  0x3B    // Chunked *.clv transfer; see doc/notes.md.
 

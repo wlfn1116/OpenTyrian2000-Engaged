@@ -78,6 +78,7 @@ typedef struct
 	JE_byte       viewOpacity[2];
 	JE_byte       viewShipOpacity[2];
 	JE_byte       viewHpBars[2];
+	JE_byte       shipSkin[2];
 	/* Custom-episode file name; empty for stock games. */
 	char          customEpFile[64];  /* CUSTOM_EPISODE_FILE_LEN */
 	/* Colon-separated Custom Endless dependencies; empty for other saves. */
@@ -118,7 +119,7 @@ void JE_loadGame(JE_byte slot);
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 
 // Fixed little-endian save record. NET_VERSION 87 added the 64-byte container name.
-#define SAVE_RECORD_PACKED_SIZE 162
+#define SAVE_RECORD_PACKED_SIZE 164
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
 bool save_record_is_coop(const JE_SaveFileType *rec);

@@ -196,6 +196,9 @@
     <ClCompile Include="..\src\game\player_ship.c">
       <Filter>game</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\game\ship_skin.c">
+      <Filter>game</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\game\shots.c">
       <Filter>game</Filter>
     </ClCompile>
@@ -585,6 +588,9 @@
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\player_ship.h">
+      <Filter>game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\game\ship_skin.h">
       <Filter>game</Filter>
     </ClInclude>
     <ClInclude Include="..\src\game\shots.h">

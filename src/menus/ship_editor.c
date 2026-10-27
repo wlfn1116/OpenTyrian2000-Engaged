@@ -51,6 +51,7 @@
 
 #include "SDL.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -243,19 +244,6 @@ bool JE_shipEditorGraphicCycleSelfTest(void)
 	       seNextGraphic(7, -1) == nort && seNextGraphic(nort, -1) == 6;
 }
 
-static const char *seGraphicName(int v, char *buf, size_t bufSize)
-{
-	if (extraShipGraphicIsCustom(v))
-	{
-		snprintf(buf, bufSize, "Custom Bank %d", v - 7);
-		return buf;
-	}
-	if (extraShipEditorGraphicName(v, buf, bufSize) != NULL)
-		return buf;
-	snprintf(buf, bufSize, "Built-in Hull %d", v);
-	return buf;
-}
-
 static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 {
 	const int v = (row == SE_ROW_SLOT) ? slot : *seField(slot, row);
@@ -265,7 +253,7 @@ static const char *seValueText(int row, int slot, char *buf, size_t bufSize)
 		snprintf(buf, bufSize, "%d of 10", v);
 		return buf;
 	case SE_ROW_GRAPHIC:
-		return seGraphicName(v, buf, bufSize);
+		return extraShipGraphicLabel(v, buf, bufSize);
 	case SE_ROW_FRONT:
 	case SE_ROW_REAR:
 		if (v == EXTRA_SHIP_CUSTOM_PORT)
@@ -344,8 +332,8 @@ static bool sePickGraphic(int slot)
 
 	const SpritePickerPage pages[2] =
 	{
-		spritePickerHullPage("In-Game", hulls, hullCount, sePickDraw, seGraphicName),
-		spritePickerHullPage("Custom", banks, bankCount, sePickDraw, seGraphicName),
+		spritePickerHullPage("In-Game", hulls, hullCount, sePickDraw, extraShipGraphicLabel),
+		spritePickerHullPage("Custom", banks, bankCount, sePickDraw, extraShipGraphicLabel),
 	};
 	const SpritePickerSpec spec = { .title = "Ship Graphic", .pages = pages, .pageCount = 2,
 	                                .tick = shipEditorServiceMusic };
@@ -1278,6 +1266,219 @@ static bool seUndoApply(bool redo, int *bank)
 	return false;
 }
 
+enum { SE_STRIP_W = SE_FRAME_W * SE_FRAMES };
+enum { SE_STRIP_BMP_MAX_BYTES = 8192, SE_STRIP_FILE_MAX_BYTES = 1 << 20 };
+
+typedef struct
+{
+	JE_byte px[SE_FRAME_H][SE_STRIP_W];
+}
+SeStrip;
+
+typedef enum
+{
+	SE_IMAGE_OK,
+	SE_IMAGE_MISSING,
+	SE_IMAGE_UNREADABLE,
+	SE_IMAGE_WRONG_SIZE,
+}
+SeImageResult;
+
+static void seStripImageName(int bank, char *buf, size_t bufSize)
+{
+	snprintf(buf, bufSize, "custom-bank-%d.bmp", bank);
+}
+
+static void seStripCapture(int bank, SeStrip *strip)
+{
+	for (int frame = 1; frame <= SE_FRAMES; ++frame)
+		for (int y = 0; y < SE_FRAME_H; ++y)
+			for (int x = 0; x < SE_FRAME_W; ++x)
+				strip->px[y][(frame - 1) * SE_FRAME_W + x] = *seFramePx(bank, frame, x, y);
+}
+
+static void seStripApply(int bank, const SeStrip *strip)
+{
+	for (int frame = 1; frame <= SE_FRAMES; ++frame)
+		for (int y = 0; y < SE_FRAME_H; ++y)
+			for (int x = 0; x < SE_FRAME_W; ++x)
+				*seFramePx(bank, frame, x, y) = strip->px[y][(frame - 1) * SE_FRAME_W + x];
+}
+
+static bool seSameRgb(SDL_Color a, SDL_Color b)
+{
+	return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+
+static JE_byte seNearestColor(SDL_Color c)
+{
+	const SDL_Color *const pal = palettes[0];
+	if (seSameRgb(c, pal[0]))
+		return 0;
+
+	int best = 1, bestDistance = INT_MAX;
+	for (int i = 1; i < 256 && bestDistance > 0; ++i)
+	{
+		const int dr = c.r - pal[i].r, dg = c.g - pal[i].g, db = c.b - pal[i].b;
+		const int distance = dr * dr + dg * dg + db * db;
+		if (distance < bestDistance)
+		{
+			best = i;
+			bestDistance = distance;
+		}
+	}
+	return (JE_byte)best;
+}
+
+static bool seStripFromSurface(SDL_Surface *s, SeStrip *strip)
+{
+	const SDL_Palette *const pal = s->format->palette;
+	if (s->format->format == SDL_PIXELFORMAT_INDEX8 && pal != NULL)
+	{
+		for (int y = 0; y < SE_FRAME_H; ++y)
+		{
+			const Uint8 *const row = (const Uint8 *)s->pixels + (size_t)y * s->pitch;
+			for (int x = 0; x < SE_STRIP_W; ++x)
+			{
+				const Uint8 i = row[x];
+				const SDL_Color c = (i < pal->ncolors) ? pal->colors[i] : palettes[0][0];
+				strip->px[y][x] = seSameRgb(c, palettes[0][i]) ? i : seNearestColor(c);
+			}
+		}
+		return true;
+	}
+
+	SDL_Surface *const argb = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ARGB8888, 0);
+	if (argb == NULL)
+		return false;
+
+	for (int y = 0; y < SE_FRAME_H; ++y)
+	{
+		const Uint8 *const bytes = (const Uint8 *)argb->pixels + (size_t)y * argb->pitch;
+		const Uint32 *const row = (const Uint32 *)bytes;
+		for (int x = 0; x < SE_STRIP_W; ++x)
+		{
+			SDL_Color c;
+			SDL_GetRGBA(row[x], argb->format, &c.r, &c.g, &c.b, &c.a);
+			strip->px[y][x] = (c.a < SDL_ALPHA_OPAQUE / 2) ? 0 : seNearestColor(c);
+		}
+	}
+	SDL_FreeSurface(argb);
+	return true;
+}
+
+static size_t seSaveBmp(SDL_Surface *s, Uint8 *out, size_t cap)
+{
+	SDL_RWops *const rw = SDL_RWFromMem(out, (int)cap);
+	if (rw == NULL)
+		return 0;
+
+	const Sint64 end = (SDL_SaveBMP_RW(s, rw, 0) == 0) ? SDL_RWtell(rw) : -1;
+	SDL_RWclose(rw);
+	return (end > 0 && end < (Sint64)cap) ? (size_t)end : 0;
+}
+
+static size_t seStripEncodeBmp(const SeStrip *strip, Uint8 *out, size_t cap)
+{
+	SDL_Surface *const s = SDL_CreateRGBSurfaceWithFormat(0, SE_STRIP_W, SE_FRAME_H, 8,
+	                                                      SDL_PIXELFORMAT_INDEX8);
+	if (s == NULL)
+		return 0;
+
+	size_t size = 0;
+	if (SDL_SetPaletteColors(s->format->palette, palettes[0], 0, 256) == 0)
+	{
+		for (int y = 0; y < SE_FRAME_H; ++y)
+			memcpy((Uint8 *)s->pixels + (size_t)y * s->pitch, strip->px[y], SE_STRIP_W);
+		size = seSaveBmp(s, out, cap);
+	}
+	SDL_FreeSurface(s);
+	return size;
+}
+
+static SeImageResult seStripDecodeBmp(const Uint8 *bytes, size_t size, SeStrip *strip)
+{
+	SDL_RWops *const rw = SDL_RWFromConstMem(bytes, (int)size);
+	SDL_Surface *const s = (rw != NULL) ? SDL_LoadBMP_RW(rw, 1) : NULL;
+	if (s == NULL)
+		return SE_IMAGE_UNREADABLE;
+
+	SeImageResult result = SE_IMAGE_WRONG_SIZE;
+	if (s->w == SE_STRIP_W && s->h == SE_FRAME_H)
+		result = seStripFromSurface(s, strip) ? SE_IMAGE_OK : SE_IMAGE_UNREADABLE;
+	SDL_FreeSurface(s);
+	return result;
+}
+
+static bool seStripExportFile(int bank, char *notice, size_t noticeSize)
+{
+	char name[24];
+	seStripImageName(bank, name, sizeof(name));
+
+	SeStrip strip;
+	seStripCapture(bank, &strip);
+	Uint8 bmp[SE_STRIP_BMP_MAX_BYTES];
+	const size_t size = seStripEncodeBmp(&strip, bmp, sizeof(bmp));
+	FILE *const f = (size > 0) ? dir_fopen(make_user_directory(), name, "wb") : NULL;
+	bool saved = false;
+	if (f != NULL)
+	{
+		saved = fwrite(bmp, 1, size, f) == size;
+		saved = fclose(f) == 0 && saved;
+	}
+
+	if (saved)
+		snprintf(notice, noticeSize, "Saved %s in the save folder", name);
+	else
+		snprintf(notice, noticeSize, "Could not save %s", name);
+	return saved;
+}
+
+static SeImageResult seStripReadFile(const char *name, SeStrip *strip)
+{
+	FILE *const f = dir_fopen(get_user_directory(), name, "rb");
+	if (f == NULL)
+		return SE_IMAGE_MISSING;
+
+	const long size = ftell_eof(f);
+	const bool sized = size > 0 && size <= SE_STRIP_FILE_MAX_BYTES;
+	Uint8 *const bytes = sized ? malloc((size_t)size) : NULL;
+	const bool read = bytes != NULL && fread(bytes, 1, (size_t)size, f) == (size_t)size;
+	fclose(f);
+
+	const SeImageResult result = read ? seStripDecodeBmp(bytes, (size_t)size, strip)
+	                                  : SE_IMAGE_UNREADABLE;
+	free(bytes);
+	return result;
+}
+
+static bool seStripImportFile(int bank, char *notice, size_t noticeSize)
+{
+	char name[24];
+	seStripImageName(bank, name, sizeof(name));
+
+	SeStrip strip;
+	const SeImageResult result = seStripReadFile(name, &strip);
+	switch (result)
+	{
+	case SE_IMAGE_OK:
+		seUndoBegin(bank);
+		seStripApply(bank, &strip);
+		snprintf(notice, noticeSize, "Loaded %s", name);
+		break;
+	case SE_IMAGE_MISSING:
+		snprintf(notice, noticeSize, "No %s in the save folder", name);
+		break;
+	case SE_IMAGE_WRONG_SIZE:
+		snprintf(notice, noticeSize, "%s must be %dx%d", name, SE_STRIP_W, SE_FRAME_H);
+		break;
+	default:
+		snprintf(notice, noticeSize, "Could not read %s", name);
+		break;
+	}
+	return result == SE_IMAGE_OK;
+}
+
 enum
 {
 	SES_ROW_BANK, SES_ROW_FRAME, SES_ROW_TOOL, SES_ROW_MIRROR, SES_ROW_GUIDES, SES_ROW_SOURCE,
@@ -1285,7 +1486,7 @@ enum
 	SES_PAL_COLOR = SES_ROW_COUNT, SES_PAL_BACKGROUND,
 	SES_NUDGE_LEFT, SES_NUDGE_UP, SES_NUDGE_DOWN, SES_NUDGE_RIGHT,
 	SES_ACT_CAPTURE,
-	SES_ACT_COPY, SES_ACT_FLIP, SES_ACT_HISTORY, SES_ACT_CLEAR, SES_ACT_REVERT, SES_ACT_DONE,
+	SES_ACT_COPY, SES_ACT_FLIP, SES_ACT_HISTORY, SES_ACT_CLEAR, SES_ACT_BANK, SES_ACT_DONE,
 	SES_NAV_COUNT,
 	SES_ACT_COUNT = SES_NAV_COUNT - SES_ACT_CAPTURE,
 };
@@ -1297,6 +1498,7 @@ enum
 };
 enum { SES_GUIDES_OFF, SES_GUIDES_VERTICAL, SES_GUIDES_HORIZONTAL, SES_GUIDES_BOTH, SES_GUIDES_COUNT };
 enum { SES_FLIP_H, SES_FLIP_V, SES_FOLD_L, SES_FOLD_R, SES_FOLD_U, SES_FOLD_D, SES_FLIP_COUNT };
+enum { SES_BANK_IMPORT, SES_BANK_EXPORT, SES_BANK_REVERT, SES_BANK_SONG, SES_BANK_COUNT };
 
 static const char *const sesToolName[SES_TOOL_COUNT] = {
 	"Paint", "Fill", "Pick", "Erase", "Shade", "Colorize"
@@ -1341,8 +1543,14 @@ static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
 	{ "Flip H",      "Mirror or fold this pose. Left/Right chooses." },
 	{ "Undo",        "Take back or redo an edit. Also Ctrl+Z and Ctrl+Y." },
 	{ "Clear",       "Erase this pose or every pose. Left/Right chooses." },
-	{ "Revert",      "Revert this bank or play a random song. Left/Right chooses." },
+	{ "Import Image", "Load this bank's poses from a 120x28 BMP. Left/Right chooses." },
 	{ "Done",        "Back to the loadout editor." },
+};
+
+static const struct { const char *label, *help; } sesBankAlt[SES_BANK_COUNT - 1] = {
+	{ "Export Image", "Save this bank's poses as a 120x28 BMP. Left/Right chooses." },
+	{ "Revert",       "Discard this bank's edits. Left/Right chooses." },
+	{ "Random Song",  "Play a random song. Left/Right chooses." },
 };
 
 static const char *const sesPoseName[SE_FRAMES] = { "Hard Left", "Left", "Center", "Right", "Hard Right" };
@@ -1521,6 +1729,11 @@ static int seCycleTool(int tool, int dir, int *paletteTarget)
 	return tool;
 }
 
+static int seCycleBankMode(int mode, int dir)
+{
+	return (mode + SES_BANK_COUNT + dir) % SES_BANK_COUNT;
+}
+
 static int seColorStep(int tool, bool wholeRow)
 {
 	return (tool == SES_TOOL_COLORIZE || wholeRow) ? 16 : 1;
@@ -1585,6 +1798,96 @@ void shipEditorEndMusicFade(void)
 	set_volume(tyrMusicVolume, fxVolume);
 }
 
+bool JE_shipStripImageSelfTest(void)
+{
+	enum { RGB_BMP_MAX_BYTES = 4 * SE_STRIP_BMP_MAX_BYTES };
+
+	SeUndoState saved;
+	seUndoCapture(1, &saved);
+
+	SeStrip strip, back;
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		for (int x = 0; x < SE_STRIP_W; ++x)
+			strip.px[y][x] = (JE_byte)(y * SE_STRIP_W + x);
+	seStripApply(1, &strip);
+
+	const char *const importHelp = sesActs[SES_ACT_BANK - SES_ACT_CAPTURE].help;
+	char dims[16];
+	snprintf(dims, sizeof(dims), "%dx%d", SE_STRIP_W, SE_FRAME_H);
+	Uint8 *const bmp = malloc(RGB_BMP_MAX_BYTES);
+	bool ok = bmp != NULL && strstr(importHelp, dims) != NULL;
+	if (ok)
+	{
+		SeStrip captured;
+		seStripCapture(1, &captured);
+		const size_t size = seStripEncodeBmp(&captured, bmp, SE_STRIP_BMP_MAX_BYTES);
+		ok = size > 0 && memcmp(&captured, &strip, sizeof(strip)) == 0 &&
+		     seStripDecodeBmp(bmp, size, &back) == SE_IMAGE_OK &&
+		     memcmp(&back, &strip, sizeof(strip)) == 0;
+	}
+
+	SDL_Surface *const rgb = ok ? SDL_CreateRGBSurfaceWithFormat(0, SE_STRIP_W, SE_FRAME_H, 24,
+	                                                             SDL_PIXELFORMAT_RGB24) : NULL;
+	ok = rgb != NULL;
+	if (ok)
+	{
+		for (int y = 0; y < SE_FRAME_H; ++y)
+			for (int x = 0; x < SE_STRIP_W; ++x)
+			{
+				Uint8 *const p = (Uint8 *)rgb->pixels + (size_t)y * rgb->pitch + (size_t)x * 3;
+				const SDL_Color c = palettes[0][strip.px[y][x]];
+				p[0] = c.r;
+				p[1] = c.g;
+				p[2] = c.b;
+			}
+		const size_t size = seSaveBmp(rgb, bmp, RGB_BMP_MAX_BYTES);
+		ok = size > 0 && seStripDecodeBmp(bmp, size, &back) == SE_IMAGE_OK;
+		for (int y = 0; y < SE_FRAME_H && ok; ++y)
+			for (int x = 0; x < SE_STRIP_W && ok; ++x)
+				ok = seSameRgb(palettes[0][back.px[y][x]], palettes[0][strip.px[y][x]]) &&
+				     (back.px[y][x] == 0) == (strip.px[y][x] == 0);
+		SDL_FreeSurface(rgb);
+	}
+
+	SDL_Surface *const argb = ok ? SDL_CreateRGBSurfaceWithFormat(0, SE_STRIP_W, SE_FRAME_H, 32,
+	                                                              SDL_PIXELFORMAT_ARGB8888) : NULL;
+	ok = argb != NULL;
+	if (ok)
+	{
+		const SDL_Color ink = palettes[0][0x9c];
+		Uint32 *const row = (Uint32 *)argb->pixels;
+		SDL_FillRect(argb, NULL, SDL_MapRGBA(argb->format, 255, 255, 255, 0));
+		row[1] = SDL_MapRGBA(argb->format, ink.r, ink.g, ink.b, SDL_ALPHA_OPAQUE);
+		ok = seStripFromSurface(argb, &back) && back.px[0][0] == 0 &&
+		     seSameRgb(palettes[0][back.px[0][1]], ink);
+		SDL_FreeSurface(argb);
+	}
+
+	SDL_Surface *const pose = ok ? SDL_CreateRGBSurfaceWithFormat(0, SE_FRAME_W, SE_FRAME_H, 8,
+	                                                              SDL_PIXELFORMAT_INDEX8) : NULL;
+	ok = pose != NULL;
+	if (ok)
+	{
+		const size_t size = seSaveBmp(pose, bmp, RGB_BMP_MAX_BYTES);
+		ok = size > 0 && seStripDecodeBmp(bmp, size, &back) == SE_IMAGE_WRONG_SIZE;
+		SDL_FreeSurface(pose);
+	}
+
+	if (ok)
+	{
+		memset(bmp, 0xab, 64);
+		ok = seStripDecodeBmp(bmp, 64, &back) == SE_IMAGE_UNREADABLE;
+	}
+
+	ok = ok && JE_textWidth(importHelp, small_font) < LEGACY_WIDTH;
+	for (int i = 0; i < SES_BANK_COUNT - 1; ++i)
+		ok = ok && JE_textWidth(sesBankAlt[i].help, small_font) < LEGACY_WIDTH;
+
+	free(bmp);
+	seUndoRestore(&saved);
+	return ok;
+}
+
 static void seSpriteEditor(int bank)
 {
 	enum { BOX_X0 = 8, BOX_Y0 = 8, BOX_X1 = 143, BOX_Y1 = 182 };
@@ -1614,7 +1917,7 @@ static void seSpriteEditor(int bank)
 	bool captureAll = true;
 	int flipMode = SES_FLIP_H;
 	bool redoMode = false;
-	bool revertRandom = false;
+	int bankMode = SES_BANK_IMPORT;
 	seUndoBase = seUndoCount = seRedoCount = 0;
 	int selected = SES_ROW_BANK;
 	int paletteTarget = SES_PAL_COLOR;
@@ -1629,7 +1932,7 @@ static void seSpriteEditor(int bank)
 	JE_byte recent[256];
 	int recentCount = 0;
 	int lastX = -1, lastY = -1;
-	char notice[40] = "";
+	char notice[64] = "";
 	int prev_mx = mouse_x, prev_my = mouse_y;
 	Uint32 starClock = 0;
 	Uint32 starLast = SDL_GetTicks();
@@ -1859,9 +2162,9 @@ static void seSpriteEditor(int bank)
 				label = "Redo";
 			else if (id == SES_ACT_CLEAR && clearAll)
 				label = "Clear All";
-			else if (id == SES_ACT_REVERT && revertRandom)
-				label = "Random Song";
-			if (id >= SES_ACT_CAPTURE && id <= SES_ACT_REVERT)
+			else if (id == SES_ACT_BANK && bankMode != SES_BANK_IMPORT)
+				label = sesBankAlt[bankMode - 1].label;
+			if (id >= SES_ACT_CAPTURE && id <= SES_ACT_BANK)
 			{
 				const Uint8 dot = (Uint8)((sel ? C_SEL : C_DIV) - 2);
 				fill_rectangle_wh(VGAScreen, bx0 + 1, ry + 2, 2, 2, dot);
@@ -1878,6 +2181,8 @@ static void seSpriteEditor(int bank)
 		                         ? "Choose the dye color. Enter here recolors the whole pose."
 		                       : selected < SES_NUDGE_LEFT ? sesPaletteHelp[selected - SES_PAL_COLOR]
 		                       : selected < SES_ACT_CAPTURE ? sesNudgeHelp[selected - SES_NUDGE_LEFT]
+		                       : selected == SES_ACT_BANK && bankMode != SES_BANK_IMPORT
+		                         ? sesBankAlt[bankMode - 1].help
 		                       : sesActs[selected - SES_ACT_CAPTURE].help;
 		editorDrawHint(notice[0] != '\0' ? notice : help);
 
@@ -2089,10 +2394,10 @@ static void seSpriteEditor(int bank)
 						case SES_ACT_FLIP:    flipMode = (flipMode + 1) % SES_FLIP_COUNT; break;
 						case SES_ACT_HISTORY: redoMode = !redoMode; break;
 						case SES_ACT_CLEAR:   clearAll = !clearAll; break;
-						case SES_ACT_REVERT:  revertRandom = !revertRandom; break;
+						case SES_ACT_BANK:    bankMode = seCycleBankMode(bankMode, 1); break;
 						default:              break;
 						}
-						if (hover >= SES_ACT_CAPTURE && hover <= SES_ACT_REVERT)
+						if (hover >= SES_ACT_CAPTURE && hover <= SES_ACT_BANK)
 							JE_playSampleNum(S_CURSOR);
 					}
 					else
@@ -2235,7 +2540,7 @@ static void seSpriteEditor(int bank)
 				case SES_ACT_FLIP:   flipMode = (flipMode + SES_FLIP_COUNT + dir) % SES_FLIP_COUNT; break;
 				case SES_ACT_HISTORY: redoMode = !redoMode; break;
 				case SES_ACT_CLEAR:  clearAll = !clearAll; break;
-				case SES_ACT_REVERT: revertRandom = !revertRandom; break;
+				case SES_ACT_BANK:   bankMode = seCycleBankMode(bankMode, dir); break;
 				default:             break;
 				}
 				JE_playSampleNum(S_CURSOR);
@@ -2254,7 +2559,7 @@ static void seSpriteEditor(int bank)
 		}
 
 		if (act >= SES_NUDGE_LEFT && act != SES_ACT_HISTORY && act != SES_ACT_DONE &&
-		    !(act == SES_ACT_REVERT && revertRandom))
+		    !(act == SES_ACT_BANK && bankMode != SES_BANK_REVERT))
 			seUndoBegin(bank);
 
 		switch (act)
@@ -2337,13 +2642,21 @@ static void seSpriteEditor(int bank)
 			JE_playSampleNum(S_SELECT);
 			break;
 		}
-		case SES_ACT_REVERT:
-			if (revertRandom)
+		case SES_ACT_BANK:
+			if (bankMode == SES_BANK_SONG)
 			{
 				sePlayRandomSong();
 				if (song_playing < MUSIC_NUM)
 					snprintf(notice, sizeof(notice), "Playing %.30s", musicTitle[song_playing]);
 				JE_playSampleNum(S_SELECT);
+				break;
+			}
+			if (bankMode == SES_BANK_EXPORT || bankMode == SES_BANK_IMPORT)
+			{
+				const bool moved = (bankMode == SES_BANK_EXPORT)
+				                 ? seStripExportFile(bank, notice, sizeof(notice))
+				                 : seStripImportFile(bank, notice, sizeof(notice));
+				JE_playSampleNum(moved ? S_SELECT : S_SPRING);
 				break;
 			}
 			for (int f = 1; f <= SE_FRAMES; ++f)

@@ -30,6 +30,7 @@
 #include "network.h"
 #include "opentyr.h"
 #include "player.h"
+#include "ship_skin.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -167,6 +168,7 @@ void JE_saveGame(JE_byte slot, const char *name)
 	for (uint p = 0; p < COUNTOF(saveFiles[slot - 1].shipColor); ++p)
 	{
 		saveFiles[slot - 1].shipColor[p] = (JE_byte)netStyleSeatColor(p);
+		saveFiles[slot - 1].shipSkin[p] = shipSkinGet(p);
 
 		const NetShipView view = netStyleView(p);
 		saveFiles[slot - 1].viewOpacity[p] = view.opacity;
@@ -290,7 +292,10 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 #endif
 
 	for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
+	{
 		netStyleSetSeatColor(p, rec->shipColor[p]);
+		shipSkinSet(p, rec->shipSkin[p]);
+	}
 
 	// Views are seat-indexed because thisPlayerNum may be assigned after loading.
 	// One-player records have no online view and leave the current session alone.
@@ -510,6 +515,16 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 		save_items_write(section, "last", rec->lastItems, NULL, NULL);
 	}
 
+	const uint skinSeats = twoP ? 2u : 1u;
+	for (uint p = 0; p < skinSeats; ++p)
+	{
+		if (rec->shipSkin[p] == SHIP_SKIN_NONE)
+			continue;
+		char key[32];
+		snprintf(key, sizeof(key), "p%u_ship_skin", p + 1);
+		config_set_int_option(section, key, rec->shipSkin[p]);
+	}
+
 	config_set_int_option(section, "input_p1", rec->input1);
 	config_set_int_option(section, "input_p2", rec->input2);
 	config_set_int_option(section, "auto_fire_special", rec->autoFireSpecial ? 1 : 0);
@@ -598,6 +613,15 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 	{
 		save_items_read(section, "p1", rec->items, &rec->power[0], &rec->power[1]);
 		save_items_read(section, "last", rec->lastItems, NULL, NULL);
+	}
+
+	const uint skinSeats = twoP ? 2u : 1u;
+	for (uint p = 0; p < skinSeats; ++p)
+	{
+		char key[32];
+		snprintf(key, sizeof(key), "p%u_ship_skin", p + 1);
+		const int skin = save_get_int(section, key, SHIP_SKIN_NONE);
+		rec->shipSkin[p] = (JE_byte)((skin < 0 || skin > UINT8_MAX) ? SHIP_SKIN_NONE : skin);
 	}
 
 	rec->input1 = (JE_byte)save_get_int(section, "input_p1", 1);
@@ -940,6 +964,7 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	one.cheatInfiniteSidekickAmmo = true;
 	one.cheatInfiniteArmor = true;
 	one.expertMode = true;
+	one.shipSkin[0] = 3;
 
 	two = one;
 	two.score2 = 123456789012LL;
@@ -955,6 +980,7 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 		two.viewOpacity[p] = (JE_byte)(NET_OPACITY_MIN + p * NET_OPACITY_STEP);
 		two.viewShipOpacity[p] = (JE_byte)(p == 0);
 		two.viewHpBars[p] = (JE_byte)(p == 0 ? NET_HP_BARS_ON_HIT : NET_HP_BARS_ALWAYS);
+		two.shipSkin[p] = (JE_byte)(9 + p * 12);
 	}
 
 	const char *fault = NULL;
@@ -1196,6 +1222,9 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	memcpy(p, rec->customEpFile, sizeof(rec->customEpFile));
 	p += sizeof(rec->customEpFile);
 
+	memcpy(p, rec->shipSkin, sizeof(rec->shipSkin));
+	p += sizeof(rec->shipSkin);
+
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }
 
@@ -1259,6 +1288,9 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 	// Reject paths received over the network.
 	if (rec->customEpFile[0] != '\0' && !customEpisodeFileNameValid(rec->customEpFile))
 		rec->customEpFile[0] = '\0';
+
+	memcpy(rec->shipSkin, p, sizeof(rec->shipSkin));
+	p += sizeof(rec->shipSkin);
 
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }

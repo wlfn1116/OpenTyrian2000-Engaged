@@ -74,6 +74,7 @@
 #include "save_menu.h"
 #include "savegame.h"
 #include "sfx.h"
+#include "ship_skin.h"
 #include "shots.h"
 #include "sprite.h"
 #include "timing.h"
@@ -124,7 +125,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       96           /* Custom weapon trail and homing values are clamped. */
+#define NET_VERSION       97           /* Ship skins ride the look packet and the save record. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.
@@ -734,11 +735,12 @@ static int network_recv_one(void)
 
 					case PACKET_PLAYER_LOOK:
 						// Repeated keep-alive announcements repair packet loss.
-						if (packet_temp->len >= 9 && packet_temp->data[4] >= 1 && packet_temp->data[4] <= 2
+						if (packet_temp->len >= 10 && packet_temp->data[4] >= 1 && packet_temp->data[4] <= 2
 						    && packet_temp->data[4] != (Uint8)thisPlayerNum)
 						{
 							const uint seat = packet_temp->data[4] - 1u;
 							netStyleSetSeatColor(seat, packet_temp->data[5]);
+							shipSkinSet(seat, packet_temp->data[9]);
 
 							// Cache the sender's view for future saves; it does not affect this machine.
 							NetShipView view;
@@ -2603,7 +2605,8 @@ void network_player_look_publish(void)
 	packet_out_temp->data[6] = view.opacity;
 	packet_out_temp->data[7] = view.shipOpacity ? 1 : 0;
 	packet_out_temp->data[8] = view.hpBars;
-	network_send_no_ack(9);
+	packet_out_temp->data[9] = shipSkinGet(netStyleLocalSeat());
+	network_send_no_ack(10);
 }
 
 void network_sa_ship_publish(int ship, bool seen_peer)

@@ -11,6 +11,7 @@ online play, editors, restored content, and smoother rendering.
 | Play online | Main menu > Online Multiplayer |
 | Transfer saves or custom data | Title screen > Extra > Transfer |
 | Edit ships | Title screen > Extra > Ship Editor |
+| Change your ship's look | Esc > Extra > Ship Skin |
 | Design a weapon | Title screen > Extra > Weapon Editor |
 | Change graphics | Setup > Graphics |
 | Soften sound effects | Setup > Sound |
@@ -459,9 +460,9 @@ the thread count each drawing stage uses.
 Destruct, SuperTyrian, Super Arcade ships, command-line cheats, and Christmas
 Mode.
 
-**Esc > Extra** exposes solo cheats and the custom-ship picker. Custom ships are
-available in solo Campaign, Endless, and Arcade, plus online Campaign, Endless,
-and Separate Arcade.
+**Esc > Extra** exposes solo cheats, the custom-ship picker, and ship skins.
+Custom ships and skins are available in solo Campaign, Endless, and Arcade, plus
+online Campaign, Endless, and Separate Arcade.
 
 ### Edit ships
 
@@ -487,6 +488,33 @@ colour; on a controller, Tab moves focus to or from the canvas.
 
 Online Campaign, Endless, and Separate Arcade exchange each player's custom
 ships and any custom weapons they need.
+
+### Bank images
+
+The sprite editor's **Import Image** button loads `custom-bank-<n>.bmp` from the
+[save folder](#files-and-logs) into the open bank. Left/Right on the button
+switches to **Export Image**, **Revert**, or **Random Song**.
+
+- **Export Image** writes the bank's five poses side by side, hard left to hard
+  right, as a 120x28 indexed BMP in the game palette. Colour 0 is transparent.
+- Edit the file in any image editor. GIMP keeps the palette when the image stays
+  in **Image > Mode > Indexed**, and those colours import exactly.
+- A full-colour image imports with each pixel matched to the nearest palette
+  colour. Black and transparent pixels become colour 0.
+- The image must be exactly 120x28. **Undo** takes an import back.
+
+### Ship skins
+
+**Esc > Extra > Ship Skin** changes how your ship looks without changing its
+weapons, armour, or hitbox. Left/Right or a click cycles **Default**, then the
+in-game hulls, then custom banks that have artwork. The preview shows the skin
+in motion.
+
+- The skin is saved with the game and shows on the other player's screen online.
+- In the shop's ship list, your current ship shows the skin and "(Skin)" after
+  its name.
+- The two-piece Dragonwing and Nort Ship can neither be worn as skins nor wear
+  one.
 
 ## Sound
 
@@ -651,6 +679,7 @@ files in private storage that is deleted on uninstall.
 | `opentyrian.sav` | Saves, Endless runs, and high scores |
 | `custom_weapons.cfg` | Weapon Editor library |
 | `custom_ships.shp` | Compiled custom ships |
+| `custom-bank-<n>.bmp` | Sprite editor bank images |
 | `User.shp` | Optional DOS ShipEdit source |
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |

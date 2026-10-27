@@ -873,6 +873,8 @@ Opacity is not rollback state. Shield-hit effects follow hull opacity, while
 health bars and other view choices remain local. Linked Arcade has no partner
 health bars.
 
+Ship skins travel in the same look packet. See [Ship skins](#ship-skins).
+
 ### Rollback
 
 `PACKET_INPUT` carries a fixed header and up to sixteen redundant records. It is
@@ -910,11 +912,11 @@ new epoch each round.
 ### Online saves
 
 Online saves use slots 12 through 22. Slot 22 is the read-only `LAST LEVEL`
-backup. `save_record_pack` and `save_record_unpack` define the 162-byte wire
-record. It was 97 bytes through `NET_VERSION` 86; version 87 appended the
-64-byte custom-episode file name, and version 94 replaced the packed 32-bit
+backup. `save_record_pack` and `save_record_unpack` define the 164-byte wire
+record. It was 97 bytes through `NET_VERSION` 86. Version 87 appended the
+64-byte custom-episode file name. Version 94 replaced the packed 32-bit
 dual-ship tag with five bytes: the session kind, two weapon powers, and two
-weapon modes.
+weapon modes. Version 97 appended one ship-skin byte per seat.
 
 A save writes only to the local machine. The peer acknowledgement supplies the
 other outpost half. Preserve player numbers on resume and restore both co-op mode
@@ -954,10 +956,10 @@ time. Later episodes, repeats, and deaths do not replace it.
   container additions.
 - Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
 
-The single-save `OTSV` payload uses version 4. After its fixed header and
-162-byte save record come the Endless bytes, a 16-bit dependency length, and
-the colon-separated dependency string. Version 3 carried a 161-byte record;
-version 2 ended after the Endless bytes.
+The single-save `OTSV` payload uses version 5. After its fixed header and
+164-byte save record come the Endless bytes, a 16-bit dependency length, and
+the colon-separated dependency string. Version 4 carried a 162-byte record and
+version 3 a 161-byte record; version 2 ended after the Endless bytes.
 
 Custom-level transfer negotiates transfer-kind version 7 and uses `OTCL`
 version 2. Multi-byte envelope fields use network byte order:
@@ -1036,6 +1038,36 @@ Use `extraShipsFor(seat)` for simulation lookups.
 Weapon byte 255 refers to the custom weapon owned by the same seat. Resolve it at
 equip time because reserved ports differ by player. The reference works even
 when the local Custom Weapons setting is off.
+
+Bank images are `custom-bank-<n>.bmp` in the user directory: 120x28, 8-bit,
+the five poses left to right, `palettes[0]`, index 0 transparent. The name uses
+hyphens because the tiny font has no underscore glyph and the editor prints it.
+SDL's BMP reader and writer run through memory `SDL_RWops`; files go through
+`dir_fopen` like every other user file.
+
+- An indexed pixel keeps its index when that palette entry matches
+  `palettes[0]`. Any other colour maps to the nearest of entries 1 to 255.
+- Exact `palettes[0][0]` black and alpha below half map to index 0.
+- Palette 0 has one pure black and 41 duplicate entries, so full-colour imports
+  preserve colours but not always indices.
+- An import pushes one undo entry only after the file decodes.
+
+### Ship skins
+
+`ship_skin.c` owns one skin byte per seat in the Ship Editor graphic-ID space;
+0 is Default. Skins are presentation only:
+
+- Draw through `shipSkinApply`. Never write `shipGr` or `shipGrPtr`; they are
+  rollback state, and their two-piece sentinels drive sidekick placement and
+  Nort Ship sparks.
+- Two-piece hulls neither wear skins nor serve as skins.
+- Availability follows `extraShipsAllowedInGame`. A custom bank also needs the
+  seat's ship file and some artwork, so a cleared bank draws the real hull.
+- Store the received byte raw and validate it at use, because item data can load
+  after a save or packet arrives. `JE_initPlayerData` resets both seats.
+
+Slots write `p1_ship_skin` and `p2_ship_skin` only when nonzero. The packed save
+record and `PACKET_PLAYER_LOOK` carry both seats' bytes.
 
 ### Custom weapons
 
