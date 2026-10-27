@@ -21,8 +21,11 @@
 #include "keyboard.h"
 #include "opentyr.h"
 #include "touch_ui.h"
+#include "video.h"
 
 #include "SDL.h"
+
+#include <stdio.h>
 
 JE_word frameCountMax;
 
@@ -34,6 +37,8 @@ int fps_cap = 0;
 // frameCountMax). Kept fixed so gameplay speed is independent of render rate.
 #define SIM_FPS 35
 static float delayPeriod = 1000.0f / (SIM_FPS * 2);
+
+#define WAIT_FRAME_PACING_MS 100
 
 static Uint16 delaySpeed = 0x4300;
 
@@ -81,11 +86,30 @@ Uint32 getDelayTicks2(void)  // FKA NortSong.frameCount2
 	return MAX(0, delay);
 }
 
+static Uint32 wait_frame_due(bool new_frame, Sint32 entry_ms, Sint32 delay_ms)
+{
+	if (!new_frame)
+		return VIDEO_NO_FRAME_DUE;
+	return entry_ms < WAIT_FRAME_PACING_MS ? 0 : (Uint32)delay_ms;
+}
+
 void wait_delay(void)
 {
-	Sint32 delay = target - SDL_GetTicks();
-	if (delay > 0)
-		SDL_Delay(delay);
+	const bool new_frame = video_take_new_frame();
+	const Sint32 entry = target - SDL_GetTicks();
+	for (Sint32 delay = entry; delay > 0; delay = target - SDL_GetTicks())
+	{
+		const Uint32 frame_due = wait_frame_due(new_frame, entry, delay);
+		const Uint32 nap = video_idle_refresh((Uint32)delay, frame_due);
+		SDL_Delay(nap);
+		if (nap == (Uint32)delay)
+			return;
+	}
+}
+
+void idle_delay(Uint32 ms)
+{
+	SDL_Delay(video_idle_refresh(ms, VIDEO_NO_FRAME_DUE));
 }
 
 // With vsync off, space out presents to the fps_cap render cap (0 = uncapped);
@@ -128,6 +152,8 @@ void limit_render_fps(void)
 
 void service_wait_delay(void)
 {
+	const bool new_frame = video_take_new_frame();
+	const Sint32 entry = target - SDL_GetTicks();
 	for (; ; )
 	{
 		service_SDL_events(false);
@@ -136,12 +162,15 @@ void service_wait_delay(void)
 		if (delay <= 0)
 			return;
 
-		SDL_Delay(MIN(delay, SDL_POLL_INTERVAL));
+		SDL_Delay(video_idle_refresh((Uint32)MIN(delay, SDL_POLL_INTERVAL),
+		                             wait_frame_due(new_frame, entry, delay)));
 	}
 }
 
 void wait_delayorinput(void)
 {
+	const bool new_frame = video_take_new_frame();
+	const Sint32 entry = target - SDL_GetTicks();
 	for (; ; )
 	{
 		// Keep logo skip controls live during the wait.
@@ -165,7 +194,8 @@ void wait_delayorinput(void)
 			return;
 		}
 
-		SDL_Delay(MIN(delay, SDL_POLL_INTERVAL));
+		SDL_Delay(video_idle_refresh((Uint32)MIN(delay, SDL_POLL_INTERVAL),
+		                             wait_frame_due(new_frame, entry, delay)));
 	}
 }
 
@@ -173,4 +203,32 @@ void setDelaySpeed(Uint16 speed)  // FKA NortSong.speed and NortSong.setTimerInt
 {
 	delaySpeed = speed;
 	delayPeriod = ((float)speed / 0x4300) * (1000.0f / (SIM_FPS * 2));
+}
+
+bool timing_test_wait_frames(char *detail, size_t detailSize)
+{
+	static const struct
+	{
+		bool new_frame;
+		Sint32 entry_ms, delay_ms;
+		Uint32 frame_due_ms;
+	} cases[] = {
+		{ false, 28, 28, VIDEO_NO_FRAME_DUE }, { false, 3000, 5, VIDEO_NO_FRAME_DUE },
+		{ true, 28, 28, 0 }, { true, 71, 40, 0 }, { true, 99, 99, 0 },
+		{ true, 100, 100, 100 }, { true, 3000, 25, 25 },
+	};
+	char fault[96] = "";
+
+	for (size_t k = 0; k < COUNTOF(cases) && fault[0] == '\0'; ++k)
+	{
+		const Uint32 got = wait_frame_due(cases[k].new_frame, cases[k].entry_ms, cases[k].delay_ms);
+		if (got != cases[k].frame_due_ms)
+			snprintf(fault, sizeof(fault), "a %d ms wait %s a new frame sees its frame due at %u",
+			         (int)cases[k].entry_ms, cases[k].new_frame ? "after" : "without",
+			         (unsigned)got);
+	}
+
+	if (fault[0] != '\0' && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault[0] == '\0';
 }

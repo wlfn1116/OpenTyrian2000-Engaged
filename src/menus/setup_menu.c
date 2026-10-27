@@ -1665,7 +1665,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		int oldFullscreenDisplay = fullscreen_display;
 		do
 		{
-			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+			idle_delay(1);  // fine poll so the cursor redraws at display rate on motion
 
 			float oldMouseX = mouse_xf;
 			float oldMouseY = mouse_yf;

@@ -126,7 +126,7 @@ void JE_helpSystem(JE_byte startTopic)
 		bool mouseMoved = false;
 		do
 		{
-			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+			idle_delay(1);  // fine poll so the cursor redraws at display rate on motion
 
 			float oldMouseX = mouse_xf;
 			float oldMouseY = mouse_yf;

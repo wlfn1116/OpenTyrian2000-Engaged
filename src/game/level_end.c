@@ -148,7 +148,7 @@ void JE_nextEpisode(void)
 			touch_ui_idle_repaint();
 			NETWORK_KEEP_ALIVE();
 
-			SDL_Delay(16);
+			idle_delay(16);
 		} while (!JE_anyButton());
 	}
 

@@ -403,7 +403,7 @@ static bool saveXferWaitForInput(void)
 		if (newkey || newmouse || mouseMoved)
 			return mouseMoved;
 
-		SDL_Delay(1);
+		idle_delay(1);
 	}
 }
 

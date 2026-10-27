@@ -22,6 +22,7 @@
 #include "mouse.h"
 #include "opentyr.h"
 #include "palette.h"
+#include "timing.h"
 #include "touch_ui.h"
 #include "video_crt.h"
 #include "video_scale.h"
@@ -29,6 +30,7 @@
 #include "console_platform.h"  // console_get_output_size()
 
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -116,6 +118,12 @@ static SDL_Rect last_output_rect = { 0, 0, vga_width, vga_height };
 
 // Last presented output size, used to detect resolution changes that need repainting.
 static int last_present_w = 0, last_present_h = 0;
+
+#define VIDEO_REFRESH_MARGIN_MS 2
+
+static Uint32 last_present_ms = 0;
+static Uint32 refresh_frame_ms = 0;
+static bool new_frame_presented = false;
 
 SDL_Surface *VGAScreen, *VGAScreenSeg;
 SDL_Surface *VGAScreen2;
@@ -827,6 +835,14 @@ static void sample_fps(void)
 	}
 }
 
+static void video_presented(bool new_frame)
+{
+	last_present_ms = SDL_GetTicks();
+	refresh_frame_ms = 0;
+	if (new_frame)
+		new_frame_presented = true;
+}
+
 static void scale_and_flip(SDL_Surface *src_surface)
 {
 	assert(src_surface->format->BitsPerPixel == 8);
@@ -865,6 +881,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 	crt_present_frame(main_window_texture, &dst_rect);
 	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
+	video_presented(true);
 
 	sample_fps();
 	video_rows_end_frame();
@@ -883,6 +900,56 @@ void video_repeat_last_present(void)
 	crt_present_frame(last_present_texture, &last_output_rect);
 	touch_ui_render(main_window_renderer, &last_output_rect);
 	SDL_RenderPresent(main_window_renderer);
+	video_presented(false);
+}
+
+bool video_take_new_frame(void)
+{
+	const bool presented = new_frame_presented;
+	new_frame_presented = false;
+	return presented;
+}
+
+static Uint32 video_refresh_frame_ms(int hz, bool vsync, int cap)
+{
+	if (hz <= 0)
+		hz = 60;
+	if (!vsync && cap > 0 && cap < hz)
+		hz = cap;
+	return (Uint32)((1000 + hz - 1) / hz);
+}
+
+static Uint32 video_idle_nap(Uint32 since_ms, Uint32 nap_ms, Uint32 frame_due_ms, Uint32 frame_ms,
+                             bool vsync)
+{
+	if (frame_due_ms < frame_ms + VIDEO_REFRESH_MARGIN_MS)
+		return nap_ms;
+
+	const Uint32 due_ms = vsync ? MAX(frame_ms / 2, 1u) : frame_ms;
+	return since_ms < due_ms ? MIN(nap_ms, due_ms - since_ms) : 0;
+}
+
+static int video_display_hz(void)
+{
+	SDL_DisplayMode mode = { 0 };
+	const int display = SDL_GetWindowDisplayIndex(main_window);
+	return display >= 0 && SDL_GetCurrentDisplayMode(display, &mode) == 0 ? mode.refresh_rate : 0;
+}
+
+Uint32 video_idle_refresh(Uint32 nap_ms, Uint32 frame_due_ms)
+{
+	const Uint32 now = SDL_GetTicks();
+	if (last_present_texture == NULL || !crt_animating(now) ||
+	    (SDL_GetWindowFlags(main_window) & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED)) != 0)
+		return nap_ms;
+
+	if (refresh_frame_ms == 0)
+		refresh_frame_ms = video_refresh_frame_ms(video_display_hz(), output_vsync, fps_cap);
+	const Uint32 nap = video_idle_nap(now - last_present_ms, nap_ms, frame_due_ms, refresh_frame_ms,
+	                                  output_vsync);
+	if (nap == 0)
+		video_repeat_last_present();
+	return nap;
 }
 
 // (Re)create the hi texture at the given size. Returns false on failure so the
@@ -1470,6 +1537,7 @@ void present_hi(SDL_Surface *hi)
 	crt_present_frame(hi_texture, &dst_rect);
 	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
+	video_presented(true);
 
 	sample_fps();
 	video_rows_end_frame();
@@ -1793,6 +1861,127 @@ bool video_test_rows_watch(char *detail, size_t detailSize)
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);
 	return fault == NULL;
+}
+
+static double video_test_present_end(double t, bool vsync, double vblank_ms)
+{
+	return vsync ? (floor(t / vblank_ms) + 1.0) * vblank_ms : t + 0.5;
+}
+
+bool video_test_idle_refresh(char *detail, size_t detailSize)
+{
+	static const struct
+	{
+		int hz, cap;
+		bool vsync;
+		Uint32 frame_ms;
+	} rates[] = {
+		{ 60, 0, true, 17 }, { 144, 0, true, 7 }, { 0, 0, true, 17 }, { 60, 30, true, 17 },
+		{ 60, 0, false, 17 }, { 60, 30, false, 34 }, { 60, 144, false, 17 }, { 240, 0, false, 5 },
+	};
+	static const struct
+	{
+		int hz;
+		double actual_hz;
+		bool vsync;
+	} displays[] = {
+		{ 60, 60.0, true }, { 60, 59.94, true }, { 120, 120.0, true }, { 144, 143.86, true },
+		{ 60, 60.0, false }, { 144, 144.0, false },
+	};
+	static const double overshoots_ms[] = { 0.0, 1.0, 1.9 };
+	static const Uint32 holds_ms[] = { 19, 30, 45, 120, 500 };
+	char fault[128] = "";
+
+	for (size_t k = 0; k < COUNTOF(rates) && fault[0] == '\0'; ++k)
+	{
+		const Uint32 got = video_refresh_frame_ms(rates[k].hz, rates[k].vsync, rates[k].cap);
+		if (got != rates[k].frame_ms)
+			snprintf(fault, sizeof(fault), "%d Hz, cap %d%s re-presents every %u ms, not %u",
+			         rates[k].hz, rates[k].cap, rates[k].vsync ? ", vsync" : "", (unsigned)got,
+			         (unsigned)rates[k].frame_ms);
+	}
+	if (fault[0] == '\0' && (video_idle_nap(0, 10, 18, 17, true) != 10 ||
+	                         video_idle_nap(50, 10, 18, 17, true) != 10))
+		snprintf(fault, sizeof(fault), "a wait too close to its frame shortens its sleep");
+
+	for (size_t d = 0; d < COUNTOF(displays) && fault[0] == '\0'; ++d)
+	{
+		const bool vsync = displays[d].vsync;
+		const Uint32 frame_ms = video_refresh_frame_ms(displays[d].hz, vsync, 0);
+		const double vblank_ms = 1000.0 / displays[d].actual_hz;
+		for (size_t o = 0; o < COUNTOF(overshoots_ms) && fault[0] == '\0'; ++o)
+		{
+			const double over = overshoots_ms[o];
+			double t = 0.25, prev = -1.0;
+			Uint32 last = 0;
+			int refreshes = 0;
+			while (t < 3000.0 && fault[0] == '\0')
+			{
+				const Uint32 nap = video_idle_nap((Uint32)t - last, 1, VIDEO_NO_FRAME_DUE,
+				                                  frame_ms, vsync);
+				if (nap != 0)
+				{
+					t += nap + over;
+					continue;
+				}
+				t = video_test_present_end(t, vsync, vblank_ms);
+				const double gap = t - prev;
+				if (prev >= 0.0 && vsync && fabs(gap - vblank_ms) > 0.01)
+					snprintf(fault, sizeof(fault),
+					         "an idle %d Hz vsync wait re-presents %.2f ms apart, not every vblank",
+					         displays[d].hz, gap);
+				else if (prev >= 0.0 && !vsync &&
+				         (gap <= frame_ms - 1.0 || gap > frame_ms + 2.0 + over))
+					snprintf(fault, sizeof(fault), "an idle %d Hz wait re-presents %.2f ms apart",
+					         displays[d].hz, gap);
+				prev = t;
+				last = (Uint32)t;
+				++refreshes;
+			}
+			const double slowest_ms = vsync ? vblank_ms : frame_ms + 2.0 + over;
+			const int want = (int)(3000.0 / slowest_ms) - 2;
+			if (fault[0] == '\0' && refreshes < want)
+				snprintf(fault, sizeof(fault),
+				         "an idle %d Hz wait re-presents %d times in 3 s, not %d", displays[d].hz,
+				         refreshes, want);
+		}
+
+		for (size_t h = 0; h < COUNTOF(holds_ms) && fault[0] == '\0'; ++h)
+		{
+			const Uint32 hold = holds_ms[h];
+			const double over = overshoots_ms[COUNTOF(overshoots_ms) - 1];
+			double t = 0.4;
+			Uint32 last = 0;
+			int refreshes = 0;
+			while (t < hold && fault[0] == '\0')
+			{
+				const Uint32 left = hold - (Uint32)t;
+				const Uint32 nap = video_idle_nap((Uint32)t - last, MIN(left, 10u), left, frame_ms,
+				                                  vsync);
+				if (nap != 0)
+				{
+					t += nap + over;
+					continue;
+				}
+				t = video_test_present_end(t, vsync, vblank_ms);
+				if (t > hold)
+					snprintf(fault, sizeof(fault),
+					         "a %d Hz re-present runs %.2f ms into the frame due at %u ms",
+					         displays[d].hz, t - hold, (unsigned)hold);
+				last = (Uint32)t;
+				++refreshes;
+			}
+			const Uint32 lead_ms = 3 * frame_ms;
+			const int want = hold > lead_ms ? (int)((hold - lead_ms) / (2 * frame_ms)) : 0;
+			if (fault[0] == '\0' && refreshes < want)
+				snprintf(fault, sizeof(fault), "a %u ms hold at %d Hz re-presents %d times, not %d",
+				         (unsigned)hold, displays[d].hz, refreshes, want);
+		}
+	}
+
+	if (fault[0] != '\0' && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault[0] == '\0';
 }
 
 // Restore an invalidated drawable from the current logical frame while input-wait loops are idle.

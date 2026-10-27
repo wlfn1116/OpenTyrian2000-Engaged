@@ -166,6 +166,9 @@ SDL_Surface *video_compose_frame(void);
 // Re-present the last composed frame (no software scaling). Keeps the display refreshing
 // while a modal system overlay (the Vita IME) is up so the compositor keeps drawing it.
 void video_repeat_last_present(void);
+#define VIDEO_NO_FRAME_DUE SDL_MAX_UINT32
+bool video_take_new_frame(void);
+Uint32 video_idle_refresh(Uint32 nap_ms, Uint32 frame_due_ms);
 // Present a supersampled 8-bit frame in the classic on-screen rectangle.
 void present_hi(SDL_Surface *hi);
 
@@ -215,6 +218,7 @@ bool video_test_rows_watch(char *detail, size_t detailSize);
 bool video_test_crt_rows(char *detail, size_t detailSize);
 bool video_test_crt_curve(char *detail, size_t detailSize);
 bool video_test_crt_layers(char *detail, size_t detailSize);
+bool video_test_idle_refresh(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.

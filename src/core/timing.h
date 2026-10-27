@@ -35,10 +35,13 @@ Uint32 getDelayTicks(void);
 Uint32 getDelayTicks2(void);
 
 void wait_delay(void);
+void idle_delay(Uint32 ms);
 void limit_render_fps(void);
 void service_wait_delay(void);
 void wait_delayorinput(void);
 
 void setDelaySpeed(Uint16 speed);
+
+bool timing_test_wait_frames(char *detail, size_t detailSize);
 
 #endif /* TIMING_H */

@@ -284,7 +284,7 @@ static int JE_loadScreenMode(bool net2p, bool saving, bool uploadPick)
 		bool mouseMoved = false;
 		do
 		{
-			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+			idle_delay(1);  // fine poll so the cursor redraws at display rate on motion
 
 			NETWORK_KEEP_ALIVE();  // the joiner is connected and waiting while the host browses
 

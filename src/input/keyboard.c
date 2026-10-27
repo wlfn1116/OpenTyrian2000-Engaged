@@ -24,6 +24,7 @@
 #include "network.h"
 #include "opentyr.h"
 #include "rollback.h"
+#include "timing.h"
 #include "touch_ui.h"
 #include "console_platform.h"
 #include "video.h"
@@ -75,7 +76,7 @@ void wait_input(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
 	service_SDL_events(false);
 	while (!((keyboard && keydown) || (mouse && mousedown) || (joystick && joydown)))
 	{
-		SDL_Delay(SDL_POLL_INTERVAL);
+		idle_delay(SDL_POLL_INTERVAL);
 		if (any_input)
 			touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();
@@ -91,7 +92,7 @@ void wait_noinput(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
 	service_SDL_events(false);
 	while ((keyboard && keydown) || (mouse && mousedown) || (joystick && joydown))
 	{
-		SDL_Delay(SDL_POLL_INTERVAL);
+		idle_delay(SDL_POLL_INTERVAL);
 		poll_joysticks();
 		service_SDL_events(false);
 
@@ -117,7 +118,7 @@ bool wait_menu_input(void)
 		if (newkey || newmouse || mouseMoved)
 			return mouseMoved;
 
-		SDL_Delay(1);  // brief idle poll; a still cursor doesn't need redrawing
+		idle_delay(1);  // brief idle poll; a still cursor doesn't need redrawing
 	}
 }
 

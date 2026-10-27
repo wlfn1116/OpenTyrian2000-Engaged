@@ -2493,7 +2493,10 @@ void network_endless_run_publish(void)
 			if (!network_peer_alive())
 				break;
 
-			SDL_Delay(4);
+			if (sent < chunks)
+				SDL_Delay(4);
+			else
+				idle_delay(4);
 		}
 
 		if (!network_peer_alive())

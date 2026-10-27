@@ -18,9 +18,12 @@
 #ifndef VIDEO_CRT_H
 #define VIDEO_CRT_H
 
+#include "opentyr.h"
+
 #include "SDL.h"
 
 void crt_present_frame(SDL_Texture *frame, const SDL_Rect *dst);
+bool crt_animating(Uint32 now_ms);
 void crt_curve_source(const SDL_Rect *output, float *x, float *y);
 void crt_release(void);
 

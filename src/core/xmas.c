@@ -24,6 +24,7 @@
 #include "mouse.h"
 #include "palette.h"
 #include "sprite.h"
+#include "timing.h"
 #include "video.h"
 
 #include <time.h>
@@ -147,7 +148,7 @@ bool xmas_prompt(void)
 			JE_showVGA();
 			JE_mouseReplace();
 
-			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+			idle_delay(1);  // fine poll so the cursor redraws at display rate on motion
 
 			float oldMouseX = mouse_xf;
 			float oldMouseY = mouse_yf;

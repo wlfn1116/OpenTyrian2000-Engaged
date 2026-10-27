@@ -1120,7 +1120,7 @@ static JE_boolean JE_inGameSetup(void)
 		bool mouseMoved = false;
 		do
 		{
-			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+			idle_delay(1);  // fine poll so the cursor redraws at display rate on motion
 
 			float oldMouseX = mouse_xf;
 			float oldMouseY = mouse_yf;
@@ -1561,7 +1561,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 				music_fade_out_tick(&deathFade);
 
 				NETWORK_KEEP_ALIVE();
-				SDL_Delay(1);
+				idle_delay(1);
 				poll_joysticks();
 				service_SDL_events(false);
 			}
@@ -1574,7 +1574,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		{
 			music_fade_out_tick(&deathFade);
 
-			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+			idle_delay(1);  // fine poll so the cursor redraws at display rate on motion
 
 			const float oldMouseX = mouse_xf;
 			const float oldMouseY = mouse_yf;
@@ -1663,7 +1663,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		music_fade_out_tick(&deathFade);
 
 		NETWORK_KEEP_ALIVE();
-		SDL_Delay(1);
+		idle_delay(1);
 		poll_joysticks();
 		service_SDL_events(false);
 	}

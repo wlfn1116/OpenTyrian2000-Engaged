@@ -10,6 +10,7 @@
 #include "render_list.h"
 #include "rollback.h"
 #include "sprite.h"
+#include "timing.h"
 #include "video.h"
 #include "video_scale.h"
 
@@ -128,9 +129,24 @@ void qa_test_present_paths(void)
 	detail[0] = '\0';
 	const bool crtLayers = video_test_crt_layers(detail, sizeof(detail));
 	snprintf(label, sizeof(label),
-	         "CRT slot mask keeps brightness, corners stay smooth, the rolling bar rolls down%s%s",
+	         "CRT slot mask keeps brightness, corners stay smooth, the rolling bar rolls down and "
+	         "keeps redrawing until it leaves%s%s",
 	         detail[0] ? ": " : "", detail);
 	qa_check(crtLayers, label);
+
+	detail[0] = '\0';
+	const bool idleRefresh = video_test_idle_refresh(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "idle waits re-present at the display rate without holding up a frame%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(idleRefresh, label);
+
+	detail[0] = '\0';
+	const bool waitFrames = timing_test_wait_frames(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "waits pacing a new frame leave presenting to it; holds and idle waits do not%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(waitFrames, label);
 
 	memcpy(rgb_palette, savedPalette, sizeof(savedPalette));
 }

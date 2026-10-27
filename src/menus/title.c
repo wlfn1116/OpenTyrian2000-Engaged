@@ -374,7 +374,7 @@ bool titleScreen(void)
 			if (newkey || new_text || newmouse || mouseMoved)
 				break;
 
-			SDL_Delay(1);  // brief idle poll; a still cursor doesn't need redrawing
+			idle_delay(1);  // brief idle poll; a still cursor doesn't need redrawing
 		}
 
 		// Handle interaction.

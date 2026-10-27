@@ -106,6 +106,7 @@ static int crt_mask_w = 0, crt_mask_strength = 0, crt_mask_kind = CRT_MASK_OFF, 
 static SDL_Texture *crt_corner_tex = NULL;
 static SDL_Texture *crt_bar_tex = NULL;
 static bool crt_corner_broken = false, crt_bar_broken = false;
+static bool crt_bar_shown = false;
 static SDL_Texture *crt_glow[CRT_GLOW_LEVELS];  // successive halvings of the frame
 static int crt_glow_levels = 0, crt_glow_src_w = 0, crt_glow_src_h = 0;
 static SDL_Texture *crt_glow_full = NULL, *crt_glow_half = NULL, *crt_glow_quarter = NULL;
@@ -202,7 +203,7 @@ void crt_release(void)
 #endif
 	crt_lines_valid = crt_lines_shown = false;
 	crt_ready = crt_broken = crt_glow_broken = crt_lines_unsupported = crt_curve_broken = false;
-	crt_strip_broken = crt_corner_broken = crt_bar_broken = false;
+	crt_strip_broken = crt_corner_broken = crt_bar_broken = crt_bar_shown = false;
 	crt_curve_failed_w = crt_curve_failed_h = 0;
 }
 
@@ -560,14 +561,23 @@ static Uint8 crt_bar_alpha(int y)
 	return (Uint8)(255.0f * (0.5f - 0.5f * cosf(2.0f * (float)M_PI * t)) + 0.5f);
 }
 
+static bool crt_bar_crossing(Uint32 now_ms)
+{
+	return now_ms % CRT_BAR_PERIOD_MS < CRT_BAR_CROSS_MS;
+}
+
+static bool crt_bar_moving(Uint32 now_ms, bool shown)
+{
+	return shown || crt_bar_crossing(now_ms);
+}
+
 static bool crt_bar_place(Uint32 now_ms, const SDL_Rect *area, SDL_FRect *bar)
 {
-	const Uint32 t = now_ms % CRT_BAR_PERIOD_MS;
-	if (t >= CRT_BAR_CROSS_MS || area->h <= 0)
+	if (!crt_bar_crossing(now_ms) || area->h <= 0)
 		return false;
 
 	const float h = fmaxf(1.0f, (float)area->h * CRT_BAR_HEIGHT_SHARE);
-	const float progress = (float)t / (float)CRT_BAR_CROSS_MS;
+	const float progress = (float)(now_ms % CRT_BAR_PERIOD_MS) / (float)CRT_BAR_CROSS_MS;
 	*bar = (SDL_FRect){ (float)area->x, (float)area->y - h + progress * ((float)area->h + h),
 	                    (float)area->w, h };
 	return true;
@@ -594,6 +604,13 @@ static void crt_draw_rolling_bar(const SDL_Rect *area)
 		return;
 	SDL_SetTextureAlphaMod(crt_bar_tex, (Uint8)(255.0f * crt_bar_depths[crt_rolling_bar] + 0.5f));
 	SDL_RenderCopyF(main_window_renderer, crt_bar_tex, NULL, &bar);
+	crt_bar_shown = true;
+}
+
+bool crt_animating(Uint32 now_ms)
+{
+	return crt_rolling_bar != CRT_ROLLING_BAR_OFF && !crt_bar_broken && crt_build() &&
+	       crt_bar_moving(now_ms, crt_bar_shown);
 }
 
 static bool crt_glow_ensure(int w, int h)
@@ -862,6 +879,7 @@ void crt_present_frame(SDL_Texture *frame, const SDL_Rect *dst)
 	const SDL_Rect area = curved != NULL ? (SDL_Rect){ 0, 0, scale * dst->w, scale * dst->h }
 	                                     : *dst;
 	crt_curve_shown = curved != NULL ? bend : crt_bends[CRT_CURVATURE_OFF];
+	crt_bar_shown = false;
 
 	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
 	SDL_RenderClear(main_window_renderer);
@@ -1172,6 +1190,16 @@ bool video_test_crt_layers(char *detail, size_t detailSize)
 		if (fabsf(top - (float)area.y) > 0.01f || prev.y < (float)(area.y + area.h) - 2.0f ||
 		    !crt_bar_place(CRT_BAR_PERIOD_MS, &area, &bar) || fabsf(bar.y - (top - bar.h)) > 0.01f)
 			snprintf(fault, sizeof(fault), "rolling bar does not cross the whole picture");
+	}
+	for (Uint32 t = 0; t < 2 * CRT_BAR_PERIOD_MS && fault[0] == '\0'; ++t)
+	{
+		const bool drawn = crt_bar_place(t, &area, &bar);
+		if (crt_bar_moving(t, false) != drawn)
+			snprintf(fault, sizeof(fault), "rolling bar %s redraws at %u ms",
+			         drawn ? "is drawn without asking for" : "asks off screen for", (unsigned)t);
+		else if (!crt_bar_moving(t, true))
+			snprintf(fault, sizeof(fault), "rolling bar left on screen at %u ms stays there",
+			         (unsigned)t);
 	}
 
 	if (fault[0] != '\0' && detail != NULL && detailSize != 0)
