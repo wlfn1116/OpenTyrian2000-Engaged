@@ -3231,7 +3231,7 @@ void JE_itemScreen(void)
 			/* Animate the active menu and handle events that do not need the outer input path. */
 
 				// Refresh conditional buttons before each outpost frame is presented.
-				if (outpostListScrolls() || shop_skin_row_cycles())
+				if (outpostListScrolls())
 					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 				else
 					touch_ui_clear_layout();
