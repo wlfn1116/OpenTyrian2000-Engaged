@@ -35,7 +35,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 
 const char *const scaling_mode_names[ScalingMode_MAX] = {
 	"Center",
@@ -171,7 +170,6 @@ static void calc_dst_render_rect(SDL_Surface *src_surface, SDL_Rect *dst_rect);
 static void scale_and_flip(SDL_Surface *);
 static void blit_with_offset(SDL_Surface* src, SDL_Surface* dst, int x_offset);
 #ifndef __vita__
-static Uint8 nearest_palette_index(Uint8 r, Uint8 g, Uint8 b);
 static void update_gradient_cache(void);
 #endif
 
@@ -2011,29 +2009,6 @@ void video_repaint_if_stale(bool force)
 }
 
 #ifndef __vita__  // gradient helpers; unused on Vita, which draws a plain black pillarbox
-static Uint8 nearest_palette_index(Uint8 r, Uint8 g, Uint8 b)
-{
-	int best = 0;
-	int best_dist = INT_MAX;
-
-	for (int i = 0; i < 256; ++i)
-	{
-		int dr = (int)colors[i].r - r;
-		int dg = (int)colors[i].g - g;
-		int db = (int)colors[i].b - b;
-		int dist = dr * dr + dg * dg + db * db;
-		if (dist < best_dist)
-		{
-			best_dist = dist;
-			best = i;
-			if (dist == 0)
-				break;
-		}
-	}
-
-	return (Uint8)best;
-}
-
 static void update_gradient_cache(void)
 {
 	if (!gradient_cache_valid || memcmp(last_gradient_palette, rgb_palette, sizeof(rgb_palette)) != 0)
@@ -2050,7 +2025,8 @@ static void update_gradient_cache(void)
 				Uint8 r = (Uint8)(col.r * factor);
 				Uint8 g = (Uint8)(col.g * factor);
 				Uint8 b = (Uint8)(col.b * factor);
-				gradient_cache[c][i] = nearest_palette_index(r, g, b);
+				const SDL_Color shade = { r, g, b, SDL_ALPHA_OPAQUE };
+				gradient_cache[c][i] = palette_nearest(colors, 0, shade);
 			}
 		}
 

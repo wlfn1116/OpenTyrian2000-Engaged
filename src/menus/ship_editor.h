@@ -29,5 +29,6 @@ bool JE_captureHullListSelfTest(void);
 bool JE_shipEditorGraphicCycleSelfTest(void);
 bool JE_shipEditorConfirmationSelfTest(void);
 bool JE_shipStripImageSelfTest(void);
+bool JE_shipStripColorSelfTest(void);
 
 #endif /* SHIP_EDITOR_H */

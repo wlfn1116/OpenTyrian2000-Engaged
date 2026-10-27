@@ -343,6 +343,9 @@
     <ClCompile Include="..\src\qa\qa_endless.c">
       <Filter>qa</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\qa\qa_images.c">
+      <Filter>qa</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\qa\qa_input.c">
       <Filter>qa</Filter>
     </ClCompile>
@@ -383,6 +386,9 @@
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\font.c">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\video\image_png.c">
       <Filter>video</Filter>
     </ClCompile>
     <ClCompile Include="..\src\video\palette.c">
@@ -486,6 +492,9 @@
       <Filter>audio</Filter>
     </ClInclude>
     <ClInclude Include="..\src\core\arg_parse.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\core\be_bytes.h">
       <Filter>core</Filter>
     </ClInclude>
     <ClInclude Include="..\src\core\config.h">
@@ -722,6 +731,9 @@
     <ClInclude Include="..\src\qa\qa_internal.h">
       <Filter>qa</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\qa\qa_png_fixtures.h">
+      <Filter>qa</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\video\animlib.h">
       <Filter>video</Filter>
     </ClInclude>
@@ -729,6 +741,9 @@
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\font.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\image_png.h">
       <Filter>video</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\palette.h">

@@ -2305,7 +2305,7 @@ static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 	SDLNet_Write16(coopEndlessMode ? (Uint16)(endlessCoopCourse + 1) : mainLevel,
 	               &packet_out_temp->data[10]);
 	SDLNet_Write16(jumpSection ? 1 : 0, &packet_out_temp->data[12]);
-	net_bytes_write64((Uint64)this_player->cash, &packet_out_temp->data[14]);
+	be_write64((Uint64)this_player->cash, &packet_out_temp->data[14]);
 	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[22]);
 	SDLNet_Write16(acknowledge, &packet_out_temp->data[24]);
 	int len = 26 + network_shop_pack_items(&packet_out_temp->data[26], &this_player->items);
@@ -3181,7 +3181,7 @@ bool network_shop_pump(void)
 			Player *const peer = &player[sender - 1];
 			const Uint16 flags = SDLNet_Read16(&packet_in[0]->data[8]);
 			network_shop_peer_sequence = sequence;
-			player_set_cash(peer, (Sint64)net_bytes_read64(&packet_in[0]->data[14]));
+			player_set_cash(peer, (Sint64)be_read64(&packet_in[0]->data[14]));
 			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[22]);
 			const int item_size = network_shop_unpack_items(&peer->items, &packet_in[0]->data[26]);
 			peer->last_items = peer->items;
@@ -3444,7 +3444,7 @@ void network_debug_state_pack(Uint8 *buf)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		memcpy(&buf[NDS_ITEMS + i * sizeof(PlayerItems)], &player[i].items, sizeof(PlayerItems));
-		net_bytes_write64((Uint64)player[i].cash, &buf[NDS_CASH + i * 8]);
+		be_write64((Uint64)player[i].cash, &buf[NDS_CASH + i * 8]);
 		SDLNet_Write16((Uint16)player[i].armor,  &buf[NDS_ARMOR + i * 4]);
 		SDLNet_Write16((Uint16)player[i].shield, &buf[NDS_ARMOR + i * 4 + 2]);
 	}
@@ -3476,7 +3476,7 @@ void network_debug_state_adopt(const Uint8 *buf, bool in_level)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		memcpy(&player[i].items, &buf[NDS_ITEMS + i * sizeof(PlayerItems)], sizeof(PlayerItems));
-		player_set_cash(&player[i], (Sint64)net_bytes_read64(&buf[NDS_CASH + i * 8]));
+		player_set_cash(&player[i], (Sint64)be_read64(&buf[NDS_CASH + i * 8]));
 		player[i].armor  = SDLNet_Read16(&buf[NDS_ARMOR + i * 4]);
 		player[i].shield = SDLNet_Read16(&buf[NDS_ARMOR + i * 4 + 2]);
 	}

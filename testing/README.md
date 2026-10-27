@@ -34,6 +34,8 @@ It covers:
 - every shipped level's event script through the loader, its data corrections,
   and how far each spawn group's pieces spread
 - hostile values, truncation, string termination, and guard bytes
+- PNG reading and writing, including truncated and corrupted files, and sprite
+  editor image round trips for every palette colour
 - SSE2, NEON, and SWAR pixel loops against frozen scalar copies
 - threaded frame rows, Render Threads tuning, band replay, and scalers whose
   texture lock fails

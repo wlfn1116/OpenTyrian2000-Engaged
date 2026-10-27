@@ -492,17 +492,23 @@ ships and any custom weapons they need.
 
 ### Bank images
 
-The sprite editor's **Import Image** button loads `custom-bank-<n>.bmp` from the
+The sprite editor's **Import Image** button loads `custom-bank-<n>.png` from the
 [save folder](#files-and-logs) into the open bank. Left/Right on the button
 switches to **Export Image**, **Revert**, or **Random Song**.
 
 - **Export Image** writes the bank's five poses side by side, hard left to hard
-  right, as a 120x28 indexed BMP in the game palette. Colour 0 is transparent.
-- Edit the file in any image editor. GIMP keeps the palette when the image stays
-  in **Image > Mode > Indexed**, and those colours import exactly.
-- A full-colour image imports with each pixel matched to the nearest palette
-  colour. Black and transparent pixels become colour 0.
-- The image must be exactly 120x28. **Undo** takes an import back.
+  right, as a 120x28 PNG in the game palette. Colour 0 is saved as transparent.
+- Edit the file in any image editor that keeps exact colours. The game palette
+  repeats some colours, so the export moves those entries one step apart and
+  every entry has a colour of its own. An unchanged pose imports back exactly,
+  even after an editor rebuilds the palette or saves the image in full colour.
+- Transparent pixels and pure black become colour 0, so the black background of
+  an older BMP export still imports as transparent.
+- Any other colour becomes the nearest game colour. Where several palette
+  entries share that colour, the import keeps the bank's current pixel when it
+  matches, then follows the colour ramp of the surrounding pixels.
+- The image must be exactly 120x28. **Undo** takes an import back. To import an
+  older `custom-bank-<n>.bmp`, open it in an image editor and save it as PNG.
 
 ### Ship skins
 
@@ -680,7 +686,7 @@ files in private storage that is deleted on uninstall.
 | `opentyrian.sav` | Saves, Endless runs, and high scores |
 | `custom_weapons.cfg` | Weapon Editor library |
 | `custom_ships.shp` | Compiled custom ships |
-| `custom-bank-<n>.bmp` | Sprite editor bank images |
+| `custom-bank-<n>.png` | Sprite editor bank images |
 | `User.shp` | Optional DOS ShipEdit source |
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |

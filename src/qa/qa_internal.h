@@ -123,4 +123,6 @@ void qa_test_background_bands(void);
 void qa_test_filter_subrows(void);
 void qa_test_flat_bands(void);
 
+void qa_test_png_codec(void);
+
 #endif /* QA_INTERNAL_H */

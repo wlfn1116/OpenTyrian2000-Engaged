@@ -664,6 +664,8 @@ void qa_test_ship_editor_file(void)
 	         "the ship editor cycles Nort Ship immediately after Dragonwing");
 	qa_check(JE_shipStripImageSelfTest(),
 	         "a custom bank's pose strip round-trips through indexed, RGB and alpha images");
+	qa_check(JE_shipStripColorSelfTest(),
+	         "every game colour imports as its own index beside its bank, exact or off-palette");
 	{
 		const unsigned int gr = ships[16].shipgraphic - 500;
 		qa_check(ships[16].shipgraphic == 581 &&

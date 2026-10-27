@@ -17,6 +17,7 @@
  */
 #include "extra_ships.h"
 
+#include "be_bytes.h"
 #include "custom_weapon.h"
 #include "episodes.h"
 #include "file.h"
@@ -466,20 +467,6 @@ JE_word extraShipGraphicSprite(uint seat, int graphic, Sprite2_array **ptr)
 
 enum { EXTRA_SHIPS_WIRE_VERSION = 1 };
 
-// Keep the wire big-endian without adding an SDL_net dependency to console builds.
-static Uint32 seRead32(const Uint8 *p)
-{
-	return ((Uint32)p[0] << 24) | ((Uint32)p[1] << 16) | ((Uint32)p[2] << 8) | p[3];
-}
-
-static void seWrite32(Uint32 v, Uint8 *p)
-{
-	p[0] = (Uint8)(v >> 24);
-	p[1] = (Uint8)(v >> 16);
-	p[2] = (Uint8)(v >> 8);
-	p[3] = (Uint8)v;
-}
-
 static size_t extraShipsSerializeMode(Uint8 *buf, size_t max, bool userOnly)
 {
 	const bool available = extraAvail && (!userOnly || extraUserAvail);
@@ -490,7 +477,7 @@ static size_t extraShipsSerializeMode(Uint8 *buf, size_t max, bool userOnly)
 	buf[0] = EXTRA_SHIPS_WIRE_VERSION;
 	buf[1] = available ? 1 : 0;
 	memcpy(&buf[2], extraShips, sizeof(JE_ShipsType));
-	seWrite32((Uint32)(available ? extraShapes.size : 0), &buf[2 + sizeof(JE_ShipsType)]);
+	be_write32((Uint32)(available ? extraShapes.size : 0), &buf[2 + sizeof(JE_ShipsType)]);
 	if (available && extraShapes.size > 0)
 		memcpy(&buf[6 + sizeof(JE_ShipsType)], extraShapes.data, extraShapes.size);
 	return total;
@@ -512,7 +499,7 @@ bool extraShipsPayloadValid(const Uint8 *buf, size_t len)
 	    buf[0] != EXTRA_SHIPS_WIRE_VERSION || buf[1] > 1)
 		return false;
 
-	const size_t blobSize = seRead32(&buf[2 + sizeof(JE_ShipsType)]);
+	const size_t blobSize = be_read32(&buf[2 + sizeof(JE_ShipsType)]);
 	return blobSize <= UINT16_MAX && len == 6 + sizeof(JE_ShipsType) + blobSize &&
 	       (buf[1] != 0 || blobSize == 0);
 }
@@ -521,7 +508,7 @@ bool extraShipsAdopt(uint seat, const Uint8 *buf, size_t len)
 {
 	if (seat >= COUNTOF(extraShipsNet) || !extraShipsPayloadValid(buf, len))
 		return false;
-	const size_t blobSize = seRead32(&buf[2 + sizeof(JE_ShipsType)]);
+	const size_t blobSize = be_read32(&buf[2 + sizeof(JE_ShipsType)]);
 
 	memcpy(extraShipsNet[seat], &buf[2], sizeof(JE_ShipsType));
 	free_sprite2s(&extraShapesNet[seat]);
@@ -549,7 +536,7 @@ bool extraShipsAdoptLocal(const Uint8 *buf, size_t len)
 		return true;
 	}
 
-	const size_t blobSize = seRead32(&buf[2 + sizeof(JE_ShipsType)]);
+	const size_t blobSize = be_read32(&buf[2 + sizeof(JE_ShipsType)]);
 	Uint8 *blob = NULL;
 	if (blobSize > 0)
 	{

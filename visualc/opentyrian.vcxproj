@@ -234,6 +234,7 @@
     <ClCompile Include="..\src\qa\qa_custom_weapons.c" />
     <ClCompile Include="..\src\qa\qa_economy.c" />
     <ClCompile Include="..\src\qa\qa_endless.c" />
+    <ClCompile Include="..\src\qa\qa_images.c" />
     <ClCompile Include="..\src\qa\qa_input.c" />
     <ClCompile Include="..\src\qa\qa_items.c" />
     <ClCompile Include="..\src\qa\qa_levels.c" />
@@ -248,6 +249,7 @@
     <ClCompile Include="..\src\video\animlib.c" />
     <ClCompile Include="..\src\video\draw.c" />
     <ClCompile Include="..\src\video\font.c" />
+    <ClCompile Include="..\src\video\image_png.c" />
     <ClCompile Include="..\src\video\palette.c" />
     <ClCompile Include="..\src\video\pcxmast.c" />
     <ClCompile Include="..\src\video\picload.c" />
@@ -379,6 +381,7 @@
     <ClInclude Include="..\src\audio\sndmast.h" />
     <ClInclude Include="..\src\audio\win_native_midi.h" />
     <ClInclude Include="..\src\core\arg_parse.h" />
+    <ClInclude Include="..\src\core\be_bytes.h" />
     <ClInclude Include="..\src\core\config.h" />
     <ClInclude Include="..\src\core\config_file.h" />
     <ClInclude Include="..\src\core\crashlog.h" />
@@ -457,9 +460,11 @@
     <ClInclude Include="..\src\platform\console_platform.h" />
     <ClInclude Include="..\src\qa\qa.h" />
     <ClInclude Include="..\src\qa\qa_internal.h" />
+    <ClInclude Include="..\src\qa\qa_png_fixtures.h" />
     <ClInclude Include="..\src\video\animlib.h" />
     <ClInclude Include="..\src\video\draw.h" />
     <ClInclude Include="..\src\video\font.h" />
+    <ClInclude Include="..\src\video\image_png.h" />
     <ClInclude Include="..\src\video\palette.h" />
     <ClInclude Include="..\src\video\pcxmast.h" />
     <ClInclude Include="..\src\video\picload.h" />

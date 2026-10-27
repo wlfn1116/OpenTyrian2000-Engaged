@@ -3,6 +3,8 @@
 
 #if defined(WITH_MIDI) || defined(_WIN32)
 
+#include "be_bytes.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,9 +18,6 @@ typedef struct
 	Uint32 tempo;  // type 2
 	Uint32 sx_off, sx_len;  // type 1
 } TmpEv;
-
-static Uint32 rd_u32(const Uint8 *p) { return ((Uint32)p[0] << 24) | ((Uint32)p[1] << 16) | ((Uint32)p[2] << 8) | p[3]; }
-static Uint16 rd_u16(const Uint8 *p) { return (Uint16)(((Uint16)p[0] << 8) | p[1]); }
 
 static Uint32 read_vlq(const Uint8 **pp, const Uint8 *end)
 {
@@ -78,11 +77,11 @@ bool midi_smf_parse(MidiSong *song, const Uint8 *data, size_t size)
 
 	if (size < 14 || memcmp(data, "MThd", 4) != 0)
 		return false;
-	Uint32 hlen = rd_u32(data + 4);
+	Uint32 hlen = be_read32(data + 4);
 	if (hlen < 6)
 		return false;
-	Uint16 ntrks = rd_u16(data + 10);
-	Uint16 division = rd_u16(data + 12);
+	Uint16 ntrks = be_read16(data + 10);
+	Uint16 division = be_read16(data + 12);
 
 	const Uint8 *p = data + 8 + hlen;
 	const Uint8 *end = data + size;
@@ -95,7 +94,7 @@ bool midi_smf_parse(MidiSong *song, const Uint8 *data, size_t size)
 	{
 		if (memcmp(p, "MTrk", 4) != 0)
 			break;
-		Uint32 tlen = rd_u32(p + 4);
+		Uint32 tlen = be_read32(p + 4);
 		const Uint8 *tp = p + 8;
 		const Uint8 *tend = tp + tlen;
 		if (tend > end || tend < tp)  // clamp a bogus/overflowing length

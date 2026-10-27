@@ -1334,7 +1334,7 @@ static void qa_quit_notice_retire(void)
 	SDLNet_Write16(2, &raw[4]);        // sender: the peer
 	SDLNet_Write16(5000, &raw[6]);     // sequence, past anything seen
 	SDLNet_Write16(0, &raw[8]);        // flags: plain state, so the pump owes no reply
-	net_bytes_write64(4321, &raw[14]); // cash, the adopted field the check reads back
+	be_write64(4321, &raw[14]); // cash, the adopted field the check reads back
 	if (packet_in[1] == NULL)
 		packet_in[1] = SDLNet_AllocPacket(NET_PACKET_SIZE);
 	memcpy(packet_in[1]->data, raw, 44);

@@ -446,6 +446,7 @@ int qa_run_unit_suite(void)
 	qa_test_background_bands();
 	qa_test_filter_subrows();
 	qa_test_flat_bands();
+	qa_test_png_codec();
 #ifdef WITH_MIDI
 	qa_test_lds_midi_detune();
 #endif

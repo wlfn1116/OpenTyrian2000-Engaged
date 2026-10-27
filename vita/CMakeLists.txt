@@ -84,6 +84,7 @@ target_link_libraries(${PROJECT_NAME}
   SceNet_stub SceNetCtl_stub
   m
 )
+target_link_libraries(${PROJECT_NAME} -Wl,--defsym,__sce_headroom=0x10000)
 
 # UNSAFE permits the game's ux0: reads and writes outside app0:.
 vita_create_self(eboot.bin ${PROJECT_NAME} UNSAFE)

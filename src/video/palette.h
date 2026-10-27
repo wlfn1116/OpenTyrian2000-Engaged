@@ -42,6 +42,9 @@ bool palette_fading(void);
 // Brightest live palette component, used to fade overlays outside the indexed frame.
 Uint8 palette_peak(void);
 
+int palette_distance(SDL_Color a, SDL_Color b);
+Uint8 palette_nearest(const SDL_Color *colors, int first, SDL_Color c);
+
 void init_step_fade_palette(int diff[256][3], Palette colors, unsigned int first_color, unsigned int last_color);
 void init_step_fade_solid(int diff[256][3], SDL_Color color, unsigned int first_color, unsigned int last_color);
 void step_fade_palette(int diff[256][3], int steps, unsigned int first_color, unsigned int last_color);

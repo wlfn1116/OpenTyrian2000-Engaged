@@ -31,6 +31,7 @@
 #include "game_menu.h"
 #include "game_state.h"
 #include "hud.h"
+#include "image_png.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "lds_play.h"
@@ -51,7 +52,6 @@
 
 #include "SDL.h"
 
-#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -1267,7 +1267,7 @@ static bool seUndoApply(bool redo, int *bank)
 }
 
 enum { SE_STRIP_W = SE_FRAME_W * SE_FRAMES };
-enum { SE_STRIP_BMP_MAX_BYTES = 8192, SE_STRIP_FILE_MAX_BYTES = 1 << 20 };
+enum { SE_STRIP_PNG_MAX_BYTES = 8192, SE_STRIP_FILE_MAX_BYTES = 1 << 20 };
 
 typedef struct
 {
@@ -1286,7 +1286,7 @@ SeImageResult;
 
 static void seStripImageName(int bank, char *buf, size_t bufSize)
 {
-	snprintf(buf, bufSize, "custom-bank-%d.bmp", bank);
+	snprintf(buf, bufSize, "custom-bank-%d.png", bank);
 }
 
 static void seStripCapture(int bank, SeStrip *strip)
@@ -1310,102 +1310,204 @@ static bool seSameRgb(SDL_Color a, SDL_Color b)
 	return a.r == b.r && a.g == b.g && a.b == b.b;
 }
 
-static JE_byte seNearestColor(SDL_Color c)
+static bool seInkShared(JE_byte ink)
 {
-	const SDL_Color *const pal = palettes[0];
-	if (seSameRgb(c, pal[0]))
-		return 0;
-
-	int best = 1, bestDistance = INT_MAX;
-	for (int i = 1; i < 256 && bestDistance > 0; ++i)
-	{
-		const int dr = c.r - pal[i].r, dg = c.g - pal[i].g, db = c.b - pal[i].b;
-		const int distance = dr * dr + dg * dg + db * db;
-		if (distance < bestDistance)
-		{
-			best = i;
-			bestDistance = distance;
-		}
-	}
-	return (JE_byte)best;
+	for (int i = 1; i < 256; ++i)
+		if (i != ink && seSameRgb(palettes[0][i], palettes[0][ink]))
+			return true;
+	return false;
 }
 
-static bool seStripFromSurface(SDL_Surface *s, SeStrip *strip)
+static SDL_Color seNudged(SDL_Color c, int step)
 {
-	const SDL_Palette *const pal = s->format->palette;
-	if (s->format->format == SDL_PIXELFORMAT_INDEX8 && pal != NULL)
-	{
-		for (int y = 0; y < SE_FRAME_H; ++y)
-		{
-			const Uint8 *const row = (const Uint8 *)s->pixels + (size_t)y * s->pitch;
-			for (int x = 0; x < SE_STRIP_W; ++x)
-			{
-				const Uint8 i = row[x];
-				const SDL_Color c = (i < pal->ncolors) ? pal->colors[i] : palettes[0][0];
-				strip->px[y][x] = seSameRgb(c, palettes[0][i]) ? i : seNearestColor(c);
-			}
-		}
-		return true;
-	}
+	Uint8 *const channels[3] = { &c.b, &c.g, &c.r };
+	Uint8 *const channel = channels[(step - 1) / 2 % 3];
+	const int delta = (step + 5) / 6;
+	const int nudged = *channel + ((step % 2 != 0) ? delta : -delta);
+	if (nudged >= 0 && nudged <= 255)
+		*channel = (Uint8)nudged;
+	return c;
+}
 
-	SDL_Surface *const argb = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ARGB8888, 0);
-	if (argb == NULL)
-		return false;
-
-	for (int y = 0; y < SE_FRAME_H; ++y)
-	{
-		const Uint8 *const bytes = (const Uint8 *)argb->pixels + (size_t)y * argb->pitch;
-		const Uint32 *const row = (const Uint32 *)bytes;
-		for (int x = 0; x < SE_STRIP_W; ++x)
-		{
-			SDL_Color c;
-			SDL_GetRGBA(row[x], argb->format, &c.r, &c.g, &c.b, &c.a);
-			strip->px[y][x] = (c.a < SDL_ALPHA_OPAQUE / 2) ? 0 : seNearestColor(c);
-		}
-	}
-	SDL_FreeSurface(argb);
+static bool seImageColorFree(SDL_Color c, const SDL_Color *image, int count)
+{
+	for (int i = 0; i < 256; ++i)
+		if (seSameRgb(c, palettes[0][i]) || (i < count && seSameRgb(c, image[i])))
+			return false;
 	return true;
 }
 
-static size_t seSaveBmp(SDL_Surface *s, Uint8 *out, size_t cap)
+static void seImagePalette(SDL_Color *image)
 {
-	SDL_RWops *const rw = SDL_RWFromMem(out, (int)cap);
-	if (rw == NULL)
-		return 0;
-
-	const Sint64 end = (SDL_SaveBMP_RW(s, rw, 0) == 0) ? SDL_RWtell(rw) : -1;
-	SDL_RWclose(rw);
-	return (end > 0 && end < (Sint64)cap) ? (size_t)end : 0;
+	for (int i = 0; i < 256; ++i)
+	{
+		image[i] = palettes[0][i];
+		if (i > 0 && seInkShared((JE_byte)i))
+			for (int step = 1; !seImageColorFree(image[i], image, i); ++step)
+				image[i] = seNudged(palettes[0][i], step);
+		image[i].a = SDL_ALPHA_OPAQUE;
+	}
 }
 
-static size_t seStripEncodeBmp(const SeStrip *strip, Uint8 *out, size_t cap)
+static int seNearestInks(SDL_Color c, JE_byte *inks)
 {
-	SDL_Surface *const s = SDL_CreateRGBSurfaceWithFormat(0, SE_STRIP_W, SE_FRAME_H, 8,
-	                                                      SDL_PIXELFORMAT_INDEX8);
-	if (s == NULL)
-		return 0;
+	const int nearest = palette_distance(c, palettes[0][palette_nearest(palettes[0], 1, c)]);
+	int count = 0;
+	for (int i = 1; i < 256; ++i)
+		if (palette_distance(c, palettes[0][i]) == nearest)
+			inks[count++] = (JE_byte)i;
+	return count;
+}
 
-	size_t size = 0;
-	if (SDL_SetPaletteColors(s->format->palette, palettes[0], 0, 256) == 0)
+static SDL_Color seSurfacePixel(const SDL_Surface *s, int x, int y, int *index)
+{
+	const Uint8 *const row = (const Uint8 *)s->pixels + (size_t)y * s->pitch;
+	const SDL_Palette *const pal = s->format->palette;
+	if (pal != NULL)
 	{
-		for (int y = 0; y < SE_FRAME_H; ++y)
-			memcpy((Uint8 *)s->pixels + (size_t)y * s->pitch, strip->px[y], SE_STRIP_W);
-		size = seSaveBmp(s, out, cap);
+		*index = row[x];
+		return (row[x] < pal->ncolors) ? pal->colors[row[x]]
+		                               : (SDL_Color){ 0, 0, 0, SDL_ALPHA_TRANSPARENT };
 	}
+
+	SDL_Color c;
+	*index = -1;
+	SDL_GetRGBA(((const Uint32 *)row)[x], s->format, &c.r, &c.g, &c.b, &c.a);
+	return c;
+}
+
+static JE_byte seImportPixel(SDL_Color c, int index, const SDL_Color *image, bool *unsure)
+{
+	*unsure = false;
+	if (c.a < SDL_ALPHA_OPAQUE / 2 || seSameRgb(c, palettes[0][0]))
+		return 0;
+	if (index > 0 && seSameRgb(c, palettes[0][index]))
+		return (JE_byte)index;
+	for (int i = 1; i < 256; ++i)
+		if (seSameRgb(c, image[i]))
+			return (JE_byte)i;
+
+	JE_byte inks[255];
+	*unsure = seNearestInks(c, inks) > 1;
+	return inks[0];
+}
+
+static int seBankVotes(const SeStrip *strip, bool (*unsure)[SE_STRIP_W], int x, int y, int bank)
+{
+	int votes = 0;
+	for (int ny = SDL_max(y - 1, 0); ny <= SDL_min(y + 1, SE_FRAME_H - 1); ++ny)
+		for (int nx = SDL_max(x - 1, 0); nx <= SDL_min(x + 1, SE_STRIP_W - 1); ++nx)
+			if (!unsure[ny][nx] && strip->px[ny][nx] != 0 && (strip->px[ny][nx] >> 4) == bank)
+				++votes;
+	return votes;
+}
+
+static JE_byte seResolveInk(SDL_Color c, JE_byte was, const SeStrip *strip,
+                            bool (*unsure)[SE_STRIP_W], const int *bankUse, int x, int y)
+{
+	JE_byte inks[255];
+	const int count = seNearestInks(c, inks);
+	for (int k = 0; k < count; ++k)
+		if (inks[k] == was)
+			return was;
+
+	int best = 0, bestLocal = -1, bestGlobal = -1;
+	for (int k = 0; k < count; ++k)
+	{
+		const int bank = inks[k] >> 4;
+		const int local = seBankVotes(strip, unsure, x, y, bank), global = bankUse[bank];
+		if (local > bestLocal || (local == bestLocal && global > bestGlobal))
+		{
+			best = k;
+			bestLocal = local;
+			bestGlobal = global;
+		}
+	}
+	return inks[best];
+}
+
+static bool seStripFromSurface(SDL_Surface *s, const SeStrip *hint, SeStrip *strip)
+{
+	const bool indexed = s->format->format == SDL_PIXELFORMAT_INDEX8 && s->format->palette != NULL;
+	SDL_Surface *const src = indexed ? s : SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ARGB8888, 0);
+	if (src == NULL)
+		return false;
+
+	SDL_Color image[256];
+	seImagePalette(image);
+	bool unsure[SE_FRAME_H][SE_STRIP_W];
+	int bankUse[16] = { 0 };
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		for (int x = 0; x < SE_STRIP_W; ++x)
+		{
+			int index;
+			const SDL_Color c = seSurfacePixel(src, x, y, &index);
+			const JE_byte ink = seImportPixel(c, index, image, &unsure[y][x]);
+			strip->px[y][x] = ink;
+			if (ink != 0 && !unsure[y][x])
+				++bankUse[ink >> 4];
+		}
+
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		for (int x = 0; x < SE_STRIP_W; ++x)
+		{
+			if (!unsure[y][x])
+				continue;
+			int index;
+			const SDL_Color c = seSurfacePixel(src, x, y, &index);
+			const JE_byte was = (hint != NULL) ? hint->px[y][x] : 0;
+			strip->px[y][x] = seResolveInk(c, was, strip, unsure, bankUse, x, y);
+		}
+
+	if (src != s)
+		SDL_FreeSurface(src);
+	return true;
+}
+
+static SDL_Surface *seStripCanvas(Uint32 format)
+{
+	return SDL_CreateRGBSurfaceWithFormat(0, SE_STRIP_W, SE_FRAME_H, SDL_BITSPERPIXEL(format),
+	                                      format);
+}
+
+static SDL_Surface *seStripSurface(const SeStrip *strip, const SDL_Color *colors)
+{
+	SDL_Surface *const s = seStripCanvas(SDL_PIXELFORMAT_INDEX8);
+	if (s == NULL)
+		return NULL;
+	if (SDL_SetPaletteColors(s->format->palette, colors, 0, 256) != 0)
+	{
+		SDL_FreeSurface(s);
+		return NULL;
+	}
+
+	for (int y = 0; y < SE_FRAME_H; ++y)
+		memcpy((Uint8 *)s->pixels + (size_t)y * s->pitch, strip->px[y], SE_STRIP_W);
+	return s;
+}
+
+static size_t seStripEncodePng(const SeStrip *strip, Uint8 *out, size_t cap)
+{
+	SDL_Color image[256];
+	seImagePalette(image);
+	image[0].a = SDL_ALPHA_TRANSPARENT;
+
+	SDL_Surface *const s = seStripSurface(strip, image);
+	const size_t size = (s != NULL) ? image_png_save(s, out, cap) : 0;
 	SDL_FreeSurface(s);
 	return size;
 }
 
-static SeImageResult seStripDecodeBmp(const Uint8 *bytes, size_t size, SeStrip *strip)
+static SeImageResult seStripDecodePng(const Uint8 *bytes, size_t size, const SeStrip *hint,
+                                      SeStrip *strip)
 {
-	SDL_RWops *const rw = SDL_RWFromConstMem(bytes, (int)size);
-	SDL_Surface *const s = (rw != NULL) ? SDL_LoadBMP_RW(rw, 1) : NULL;
+	SDL_Surface *const s = image_png_load(bytes, size);
 	if (s == NULL)
 		return SE_IMAGE_UNREADABLE;
 
 	SeImageResult result = SE_IMAGE_WRONG_SIZE;
 	if (s->w == SE_STRIP_W && s->h == SE_FRAME_H)
-		result = seStripFromSurface(s, strip) ? SE_IMAGE_OK : SE_IMAGE_UNREADABLE;
+		result = seStripFromSurface(s, hint, strip) ? SE_IMAGE_OK : SE_IMAGE_UNREADABLE;
 	SDL_FreeSurface(s);
 	return result;
 }
@@ -1417,13 +1519,13 @@ static bool seStripExportFile(int bank, char *notice, size_t noticeSize)
 
 	SeStrip strip;
 	seStripCapture(bank, &strip);
-	Uint8 bmp[SE_STRIP_BMP_MAX_BYTES];
-	const size_t size = seStripEncodeBmp(&strip, bmp, sizeof(bmp));
+	Uint8 png[SE_STRIP_PNG_MAX_BYTES];
+	const size_t size = seStripEncodePng(&strip, png, sizeof(png));
 	FILE *const f = (size > 0) ? dir_fopen(make_user_directory(), name, "wb") : NULL;
 	bool saved = false;
 	if (f != NULL)
 	{
-		saved = fwrite(bmp, 1, size, f) == size;
+		saved = fwrite(png, 1, size, f) == size;
 		saved = fclose(f) == 0 && saved;
 	}
 
@@ -1434,7 +1536,7 @@ static bool seStripExportFile(int bank, char *notice, size_t noticeSize)
 	return saved;
 }
 
-static SeImageResult seStripReadFile(const char *name, SeStrip *strip)
+static SeImageResult seStripReadFile(const char *name, const SeStrip *hint, SeStrip *strip)
 {
 	FILE *const f = dir_fopen(get_user_directory(), name, "rb");
 	if (f == NULL)
@@ -1446,7 +1548,7 @@ static SeImageResult seStripReadFile(const char *name, SeStrip *strip)
 	const bool read = bytes != NULL && fread(bytes, 1, (size_t)size, f) == (size_t)size;
 	fclose(f);
 
-	const SeImageResult result = read ? seStripDecodeBmp(bytes, (size_t)size, strip)
+	const SeImageResult result = read ? seStripDecodePng(bytes, (size_t)size, hint, strip)
 	                                  : SE_IMAGE_UNREADABLE;
 	free(bytes);
 	return result;
@@ -1457,8 +1559,9 @@ static bool seStripImportFile(int bank, char *notice, size_t noticeSize)
 	char name[24];
 	seStripImageName(bank, name, sizeof(name));
 
-	SeStrip strip;
-	const SeImageResult result = seStripReadFile(name, &strip);
+	SeStrip current, strip;
+	seStripCapture(bank, &current);
+	const SeImageResult result = seStripReadFile(name, &current, &strip);
 	switch (result)
 	{
 	case SE_IMAGE_OK:
@@ -1543,12 +1646,12 @@ static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
 	{ "Flip H",      "Mirror or fold this pose. Left/Right chooses." },
 	{ "Undo",        "Take back or redo an edit. Also Ctrl+Z and Ctrl+Y." },
 	{ "Clear",       "Erase this pose or every pose. Left/Right chooses." },
-	{ "Import Image", "Load this bank's poses from a 120x28 BMP. Left/Right chooses." },
+	{ "Import Image", "Load this bank's poses from a 120x28 PNG. Left/Right chooses." },
 	{ "Done",        "Back to the loadout editor." },
 };
 
 static const struct { const char *label, *help; } sesBankAlt[SES_BANK_COUNT - 1] = {
-	{ "Export Image", "Save this bank's poses as a 120x28 BMP. Left/Right chooses." },
+	{ "Export Image", "Save this bank's poses as a 120x28 PNG. Left/Right chooses." },
 	{ "Revert",       "Discard this bank's edits. Left/Right chooses." },
 	{ "Random Song",  "Play a random song. Left/Right chooses." },
 };
@@ -1798,68 +1901,106 @@ void shipEditorEndMusicFade(void)
 	set_volume(tyrMusicVolume, fxVolume);
 }
 
+static void seTestPaint(SDL_Surface *s, int x, int y, int w, int h, SDL_Color c)
+{
+	const Uint32 pixel = SDL_MapRGBA(s->format, c.r, c.g, c.b, SDL_ALPHA_OPAQUE);
+	SDL_FillRect(s, &(SDL_Rect){ x, y, w, h }, pixel);
+}
+
+static bool seTestDecodes(const Uint8 *png, size_t size, const SeStrip *want)
+{
+	SeStrip back;
+	return size > 0 && seStripDecodePng(png, size, NULL, &back) == SE_IMAGE_OK &&
+	       memcmp(&back, want, sizeof(back)) == 0;
+}
+
+static bool seTestSaves(const SeStrip *strip, const SDL_Color *colors, Uint8 *png, size_t cap,
+                        const SeStrip *want)
+{
+	SDL_Surface *const s = seStripSurface(strip, colors);
+	const size_t size = (s != NULL) ? image_png_save(s, png, cap) : 0;
+	SDL_FreeSurface(s);
+	return seTestDecodes(png, size, want);
+}
+
 bool JE_shipStripImageSelfTest(void)
 {
-	enum { RGB_BMP_MAX_BYTES = 4 * SE_STRIP_BMP_MAX_BYTES };
+	enum { MOVED = 5, BELOW = 3, ABOVE = 0x9c };
 
 	SeUndoState saved;
 	seUndoCapture(1, &saved);
 
-	SeStrip strip, back;
+	SeStrip strip, flipped, back;
 	for (int y = 0; y < SE_FRAME_H; ++y)
 		for (int x = 0; x < SE_STRIP_W; ++x)
+		{
 			strip.px[y][x] = (JE_byte)(y * SE_STRIP_W + x);
+			flipped.px[y][x] = (JE_byte)(255 - strip.px[y][x]);
+		}
 	seStripApply(1, &strip);
 
 	const char *const importHelp = sesActs[SES_ACT_BANK - SES_ACT_CAPTURE].help;
 	char dims[16];
 	snprintf(dims, sizeof(dims), "%dx%d", SE_STRIP_W, SE_FRAME_H);
-	Uint8 *const bmp = malloc(RGB_BMP_MAX_BYTES);
-	bool ok = bmp != NULL && strstr(importHelp, dims) != NULL;
-	if (ok)
-	{
-		SeStrip captured;
-		seStripCapture(1, &captured);
-		const size_t size = seStripEncodeBmp(&captured, bmp, SE_STRIP_BMP_MAX_BYTES);
-		ok = size > 0 && memcmp(&captured, &strip, sizeof(strip)) == 0 &&
-		     seStripDecodeBmp(bmp, size, &back) == SE_IMAGE_OK &&
-		     memcmp(&back, &strip, sizeof(strip)) == 0;
-	}
+	Uint8 png[SE_STRIP_PNG_MAX_BYTES];
+	SeStrip captured;
+	seStripCapture(1, &captured);
+	const size_t exported = seStripEncodePng(&captured, png, sizeof(png));
+	bool ok = strstr(importHelp, dims) != NULL && memcmp(&captured, &strip, sizeof(strip)) == 0 &&
+	          seTestDecodes(png, exported, &strip);
 
-	SDL_Surface *const rgb = ok ? SDL_CreateRGBSurfaceWithFormat(0, SE_STRIP_W, SE_FRAME_H, 24,
-	                                                             SDL_PIXELFORMAT_RGB24) : NULL;
-	ok = rgb != NULL;
-	if (ok)
-	{
-		for (int y = 0; y < SE_FRAME_H; ++y)
-			for (int x = 0; x < SE_STRIP_W; ++x)
-			{
-				Uint8 *const p = (Uint8 *)rgb->pixels + (size_t)y * rgb->pitch + (size_t)x * 3;
-				const SDL_Color c = palettes[0][strip.px[y][x]];
-				p[0] = c.r;
-				p[1] = c.g;
-				p[2] = c.b;
-			}
-		const size_t size = seSaveBmp(rgb, bmp, RGB_BMP_MAX_BYTES);
-		ok = size > 0 && seStripDecodeBmp(bmp, size, &back) == SE_IMAGE_OK;
-		for (int y = 0; y < SE_FRAME_H && ok; ++y)
-			for (int x = 0; x < SE_STRIP_W && ok; ++x)
-				ok = seSameRgb(palettes[0][back.px[y][x]], palettes[0][strip.px[y][x]]) &&
-				     (back.px[y][x] == 0) == (strip.px[y][x] == 0);
-		SDL_FreeSurface(rgb);
-	}
+	SDL_Surface *const decoded = ok ? image_png_load(png, exported) : NULL;
+	SDL_Surface *const truecolor =
+		(decoded != NULL) ? SDL_ConvertSurfaceFormat(decoded, SDL_PIXELFORMAT_ARGB8888, 0) : NULL;
+	ok = truecolor != NULL && seStripFromSurface(truecolor, NULL, &back) &&
+	     memcmp(&back, &strip, sizeof(strip)) == 0;
+	SDL_FreeSurface(truecolor);
+	SDL_FreeSurface(decoded);
 
-	SDL_Surface *const argb = ok ? SDL_CreateRGBSurfaceWithFormat(0, SE_STRIP_W, SE_FRAME_H, 32,
-	                                                              SDL_PIXELFORMAT_ARGB8888) : NULL;
+	SDL_Color image[256], reversed[256], respun[256], legacy[256];
+	seImagePalette(image);
+	image[0].a = SDL_ALPHA_TRANSPARENT;
+	for (int i = 0; i < 256; ++i)
+	{
+		reversed[i] = image[255 - i];
+		respun[i] = image[(i == 0) ? MOVED : (i <= MOVED) ? i - 1 : i];
+		respun[i].a = (i == 0) ? SDL_ALPHA_TRANSPARENT : SDL_ALPHA_OPAQUE;
+		legacy[i] = palettes[0][i];
+		legacy[i].a = SDL_ALPHA_OPAQUE;
+	}
+	ok = ok && seTestSaves(&flipped, reversed, png, sizeof(png), &strip) &&
+	     seTestSaves(&strip, legacy, png, sizeof(png), &strip);
+
+	SeStrip spun, want;
+	memset(&spun, 0, sizeof(spun));
+	memset(&want, 0, sizeof(want));
+	spun.px[0][0] = BELOW + 1;
+	spun.px[0][1] = want.px[0][1] = ABOVE;
+	spun.px[0][2] = 1;
+	want.px[0][0] = BELOW;
+	ok = ok && seTestSaves(&spun, respun, png, sizeof(png), &want);
+
+	SDL_Surface *const old = ok ? seStripSurface(&strip, legacy) : NULL;
+	SDL_Surface *const rgb =
+		(old != NULL) ? SDL_ConvertSurfaceFormat(old, SDL_PIXELFORMAT_RGB24, 0) : NULL;
+	ok = rgb != NULL && seStripFromSurface(rgb, &strip, &back) &&
+	     memcmp(&back, &strip, sizeof(strip)) == 0 && seStripFromSurface(rgb, NULL, &back);
+	for (int y = 0; y < SE_FRAME_H && ok; ++y)
+		for (int x = 0; x < SE_STRIP_W && ok; ++x)
+			ok = seSameRgb(palettes[0][back.px[y][x]], palettes[0][strip.px[y][x]]) &&
+			     (back.px[y][x] == 0) == (strip.px[y][x] == 0);
+	SDL_FreeSurface(rgb);
+	SDL_FreeSurface(old);
+
+	SDL_Surface *const argb = ok ? seStripCanvas(SDL_PIXELFORMAT_ARGB8888) : NULL;
 	ok = argb != NULL;
 	if (ok)
 	{
-		const SDL_Color ink = palettes[0][0x9c];
-		Uint32 *const row = (Uint32 *)argb->pixels;
-		SDL_FillRect(argb, NULL, SDL_MapRGBA(argb->format, 255, 255, 255, 0));
-		row[1] = SDL_MapRGBA(argb->format, ink.r, ink.g, ink.b, SDL_ALPHA_OPAQUE);
-		ok = seStripFromSurface(argb, &back) && back.px[0][0] == 0 &&
-		     seSameRgb(palettes[0][back.px[0][1]], ink);
+		SDL_FillRect(argb, NULL, SDL_MapRGBA(argb->format, 255, 255, 255, SDL_ALPHA_TRANSPARENT));
+		seTestPaint(argb, 1, 0, 1, 1, palettes[0][ABOVE]);
+		seTestPaint(argb, 2, 0, 1, 1, palettes[0][0]);
+		ok = seStripFromSurface(argb, NULL, &back) &&
+		     back.px[0][0] == 0 && back.px[0][1] == ABOVE && back.px[0][2] == 0;
 		SDL_FreeSurface(argb);
 	}
 
@@ -1868,23 +2009,102 @@ bool JE_shipStripImageSelfTest(void)
 	ok = pose != NULL;
 	if (ok)
 	{
-		const size_t size = seSaveBmp(pose, bmp, RGB_BMP_MAX_BYTES);
-		ok = size > 0 && seStripDecodeBmp(bmp, size, &back) == SE_IMAGE_WRONG_SIZE;
+		const size_t size = image_png_save(pose, png, sizeof(png));
+		ok = size > 0 && seStripDecodePng(png, size, NULL, &back) == SE_IMAGE_WRONG_SIZE;
 		SDL_FreeSurface(pose);
 	}
 
 	if (ok)
 	{
-		memset(bmp, 0xab, 64);
-		ok = seStripDecodeBmp(bmp, 64, &back) == SE_IMAGE_UNREADABLE;
+		memset(png, 0xab, 64);
+		ok = seStripDecodePng(png, 64, NULL, &back) == SE_IMAGE_UNREADABLE;
 	}
 
 	ok = ok && JE_textWidth(importHelp, small_font) < LEGACY_WIDTH;
 	for (int i = 0; i < SES_BANK_COUNT - 1; ++i)
 		ok = ok && JE_textWidth(sesBankAlt[i].help, small_font) < LEGACY_WIDTH;
 
-	free(bmp);
 	seUndoRestore(&saved);
+	return ok;
+}
+
+static int seBankUniqueInk(int bank)
+{
+	for (int i = SDL_max(bank * 16, 1); i < bank * 16 + 16; ++i)
+		if (!seInkShared((JE_byte)i))
+			return i;
+	return 0;
+}
+
+static SDL_Color seOffPalette(SDL_Color c)
+{
+	c.g = (Uint8)((c.g < 255) ? c.g + 1 : c.g - 1);
+	c.b = (Uint8)((c.b < 255) ? c.b + 1 : c.b - 1);
+	return c;
+}
+
+static SDL_Point seTestSlot(int slot)
+{
+	enum { SLOT = 4, ACROSS = SE_STRIP_W / SLOT };
+	return (SDL_Point){ slot % ACROSS * SLOT + 1, slot / ACROSS * SLOT + 1 };
+}
+
+bool JE_shipStripColorSelfTest(void)
+{
+	enum { SLOTS = (SE_STRIP_W / 4) * (SE_FRAME_H / 4), HULL = 0x7a, HIGHLIGHT = 0x7f };
+
+	SDL_Color image[256];
+	seImagePalette(image);
+	bool ok = true;
+	for (int i = 1; i < 256 && ok; ++i)
+	{
+		ok = seInkShared((JE_byte)i)
+		   ? seImageColorFree(image[i], image, 0) && palette_distance(image[i], palettes[0][i]) <= 4
+		   : seSameRgb(image[i], palettes[0][i]);
+		for (int j = 0; j < i && ok; ++j)
+			ok = !seSameRgb(image[i], image[j]);
+	}
+
+	SDL_Surface *const s = seStripCanvas(SDL_PIXELFORMAT_RGB24);
+	ok = ok && s != NULL;
+	SeStrip back;
+	for (int pass = 0; pass < 4 && ok; ++pass)
+	{
+		const int first = 1 + (pass % 2) * SLOTS, last = SDL_min(first + SLOTS, 256);
+		SDL_FillRect(s, NULL, 0);
+		for (int i = first; i < last; ++i)
+		{
+			const SDL_Point at = seTestSlot(i - first);
+			const int unique = seBankUniqueInk(i >> 4);
+			const SDL_Color ink = (pass < 2) ? palettes[0][i] : seOffPalette(palettes[0][i]);
+			if (unique != 0)
+				seTestPaint(s, at.x - 1, at.y - 1, 3, 3, palettes[0][unique]);
+			seTestPaint(s, at.x, at.y, 1, 1, ink);
+		}
+		ok = seStripFromSurface(s, NULL, &back);
+		for (int i = first; i < last && ok; ++i)
+		{
+			const SDL_Point at = seTestSlot(i - first);
+			const JE_byte got = back.px[at.y][at.x];
+			ok = (seBankUniqueInk(i >> 4) != 0) ? got == i
+			                                    : seSameRgb(palettes[0][got], palettes[0][i]);
+		}
+	}
+
+	if (ok)
+	{
+		SDL_FillRect(s, NULL, 0);
+		seTestPaint(s, 4, 4, 3, 3, palettes[0][HULL]);
+		seTestPaint(s, 60, 20, 1, 1, palettes[0][HIGHLIGHT]);
+		ok = !seInkShared(HULL) && seInkShared(HIGHLIGHT) && seStripFromSurface(s, NULL, &back) &&
+		     back.px[20][60] == HIGHLIGHT;
+
+		SDL_FillRect(s, NULL, 0);
+		seTestPaint(s, 60, 20, 1, 1, palettes[0][HIGHLIGHT]);
+		ok = ok && seStripFromSurface(s, NULL, &back) && back.px[20][60] < HIGHLIGHT &&
+		     seSameRgb(palettes[0][back.px[20][60]], palettes[0][HIGHLIGHT]);
+	}
+	SDL_FreeSurface(s);
 	return ok;
 }
 

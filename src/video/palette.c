@@ -26,6 +26,7 @@
 #include "video.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -105,6 +106,27 @@ Uint8 palette_peak(void)
 	}
 
 	return peak;
+}
+
+int palette_distance(SDL_Color a, SDL_Color b)
+{
+	const int dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
+	return dr * dr + dg * dg + db * db;
+}
+
+Uint8 palette_nearest(const SDL_Color *colors, int first, SDL_Color c)
+{
+	int best = first, best_dist = INT_MAX;
+	for (int i = first; i < 256 && best_dist > 0; ++i)
+	{
+		const int dist = palette_distance(colors[i], c);
+		if (dist < best_dist)
+		{
+			best = i;
+			best_dist = dist;
+		}
+	}
+	return (Uint8)best;
 }
 
 void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color)

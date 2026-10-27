@@ -30,6 +30,11 @@ Keep code comments local. Put subsystem contracts here.
 - The Windows ARM64 job builds SDL2 and SDL2_net from source. SDL2 needs
   `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` and `-DSDL_LIBC=ON` there.
 - Switch builds run under devkitPro bash. Vita builds use native CMake and Ninja.
+- VitaSDK's linker starts the data segment on the next 64 KiB boundary, and
+  `vita-elf-create` appends about 3 KB of import tables after the code.
+  `vita/CMakeLists.txt` defines `__sce_headroom` as 64 KiB so they always fit.
+  Without it, an unlucky code size fails with "Cannot allocate ... bytes for
+  SCE data". The gap costs no memory because each segment loads separately.
 - Console Release builds define `NDEBUG`.
 
 For MSVC analysis:
@@ -1052,17 +1057,32 @@ Weapon byte 255 refers to the custom weapon owned by the same seat. Resolve it a
 equip time because reserved ports differ by player. The reference works even
 when the local Custom Weapons setting is off.
 
-Bank images are `custom-bank-<n>.bmp` in the user directory: 120x28, 8-bit,
-the five poses left to right, `palettes[0]`, index 0 transparent. The name uses
-hyphens because the tiny font has no underscore glyph and the editor prints it.
-SDL's BMP reader and writer run through memory `SDL_RWops`; files go through
+Bank images are `custom-bank-<n>.png` in the user directory: 120x28, the five
+poses left to right, index 0 transparent. The name uses hyphens because the tiny
+font has no underscore glyph and the editor prints it. Files go through
 `dir_fopen` like every other user file.
 
-- An indexed pixel keeps its index when that palette entry matches
-  `palettes[0]`. Any other colour maps to the nearest of entries 1 to 255.
-- Exact `palettes[0][0]` black and alpha below half map to index 0.
-- Palette 0 has one pure black and 41 duplicate entries, so full-colour imports
-  preserve colours but not always indices.
+`src/video/image_png.c` reads and writes PNG without a library. The writer emits
+8-bit indexed images in stored deflate blocks. The reader accepts every PNG
+colour type, bit depth, and Adam7 interlacing. It checks chunk CRCs and the
+zlib Adler-32, skips unknown ancillary chunks, rejects unknown critical ones,
+and refuses headers over 16384 pixels a side or 4M pixels before allocating.
+
+- In palette 0, 78 of the 255 inks share their colour with another ink, and
+  banks 1 and 11, and 10 and 14, are identical. The export palette
+  (`seImagePalette`) moves each shared ink one step to a colour no palette entry
+  uses, so every index survives an editor that rebuilds the palette or saves
+  full colour.
+- Import, per pixel (`seImportPixel`): alpha below half or exact black is index
+  0. An indexed pixel whose entry equals `palettes[0]` at that index keeps it.
+  An export-palette colour maps to its index. Anything else takes the nearest
+  `palettes[0]` colour (`palette_nearest`, `palette_distance`).
+- When several inks share that nearest colour, `seResolveInk` takes the bank's
+  current pixel, then the bank most used by the resolved neighbours, then by the
+  whole image, then the lowest index.
+- `tools/png_fixtures/gen_fixtures.py` writes `src/qa/qa_png_fixtures.h` and
+  checks each fixture against Pillow. Pillow misreads `tRNS` keys on low-depth
+  grey and 16-bit RGB images, so the generator compares only RGB for keyed ones.
 - An import pushes one undo entry only after the file decodes.
 
 ### Ship skins

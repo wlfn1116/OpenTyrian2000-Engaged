@@ -4,6 +4,7 @@
 #include "qa_internal.h"
 
 #include "audio.h"
+#include "be_bytes.h"
 
 #include "SDL.h"
 #ifdef WITH_MIDI
@@ -139,11 +140,6 @@ static size_t qa_lds_build(JE_byte *out)
 	return (size_t)(p - out);
 }
 
-static unsigned qa_smf_u32(const JE_byte *p)
-{
-	return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) | ((unsigned)p[2] << 8) | p[3];
-}
-
 static const JE_byte *qa_smf_vlq(const JE_byte *p, const JE_byte *end, unsigned *out)
 {
 	unsigned value = 0;
@@ -169,14 +165,14 @@ static bool qa_smf_scan(const JE_byte *data, size_t size, QaLdsVoice *voice, uns
 
 	if (size < 14 || memcmp(p, "MThd", 4) != 0)
 		return false;
-	p += 8 + qa_smf_u32(p + 4);
+	p += 8 + be_read32(p + 4);
 
 	for (unsigned i = 0; i < COUNTOF(bend); ++i)
 		bend[i] = QA_LDS_BEND_CENTER;
 
 	while (end - p >= 8)
 	{
-		const unsigned length = qa_smf_u32(p + 4);
+		const unsigned length = be_read32(p + 4);
 		const JE_byte *track = p + 8;
 		const JE_byte *trackEnd = track + length;
 		JE_byte status = 0;
