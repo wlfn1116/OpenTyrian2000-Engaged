@@ -89,6 +89,12 @@
 # building with only the old projection restored, every other edit in the change kept: all three
 # hashes came back at the previous line's values. The three hashes below come back identically
 # from a working directory with no opentyrian.cfg in it.
-1 180 a3403644
-2 180 0e16e59f
-3 180 7f79716c
+# Regenerated 2026-10-27, for a snapshot-shape change with no simulation change behind it: the
+# Afterburners perk took the 31st perk slot, so endless.perkOwned and both rows of
+# endless.perkTakenBy grew by one byte. Verified by building with those items registered over their
+# old 30-perk rows only, every other edit in the change kept: all three hashes came back at the
+# previous line's values. That also covers the Smooth-Motion-off momentum step, which the demos
+# fly and which now runs through the helper the Endless move scale predicts with.
+1 180 e86072a0
+2 180 01eb4985
+3 180 7e1c91c4

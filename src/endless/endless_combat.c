@@ -1106,12 +1106,20 @@ float endlessGravityDrift(void)
 float endlessGravityDriftX(void) { return endlessGravityDrift() * endlessGravityDirX; }
 float endlessGravityDriftY(void) { return endlessGravityDrift() * endlessGravityDirY; }
 
+static float endlessShipGravityDrift(uint p)
+{
+	return endlessGravityDrift() * endlessPerkGravityScale(p);
+}
+
+float endlessShipGravityDriftX(uint p) { return endlessShipGravityDrift(p) * endlessGravityDirX; }
+float endlessShipGravityDriftY(uint p) { return endlessShipGravityDrift(p) * endlessGravityDirY; }
+
 // Classic movement carries the fractional drift independently per ship and per axis.
 int endlessGravityPullX(uint p)
 {
 	if (p >= COUNTOF(endlessGravityCarryX))
 		return 0;
-	endlessGravityCarryX[p] += endlessGravityDriftX();
+	endlessGravityCarryX[p] += endlessShipGravityDriftX(p);
 	const int step = (int)endlessGravityCarryX[p];
 	endlessGravityCarryX[p] -= (float)step;
 	return step;
@@ -1120,7 +1128,7 @@ int endlessGravityPullY(uint p)
 {
 	if (p >= COUNTOF(endlessGravityCarryY))
 		return 0;
-	endlessGravityCarryY[p] += endlessGravityDriftY();
+	endlessGravityCarryY[p] += endlessShipGravityDriftY(p);
 	const int step = (int)endlessGravityCarryY[p];
 	endlessGravityCarryY[p] -= (float)step;
 	return step;
@@ -1130,15 +1138,27 @@ int endlessGravityPullY(uint p)
 #define ENDLESS_SLUGGISH_BASE     0.18f
 #define ENDLESS_SLUGGISH_PER_ZONE 0.010f
 #define ENDLESS_SLUGGISH_MAX      0.55f
-float endlessMoveScale(void)
+static float endlessSluggishSlowdown(void)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_SLUGGISH))
-		return 1.0f;
+		return 0.0f;
 	float slow = (ENDLESS_SLUGGISH_BASE + ENDLESS_SLUGGISH_PER_ZONE * (float)endlessRunDepth)
 	           * (float)endlessDifficultyRampPercent() / 100.0f;
 	if (slow > ENDLESS_SLUGGISH_MAX)
 		slow = ENDLESS_SLUGGISH_MAX;
-	return 1.0f - slow;
+	return slow;
+}
+
+float endlessMoveScale(void)
+{
+	return 1.0f - endlessSluggishSlowdown();
+}
+
+float endlessShipMoveScale(uint p)
+{
+	if (!endlessFxActive())
+		return 1.0f;
+	return endlessPerkMoveScale(p, endlessSluggishSlowdown());
 }
 
 bool endlessShieldRegenOff(void)

@@ -910,6 +910,59 @@ bool endlessArmOpeningSalvoForTick(Player *this_player, JE_byte playerNum_)
 	return endlessOpeningSalvoConsume();
 }
 
+static int ship_axis_velocity(int velocity, bool frictionDue, int accel)
+{
+	if (frictionDue)
+	{
+		if (velocity < 0)
+			++velocity;
+		else if (velocity > 0)
+			--velocity;
+	}
+	velocity += accel;
+	return MIN(MAX(-4, velocity), 4);
+}
+
+static int ship_scaled_axis(int start, int pos, int momentum, float scale, float *carry)
+{
+	const float want = (float)(pos - start + momentum) * scale + *carry;
+	const int moved = (int)(want >= 0.0f ? want + 0.5f : want - 0.5f);
+	*carry = want - (float)moved;
+	return start + moved - momentum;
+}
+
+bool player_ship_move_scale_self_test(void)
+{
+	static const float scales[] = { 1.0f, 0.45f, 1.5f };
+	enum { TICKS = 200 };
+
+	bool ok = true;
+	for (unsigned s = 0; s < COUNTOF(scales); ++s)
+	{
+		int plainX = 0, plainV = 0, scaledX = 0, scaledV = 0;
+		unsigned plainFriction = 0, scaledFriction = 0;
+		float carry = 0.0f;
+		for (int tick = 0; tick < TICKS; ++tick)
+		{
+			const bool plainDue = plainFriction == 0;
+			plainFriction = plainDue ? 1 : plainFriction - 1;
+			plainV = ship_axis_velocity(plainV, plainDue, CURRENT_KEY_SPEED);
+			plainX += CURRENT_KEY_SPEED + plainV;
+
+			const bool scaledDue = scaledFriction == 0;
+			const int momentum = ship_axis_velocity(scaledV, scaledDue, CURRENT_KEY_SPEED);
+			const int live = ship_scaled_axis(scaledX, scaledX + CURRENT_KEY_SPEED, momentum,
+			                                  scales[s], &carry);
+			scaledFriction = scaledDue ? 1 : scaledFriction - 1;
+			scaledV = ship_axis_velocity(scaledV, scaledDue, CURRENT_KEY_SPEED);
+			scaledX = live + scaledV;
+		}
+		const int want = (int)((float)plainX * scales[s] + 0.5f);
+		ok = ok && scaledX >= want - 1 && scaledX <= want + 1;
+	}
+	return ok;
+}
+
 static void JE_playerMovement(Player *this_player,
                        JE_byte inputDevice,
                        JE_byte playerNum_,
@@ -1116,9 +1169,9 @@ redo:
 	{
 		*mouseX_ = this_player->x;
 		*mouseY_ = this_player->y;
-		// Snapshot classic-path movement before SLUGGISH rescales it.
-		const int sluggishStartX = this_player->x;
-		const int sluggishStartY = this_player->y;
+		// Snapshot classic-path movement before the Endless move scale rescales it.
+		const int moveStartX = this_player->x;
+		const int moveStartY = this_player->y;
 		button[1-1] = false;
 		button[2-1] = false;
 		button[3-1] = false;
@@ -1352,23 +1405,24 @@ redo:
 				else if (mouseYC < -2)
 					accelYC--;
 
-				// Smooth-Motion-off Sluggish path. Scale the completed movement and keep a fractional
-				// carry per ship so the modifier has the same long-run rate for every input source.
+				// Smooth-Motion-off Endless move scale: scale the completed movement, momentum
+				// included, carrying fractions per ship so every input keeps one long-run rate.
 				{
-					const uint sluggishIdx = (playerNum_ >= 2) ? 1u : 0u;
-					const float ms = endlessMoveScale();
-					if (ms < 1.0f)
+					const uint moveIdx = (playerNum_ >= 2) ? 1u : 0u;
+					const float ms = vt_input ? 1.0f : endlessShipMoveScale(moveIdx);
+					if (ms != 1.0f)
 					{
 						static float carryXs[2] = { 0.0f, 0.0f }, carryYs[2] = { 0.0f, 0.0f };
-						float carryX = carryXs[sluggishIdx], carryY = carryYs[sluggishIdx];
-						const float wantX = (float)(this_player->x - sluggishStartX) * ms + carryX;
-						const float wantY = (float)(this_player->y - sluggishStartY) * ms + carryY;
-						const int   dX = (int)(wantX >= 0.0f ? wantX + 0.5f : wantX - 0.5f);
-						const int   dY = (int)(wantY >= 0.0f ? wantY + 0.5f : wantY - 0.5f);
-						carryXs[sluggishIdx] = wantX - (float)dX;
-						carryYs[sluggishIdx] = wantY - (float)dY;
-						this_player->x = sluggishStartX + dX;
-						this_player->y = sluggishStartY + dY;
+						const bool xDue = this_player->x_friction_ticks == 0;
+						const bool yDue = this_player->y_friction_ticks == 0;
+						const int momentumX = vt ? 0 : ship_axis_velocity(this_player->x_velocity,
+						                                                  xDue, accelXC);
+						const int momentumY = vt ? 0 : ship_axis_velocity(this_player->y_velocity,
+						                                                  yDue, accelYC);
+						this_player->x = ship_scaled_axis(moveStartX, this_player->x, momentumX, ms,
+						                                  &carryXs[moveIdx]);
+						this_player->y = ship_scaled_axis(moveStartY, this_player->y, momentumY, ms,
+						                                  &carryYs[moveIdx]);
 					}
 				}
 
@@ -1804,42 +1858,18 @@ redo:
 
 			if (!vt)
 			{
-			if (this_player->x_friction_ticks > 0)
-			{
-				--this_player->x_friction_ticks;
-			}
-			else
-			{
-				this_player->x_friction_ticks = 1;
+				const bool xDue = this_player->x_friction_ticks == 0;
+				const bool yDue = this_player->y_friction_ticks == 0;
+				this_player->x_friction_ticks = xDue ? 1 : this_player->x_friction_ticks - 1;
+				this_player->y_friction_ticks = yDue ? 2 : this_player->y_friction_ticks - 1;
 
-				if (this_player->x_velocity < 0)
-					++this_player->x_velocity;
-				else if (this_player->x_velocity > 0)
-					--this_player->x_velocity;
-			}
+				this_player->x_velocity = ship_axis_velocity(this_player->x_velocity, xDue,
+				                                             accelXC);
+				this_player->y_velocity = ship_axis_velocity(this_player->y_velocity, yDue,
+				                                             accelYC);
 
-			if (this_player->y_friction_ticks > 0)
-			{
-				--this_player->y_friction_ticks;
-			}
-			else
-			{
-				this_player->y_friction_ticks = 2;
-
-				if (this_player->y_velocity < 0)
-					++this_player->y_velocity;
-				else if (this_player->y_velocity > 0)
-					--this_player->y_velocity;
-			}
-
-			this_player->x_velocity += accelXC;
-			this_player->y_velocity += accelYC;
-
-			this_player->x_velocity = MIN(MAX(-4, this_player->x_velocity), 4);
-			this_player->y_velocity = MIN(MAX(-4, this_player->y_velocity), 4);
-
-			this_player->x += this_player->x_velocity;
-			this_player->y += this_player->y_velocity;
+				this_player->x += this_player->x_velocity;
+				this_player->y += this_player->y_velocity;
 			}
 
 			// if player moved, add new ship x, y history entry

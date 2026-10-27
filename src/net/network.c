@@ -125,7 +125,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       97           /* Ship skins ride the look packet and the save record. */
+#define NET_VERSION       98           /* Afterburners perk and full-step Endless move scaling. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

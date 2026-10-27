@@ -49,6 +49,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Reinforced Prow",  "Ram much harder and take much less for it.", 4 },
 	{ "Knife Fight",      "More damage the closer you fly to a foe.", 4 },
 	{ "Deflector",        "Shots hurt your shield less and bounce back.", 2 },
+	{ "Afterburners",     "Faster ship that resists slowdowns and gravity.", 5 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -280,6 +281,25 @@ int endlessPerkShotSpeedPercent(void)
 	if (!endlessFxActive())
 		return 100;
 	return 100 + perkFx(PERK_SHOTSPEED) * ENDLESS_PERK_SHOTSPEED_PCT;
+}
+
+static int endlessPerkAfterburnerResist(uint p)
+{
+	return endlessClamp(perkShip(p, PERK_AFTERBURNER) * ENDLESS_PERK_AFTERBURNER_RESIST_PCT,
+	                    0, ENDLESS_PERK_AFTERBURNER_RESIST_MAX);
+}
+
+float endlessPerkMoveScale(uint p, float slowdown)
+{
+	const float kept = slowdown - slowdown * (float)endlessPerkAfterburnerResist(p) / 100.0f;
+	const float boost = (float)(perkShip(p, PERK_AFTERBURNER) * ENDLESS_PERK_AFTERBURNER_SPEED_PCT)
+	                  / 100.0f;
+	return (1.0f - kept) * (1.0f + boost);
+}
+
+float endlessPerkGravityScale(uint p)
+{
+	return 1.0f - (float)endlessPerkAfterburnerResist(p) / 100.0f;
 }
 
 // Radar adds the shipped level name to each Chart-a-Course help line, for the player who owns it.

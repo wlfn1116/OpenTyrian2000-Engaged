@@ -200,6 +200,7 @@ Breakthrough, the E-Shop, and gambles can add picks.
 | Reinforced Prow | Stronger, safer ramming |
 | Knife Fight | More damage at close range |
 | Deflector | Shielded shots bounce back; later stacks reduce shield loss |
+| Afterburners | 10% faster movement per stack; each resists 16% of slowdown and gravity, up to 80% |
 
 Every perk screen also offers **Take the Cash**.
 

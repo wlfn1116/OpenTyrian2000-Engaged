@@ -47,6 +47,7 @@ void qa_test_twin_pods_perk(void);
 void qa_test_reinforced_prow_perk(void);
 void qa_test_knife_fight_perk(void);
 void qa_test_deflector_perk(void);
+void qa_test_afterburner_perk(void);
 void qa_test_countermeasure_burst(void);
 void qa_test_guided_screen_aim(void);
 void qa_test_elite_tier_eligibility(void);

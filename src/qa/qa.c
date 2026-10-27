@@ -389,6 +389,7 @@ int qa_run_unit_suite(void)
 	qa_test_reinforced_prow_perk();
 	qa_test_knife_fight_perk();
 	qa_test_deflector_perk();
+	qa_test_afterburner_perk();
 	qa_test_countermeasure_burst();
 	qa_test_guided_screen_aim();
 	qa_test_health_bar_scale();

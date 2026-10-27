@@ -1104,6 +1104,119 @@ void qa_test_deflector_perk(void)
 	coopEndlessMode = savedCoop;
 }
 
+static bool qa_afterburner_close(float got, float want)
+{
+	return got > want - 0.01f && got < want + 0.01f;
+}
+
+static float qa_afterburner_ladder_top(uint p, float floor, bool *rising)
+{
+	float previous = floor;
+	*rising = true;
+	for (int stacks = 1; stacks <= endlessPerkMaxStack(PERK_AFTERBURNER); ++stacks)
+	{
+		endlessPerkSetOwnedFor(p, PERK_AFTERBURNER, stacks);
+		const float scale = endlessShipMoveScale(p);
+		*rising = *rising && scale > previous;
+		previous = scale;
+	}
+	return previous;
+}
+
+void qa_test_afterburner_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const Uint64 savedMods = endlessActiveMods;
+	const int savedDepth = endlessRunDepth;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	endlessActiveMods = 0;
+	endlessRunDepth = 40;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+
+	qa_check(endlessShipMoveScale(0) == 1.0f && endlessShipMoveScale(1) == 1.0f,
+	         "without Afterburners or Molasses both ships move at stock speed");
+
+	const int maxStacks = endlessPerkMaxStack(PERK_AFTERBURNER);
+	const float fullBoost = 1.0f + (float)(maxStacks * ENDLESS_PERK_AFTERBURNER_SPEED_PCT) / 100.0f;
+	const float fullResist = (float)endlessClamp(maxStacks * ENDLESS_PERK_AFTERBURNER_RESIST_PCT, 0,
+	                                             ENDLESS_PERK_AFTERBURNER_RESIST_MAX) / 100.0f;
+	bool rising;
+	float top = qa_afterburner_ladder_top(0, 1.0f, &rising);
+	qa_check(maxStacks == 5 && rising && qa_afterburner_close(top, fullBoost),
+	         "each Afterburners stack adds speed, reaching the full boost at five");
+
+	endlessActiveMods = ENDLESS_MOD_SLUGGISH;
+	const float molasses = endlessMoveScale();
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, 0);
+	const bool stockSlowed = molasses < 1.0f && endlessShipMoveScale(0) == molasses;
+	top = qa_afterburner_ladder_top(0, molasses, &rising);
+	const float resisted = (1.0f - (1.0f - molasses) * (1.0f - fullResist)) * fullBoost;
+	qa_check(stockSlowed && rising && qa_afterburner_close(top, resisted) && top < fullBoost,
+	         "Afterburners shave Molasses a stack at a time, never all of it, and add their speed");
+
+	endlessActiveMods = ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_GRAVITY;
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, 0);
+	const float pull = endlessGravityDrift();
+	const bool stockPull = pull > 0.0f && endlessShipGravityDriftY(0) == pull;
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, maxStacks);
+	const float resistedPull = endlessShipGravityDriftY(0);
+	qa_check(stockPull && endlessGravityDrift() == pull && endlessMoveScale() == molasses &&
+	         resistedPull > 0.0f && qa_afterburner_close(resistedPull, pull * (1.0f - fullResist)),
+	         "Afterburners resist only their own ship's gravity, and never fully");
+
+	enum { PULL_TICKS = 100 };
+	int plainPulled = 0, resistedPulled = 0;
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, 0);
+	endlessRollGravityDir();
+	for (int tick = 0; tick < PULL_TICKS; ++tick)
+		plainPulled += endlessGravityPullY(0);
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, maxStacks);
+	endlessRollGravityDir();
+	for (int tick = 0; tick < PULL_TICKS; ++tick)
+		resistedPulled += endlessGravityPullY(0);
+	const int wantPulled = (int)((float)plainPulled * (1.0f - fullResist) + 0.5f);
+	qa_check(plainPulled > 0 && resistedPulled >= wantPulled - 1 &&
+	         resistedPulled <= wantPulled + 1,
+	         "Smooth-Motion-off gravity pulls a resisting ship the matching fraction of the way");
+
+	endlessActiveMods = ENDLESS_MOD_GRAVITY;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkSetOwnedFor(1, PERK_AFTERBURNER, 2);
+	coopEndlessMode = true;
+	const bool coopOwnShip = endlessShipMoveScale(0) == 1.0f && endlessShipMoveScale(1) > 1.0f &&
+	                         endlessShipGravityDriftY(1) < endlessShipGravityDriftY(0);
+	coopEndlessMode = false;
+	const bool soloIgnoresRowTwo = endlessShipMoveScale(1) == 1.0f;
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, 3);
+	qa_check(coopOwnShip && soloIgnoresRowTwo && endlessShipMoveScale(1) > 1.0f,
+	         "Afterburners act only on their own ship in co-op and on the shared row elsewhere");
+
+	endlessMode = false;
+	qa_check(endlessShipMoveScale(0) == 1.0f && endlessShipGravityDriftY(0) == 0.0f,
+	         "Afterburners do nothing outside Endless effects");
+
+	qa_check(player_ship_move_scale_self_test(),
+	         "Smooth-Motion-off movement scales the whole step, momentum included");
+
+	endlessActiveMods = 0;
+	endlessRollGravityDir();
+
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+	endlessActiveMods = savedMods;
+	endlessRunDepth = savedDepth;
+}
+
 /* Countermeasures clears shots within hull-relative reach and has no cooldown. */
 void qa_test_countermeasure_burst(void)
 {

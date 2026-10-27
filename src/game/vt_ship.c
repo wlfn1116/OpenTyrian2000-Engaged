@@ -330,7 +330,7 @@ static void vt_ship_step_player(int p, float dt)
 
 	// Combine momentum, immediate directional movement, and mouse/touch delta. Endless movement
 	// scaling applies to the complete displacement.
-	const float mscale = endlessMoveScale();
+	const float mscale = endlessShipMoveScale((uint)p);
 	const float step_x = ((vt_vx[p] + ix * VT_DIRECT) * dt + mdx) * mscale;
 	const float step_y = ((vt_vy[p] + iy * VT_DIRECT) * dt + mdy) * mscale;
 
@@ -341,8 +341,8 @@ static void vt_ship_step_player(int p, float dt)
 
 	// Apply render-rate-independent Endless gravity; the bounds below handle every heading. Online,
 	// folding it into VT motion lets vt_ship_commit_net deliver it exactly once.
-	vt_x[p] += endlessGravityDriftX() * dt;
-	vt_y[p] += endlessGravityDriftY() * dt;
+	vt_x[p] += endlessShipGravityDriftX((uint)p) * dt;
+	vt_y[p] += endlessShipGravityDriftY((uint)p) * dt;
 
 	// Same playfield bounds the sim enforces (player_ship.c). Stop velocity at walls
 	// so we don't accumulate phantom momentum while held against an edge.

@@ -114,6 +114,10 @@ The real-time ship integrator (`vt_ship.c`) affects simulation.
 - Rollback shows the local live position; Delay-Based shows the delayed tick
   position.
 - Remote ships extrapolate from the last tick, then ease. Large jumps snap.
+- Apply the Endless move scale once. VT scales its own step, so the fixed-tick
+  input block skips input that VT already moved.
+- The fixed-tick block scales the whole step before the input tuple. It predicts
+  the simulation's momentum with the same `ship_axis_velocity` helper.
 
 ### Gauges and effects
 
@@ -669,6 +673,15 @@ the ship whose effect is being calculated.
   and the random-special datacube (enemy 513) at 1-in-(300/stacks), once per
   linked hull with the loot centered on the hull. An unclaimed kill uses the
   deeper seat; either ship may collect.
+- Afterburners act through `endlessShipMoveScale` and
+  `endlessShipGravityDriftX`/`Y`: 10% speed per stack, and each stack resists
+  16% of the Sluggish slowdown and of gravity drift, capped at 80%. The sector
+  values (`endlessMoveScale`, `endlessGravityDrift*`) stay perk-free.
+
+Adding a perk grows `endless.perkOwned` and both rows of `endless.perkTakenBy`,
+which moves every replay fixture hash. Prove the move is shape-only by
+registering the old row width, then regenerate. The save, wire, and debug perk
+blocks hold 32 perks.
 
 Countermeasures triggers on every hull hit, has no cooldown, and ignores
 shield-only hits.

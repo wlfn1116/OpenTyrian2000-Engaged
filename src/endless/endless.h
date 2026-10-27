@@ -739,7 +739,10 @@ int   endlessGravityPullY(uint p);
 float endlessGravityDrift(void);
 float endlessGravityDriftX(void);
 float endlessGravityDriftY(void);
+float endlessShipGravityDriftX(uint p);
+float endlessShipGravityDriftY(uint p);
 float endlessMoveScale(void);
+float endlessShipMoveScale(uint p);
 
 // Power-system modifiers.
 bool     endlessShieldRegenOff(void);

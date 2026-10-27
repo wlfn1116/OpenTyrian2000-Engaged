@@ -217,6 +217,9 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_KNIFE_FADE_PX      48
 #define ENDLESS_PERK_DEFLECT_MULT2      200
 #define ENDLESS_PERK_DEFLECT_SHIELD_PCT 17
+#define ENDLESS_PERK_AFTERBURNER_SPEED_PCT  10
+#define ENDLESS_PERK_AFTERBURNER_RESIST_PCT 16
+#define ENDLESS_PERK_AFTERBURNER_RESIST_MAX 80
 
 // Offer-array width is fixed by the widest persisted slate.
 #define ENDLESS_PERK_OFFERS           3
@@ -261,6 +264,7 @@ enum {
 	PERK_PROW,
 	PERK_KNIFE,
 	PERK_DEFLECTOR,
+	PERK_AFTERBURNER,
 	PERK_COUNT
 };
 
@@ -277,6 +281,8 @@ extern JE_byte endlessPerkTakenBy[2][PERK_COUNT];
 JE_byte endlessPerkEffective(uint p, int id);
 void endlessPerkRederive(void);
 void endlessPerkGrant(uint p, int id, int delta);
+float endlessPerkMoveScale(uint p, float slowdown);
+float endlessPerkGravityScale(uint p);
 /* The offered slate, the pending gate and the resolved depth all describe THIS machine's player:
  * both sides roll their own slate from their own stream at the same outpost. */
 extern int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];
