@@ -29,6 +29,7 @@
 typedef enum
 {
 	SPRITE_PICKER_SHEET,
+	SPRITE_PICKER_BLOCKS,
 	SPRITE_PICKER_TABLE,
 	SPRITE_PICKER_LIST,
 } SpritePickerKind;
@@ -68,5 +69,6 @@ SpritePickerPage spritePickerHullPage(const char *name, const int *values, int c
                                       const char *(*label)(int value, char *buf, size_t n));
 int spritePickerIndexOf(const int *values, int count, int value);
 int spritePickerCycle(const int *values, int count, int current, int dir);
+bool spritePickerBlocksSelfTest(const SpritePickerPage *page, char *detail, size_t detailSize);
 
 #endif // SPRITE_PICKER_H

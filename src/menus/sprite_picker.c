@@ -45,6 +45,7 @@ enum
 	SP_BAR_X = 245,
 	SP_INFO_X0 = 249, SP_INFO_X1 = 310, SP_INFO_Y0 = 24, SP_INFO_H = 64,
 	SP_SHEET_COLS = 19, SP_TILE_W = 12, SP_TILE_H = 14, SP_HULL_W = 57, SP_HULL_H = 38,
+	SP_BLOCK_COLS = SP_SHEET_COLS / 2,
 	SP_CELL_MAX = 64, SP_MARGIN = 2,
 	SP_PAGES_MAX = 4, SP_TYPED_MAX = 5,
 	SP_DRAG_PX = 4,
@@ -77,8 +78,21 @@ typedef struct
 
 static SDL_Surface *spScratch, *spStrip;
 
+static int spBlockBase(int block)
+{
+	return 1 + 2 * (block % SP_BLOCK_COLS) + 2 * SP_SHEET_COLS * (block / SP_BLOCK_COLS);
+}
+
 static int spCells(const SpritePickerPage *p)
 {
+	if (p->kind == SPRITE_PICKER_BLOCKS)
+	{
+		const int last = MIN(p->first + p->count, sprite2_count(p->sheet) - SP_SHEET_COLS) - 1;
+		int blocks = 0;
+		while (spBlockBase(blocks) <= last)
+			++blocks;
+		return blocks;
+	}
 	if (p->kind != SPRITE_PICKER_SHEET)
 		return MAX(p->count, 0);
 	const int last = p->first + p->count - 1 + (p->big ? SP_SHEET_COLS + 1 : 0);
@@ -91,6 +105,8 @@ static bool spSelectable(const SpritePickerPage *p, int cell)
 		return false;
 	if (p->kind == SPRITE_PICKER_SHEET)
 		return cell + 1 >= p->first && cell + 1 < p->first + p->count;
+	if (p->kind == SPRITE_PICKER_BLOCKS)
+		return spBlockBase(cell) >= p->first;
 	return true;
 }
 
@@ -100,6 +116,8 @@ static int spValue(const SpritePickerPage *p, int cell)
 	{
 	case SPRITE_PICKER_SHEET:
 		return p->valueBase + cell + 1;
+	case SPRITE_PICKER_BLOCKS:
+		return p->valueBase + spBlockBase(cell);
 	case SPRITE_PICKER_TABLE:
 		return p->valueBase + p->first + cell;
 	default:
@@ -135,11 +153,20 @@ static int spLastSelectable(const SpritePickerPage *p)
 
 static void spGrid(const SpritePickerPage *p, SpGrid *g)
 {
-	const bool sheet = (p->kind == SPRITE_PICKER_SHEET);
-	g->cellW = sheet ? SP_TILE_W : clampi(p->cellW, 1, SP_GRID_W - 2 * SP_PAD);
-	g->cellH = sheet ? SP_TILE_H : clampi(p->cellH, 1, SP_CELL_MAX);
-	g->cols = sheet ? SP_SHEET_COLS : MAX((SP_GRID_W - 2 * SP_PAD) / g->cellW, 1);
-	g->span = (sheet && p->big) ? 2 : 1;
+	if (p->kind == SPRITE_PICKER_SHEET || p->kind == SPRITE_PICKER_BLOCKS)
+	{
+		const bool blocks = (p->kind == SPRITE_PICKER_BLOCKS);
+		g->cellW = blocks ? 2 * SP_TILE_W : SP_TILE_W;
+		g->cellH = blocks ? 2 * SP_TILE_H : SP_TILE_H;
+		g->cols = blocks ? SP_BLOCK_COLS : SP_SHEET_COLS;
+	}
+	else
+	{
+		g->cellW = clampi(p->cellW, 1, SP_GRID_W - 2 * SP_PAD);
+		g->cellH = clampi(p->cellH, 1, SP_CELL_MAX);
+		g->cols = MAX((SP_GRID_W - 2 * SP_PAD) / g->cellW, 1);
+	}
+	g->span = (p->kind == SPRITE_PICKER_SHEET && p->big) ? 2 : 1;
 	g->rows = (spCells(p) + g->cols - 1) / g->cols;
 	if (g->span > 1)
 		g->rows = MAX(g->rows, spLastSelectable(p) / g->cols + g->span);
@@ -313,6 +340,9 @@ static void spDrawCell(SDL_Surface *dst, const SpritePickerPage *p, int cell, in
 		if (cell + 1 <= sprite2_count(p->sheet))
 			blit_sprite2(dst, x, y, *p->sheet, (unsigned int)cell + 1);
 		break;
+	case SPRITE_PICKER_BLOCKS:
+		spDraw2x2(dst, p->sheet, (unsigned int)spBlockBase(cell), x, y, w, h);
+		break;
 	case SPRITE_PICKER_TABLE:
 		spritePickerDrawFit(dst, p->table, (unsigned int)(p->first + cell), x + 1, y + 1, w - 2,
 		                    h - 2, 1);
@@ -339,10 +369,11 @@ static void spDrawPreview(const SpritePickerPage *p, int cell, int x0, int y0, i
 		return;
 	}
 
-	const unsigned int index = (unsigned int)cell + 1;
+	const bool blocks = (p->kind == SPRITE_PICKER_BLOCKS);
+	const unsigned int index = (unsigned int)(blocks ? spBlockBase(cell) : cell + 1);
 	if ((int)index > sprite2_count(p->sheet))
 		return;
-	if (p->big)
+	if (p->big || blocks)
 	{
 		spDraw2x2(VGAScreen, p->sheet, index, x0, y0, w, h);
 		return;
@@ -745,6 +776,11 @@ static void spHandleText(SpState *s)
 		spJump(s, atoi(s->typed));
 }
 
+static bool spTypedAllowed(const SpritePickerPage *p, int value)
+{
+	return p->kind != SPRITE_PICKER_BLOCKS || spCellOf(p, value) >= 0;
+}
+
 static void spHandleKey(SpState *s, bool *done, bool *picked, int *value)
 {
 	const SpritePickerPage *const p = spPage(s);
@@ -787,9 +823,9 @@ static void spHandleKey(SpState *s, bool *done, bool *picked, int *value)
 	case SDL_SCANCODE_RETURN:
 	case SDL_SCANCODE_KP_ENTER:
 	case SDL_SCANCODE_SPACE:
-		if (s->typed[0] != '\0')
+		if (s->typed[0] != '\0' && spTypedAllowed(p, atoi(s->typed)))
 			*value = atoi(s->typed);
-		else if (spSelectable(p, s->cursor[s->page]))
+		else if (s->typed[0] == '\0' && spSelectable(p, s->cursor[s->page]))
 			*value = spValue(p, s->cursor[s->page]);
 		else
 		{
@@ -884,4 +920,90 @@ bool spritePickerRun(const SpritePickerSpec *spec, int *value)
 		newkey = newmouse = new_text = false;
 	}
 	return picked;
+}
+
+static bool spWholeBlock(const SpritePickerPage *p, int index)
+{
+	const int tile = index - 1;
+	return tile >= 0 && tile % SP_SHEET_COLS % 2 == 0 && tile % SP_SHEET_COLS < SP_SHEET_COLS - 1 &&
+	       tile / SP_SHEET_COLS % 2 == 0 && index + SP_SHEET_COLS + 1 <= sprite2_count(p->sheet);
+}
+
+static const char *spKeyFault(SpState *s, SDL_Scancode key, const char *typed, int want)
+{
+	bool done = false, picked = false;
+	int value = -1;
+	SDL_strlcpy(s->typed, typed, sizeof(s->typed));
+	lastkey_scan = key;
+	spHandleKey(s, &done, &picked, &value);
+	const SpritePickerPage *const p = spPage(s);
+	if (key != SDL_SCANCODE_RETURN)
+		return (spValue(p, s->cursor[s->page]) == want) ? NULL : "the arrows step off whole icons";
+	if (want < 0)
+		return (done || picked) ? "a typed number that splits two icons is accepted" : NULL;
+	return (picked && value == want) ? NULL : "a typed whole icon is refused";
+}
+
+static const char *spBlocksFault(SpState *s)
+{
+	const SpritePickerPage *const p = spPage(s);
+	SpGrid g;
+	spGrid(p, &g);
+	if (p->kind != SPRITE_PICKER_BLOCKS || g.cols != SP_BLOCK_COLS || g.cellW != 2 * SP_TILE_W ||
+	    g.cellH != 2 * SP_TILE_H)
+		return "the page is not laid out as whole icons";
+
+	int whole = 0;
+	for (int index = p->first; index < p->first + p->count; ++index)
+		whole += spWholeBlock(p, index) ? 1 : 0;
+	const int cells = spCells(p);
+	if (cells == 0 || cells != whole)
+		return "the page does not list each whole icon exactly once";
+
+	for (int cell = 0, previous = 0; cell < cells; ++cell)
+	{
+		const int index = spValue(p, cell) - p->valueBase;
+		if (!spSelectable(p, cell) || index <= previous || !spWholeBlock(p, index))
+			return "the page offers half an icon";
+		previous = index;
+
+		const int x = g.x0 + cell % g.cols * g.cellW;
+		const int y = SP_GRID_Y0 + SP_PAD + cell / g.cols * g.cellH;
+		const bool shown = y + g.cellH <= SP_GRID_Y0 + SP_GRID_H;
+		if (shown && (spCellAt(s, &g, x, y) != cell ||
+		              spCellAt(s, &g, x + g.cellW - 1, y + g.cellH - 1) != cell))
+			return "a tap inside an icon picks a different one";
+	}
+
+	s->cursor[s->page] = SP_BLOCK_COLS - 1;
+	const char *fault = spKeyFault(s, SDL_SCANCODE_RIGHT, "", spValue(p, SP_BLOCK_COLS));
+	if (fault == NULL)
+		fault = spKeyFault(s, SDL_SCANCODE_DOWN, "", spValue(p, 2 * SP_BLOCK_COLS));
+	if (fault == NULL)
+		fault = spKeyFault(s, SDL_SCANCODE_LEFT, "", spValue(p, 2 * SP_BLOCK_COLS - 1));
+	char typed[SP_TYPED_MAX + 1];
+	snprintf(typed, sizeof(typed), "%d", spValue(p, 1) - 1);
+	if (fault == NULL)
+		fault = spKeyFault(s, SDL_SCANCODE_RETURN, typed, -1);
+	snprintf(typed, sizeof(typed), "%d", spValue(p, 1));
+	if (fault == NULL)
+		fault = spKeyFault(s, SDL_SCANCODE_RETURN, typed, spValue(p, 1));
+	return fault;
+}
+
+bool spritePickerBlocksSelfTest(const SpritePickerPage *page, char *detail, size_t detailSize)
+{
+	SpState s;
+	memset(&s, 0, sizeof(s));
+	s.spec.pages = page;
+	s.spec.pageCount = 1;
+	s.originalPage = s.originalCell = -1;
+
+	const SDL_Scancode savedKey = lastkey_scan;
+	const char *const fault = spBlocksFault(&s);
+	lastkey_scan = savedKey;
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }

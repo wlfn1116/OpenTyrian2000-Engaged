@@ -13,6 +13,7 @@
 
 #include "SDL.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -339,6 +340,21 @@ void qa_test_weapon_editor(void)
 	         "the outpost editor previews a custom ship only while custom ships are listed");
 	qa_check(weaponEditorOutpostMusicSelfTest(),
 	         "the outpost weapon editor keeps the outpost's song; the Setup one shuffles songs");
+
+	char detail[96] = "";
+	char label[192];
+	const bool wholeIcons = weaponEditorIconPickerSelfTest(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "the Shop Icon picker offers and steps through whole icons only%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(wholeIcons, label);
+
+	detail[0] = '\0';
+	const bool tabs = weaponEditorTabNavSelfTest(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "the editor's tabs move as a grid and Enter opens the page%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(tabs, label);
 }
 
 /* Online Campaign designs must round-trip exactly and reject malformed streams. */

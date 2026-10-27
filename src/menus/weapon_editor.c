@@ -1770,6 +1770,14 @@ static SpritePickerPage cwSheetPage(const char *name, const Sprite2_array *sheet
 	return page;
 }
 
+static SpritePickerPage cwIconPage(void)
+{
+	const SpritePickerPage page = { .name = "Icons", .kind = SPRITE_PICKER_BLOCKS,
+	                                .sheet = &shopSpriteSheet, .first = 1,
+	                                .count = CUSTOM_ICON_MAX };
+	return page;
+}
+
 static void cwPickShipDraw(int value, int px, int py, int w, int h)
 {
 	Sprite2_array *sheet;
@@ -1810,7 +1818,7 @@ static void cwOpenPicker(int f)
 	}
 	case CWF_ICON:
 		spec.title = "Shop Icon";
-		pages[spec.pageCount++] = cwSheetPage("Icons", &shopSpriteSheet, true, CUSTOM_ICON_MAX, 0);
+		pages[spec.pageCount++] = cwIconPage();
 		value = customWeaponItemGraphic;
 		break;
 	case CWF_SK_SPRITE:
@@ -3170,11 +3178,17 @@ static const char *cwHintText(char *buf, size_t n)
 	}
 }
 
+static bool cwRememberRow(void)
+{
+	const bool content = cwSelRow > 0 && cwSelRow < cwNavCount - 1;
+	if (content)
+		cwPageRow[cwPage] = cwSelRow;
+	return content;
+}
+
 static void cwSwitchPage(int page, bool intoContent)
 {
-	const bool wasContent = cwSelRow > 0 && cwSelRow < cwNavCount - 1;
-	if (wasContent)
-		cwPageRow[cwPage] = cwSelRow;
+	const bool wasContent = cwRememberRow();
 	cwPage = (page + CWP_COUNT) % CWP_COUNT;
 	cwArmed = -1;
 	cwHistoryMerge = -1;
@@ -3207,6 +3221,14 @@ static void cwSelect(int row, int cell)
 
 static void cwMoveSelection(int dir)
 {
+	const int tab = cwPage + dir * CW_TAB_COLS;
+	if (cwNav[cwSelRow].kind == CWN_TABS && tab >= 0 && tab < CWP_COUNT)
+	{
+		cwSwitchPage(tab, false);
+		return;
+	}
+
+	cwRememberRow();
 	const int fromX = cwCellCenterX(&cwNav[cwSelRow], cwSelCell);
 	const int row = (cwSelRow + cwNavCount + dir) % cwNavCount;
 	int cell = 0;
@@ -3324,8 +3346,8 @@ static void cwActivate(bool *done, bool *equipped)
 	switch (n->kind)
 	{
 	case CWN_TABS:
-		cwSwitchPage(cwPage + 1, false);
-		JE_playSampleNum(S_CURSOR);
+		cwSwitchPage(cwPage, true);
+		JE_playSampleNum(cwNav[cwSelRow].kind == CWN_TABS ? S_SPRING : S_CURSOR);
 		break;
 	case CWN_FIELD:
 	{
@@ -3707,6 +3729,16 @@ static void cwHandleMouse(int *prev_mx, int *prev_my, bool *done, bool *equipped
 		cwHandleBoxPress();
 }
 
+static void cwLoadSheets(void)
+{
+	// The impact explosions need the explosion sprite sheet, which the game only loads lazily at
+	// level start; it can be NULL here (editor opened from Setup, or the between-levels shop).
+	if (explosionSpriteSheet.data == NULL)
+		JE_loadCompShapes(&explosionSpriteSheet, '6');
+	if (shopSpriteSheet.data == NULL)
+		JE_loadCompShapes(&shopSpriteSheet, '1');
+}
+
 bool JE_weaponEditor(bool fromOutpost)
 {
 	// The title-screen Setup menu can reach this before item data is loaded.
@@ -3715,12 +3747,7 @@ bool JE_weaponEditor(bool fromOutpost)
 	else if (customWeaponPort <= 0)
 		customWeaponInit();
 
-	// The impact explosions need the explosion sprite sheet, which the game only loads lazily at
-	// level start; it can be NULL here (editor opened from Setup, or the between-levels shop).
-	if (explosionSpriteSheet.data == NULL)
-		JE_loadCompShapes(&explosionSpriteSheet, '6');
-	if (shopSpriteSheet.data == NULL)
-		JE_loadCompShapes(&shopSpriteSheet, '1');
+	cwLoadSheets();
 
 	customWeaponSelectLevel(0);
 	customWeaponSelectMode(0);
@@ -3953,6 +3980,89 @@ bool weaponEditorSkinPreviewSelfTest(char *detail, size_t detailSize)
 		player[p].items.ship = savedShips[p];
 		shipSkinSet(p, savedSkins[p]);
 	}
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+bool weaponEditorIconPickerSelfTest(char *detail, size_t detailSize)
+{
+	cwLoadSheets();
+	const SpritePickerPage page = cwIconPage();
+	return spritePickerBlocksSelfTest(&page, detail, detailSize);
+}
+
+static bool cwTabStep(SDL_Scancode key, int wantPage, int wantRow)
+{
+	bool done = false, equipped = false;
+	lastkey_scan = key;
+	lastkey_mod = KMOD_NONE;
+	cwHandleKey(&done, &equipped);
+	return !done && !equipped && cwPage == wantPage && cwSelRow == wantRow;
+}
+
+static const char *cwTabNavFault(void)
+{
+	cwPage = CWP_WEAPON;
+	cwBuildNav();
+	cwSelRow = 0;
+	cwSelCell = cwPage;
+
+	if (!cwTabStep(SDL_SCANCODE_DOWN, CWP_IMPORT, 0) ||
+	    !cwTabStep(SDL_SCANCODE_UP, CWP_WEAPON, 0) ||
+	    !cwTabStep(SDL_SCANCODE_RIGHT, CWP_SHOTS, 0) ||
+	    !cwTabStep(SDL_SCANCODE_DOWN, CWP_SIDEKICK, 0))
+		return "Up and Down do not move between the two rows of tabs";
+	if (!cwTabStep(SDL_SCANCODE_DOWN, CWP_SIDEKICK, 1))
+		return "Down from a bottom tab does not open the page";
+
+	if (!cwTabStep(SDL_SCANCODE_DOWN, CWP_SIDEKICK, 2) ||
+	    !cwTabStep(SDL_SCANCODE_DOWN, CWP_SIDEKICK, 3) ||
+	    !cwTabStep(SDL_SCANCODE_TAB, CWP_RANGE, 1) ||
+	    !cwTabStep(SDL_SCANCODE_UP, CWP_RANGE, 0) ||
+	    !cwTabStep(SDL_SCANCODE_LEFT, CWP_SIDEKICK, 0))
+		return "the page keys no longer reach the tab row";
+	if (!cwTabStep(SDL_SCANCODE_RETURN, CWP_SIDEKICK, 3))
+		return "Enter on a tab does not open that page where the player left it";
+	if (!cwTabStep(SDL_SCANCODE_UP, CWP_SIDEKICK, 2) ||
+	    !cwTabStep(SDL_SCANCODE_UP, CWP_SIDEKICK, 1) ||
+	    !cwTabStep(SDL_SCANCODE_UP, CWP_SIDEKICK, 0) ||
+	    !cwTabStep(SDL_SCANCODE_RETURN, CWP_SIDEKICK, 1))
+		return "Enter on a tab skips the row the player just left";
+
+	if (!cwTabStep(SDL_SCANCODE_UP, CWP_SIDEKICK, 0) ||
+	    !cwTabStep(SDL_SCANCODE_RIGHT, CWP_RANGE, 0) ||
+	    !cwTabStep(SDL_SCANCODE_RIGHT, CWP_HELP, 0) ||
+	    !cwTabStep(SDL_SCANCODE_RETURN, CWP_HELP, 0))
+		return "Enter on a page without rows leaves the tab row";
+	if (!cwTabStep(SDL_SCANCODE_UP, CWP_LEVELS, 0) ||
+	    !cwTabStep(SDL_SCANCODE_UP, CWP_LEVELS, cwNavCount - 1))
+		return "Up from the top row of tabs no longer wraps to the buttons";
+	return NULL;
+}
+
+bool weaponEditorTabNavSelfTest(char *detail, size_t detailSize)
+{
+	const int savedPage = cwPage, savedRow = cwSelRow, savedCell = cwSelCell;
+	const int savedNum = cwNumField;
+	int savedRows[CWP_COUNT];
+	memcpy(savedRows, cwPageRow, sizeof(savedRows));
+	const SDL_Scancode savedKey = lastkey_scan;
+	const SDL_Keymod savedMod = lastkey_mod;
+
+	cwNumField = -1;
+	memset(cwPageRow, 0, sizeof(cwPageRow));
+	const char *const fault = cwTabNavFault();
+
+	lastkey_scan = savedKey;
+	lastkey_mod = savedMod;
+	memcpy(cwPageRow, savedRows, sizeof(savedRows));
+	cwNumField = savedNum;
+	cwPage = savedPage;
+	cwSelRow = savedRow;
+	cwSelCell = savedCell;
+	cwBuildNav();
 
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);
