@@ -202,8 +202,7 @@ void JE_playCredits(void)
 	fade_palette(colors, 2, 0, 255);
 
 	// A press surviving the fades would end the roll on its first JE_anyButton.
-	wait_noinput(true, true, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(true, true, true);
 
 	const int ticks_max = lines * 20 * 3;
 

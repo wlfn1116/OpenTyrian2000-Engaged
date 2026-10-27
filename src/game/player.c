@@ -38,6 +38,13 @@ Player player[2];
 JE_word shipGr, shipGr2;
 Sprite2_array *shipGrPtr, *shipGr2ptr;
 
+// Sentinel graphics, not items.ship, identify Linked Arcade's second hull.
+JE_word player_seat_hull(uint seat, Sprite2_array **sheet)
+{
+	*sheet = (seat == 1) ? shipGr2ptr : shipGrPtr;
+	return (seat == 1) ? shipGr2 : shipGr;
+}
+
 uint gameplay_local_player_index(void)
 {
 	// Every dual-ship session gives each machine a ship of its own to read: both co-op modes and

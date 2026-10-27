@@ -262,4 +262,6 @@ void JE_playerScoreLabel(JE_byte pnum, char *out, size_t outSize);
 extern JE_word shipGr, shipGr2;
 extern Sprite2_array *shipGrPtr, *shipGr2ptr;
 
+JE_word player_seat_hull(uint seat, Sprite2_array **sheet);
+
 #endif // PLAYER_H

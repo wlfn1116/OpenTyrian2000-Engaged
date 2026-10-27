@@ -621,8 +621,7 @@ void JE_highScoreScreen(void)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer and arrow sprites
 
 	// The press that opened the boards would page straight through them.
-	wait_noinput(true, true, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(true, true, true);
 
 	bool restart = true;
 
@@ -1110,8 +1109,7 @@ void JE_highScoreCheck(void)
 				fade_palette(colors, 15, 0, 255);
 
 				// A surviving press would zero frameCountMax in the glow and skip the wait.
-				wait_noinput(true, true, true);
-				newkey = newmouse = false;
+				wait_noinput_consume(true, true, true);
 
 				sprintf(buffer, "~#%d:~  %lld", slot+1, (long long)t2kHighScores[table][slot].score);
 

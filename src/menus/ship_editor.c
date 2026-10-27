@@ -1901,10 +1901,15 @@ void shipEditorEndMusicFade(void)
 	set_volume(tyrMusicVolume, fxVolume);
 }
 
+static void seTestPaintAlpha(SDL_Surface *s, int x, int y, int w, int h, SDL_Color c, Uint8 alpha)
+{
+	const Uint32 pixel = SDL_MapRGBA(s->format, c.r, c.g, c.b, alpha);
+	SDL_FillRect(s, &(SDL_Rect){ x, y, w, h }, pixel);
+}
+
 static void seTestPaint(SDL_Surface *s, int x, int y, int w, int h, SDL_Color c)
 {
-	const Uint32 pixel = SDL_MapRGBA(s->format, c.r, c.g, c.b, SDL_ALPHA_OPAQUE);
-	SDL_FillRect(s, &(SDL_Rect){ x, y, w, h }, pixel);
+	seTestPaintAlpha(s, x, y, w, h, c, SDL_ALPHA_OPAQUE);
 }
 
 static bool seTestDecodes(const Uint8 *png, size_t size, const SeStrip *want)
@@ -1999,8 +2004,11 @@ bool JE_shipStripImageSelfTest(void)
 		SDL_FillRect(argb, NULL, SDL_MapRGBA(argb->format, 255, 255, 255, SDL_ALPHA_TRANSPARENT));
 		seTestPaint(argb, 1, 0, 1, 1, palettes[0][ABOVE]);
 		seTestPaint(argb, 2, 0, 1, 1, palettes[0][0]);
+		seTestPaintAlpha(argb, 3, 0, 1, 1, palettes[0][ABOVE], SDL_ALPHA_OPAQUE / 2 - 1);
+		seTestPaintAlpha(argb, 4, 0, 1, 1, palettes[0][ABOVE], SDL_ALPHA_OPAQUE / 2);
 		ok = seStripFromSurface(argb, NULL, &back) &&
-		     back.px[0][0] == 0 && back.px[0][1] == ABOVE && back.px[0][2] == 0;
+		     back.px[0][0] == 0 && back.px[0][1] == ABOVE && back.px[0][2] == 0 &&
+		     back.px[0][3] == 0 && back.px[0][4] == ABOVE;
 		SDL_FreeSurface(argb);
 	}
 
@@ -2158,8 +2166,7 @@ static void seSpriteEditor(int bank)
 	Uint32 starLast = SDL_GetTicks();
 	bool done = false;
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(false, false, true);
 	mouseShiftKeepsCursor = true;
 	mouseTwoFingerRightClick = true;
 
@@ -2902,8 +2909,7 @@ static void seSpriteEditor(int bank)
 	// Loadout previews read the compiled blob.
 	seRebuildShapes();
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(false, false, true);
 }
 
 void JE_shipEditor(void)
@@ -2970,8 +2976,7 @@ void JE_shipEditor(void)
 	bool forceSave = false;
 	bool done = false;
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(false, false, true);
 	mouseTwoFingerRightClick = true;
 
 	while (!done)

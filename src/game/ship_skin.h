@@ -33,8 +33,12 @@ void shipSkinSet(uint seat, JE_byte graphic);
 
 bool shipSkinOffered(uint seat, int graphic);
 JE_byte shipSkinEffective(uint seat);
+bool shipSkinFitsHull(JE_word gr);
 bool shipSkinWearable(uint seat);
-int shipSkinOrder(uint seat, int *order, int capacity);
+JE_byte shipSkinWorn(uint seat, const Sprite2_array *sheet, JE_word gr);
+int shipSkinOrder(uint seat, const Sprite2_array *sheet, JE_word gr, int *order, int capacity);
+bool shipSkinHasChoices(uint seat, const Sprite2_array *sheet, JE_word gr);
+void shipSkinCycle(uint seat, const Sprite2_array *sheet, JE_word gr, int dir);
 const char *shipSkinName(int graphic, char *buf, size_t bufSize);
 
 JE_byte shipSkinApply(uint seat, Sprite2_array **sheet, JE_word *gr);

@@ -431,8 +431,7 @@ static bool try_load_newsh(char c, Sprite2_array *out)
 /* Debug sprite browser with palette switching and neighbouring frames. */
 void JE_spriteViewer(int off_x, int off_y)
 {
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;  // don't let the click/key that opened us leak in
+	wait_noinput_consume(false, false, true);  // don't let the click/key that opened us leak in
 
 	/* Build the source list from whatever graphics are currently loaded. It only
 	 * borrows source pointers, so reusable storage keeps this debug UI's stack small. */

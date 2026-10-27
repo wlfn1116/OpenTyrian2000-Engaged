@@ -734,22 +734,7 @@ static int network_recv_one(void)
 						break;
 
 					case PACKET_PLAYER_LOOK:
-						// Repeated keep-alive announcements repair packet loss.
-						if (packet_temp->len >= 10 && packet_temp->data[4] >= 1 && packet_temp->data[4] <= 2
-						    && packet_temp->data[4] != (Uint8)thisPlayerNum)
-						{
-							const uint seat = packet_temp->data[4] - 1u;
-							netStyleSetSeatColor(seat, packet_temp->data[5]);
-							shipSkinSet(seat, packet_temp->data[9]);
-
-							// Cache the sender's view for future saves; it does not affect this machine.
-							NetShipView view;
-							view.opacity = packet_temp->data[6];
-							view.shipOpacity = packet_temp->data[7] != 0;
-							view.hpBars = packet_temp->data[8];
-							netStyleSetView(seat, view);
-						}
-
+						network_player_look_adopt(packet_temp->data, packet_temp->len);
 						last_in_tick = SDL_GetTicks();
 						break;
 
@@ -1728,8 +1713,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 		if (err)
 		{
-			wait_noinput(true, true, true);
-			newkey = newmouse = false;
+			wait_noinput_consume(true, true, true);
 
 			// Re-present each frame so the cursor and touch layout stay live.
 			while (!JE_anyButton())
@@ -2592,21 +2576,43 @@ void network_sa_ship_reset(void)
 	net_sa_ship_peer_saw_us = false;
 }
 
+int network_player_look_pack(Uint8 *buf)
+{
+	const NetShipView view = netStyleLocalView();
+	buf[4] = (Uint8)thisPlayerNum;
+	buf[5] = (Uint8)netStyleSeatColor(netStyleLocalSeat());
+	buf[6] = view.opacity;
+	buf[7] = view.shipOpacity ? 1 : 0;
+	buf[8] = view.hpBars;
+	buf[9] = shipSkinGet(netStyleLocalSeat());
+	return 10;
+}
+
+void network_player_look_adopt(const Uint8 *buf, int len)
+{
+	// Repeated keep-alive announcements repair packet loss.
+	if (len < 10 || buf[4] < 1 || buf[4] > 2 || buf[4] == (Uint8)thisPlayerNum)
+		return;
+
+	const uint seat = buf[4] - 1u;
+	netStyleSetSeatColor(seat, buf[5]);
+	shipSkinSet(seat, buf[9]);
+
+	// Cache the sender's view for future saves; it does not affect this machine.
+	NetShipView view;
+	view.opacity = buf[6];
+	view.shipOpacity = buf[7] != 0;
+	view.hpBars = buf[8];
+	netStyleSetView(seat, view);
+}
+
 void network_player_look_publish(void)
 {
 	if (!isNetworkGame || !connected)
 		return;
 
-	const NetShipView view = netStyleLocalView();
-
 	network_prepare(PACKET_PLAYER_LOOK);
-	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
-	packet_out_temp->data[5] = (Uint8)netStyleSeatColor(netStyleLocalSeat());
-	packet_out_temp->data[6] = view.opacity;
-	packet_out_temp->data[7] = view.shipOpacity ? 1 : 0;
-	packet_out_temp->data[8] = view.hpBars;
-	packet_out_temp->data[9] = shipSkinGet(netStyleLocalSeat());
-	network_send_no_ack(10);
+	network_send_no_ack(network_player_look_pack(packet_out_temp->data));
 }
 
 void network_sa_ship_publish(int ship, bool seen_peer)

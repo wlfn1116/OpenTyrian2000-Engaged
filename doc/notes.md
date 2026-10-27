@@ -1098,9 +1098,13 @@ and refuses headers over 16384 pixels a side or 4M pixels before allocating.
   seat's ship file and some artwork, so a cleared bank draws the real hull.
 - Store the received byte raw and validate it at use, because item data can load
   after a save or packet arrives. `JE_initPlayerData` resets both seats.
+- In the shop's ship list, Enter and Left/Right on the owned ship's row cycle
+  its skin in place (`shop_skin_row_step`). Enter on any other row still buys
+  and jumps to Done.
 
 Slots write `p1_ship_skin` and `p2_ship_skin` only when nonzero. The packed save
-record and `PACKET_PLAYER_LOOK` carry both seats' bytes.
+record carries both seats' bytes; each `PACKET_PLAYER_LOOK` carries only the
+sender's.
 
 ### Custom weapons
 

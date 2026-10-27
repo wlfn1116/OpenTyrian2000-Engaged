@@ -11,12 +11,14 @@
 #include "endless.h"
 #include "endless_internal.h"
 #include "game_loop.h"
+#include "game_menu.h"
 #include "game_state.h"
 #include "level_end.h"
 #include "network.h"
 #include "player.h"
 #include "save_menu.h"
 #include "savegame.h"
+#include "ship_skin.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -2780,6 +2782,27 @@ static void qa_custom_mark_matrix(void)
 	player[1].items.ship = 1;
 	endlessCustomWeaponZoneEnd();
 	qa_check(!endlessRunUsedCustom, "picking a hull outside a zone leaves the record alone");
+
+	const JE_byte savedSkins[COUNTOF(player)] = { shipSkinGet(0), shipSkinGet(1) };
+	endlessRunUsedCustom = false;
+	endlessResetCustomWeaponZone();
+	Sprite2_array *hullSheet;
+	const JE_word hull = shop_ship_hull(1, &hullSheet);
+	int worn = 0;
+	for (uint seat = 0; seat < COUNTOF(player); ++seat)
+		for (int step = 0; step < SHIP_SKIN_ORDER_MAX; ++step)
+		{
+			shipSkinCycle(seat, hullSheet, hull, 1);
+			Sprite2_array *look = hullSheet;
+			JE_word lookGr = hull;
+			worn += (shipSkinApply(seat, &look, &lookGr) != SHIP_SKIN_NONE) ? 1 : 0;
+		}
+	endlessCustomWeaponZoneEnd();
+	qa_check(worn > 0 && !endlessRunUsedCustom && player[0].items.ship == 1 &&
+	         player[1].items.ship == 1,
+	         "wearing and cycling skins mid-zone leaves the record unmarked");
+	shipSkinSet(0, savedSkins[0]);
+	shipSkinSet(1, savedSkins[1]);
 
 	player[0].items.ship = savedShips[0];
 	player[1].items.ship = savedShips[1];

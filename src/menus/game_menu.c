@@ -405,6 +405,75 @@ static Uint8 *playeritem_map(PlayerItems *items, uint i)
 	return map[i];
 }
 
+static JE_byte upgrade_sub_row_item(int row)
+{
+	return itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][row - 2];
+}
+
+static Sint64 upgrade_sub_row_cost(int row)
+{
+	return JE_getCost(curSel[MENU_UPGRADES], upgrade_sub_row_item(row));
+}
+
+enum { SHOP_CUSTOM_BIG_SHIP = 32 };  // shipedit ships get a default
+
+static int shop_big_ship_graphic(JE_word ship)
+{
+	return (ship < COUNTOF(ships)) ? ships[ship].bigshipgraphic : SHOP_CUSTOM_BIG_SHIP;
+}
+
+static JE_byte shop_owned_skin(JE_word ship, Sprite2_array **sheet, JE_word *gr)
+{
+	*gr = shop_ship_hull(ship, sheet);
+	return (ship == old_items[shopPlayerIndex].ship) ? shipSkinApply(shop_draw_seat(), sheet, gr)
+	                                                  : SHIP_SKIN_NONE;
+}
+
+static int shop_illustration_graphic(void)
+{
+	const JE_word ship = shopPlayer()->items.ship;
+	Sprite2_array *sheet;
+	JE_word gr;
+	const JE_byte skin = shop_owned_skin(ship, &sheet, &gr);
+	if (skin == SHIP_SKIN_NONE)
+		return shop_big_ship_graphic(ship);
+
+	const int owner = extraShipGraphicOwner(skin);
+	return (owner != 0) ? shop_big_ship_graphic((JE_word)owner) : SHOP_CUSTOM_BIG_SHIP;
+}
+
+static bool shop_skin_row_hull(Sprite2_array **sheet, JE_word *gr)
+{
+	if (curMenu != MENU_UPGRADE_SUB || curSel[MENU_UPGRADES] != 2 ||
+	    curSel[MENU_UPGRADE_SUB] >= menuChoices[MENU_UPGRADE_SUB])
+		return false;
+
+	const JE_word ship = upgrade_sub_row_item(curSel[MENU_UPGRADE_SUB]);
+	if (ship != old_items[shopPlayerIndex].ship)
+		return false;
+
+	*gr = shop_ship_hull(ship, sheet);
+	return shipSkinHasChoices(shop_draw_seat(), *sheet, *gr);
+}
+
+static bool shop_skin_row_cycles(void)
+{
+	Sprite2_array *sheet;
+	JE_word gr;
+	return shop_skin_row_hull(&sheet, &gr);
+}
+
+static bool shop_skin_row_step(int dir)
+{
+	Sprite2_array *sheet;
+	JE_word gr;
+	if (!shop_skin_row_hull(&sheet, &gr))
+		return false;
+
+	shipSkinCycle(shop_draw_seat(), sheet, gr, dir);
+	return true;
+}
+
 static void stock_owned_items(PlayerItems *owned)
 {
 	for (int i = 0; i < 7; i++)
@@ -1074,6 +1143,13 @@ static void configure_arcade_debug_menus(void)
 	configure_mode_debug_menu(MENU_SUPER_TYRIAN,    MENU_SUPER_TYRIAN + 1,    5, quitST, &savedST);
 }
 
+enum { UPGRADE_CUSTOM_ROW = 9 };
+
+static bool upgrade_row_is_custom(int menu, int row)
+{
+	return customWeaponEnabled && menu == MENU_UPGRADES && row == UPGRADE_CUSTOM_ROW;
+}
+
 /* Toggle the Custom row and move Done between items 9 and 10. */
 static void configure_custom_weapon_menu(void)
 {
@@ -1083,20 +1159,20 @@ static void configure_custom_weapon_menu(void)
 
 	if (!savedDoneValid)
 	{
-		SDL_strlcpy(savedDone, menuInt[2][8], entrySize);  // stock "Done" (item 9)
+		SDL_strlcpy(savedDone, menuInt[2][UPGRADE_CUSTOM_ROW - 1], entrySize);  // stock "Done"
 		savedDoneValid = true;
 	}
 
 	if (customWeaponEnabled)
 	{
-		menuChoices[MENU_UPGRADES] = 10;
-		SDL_strlcpy(menuInt[2][8], "Custom", entrySize);   // item 9
-		SDL_strlcpy(menuInt[2][9], savedDone, entrySize);  // item 10 = Done
+		menuChoices[MENU_UPGRADES] = UPGRADE_CUSTOM_ROW + 1;
+		SDL_strlcpy(menuInt[2][UPGRADE_CUSTOM_ROW - 1], "Custom", entrySize);
+		SDL_strlcpy(menuInt[2][UPGRADE_CUSTOM_ROW], savedDone, entrySize);  // item 10 = Done
 	}
 	else
 	{
-		menuChoices[MENU_UPGRADES] = 9;
-		SDL_strlcpy(menuInt[2][8], savedDone, entrySize);  // restore Done at item 9
+		menuChoices[MENU_UPGRADES] = UPGRADE_CUSTOM_ROW;
+		SDL_strlcpy(menuInt[2][UPGRADE_CUSTOM_ROW - 1], savedDone, entrySize);  // restore Done
 	}
 }
 
@@ -2664,7 +2740,7 @@ void JE_itemScreen(void)
 		{
 			/* Move cursor until we hit either "Done" or a weapon the player can afford */
 			while (curSel[MENU_UPGRADE_SUB] < menuChoices[MENU_UPGRADE_SUB] &&
-				JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][curSel[MENU_UPGRADE_SUB] - 2]) > shopPlayer()->cash)
+				upgrade_sub_row_cost(curSel[MENU_UPGRADE_SUB]) > shopPlayer()->cash)
 			{
 				curSel[MENU_UPGRADE_SUB] += lastDirection;
 				if (curSel[MENU_UPGRADE_SUB] < 2)
@@ -2681,13 +2757,15 @@ void JE_itemScreen(void)
 			else
 			{
 				/* Otherwise display the selected weapon */
-				*playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2) = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2];
+				*playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2) =
+				    upgrade_sub_row_item(curSel[MENU_UPGRADE_SUB]);
 			}
 
 			/* Get power level info for front and rear weapons */
 			if ((curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4) && curSel[MENU_UPGRADE_SUB] < menuChoices[MENU_UPGRADE_SUB])
 			{
-				if (curSel[MENU_UPGRADES] == 4 && itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2] == 0)
+				if (curSel[MENU_UPGRADES] == 4 &&
+				    upgrade_sub_row_item(curSel[MENU_UPGRADE_SUB]) == 0)
 				{
 					// "None" on rear weapon menu cannot be upgraded
 					// ("None" on front weapon menu can; this is accurate to the original game)
@@ -2700,7 +2778,7 @@ void JE_itemScreen(void)
 					           item_level = shopPlayer()->items.weapon[port].power;
 
 					// calculate upgradeCost
-					JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2]);
+					upgrade_sub_row_cost(curSel[MENU_UPGRADE_SUB]);
 
 					leftPower  = item_level > 1;  // can downgrade
 					rightPower = item_level < 11; // can upgrade
@@ -2757,7 +2835,7 @@ void JE_itemScreen(void)
 				if (tempW < menuChoices[MENU_UPGRADE_SUB] - 1)
 				{
 					/* Get base cost for choice */
-					temp_cost = JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][tempW-1]);
+					temp_cost = upgrade_sub_row_cost(tempW + 1);
 				}
 				else
 				{
@@ -2767,7 +2845,7 @@ void JE_itemScreen(void)
 
 				int afford_shade = (temp_cost > shopPlayer()->cash) ? 4 : 0;  // can player afford current weapon at all
 
-				temp = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][tempW-1]; /* Item ID */
+				temp = upgrade_sub_row_item(tempW + 1); /* Item ID */
 				switch (curSel[MENU_UPGRADES]-1)
 				{
 					case 1: /* ship */
@@ -2825,10 +2903,7 @@ void JE_itemScreen(void)
 				JE_word skin_gr = 0;
 				JE_byte skin = SHIP_SKIN_NONE;
 				if (owned && curSel[MENU_UPGRADES]-1 == 1)
-				{
-					skin_gr = shop_ship_hull(temp, &skin_sheet);
-					skin = shipSkinApply(shop_draw_seat(), &skin_sheet, &skin_gr);
-				}
+					skin = shop_owned_skin(temp, &skin_sheet, &skin_gr);
 				if (skin != SHIP_SKIN_NONE)
 					shop_skin_row_name(temp, marker_x - SHOP_ROW_TAG_MARKER_GAP - cols.nameX,
 					                   tempStr, sizeof(tempStr));
@@ -3156,7 +3231,7 @@ void JE_itemScreen(void)
 			/* Animate the active menu and handle events that do not need the outer input path. */
 
 				// Refresh conditional buttons before each outpost frame is presented.
-				if (outpostListScrolls())
+				if (outpostListScrolls() || shop_skin_row_cycles())
 					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 				else
 					touch_ui_clear_layout();
@@ -3734,7 +3809,7 @@ void JE_itemScreen(void)
 						else
 						{
 							if (curMenu == MENU_UPGRADE_SUB &&
-								JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][selection - 2]) > shopPlayer()->cash)
+								upgrade_sub_row_cost(selection) > shopPlayer()->cash)
 							{
 								JE_playSampleNum(S_CLINK);
 							}
@@ -4092,6 +4167,9 @@ void JE_itemScreen(void)
 				case 4:
 					switch (curSel[MENU_UPGRADES])
 					{
+					case 2:
+						shop_skin_row_step(-1);
+						break;
 					case 3:
 					case 4:
 						if (leftPower)
@@ -4197,6 +4275,9 @@ void JE_itemScreen(void)
 				case 4:
 					switch (curSel[MENU_UPGRADES])
 					{
+					case 2:
+						shop_skin_row_step(1);
+						break;
 					case 3:
 					case 4:
 						if (rightPower && rightPowerAfford)
@@ -4240,9 +4321,7 @@ void draw_ship_illustration(void)
 	{
 		assert(shopPlayer()->items.ship > 0);
 
-		const int sprite_id = (shopPlayer()->items.ship < COUNTOF(ships))  // shipedit ships get a default
-		                      ? ships[shopPlayer()->items.ship].bigshipgraphic - 1
-		                      : 31;
+		const int sprite_id = shop_illustration_graphic() - 1;
 
 		const int ship_x[] = { 31, 0, 0, 0, 35, 31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 30 },
 		          ship_y[] = { 36, 0, 0, 0, 33, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 33, 30 };
@@ -4497,13 +4576,6 @@ static void blit_preview_ship2(SDL_Surface *surface, int x, int y, Sprite2_array
 	blit_sprite2_alpha(surface, x, y, sheet, index, style.bank, style.opacity);
 }
 
-// Sentinel graphics, not items.ship, identify Linked Arcade's second hull.
-static JE_word shop_seat_hull(uint seat, Sprite2_array **sheet)
-{
-	*sheet = (seat == 1) ? shipGr2ptr : shipGrPtr;
-	return (seat == 1) ? shipGr2 : shipGr;
-}
-
 // Graphics 0 and 1 are the wide Dragonwing and Nort Ship sentinels.
 void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py)
 {
@@ -4526,7 +4598,7 @@ void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py)
 static void draw_preview_hull(uint seat, int x, int y)
 {
 	Sprite2_array *sheet = NULL;
-	JE_word gr = shop_seat_hull(seat, &sheet);
+	JE_word gr = player_seat_hull(seat, &sheet);
 	if (sheet != NULL)
 	{
 		shipSkinApply(seat, &sheet, &gr);
@@ -4582,6 +4654,130 @@ bool game_menu_test_skin_row_name(void)
 		}
 	}
 	return ok;
+}
+
+static const char *shop_skin_cycle_fault(void)
+{
+	const uint seat = shop_draw_seat();
+	JE_byte *const shipRows = itemAvail[itemAvailMap[0] - 1];
+	curSel[MENU_UPGRADES] = 2;
+	menuChoices[MENU_UPGRADE_SUB] = 4;
+	shipRows[0] = 1;
+	shipRows[1] = 2;
+	old_items[shopPlayerIndex].ship = 1;
+	shopPlayer()->items.ship = 1;
+	shipSkinSet(seat, SHIP_SKIN_NONE);
+
+	curSel[MENU_UPGRADE_SUB] = 2;
+	if (!shop_skin_row_cycles())
+		return "the owned ship's row offers no skins";
+	JE_menuFunction(2);
+	const JE_byte first = shipSkinGet(seat);
+	if (first == SHIP_SKIN_NONE || curSel[MENU_UPGRADE_SUB] != 2)
+		return "Enter on the owned ship's row does not change its skin in place";
+	if (!shop_skin_row_step(-1) || shipSkinGet(seat) != SHIP_SKIN_NONE ||
+	    !shop_skin_row_step(1) || shipSkinGet(seat) != first)
+		return "Left and Right on the owned ship's row do not step through the skins";
+
+	Sprite2_array *sheet;
+	JE_word gr;
+	bool restyled = false;
+	for (int n = 0; n < SHIP_SKIN_ORDER_MAX && shipSkinGet(seat) != SHIP_SKIN_NONE; ++n)
+	{
+		if (shop_owned_skin(1, &sheet, &gr) != shipSkinGet(seat))
+			return "the owned ship's cycle stops on a skin that looks like the ship itself";
+		const int owner = extraShipGraphicOwner(shipSkinGet(seat));
+		const int want = (owner != 0) ? ships[owner].bigshipgraphic : SHOP_CUSTOM_BIG_SHIP;
+		if (shop_illustration_graphic() != want)
+			return "the big ship illustration does not follow the skin";
+		restyled = restyled || want != ships[1].bigshipgraphic;
+		shop_skin_row_step(1);
+	}
+	if (!restyled)
+		return "no skin changes the big ship illustration";
+
+	const int firstOwner = extraShipGraphicOwner(first);
+	old_items[shopPlayerIndex].ship = (Uint8)firstOwner;
+	shopPlayer()->items.ship = (Uint8)firstOwner;
+	shipSkinSet(seat, first);
+	if (firstOwner <= 1 || shop_owned_skin((JE_word)firstOwner, &sheet, &gr) != SHIP_SKIN_NONE ||
+	    shop_illustration_graphic() != shop_big_ship_graphic((JE_word)firstOwner))
+		return "a skin that looks like the owned ship still marks it as skinned";
+	old_items[shopPlayerIndex].ship = 1;
+
+	shipSkinSet(seat, first);
+	shopPlayer()->items.ship = 2;
+	if (shop_illustration_graphic() != ships[2].bigshipgraphic)
+		return "a ship still on offer is illustrated in the owned ship's skin";
+
+	curSel[MENU_UPGRADE_SUB] = 3;
+	if (shop_skin_row_cycles())
+		return "a ship still on offer cycles skins";
+	JE_menuFunction(3);
+	if (curSel[MENU_UPGRADE_SUB] != 4 || shipSkinGet(seat) != first)
+		return "buying another ship does not go to Done, or changes the skin";
+	shipRows[2] = (JE_byte)old_items[shopPlayerIndex].ship;
+	if (shop_skin_row_cycles())
+		return "the Done row cycles skins";
+
+	shipRows[0] = SHIP_DRAGONWING;
+	old_items[shopPlayerIndex].ship = SHIP_DRAGONWING;
+	curSel[MENU_UPGRADE_SUB] = 2;
+	if (shop_skin_row_cycles())
+		return "a two-piece hull cycles skins";
+	return NULL;
+}
+
+bool game_menu_test_skin_cycling(char *detail, size_t detailSize)
+{
+	const JE_integer savedMenu = curMenu;
+	const uint savedShopper = shopPlayerIndex;
+	const JE_byte savedCategory = curSel[MENU_UPGRADES], savedRow = curSel[MENU_UPGRADE_SUB];
+	const JE_byte savedChoices = menuChoices[MENU_UPGRADE_SUB];
+	const JE_boolean savedNet = isNetworkGame, savedTwo = twoPlayerMode;
+	const bool savedCoop = coopCampaignMode;
+	JE_byte savedRows[COUNTOF(itemAvail[0])];
+	memcpy(savedRows, itemAvail[itemAvailMap[0] - 1], sizeof(savedRows));
+	PlayerItems savedOld[2], savedItems[2];
+	memcpy(savedOld, old_items, sizeof(savedOld));
+	const JE_byte savedSkins[2] = { shipSkinGet(0), shipSkinGet(1) };
+	for (uint p = 0; p < 2; ++p)
+		savedItems[p] = player[p].items;
+
+	curMenu = MENU_UPGRADE_SUB;
+	shopPlayerIndex = 0;
+	const char *fault = shop_skin_cycle_fault();
+	if (fault == NULL)
+	{
+		isNetworkGame = true;
+		twoPlayerMode = true;
+		coopCampaignMode = true;
+		shopPlayerIndex = 1;
+		shipSkinSet(0, savedSkins[0]);
+		fault = shop_skin_cycle_fault();
+		if (fault == NULL && shipSkinGet(0) != savedSkins[0])
+			fault = "online, cycling the second seat's skin changes the first seat's";
+	}
+
+	curMenu = savedMenu;
+	shopPlayerIndex = savedShopper;
+	curSel[MENU_UPGRADES] = savedCategory;
+	curSel[MENU_UPGRADE_SUB] = savedRow;
+	menuChoices[MENU_UPGRADE_SUB] = savedChoices;
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCoop;
+	memcpy(itemAvail[itemAvailMap[0] - 1], savedRows, sizeof(savedRows));
+	memcpy(old_items, savedOld, sizeof(savedOld));
+	for (uint p = 0; p < 2; ++p)
+	{
+		player[p].items = savedItems[p];
+		shipSkinSet(p, savedSkins[p]);
+	}
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }
 
 JE_word shop_ship_hull(JE_word ship, Sprite2_array **sheet)
@@ -5326,12 +5522,12 @@ JE_integer JE_partWay(JE_integer start, JE_integer finish, JE_byte dots, JE_byte
 	return (finish - start) / (dots + 2) * (dist + 1) + start;
 }
 
-void JE_doShipSpecs(void)
+static void ship_specs_present(void)
 {
 	/* Build the Ship Specs image in existing scratch surfaces, then scale it onscreen. */
 
 	// Create the source image.
-	wait_noinput(true, true, true);
+	wait_noinput_consume(true, true, true);
 	JE_drawShipSpecs(game_screen, VGAScreen2);
 
 	// Restore the scratch surface.
@@ -5340,7 +5536,47 @@ void JE_doShipSpecs(void)
 	// Present the scaled image.
 	JE_playSampleNum(S_SPRING);
 	JE_scaleInPicture(VGAScreen, game_screen);
+}
+
+void JE_doShipSpecs(void)
+{
+	ship_specs_present();
 	wait_input(true, true, true);
+}
+
+static bool screens_match(const SDL_Surface *a, const SDL_Surface *b)
+{
+	for (int y = 0; y < a->h; ++y)
+		if (memcmp((const Uint8 *)a->pixels + (size_t)y * a->pitch,
+		           (const Uint8 *)b->pixels + (size_t)y * b->pitch, (size_t)a->w) != 0)
+			return false;
+	return true;
+}
+
+bool game_menu_test_ship_specs(void)
+{
+	const bool savedSmooth = smoothMotion;
+	Palette savedColors;
+	memcpy(savedColors, colors, sizeof(savedColors));
+
+	smoothMotion = false;
+	JE_clr256(VGAScreen);
+	newkey = newmouse = true;
+	ship_specs_present();
+
+	bool inked = false;
+	for (int y = 0; y < game_screen->h && !inked; ++y)
+	{
+		const Uint8 *const row =
+		    (const Uint8 *)game_screen->pixels + (size_t)y * game_screen->pitch;
+		for (int x = 0; x < game_screen->w && !inked; ++x)
+			inked = row[x] != 0;
+	}
+	const bool shown = inked && screens_match(VGAScreen, game_screen);
+
+	memcpy(colors, savedColors, sizeof(colors));
+	smoothMotion = savedSmooth;
+	return shown;
 }
 
 // E-Shop cost highlight under shop palette 1.
@@ -5657,10 +5893,11 @@ void JE_drawMainMenuHelpText(void)
 				SDL_strlcpy(ownedStr, endlessPerkChoiceOwnedText(curSel[MENU_PERKS] - 2), sizeof(ownedStr));
 			}
 		}
-		else if (customWeaponEnabled && curMenu == MENU_UPGRADES && curSel[curMenu] >= 9)
+		else if (customWeaponEnabled && curMenu == MENU_UPGRADES &&
+		         curSel[curMenu] >= UPGRADE_CUSTOM_ROW)
 		{
 			// Supply help for the inserted Custom row and shifted Done row.
-			if (curSel[curMenu] == 9)
+			if (upgrade_row_is_custom(curMenu, curSel[curMenu]))
 				SDL_strlcpy(tempStr, "Create and equip a custom weapon.", sizeof(tempStr));
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Done
@@ -6310,7 +6547,7 @@ void JE_menuFunction(JE_byte select)
 		{
 			curMenu = MENU_FULL_GAME;
 		}
-		else if (customWeaponEnabled && select == 9) // Custom: open the editor, equip from there
+		else if (upgrade_row_is_custom(curMenu, select)) // open the editor, equip from there
 		{
 			const bool equipped = JE_weaponEditor(true);
 			if (equipped)
@@ -6472,6 +6709,9 @@ void JE_menuFunction(JE_byte select)
 		break;
 
 	case MENU_UPGRADE_SUB:
+		if (shop_skin_row_step(1))
+			break;
+
 		if (curSel[MENU_UPGRADE_SUB] < menuChoices[MENU_UPGRADE_SUB])
 		{
 			// select done
@@ -6882,28 +7122,24 @@ void JE_drawShipSpecs(SDL_Surface * screen, SDL_Surface * temp_screen)
 	JE_rectangle(screen, 0, 0, 319, 199, 37);
 	JE_rectangle(screen, 1, 1, 318, 198, 35);
 
+	const JE_word ship = (shopPlayer()->items.ship > 0) ? shopPlayer()->items.ship
+	                                                   : old_items[shopPlayerIndex].ship;
+	char name[sizeof(ships[0].name)];
+
 	verticalHeight = 9;
-	JE_outText(screen, 10, 2, ships[shopPlayer()->items.ship].name, 12, 3);
-	JE_helpBox(screen, 100, 20, shipInfo[shopPlayer()->items.ship-1][0], 40);
-	JE_helpBox(screen, 100, 100, shipInfo[shopPlayer()->items.ship-1][1], 40);
+	JE_outText(screen, 10, 2, shop_ship_name(ship, name, sizeof(name)), 12, 3);
+	if (ship >= 1 && ship <= HELPTEXT_SHIPINFO_COUNT)
+	{
+		JE_helpBox(screen, 100, 20, shipInfo[ship - 1][0], 40);
+		JE_helpBox(screen, 100, 100, shipInfo[ship - 1][1], 40);
+	}
 	verticalHeight = 7;
 
 	JE_outText(screen, JE_fontCenter(miscText[4], TINY_FONT), 190, miscText[4], 12, 2);
 
 	//now draw the green ship over that.
 	//This hardcoded stuff is for positioning our little ship graphic
-	if (shopPlayer()->items.ship > 90)
-	{
-		temp_index = 32;
-	}
-	else if (shopPlayer()->items.ship > 0)
-	{
-		temp_index = ships[shopPlayer()->items.ship].bigshipgraphic;
-	}
-	else
-	{
-		temp_index = ships[old_items[shopPlayerIndex].ship].bigshipgraphic;
-	}
+	temp_index = shop_big_ship_graphic(ship);
 
 	switch (temp_index)
 	{

@@ -130,8 +130,7 @@ static void JE_expertSettingsMenu(int off_x, int off_y)
 	size_t selected = 0;
 	int prev_mx = mouse_x, prev_my = mouse_y;  // for motion-based hover
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;  // don't let the click/key that opened us leak in
+	wait_noinput_consume(false, false, true);  // don't let the click/key that opened us leak in
 
 	const int px0 = DEBUG_MENU_X + off_x, py0 = DEBUG_MENU_Y + off_y;
 	const int px1 = DEBUG_MENU_X + DEBUG_MENU_WIDTH - 1 + off_x, py1 = vga_height - 5 + off_y;
@@ -738,8 +737,7 @@ void JE_debugMenu(bool center)
 	char dbgCashStr[16] = "";
 	char dbgHangStr[8] = "";                   // inline typed field for the Hang Watchdog row (seconds)
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;  // don't let the click/key that opened us leak in
+	wait_noinput_consume(false, false, true);  // don't let the click/key that opened us leak in
 
 	/* Panel geometry. Spans the DEBUG_MENU_X..+WIDTH area (centred in the
 	 * playfield) that the in-game caller saves and restores around this menu. */

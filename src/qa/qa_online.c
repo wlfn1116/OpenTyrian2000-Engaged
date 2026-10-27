@@ -26,6 +26,7 @@
 #include "rollback.h"
 #include "save_menu.h"
 #include "savegame.h"
+#include "ship_skin.h"
 #include "video.h"  // PLAYFIELD_LEFT / PLAYFIELD_RIGHT, for the HUD block geometry check
 
 #include <ctype.h>
@@ -1801,6 +1802,7 @@ static void qa_dual_arcade_save_roundtrip(void)
 	const PlayerItems savedItems[2] = { player[0].items, player[1].items };
 	const JE_SaveFileType savedSlot = saveFiles[QA_SAVE_SLOT - 1];
 	const int savedLevel = saveLevel;
+	const JE_byte savedSkins[2] = { shipSkinGet(0), shipSkinGet(1) };
 
 	for (int mode = 0; mode < 3; ++mode)
 	{
@@ -1842,6 +1844,9 @@ static void qa_dual_arcade_save_roundtrip(void)
 		for (uint p = 0; p < COUNTOF(player); ++p)
 			player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 		const PlayerItems wrote[2] = { player[0].items, player[1].items };
+		const JE_byte wroteSkins[2] = { (JE_byte)(16 + mode), (JE_byte)(3 + mode) };
+		shipSkinSet(0, wroteSkins[0]);
+		shipSkinSet(1, wroteSkins[1]);
 
 		JE_saveGame(QA_SAVE_SLOT, "QA DUAL SHIPS ");
 		const JE_SaveFileType *const rec = &saveFiles[QA_SAVE_SLOT - 1];
@@ -1853,7 +1858,11 @@ static void qa_dual_arcade_save_roundtrip(void)
 		memset(&player[0].items, 0, sizeof(player[0].items));
 		memset(&player[1].items, 0, sizeof(player[1].items));
 		player[0].weapon_mode = player[1].weapon_mode = 0;
+		shipSkinReset();
 		JE_loadGameRecord(rec, true);
+
+		snprintf(label, sizeof(label), "%s: both ships' skins come back", shape);
+		qa_check(shipSkinGet(0) == wroteSkins[0] && shipSkinGet(1) == wroteSkins[1], label);
 
 		snprintf(label, sizeof(label), "%s: both hulls and both front guns come back", shape);
 		qa_check(player[0].items.ship == wrote[0].ship && player[1].items.ship == wrote[1].ship
@@ -1944,6 +1953,8 @@ static void qa_dual_arcade_save_roundtrip(void)
 	for (uint p = 0; p < COUNTOF(player); ++p)
 		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 	superArcadeMode = SA_NONE;   // the loads above adopted the records' rulesets
+	shipSkinSet(0, savedSkins[0]);
+	shipSkinSet(1, savedSkins[1]);
 	qa_modes_clear();
 	isNetworkGame = false;
 }

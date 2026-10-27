@@ -415,13 +415,15 @@ int extraShipGraphicMax(void)
 	return 15 + extraShipExtendedGraphics(extended, COUNTOF(extended));
 }
 
-const char *extraShipEditorGraphicName(int graphic, char *buf, size_t bufSize)
+int extraShipGraphicOwner(int graphic)
 {
 	JE_word raw;
-	if (!extraShipGraphicRaw(graphic, &raw))
-		return NULL;
+	return extraShipGraphicRaw(graphic, &raw) ? JE_shipHullOwner(raw) : 0;
+}
 
-	const int ship = JE_shipHullOwner(raw);
+const char *extraShipEditorGraphicName(int graphic, char *buf, size_t bufSize)
+{
+	const int ship = extraShipGraphicOwner(graphic);
 	return ship != 0 ? JE_shipShortName((JE_word)ship, buf, bufSize) : NULL;
 }
 

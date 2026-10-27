@@ -16,6 +16,7 @@
 #include "health_bars.h"
 #include "hud.h"
 #include "item_prices.h"
+#include "net_style.h"
 #include "network.h"
 #include "player.h"
 #include "player_ship.h"
@@ -24,7 +25,9 @@
 #include "ship_skin.h"
 #include "specials.h"
 #include "sprite.h"
+#include "sprite_picker.h"
 #include "video.h"
+#include "weapon_editor.h"
 
 #include "SDL.h"
 
@@ -881,7 +884,7 @@ void qa_test_ship_skins(void)
 	extraAvail = true;
 
 	int order[SHIP_SKIN_ORDER_MAX] = { 0 };
-	const int count = shipSkinOrder(0, order, COUNTOF(order));
+	const int count = shipSkinOrder(0, &spriteSheet9, 233, order, COUNTOF(order));
 	bool grouped = count > 2 && order[0] == SHIP_SKIN_NONE;
 	bool customSeen = false;
 	int customCount = 0;
@@ -903,6 +906,39 @@ void qa_test_ship_skins(void)
 	qa_check(qa_apply_skin(233, &look, &lookGr) == order[1] && lookGr == expectGr &&
 	         look == expectSheet,
 	         "a single-piece hull draws the chosen skin's sprite");
+
+	bool ownLeftOut = true;
+	for (JE_word ship = 1; ship <= SHIP_DRAGONWING; ++ship)
+	{
+		Sprite2_array *hullSheet;
+		const JE_word hull = shop_ship_hull(ship, &hullSheet);
+		if (ships[ship].name[0] == '\0' || !shipSkinFitsHull(hull))
+			continue;
+
+		int hullOrder[SHIP_SKIN_ORDER_MAX];
+		const int hullCount = shipSkinOrder(0, hullSheet, hull, hullOrder, COUNTOF(hullOrder));
+		int matches = 0;
+		for (int graphic = 1; graphic <= extraShipGraphicMax(); ++graphic)
+		{
+			Sprite2_array *skinSheet;
+			const bool same = extraShipGraphicSprite(0, graphic, &skinSheet) == hull &&
+			                  skinSheet == hullSheet;
+			const bool listed = spritePickerIndexOf(hullOrder, hullCount, graphic) >= 0;
+			matches += same ? 1 : 0;
+			ownLeftOut = ownLeftOut && listed == (shipSkinOffered(0, graphic) && !same);
+		}
+		ownLeftOut = ownLeftOut && matches == 1;
+	}
+	qa_check(ownLeftOut, "each in-game hull's skin cycle skips just the skin that draws as it");
+
+	shipSkinSet(0, 1);
+	qa_check(shipSkinWorn(0, &spriteSheet9, 233) == SHIP_SKIN_NONE &&
+	         qa_apply_skin(233, &look, &lookGr) == SHIP_SKIN_NONE && lookGr == 233 &&
+	         look == &spriteSheet9 && shipSkinWorn(0, &spriteSheet9, 157) == 1,
+	         "a skin that draws as the hull reads as Default there and still dresses other hulls");
+	shipSkinCycle(0, &spriteSheet9, 233, 1);
+	qa_check(shipSkinGet(0) == order[1],
+	         "cycling on from a skin that draws as the hull lands on the next real skin");
 
 	qa_check(qa_apply_skin(0, &look, &lookGr) == SHIP_SKIN_NONE && lookGr == 0 &&
 	         qa_apply_skin(1, &look, &lookGr) == SHIP_SKIN_NONE && lookGr == 1 &&
@@ -933,6 +969,49 @@ void qa_test_ship_skins(void)
 	qa_check(game_menu_test_skin_row_name(),
 	         "a skinned ship's shop row shows its short name plus (Skin) before the marker");
 
+	const uint savedThis = thisPlayerNum;
+	const int savedColor = netStyleSeatColor(1);
+	const NetShipView savedView = netStyleView(1);
+	const NetShipView sentView = { NET_OPACITY_MIN, false, NET_HP_BARS_ALWAYS };
+	thisPlayerNum = 2;
+	shipSkinSet(1, 21);
+	netStyleSetSeatColor(1, 5);
+	netStyleSetView(1, sentView);
+	Uint8 lookPacket[NET_PACKET_SIZE] = { 0 };
+	const int lookLen = network_player_look_pack(lookPacket);
+	shipSkinSet(1, SHIP_SKIN_NONE);
+	netStyleSetSeatColor(1, NET_SHIP_COLOR_NONE);
+	netStyleSetView(1, (NetShipView){ NET_OPACITY_FULL, true, NET_HP_BARS_OFF });
+	network_player_look_adopt(lookPacket, lookLen);
+	const bool echoIgnored = shipSkinGet(1) == SHIP_SKIN_NONE;
+	thisPlayerNum = 1;
+	network_player_look_adopt(lookPacket, lookLen - 1);
+	const bool shortIgnored = shipSkinGet(1) == SHIP_SKIN_NONE;
+	network_player_look_adopt(lookPacket, lookLen);
+	const NetShipView got = netStyleView(1);
+	qa_check(echoIgnored && shortIgnored && shipSkinGet(1) == 21 && netStyleSeatColor(1) == 5 &&
+	         got.opacity == sentView.opacity && got.shipOpacity == sentView.shipOpacity &&
+	         got.hpBars == sentView.hpBars,
+	         "the look packet hands the sender's dye, view, and skin to the other machine");
+	netStyleSetSeatColor(1, savedColor);
+	netStyleSetView(1, savedView);
+	thisPlayerNum = savedThis;
+
+	char detail[96] = "";
+	char label[192];
+	const bool cycles = game_menu_test_skin_cycling(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "the outpost's owned ship cycles skins on Enter, Left and Right, online too%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(cycles, label);
+
+	detail[0] = '\0';
+	const bool previews = weaponEditorSkinPreviewSelfTest(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "the outpost weapon editor previews the equipped ship in its skin, online too%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(previews, label);
+
 	shipSkinSet(1, 7);
 	shipSkinReset();
 	qa_check(shipSkinGet(0) == SHIP_SKIN_NONE && shipSkinGet(1) == SHIP_SKIN_NONE,
@@ -946,6 +1025,12 @@ void qa_test_ship_skins(void)
 	timedBattleMode = savedTimed;
 	shipSkinSet(0, savedSkin[0]);
 	shipSkinSet(1, savedSkin[1]);
+}
+
+void qa_test_ship_specs(void)
+{
+	qa_check(game_menu_test_ship_specs(),
+	         "Ship Specs scales its picture in even right after the press that opened it");
 }
 
 /* Shield and armor glows are personal presentation state. They advance once per real tick,

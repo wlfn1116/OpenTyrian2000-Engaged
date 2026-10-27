@@ -1496,7 +1496,8 @@ void hud_draw_ship_hp_bars_preview(int x, int y, int along,
 // Hull bounds; graphics 0 and 1 are two-piece sentinels.
 void hud_ship_hp_bar_box(uint seat, int *l, int *r, int *t, int *b)
 {
-	const JE_word gr = (seat == 1) ? shipGr2 : shipGr;
+	Sprite2_array *sheet;
+	const JE_word gr = player_seat_hull(seat, &sheet);
 	const bool wide = (gr == 0 || gr == 1);
 
 	*l = (int)player[seat].x + (wide ? -17 : -5);

@@ -137,8 +137,7 @@ void JE_nextEpisode(void)
 	fade_palette(colors, 15, 0, 255);
 
 	// A press surviving the fades would drop the banner on its first JE_anyButton.
-	wait_noinput(true, true, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(true, true, true);
 	// A gameplay wire test has no player to press past the episode banner.
 	if (waitForEpisodeBanner)
 	{

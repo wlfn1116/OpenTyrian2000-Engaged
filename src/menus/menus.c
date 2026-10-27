@@ -626,8 +626,7 @@ bool networkDisconnectSavePrompt(const char *message)
 		return true;
 	}
 
-	wait_noinput(true, true, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(true, true, true);
 
 	int wMenuItem[COUNTOF(menu_item)] = { 0 };
 	MenuList menu = {

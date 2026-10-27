@@ -65,6 +65,7 @@ extern int ship_sensitivity;
 
 void wait_input(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick);
 void wait_noinput(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick);
+void wait_noinput_consume(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick);
 bool wait_menu_input(void);
 void init_keyboard(void);
 void mouseSetRelative(bool enable);

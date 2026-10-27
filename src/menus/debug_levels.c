@@ -524,8 +524,7 @@ static bool endlessDebugScreen(bool jumpMode)
 	int  prev_mx = mouse_x, prev_my = mouse_y;
 	bool chosen = false, done = false;
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;         // don't let the press that opened us leak in
+	wait_noinput_consume(false, false, true);  // don't let the press that opened us leak in
 
 	while (!done)
 	{
@@ -1482,8 +1481,7 @@ bool JE_debugLevelSelect(void)
 	int  prev_mx = mouse_x, prev_my = mouse_y;  // for motion-based hover
 	bool chosen = false, done = false;
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;  // don't let the click/key that opened us leak in
+	wait_noinput_consume(false, false, true);  // don't let the click/key that opened us leak in
 
 	while (!done)
 	{

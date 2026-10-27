@@ -337,6 +337,8 @@ void qa_test_weapon_editor(void)
 	extraAvail = savedExtraAvail;
 	qa_check(unlisted == -1 && listed == custom,
 	         "the outpost editor previews a custom ship only while custom ships are listed");
+	qa_check(weaponEditorOutpostMusicSelfTest(),
+	         "the outpost weapon editor keeps the outpost's song; the Setup one shuffles songs");
 }
 
 /* Online Campaign designs must round-trip exactly and reject malformed streams. */

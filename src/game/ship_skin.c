@@ -19,7 +19,9 @@
 
 #include "extra_ships.h"
 #include "ingame_menu.h"
+#include "network.h"
 #include "player.h"
+#include "sprite_picker.h"
 
 #include "SDL.h"
 
@@ -46,6 +48,11 @@ void shipSkinSet(uint seat, JE_byte graphic)
 static bool shipSkinSingleHull(JE_word gr)
 {
 	return gr > 1;
+}
+
+bool shipSkinFitsHull(JE_word gr)
+{
+	return shipSkinSingleHull(gr) && extraShipsAllowedInGame();
 }
 
 static bool shipSkinHasInk(const Sprite2_array *sheet, JE_word gr)
@@ -81,11 +88,28 @@ JE_byte shipSkinEffective(uint seat)
 
 bool shipSkinWearable(uint seat)
 {
-	return seat < COUNTOF(shipSkin) && extraShipsAllowedInGame() &&
-	       shipSkinSingleHull(seat == 1 ? shipGr2 : shipGr);
+	Sprite2_array *sheet;
+	return seat < COUNTOF(shipSkin) && shipSkinFitsHull(player_seat_hull(seat, &sheet));
 }
 
-int shipSkinOrder(uint seat, int *order, int capacity)
+static bool shipSkinRestyles(uint seat, int graphic, const Sprite2_array *sheet, JE_word gr)
+{
+	Sprite2_array *skinSheet;
+	return extraShipGraphicSprite(seat, graphic, &skinSheet) != gr || skinSheet != sheet;
+}
+
+JE_byte shipSkinWorn(uint seat, const Sprite2_array *sheet, JE_word gr)
+{
+	if (!shipSkinFitsHull(gr))
+		return SHIP_SKIN_NONE;
+
+	const JE_byte skin = shipSkinEffective(seat);
+	if (skin == SHIP_SKIN_NONE || !shipSkinRestyles(seat, skin, sheet, gr))
+		return SHIP_SKIN_NONE;
+	return skin;
+}
+
+int shipSkinOrder(uint seat, const Sprite2_array *sheet, JE_word gr, int *order, int capacity)
 {
 	int count = 0;
 	if (count < capacity)
@@ -95,9 +119,23 @@ int shipSkinOrder(uint seat, int *order, int capacity)
 	for (int custom = 0; custom <= 1; ++custom)
 		for (int graphic = 1; graphic <= max && count < capacity; ++graphic)
 			if (extraShipGraphicIsCustom(graphic) == (custom != 0) &&
-			    shipSkinOffered(seat, graphic))
+			    shipSkinOffered(seat, graphic) && shipSkinRestyles(seat, graphic, sheet, gr))
 				order[count++] = graphic;
 	return count;
+}
+
+bool shipSkinHasChoices(uint seat, const Sprite2_array *sheet, JE_word gr)
+{
+	int order[SHIP_SKIN_ORDER_MAX];
+	return shipSkinFitsHull(gr) && shipSkinOrder(seat, sheet, gr, order, COUNTOF(order)) > 1;
+}
+
+void shipSkinCycle(uint seat, const Sprite2_array *sheet, JE_word gr, int dir)
+{
+	int order[SHIP_SKIN_ORDER_MAX];
+	const int count = shipSkinOrder(seat, sheet, gr, order, COUNTOF(order));
+	shipSkinSet(seat, (JE_byte)spritePickerCycle(order, count, shipSkinWorn(seat, sheet, gr), dir));
+	network_player_look_publish();
 }
 
 const char *shipSkinName(int graphic, char *buf, size_t bufSize)
@@ -111,10 +149,7 @@ const char *shipSkinName(int graphic, char *buf, size_t bufSize)
 
 JE_byte shipSkinApply(uint seat, Sprite2_array **sheet, JE_word *gr)
 {
-	if (!shipSkinSingleHull(*gr) || !extraShipsAllowedInGame())
-		return SHIP_SKIN_NONE;
-
-	const JE_byte skin = shipSkinEffective(seat);
+	const JE_byte skin = shipSkinWorn(seat, *sheet, *gr);
 	if (skin != SHIP_SKIN_NONE)
 		*gr = extraShipGraphicSprite(seat, skin, sheet);
 	return skin;

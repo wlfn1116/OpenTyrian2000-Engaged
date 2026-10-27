@@ -40,6 +40,7 @@
 #include "render_list.h"
 #include "sfx.h"
 #include "ship_editor.h"
+#include "ship_skin.h"
 #include "shots.h"
 #include "sndmast.h"
 #include "sparks.h"
@@ -461,7 +462,7 @@ static int cwNavCount;
 static int cwSelRow, cwSelCell;
 static int cwPage = CWP_WEAPON;
 static int cwPageRow[CWP_COUNT];
-static bool cwCanEquip;
+static bool cwFromOutpost;
 static int cwArmed = -1;
 
 static int cwImportSrc = 0;
@@ -485,6 +486,7 @@ static const CwRange cwRangeDefaults = CW_RANGE_DEFAULTS;
 static CwRange cwRange = CW_RANGE_DEFAULTS;
 static int cwTickShipX, cwTickShipY;
 static int cwConfiguredShip = -1;
+static int cwEquippedShip = -1;
 
 static const struct { const char *key; int *value; } cwRangeKeys[] =
 {
@@ -829,6 +831,32 @@ int weaponEditorRangeShip(int ship)
 		return -1;
 	const int owner = JE_shipHullOwner(ships[ship].shipgraphic);
 	return owner != 0 ? owner : -1;
+}
+
+static void cwPreviewEquippedShip(void)
+{
+	cwEquippedShip =
+	    cwFromOutpost ? weaponEditorRangeShip(player[customWeaponLocalOwner()].items.ship) : -1;
+	if (cwEquippedShip > 0)
+	{
+		cwConfiguredShip = cwRange.ship;
+		cwRange.ship = cwEquippedShip;
+	}
+}
+
+static JE_word cwRangeShipLook(Sprite2_array **sheet)
+{
+	JE_word gr = shop_ship_hull((JE_word)cwRange.ship, sheet);
+	if (cwRange.ship == cwEquippedShip)
+		shipSkinApply((uint)customWeaponLocalOwner(), sheet, &gr);
+	return gr;
+}
+
+static void cwDrawRangeShip(int x, int y)
+{
+	Sprite2_array *sheet;
+	const JE_word gr = cwRangeShipLook(&sheet);
+	shop_draw_hull(sheet, gr, x, y);
 }
 
 static void cwFieldValue(int f, char *buf, size_t n)
@@ -1459,7 +1487,7 @@ static bool cwActionAvailable(int a)
 	{
 	case CWA_UNDO:          return cwHistoryPos > 0;
 	case CWA_REDO:          return cwHistoryPos + 1 < cwHistoryCount;
-	case CWA_EQUIP:         return cwCanEquip;
+	case CWA_EQUIP:         return cwFromOutpost;
 	case CWA_LIB_NEW:
 	case CWA_LIB_DUPLICATE: return customWeaponLibCount < CUSTOM_WEAPON_LIB_MAX;
 	case CWA_LIB_DELETE:    return customWeaponLibCount > 1;
@@ -1726,6 +1754,13 @@ static void cwServiceNetwork(void)
 		;
 }
 
+typedef void (*CwMusicTick)(void);
+
+static CwMusicTick cwMusicTick(void)
+{
+	return cwFromOutpost ? NULL : shipEditorServiceMusic;
+}
+
 static SpritePickerPage cwSheetPage(const char *name, const Sprite2_array *sheet, bool big,
                                     int count, int valueBase)
 {
@@ -1754,8 +1789,7 @@ static void cwOpenPicker(int f)
 	JE_WeaponType *const w = cwCur();
 	const int bullet = cwBulletIndex();
 	SpritePickerPage pages[3];
-	SpritePickerSpec spec = { .pages = pages, .idle = cwServiceNetwork,
-	                          .tick = shipEditorServiceMusic };
+	SpritePickerSpec spec = { .pages = pages, .idle = cwServiceNetwork, .tick = cwMusicTick() };
 	int rangeShips[CW_RANGE_SHIPS_MAX], rangeCount = 0, value = 0;
 	switch (f)
 	{
@@ -2344,7 +2378,7 @@ static void cwSimTick(void)
 	JE_clearSPClip();
 
 	rl_current_id = RL_ID_SHIP_BASE + 1;
-	JE_drawItem(1, (JE_word)cwRange.ship, player[0].x - 5, player[0].y - 7);
+	cwDrawRangeShip(player[0].x - 5, player[0].y - 7);
 	rl_current_id = 0;
 	if (usePods)
 		cwFireAndDrawPods(&pods);
@@ -2743,7 +2777,7 @@ static void cwBuildNav(void)
 	n->id[n->count++] = CWA_UNDO;
 	n->id[n->count++] = CWA_REDO;
 	n->id[n->count++] = CWA_SAVE;
-	if (cwCanEquip)
+	if (cwFromOutpost)
 		n->id[n->count++] = CWA_EQUIP;
 	n->id[n->count++] = CWA_DONE;
 
@@ -3673,7 +3707,7 @@ static void cwHandleMouse(int *prev_mx, int *prev_my, bool *done, bool *equipped
 		cwHandleBoxPress();
 }
 
-bool JE_weaponEditor(bool canEquip)
+bool JE_weaponEditor(bool fromOutpost)
 {
 	// The title-screen Setup menu can reach this before item data is loaded.
 	if (weaponPort[1].name[0] == '\0')
@@ -3696,7 +3730,7 @@ bool JE_weaponEditor(bool canEquip)
 	    clampi(cwImportSrc, 0, (customBulletPresetCount > 0) ? customBulletPresetCount - 1 : 0);
 	cwImportPwr = customBulletMaxPower(cwImportSrc);
 	cwBulletSel = 0;
-	cwCanEquip = canEquip;
+	cwFromOutpost = fromOutpost;
 
 	cwRevertBuf = malloc(CUSTOM_WEAPON_LIBRARY_WIRE_MAX);
 	cwRevertLen = (cwRevertBuf != NULL)
@@ -3717,13 +3751,7 @@ bool JE_weaponEditor(bool canEquip)
 
 	cwClearPreviewShots();
 	cwRangeSanitize();
-	const int equippedHull =
-	    canEquip ? weaponEditorRangeShip(player[customWeaponLocalOwner()].items.ship) : -1;
-	if (equippedHull > 0)
-	{
-		cwConfiguredShip = cwRange.ship;
-		cwRange.ship = equippedHull;
-	}
+	cwPreviewEquippedShip();
 	cwLayoutDummies();
 	cwPreviewKey = -1;
 	cwDrag = CW_DRAG_NONE;
@@ -3741,6 +3769,7 @@ bool JE_weaponEditor(bool canEquip)
 	mouse_scroll = 0;
 	mouseTwoFingerRightClick = true;
 
+	const CwMusicTick musicTick = cwMusicTick();
 	const double tick_ms = editorTickMs();
 	double nextTick_ms = SDL_GetTicks();
 	Uint32 clock_ms = 0, clockLast_ms = SDL_GetTicks();
@@ -3757,7 +3786,8 @@ bool JE_weaponEditor(bool canEquip)
 		if (tick_schedule_due(&nextTick_ms, tick_ms, now))
 		{
 			cwSimTick();
-			shipEditorServiceMusic();
+			if (musicTick != NULL)
+				musicTick();
 		}
 		clock_ms += now - clockLast_ms;
 		clockLast_ms = now;
@@ -3840,4 +3870,91 @@ void weaponEditorRelease(void)
 	SDL_FreeSurface(cwHiReplay);
 	cwHiReplay = NULL;
 	spritePickerRelease();
+}
+
+bool weaponEditorOutpostMusicSelfTest(void)
+{
+	const bool savedOutpost = cwFromOutpost;
+	cwFromOutpost = true;
+	const bool outpostKeepsSong = cwMusicTick() == NULL;
+	cwFromOutpost = false;
+	const bool setupShuffles = cwMusicTick() == shipEditorServiceMusic;
+	cwFromOutpost = savedOutpost;
+	return outpostKeepsSong && setupShuffles;
+}
+
+static const char *cwSkinPreviewFault(void)
+{
+	const uint seat = (uint)customWeaponLocalOwner();
+	Sprite2_array *talonSheet, *carrotSheet, *skinSheet, *sheet;
+	const JE_word talon = shop_ship_hull(1, &talonSheet);
+	const JE_word carrot = shop_ship_hull(2, &carrotSheet);
+	int order[SHIP_SKIN_ORDER_MAX];
+	if (shipSkinOrder(seat, talonSheet, talon, order, COUNTOF(order)) < 3)
+		return "the equipped hull offers too few skins";
+	const JE_word skin = extraShipGraphicSprite(seat, order[1], &skinSheet);
+
+	player[seat].items.ship = 1;
+	shipSkinSet(seat, (JE_byte)order[1]);
+	shipSkinSet(1u - seat, (JE_byte)order[2]);
+	cwFromOutpost = true;
+	cwConfiguredShip = -1;
+	cwRange.ship = 2;
+	cwPreviewEquippedShip();
+	if (cwRange.ship != 1 || cwConfiguredShip != 2)
+		return "the outpost editor does not preview the equipped ship";
+	if (cwRangeShipLook(&sheet) != skin || sheet != skinSheet)
+		return "the outpost editor previews the equipped ship without its owner's skin";
+
+	cwRange.ship = 2;
+	if (cwRangeShipLook(&sheet) != carrot || sheet != carrotSheet)
+		return "another range ship wears the equipped ship's skin";
+
+	cwFromOutpost = false;
+	cwConfiguredShip = -1;
+	cwRange.ship = 1;
+	cwPreviewEquippedShip();
+	if (cwRange.ship != 1 || cwRangeShipLook(&sheet) != talon || sheet != talonSheet)
+		return "the Setup editor's range ship wears a skin";
+	return NULL;
+}
+
+bool weaponEditorSkinPreviewSelfTest(char *detail, size_t detailSize)
+{
+	const bool savedOutpost = cwFromOutpost;
+	const int savedEquipped = cwEquippedShip, savedConfigured = cwConfiguredShip;
+	const int savedRange = cwRange.ship;
+	const JE_boolean savedNet = isNetworkGame, savedTwo = twoPlayerMode;
+	const JE_boolean savedCoop = coopCampaignMode;
+	const uint savedThis = thisPlayerNum;
+	const JE_byte savedShips[2] = { player[0].items.ship, player[1].items.ship };
+	const JE_byte savedSkins[2] = { shipSkinGet(0), shipSkinGet(1) };
+
+	const char *fault = cwSkinPreviewFault();
+	if (fault == NULL)
+	{
+		isNetworkGame = true;
+		twoPlayerMode = true;
+		coopCampaignMode = true;
+		thisPlayerNum = 2;
+		fault = cwSkinPreviewFault();
+	}
+
+	cwFromOutpost = savedOutpost;
+	cwEquippedShip = savedEquipped;
+	cwConfiguredShip = savedConfigured;
+	cwRange.ship = savedRange;
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCoop;
+	thisPlayerNum = savedThis;
+	for (uint p = 0; p < 2; ++p)
+	{
+		player[p].items.ship = savedShips[p];
+		shipSkinSet(p, savedSkins[p]);
+	}
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }

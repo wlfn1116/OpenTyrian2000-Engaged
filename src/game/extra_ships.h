@@ -57,6 +57,7 @@ bool extraShipGraphicIsCustom(int graphic);
 bool extraShipGraphicIsNort(int graphic);
 bool extraShipGraphicIsWide(int graphic);
 int extraShipGraphicMax(void);
+int extraShipGraphicOwner(int graphic);
 const char *extraShipEditorGraphicName(int graphic, char *buf, size_t bufSize);
 const char *extraShipGraphicLabel(int graphic, char *buf, size_t bufSize);
 

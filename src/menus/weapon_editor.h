@@ -21,9 +21,11 @@
 #include "opentyr.h"
 #include "config_file.h"
 
-bool JE_weaponEditor(bool canEquip);
+bool JE_weaponEditor(bool fromOutpost);
 int weaponEditorRangeShip(int ship);
 void weaponEditorRelease(void);
+bool weaponEditorOutpostMusicSelfTest(void);
+bool weaponEditorSkinPreviewSelfTest(char *detail, size_t detailSize);
 void weaponEditorConfigLoad(const ConfigSection *section);
 void weaponEditorConfigSave(ConfigSection *section);
 

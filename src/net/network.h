@@ -342,8 +342,10 @@ void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *p
  * only after both peers hold the same final pair. */
 void network_sa_ship_publish(int ship, bool seen_peer);
 
-// Send the local dye and view now; the keep-alive beat repeats them without acknowledgement.
+// Send the local dye, view, and skin now; the keep-alive beat repeats them without acknowledgement.
 void network_player_look_publish(void);
+int  network_player_look_pack(Uint8 *buf);
+void network_player_look_adopt(const Uint8 *buf, int len);
 int  network_sa_ship_peer(void);         // the peer's pick, 0 if they have none right now
 bool network_sa_ship_peer_saw_us(void);  // the peer's latest word says they hold our pick
 void network_sa_ship_reset(void);

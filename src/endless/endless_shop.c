@@ -1145,8 +1145,8 @@ static void endlessApproachShow(const EndlessApproachScreen *sc)
 	fade_palette(colors, 10, 0, 255);
 
 	ESCPressed = false;         // a stale script-skip flag would blank the whole screen
-	wait_noinput(true, true, true);   // a surviving tally-dismiss press would flash the text past
-	newkey = newmouse = false;
+	// a surviving tally-dismiss press would flash the text past
+	wait_noinput_consume(true, true, true);
 	useLastBank = false;
 	warningCol = 14 * 16 + 5;
 	warningColChange = 1;

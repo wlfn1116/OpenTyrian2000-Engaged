@@ -445,8 +445,7 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 	fade_palette(colors, 10, 0, 255);
 
 	// Ignore the input that dismissed the transfer screen.
-	wait_noinput(true, true, true);
-	newkey = newmouse = false;
+	wait_noinput_consume(true, true, true);
 	touch_ui_consume_input();
 	for (;;)
 	{

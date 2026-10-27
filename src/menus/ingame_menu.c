@@ -48,7 +48,6 @@
 #include "ship_skin.h"
 #include "sndmast.h"
 #include "sprite.h"
-#include "sprite_picker.h"
 #include "timing.h"
 #include "video.h"
 
@@ -320,18 +319,10 @@ static void extraMenuCycleCustomShip(uint pnum, int dir)
 	extraShipLoadoutRefresh(pnum, true);
 }
 
-static void extraMenuCycleShipSkin(uint pnum, int dir)
-{
-	int order[SHIP_SKIN_ORDER_MAX];
-	const int count = shipSkinOrder(pnum, order, COUNTOF(order));
-	shipSkinSet(pnum, (JE_byte)spritePickerCycle(order, count, shipSkinEffective(pnum), dir));
-	network_player_look_publish();
-}
-
 static void extraMenuDrawShipPreview(uint pnum, int cx, int y, int banking, bool skinned)
 {
-	Sprite2_array *sheet = pnum == 1 ? shipGr2ptr : shipGrPtr;
-	JE_word gr = pnum == 1 ? shipGr2 : shipGr;
+	Sprite2_array *sheet;
+	JE_word gr = player_seat_hull(pnum, &sheet);
 	if (skinned)
 		shipSkinApply(pnum, &sheet, &gr);
 	if (sheet == NULL || sheet->data == NULL)
@@ -546,8 +537,7 @@ static bool JE_extraMenu(void)
 
 	// The pause loop repaints its full background after this opaque panel closes.
 
-	wait_noinput(false, false, true);
-	newkey = newmouse = false;  // don't let the click/key that opened us leak in
+	wait_noinput_consume(false, false, true);  // don't let the click/key that opened us leak in
 
 	if (isNetworkGame)
 		network_debug_sync_mark();
@@ -583,6 +573,8 @@ static bool JE_extraMenu(void)
 	while (!closeMenu)
 	{
 		const bool skinRowAllowed = shipSkinWearable(shipSeat);
+		Sprite2_array *shipSheet;
+		const JE_word shipHull = player_seat_hull(shipSeat, &shipSheet);
 
 		// Rows for the current page.
 		const char *const *labels;
@@ -642,8 +634,8 @@ static bool JE_extraMenu(void)
 					value = "Standard";
 			}
 			else if (page == PAGE_ROOT && i == ROOT_SHIP_SKIN)
-				value = shipSkinName(skinRowAllowed ? shipSkinEffective(shipSeat) : SHIP_SKIN_NONE,
-				                     valbuf, sizeof(valbuf));
+				value = shipSkinName(shipSkinWorn(shipSeat, shipSheet, shipHull), valbuf,
+				                     sizeof(valbuf));
 			else if (page == PAGE_DEBUG && i == 0)
 				value = debug ? "On" : "Off";
 			else if (page == PAGE_DEBUG && i == 1)
@@ -821,7 +813,7 @@ static bool JE_extraMenu(void)
 			}
 			else if (page == PAGE_ROOT && selected == ROOT_SHIP_SKIN && skinRowAllowed)
 			{
-				extraMenuCycleShipSkin(shipSeat, adjustDir);
+				shipSkinCycle(shipSeat, shipSheet, shipHull, adjustDir);
 				shipPreviewStart = SDL_GetTicks();
 				JE_playSampleNum(S_CURSOR);
 			}
@@ -884,7 +876,7 @@ static bool JE_extraMenu(void)
 			case ROOT_SHIP_SKIN:
 				if (skinRowAllowed)
 				{
-					extraMenuCycleShipSkin(shipSeat, +1);
+					shipSkinCycle(shipSeat, shipSheet, shipHull, +1);
 					shipPreviewStart = SDL_GetTicks();
 					JE_playSampleNum(S_SELECT);
 				}

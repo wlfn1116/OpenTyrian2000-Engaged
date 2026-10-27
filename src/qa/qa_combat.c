@@ -26,6 +26,7 @@
 
 #include "SDL.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1123,6 +1124,24 @@ static float qa_afterburner_ladder_top(uint p, float floor, bool *rising)
 	return previous;
 }
 
+static int qa_afterburner_pull(int stacks, bool sideways)
+{
+	enum { PULL_TICKS = 100 };
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, stacks);
+	endlessRollGravityDir();
+	int pulled = 0;
+	for (int tick = 0; tick < PULL_TICKS; ++tick)
+		pulled += sideways ? endlessGravityPullX(0) : endlessGravityPullY(0);
+	return pulled;
+}
+
+static bool qa_afterburner_pulled(int plain, int resisted, float resist)
+{
+	const int want = (int)((float)abs(plain) * (1.0f - resist) + 0.5f);
+	return plain != 0 && (resisted < 0) == (plain < 0) && abs(resisted) >= want - 1 &&
+	       abs(resisted) <= want + 1;
+}
+
 void qa_test_afterburner_perk(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -1171,20 +1190,26 @@ void qa_test_afterburner_perk(void)
 	         resistedPull > 0.0f && qa_afterburner_close(resistedPull, pull * (1.0f - fullResist)),
 	         "Afterburners resist only their own ship's gravity, and never fully");
 
-	enum { PULL_TICKS = 100 };
-	int plainPulled = 0, resistedPulled = 0;
-	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, 0);
-	endlessRollGravityDir();
-	for (int tick = 0; tick < PULL_TICKS; ++tick)
-		plainPulled += endlessGravityPullY(0);
-	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, maxStacks);
-	endlessRollGravityDir();
-	for (int tick = 0; tick < PULL_TICKS; ++tick)
-		resistedPulled += endlessGravityPullY(0);
-	const int wantPulled = (int)((float)plainPulled * (1.0f - fullResist) + 0.5f);
-	qa_check(plainPulled > 0 && resistedPulled >= wantPulled - 1 &&
-	         resistedPulled <= wantPulled + 1,
+	const int plainPulled = qa_afterburner_pull(0, false);
+	const int resistedPulled = qa_afterburner_pull(maxStacks, false);
+	qa_check(plainPulled > 0 && qa_afterburner_pulled(plainPulled, resistedPulled, fullResist),
 	         "Smooth-Motion-off gravity pulls a resisting ship the matching fraction of the way");
+
+	endlessActiveMods |= ENDLESS_MOD_GRAVITY_OMNI;
+	Uint64 heading = 0;
+	do
+	{
+		endlessReseed(heading);
+		endlessRollGravityDir();
+	} while (fabsf(endlessGravityDriftX()) < 0.5f * endlessGravityDrift() && ++heading < 64);
+	endlessReseed(heading);
+	const int plainSideways = qa_afterburner_pull(0, true);
+	endlessReseed(heading);
+	const int resistedSideways = qa_afterburner_pull(maxStacks, true);
+	qa_check(qa_afterburner_pulled(plainSideways, resistedSideways, fullResist),
+	         "...and a Rogue Well heading's sideways pull by the same fraction");
+	endlessActiveMods &= ~ENDLESS_MOD_GRAVITY_OMNI;
+	endlessRollGravityDir();
 
 	endlessActiveMods = ENDLESS_MOD_GRAVITY;
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));

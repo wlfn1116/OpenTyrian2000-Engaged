@@ -11,7 +11,7 @@ online play, editors, restored content, and smoother rendering.
 | Play online | Main menu > Online Multiplayer |
 | Transfer saves or custom data | Title screen > Extra > Transfer |
 | Edit ships | Title screen > Extra > Ship Editor |
-| Change your ship's look | Esc > Extra > Ship Skin |
+| Change your ship's look | Esc > Extra > Ship Skin, or your ship in the shop's ship list |
 | Design a weapon | Title screen > Extra > Weapon Editor |
 | Change graphics | Setup > Graphics |
 | Soften sound effects | Setup > Sound |
@@ -519,7 +519,9 @@ in motion.
 
 - The skin is saved with the game and shows on the other player's screen online.
 - In the shop's ship list, your current ship shows the skin and "(Skin)" after
-  its name.
+  its name. Enter or Left/Right on that row cycles the skin, and the large ship
+  picture follows it. On touch screens the row shows the arrow buttons. Enter on
+  any other ship still buys it.
 - The two-piece Dragonwing and Nort Ship can neither be worn as skins nor wear
   one.
 

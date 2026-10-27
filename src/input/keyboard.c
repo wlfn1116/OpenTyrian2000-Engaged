@@ -101,6 +101,12 @@ void wait_noinput(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
 	}
 }
 
+void wait_noinput_consume(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
+{
+	wait_noinput(keyboard, mouse, joystick);
+	newkey = newmouse = false;
+}
+
 // Wait for a key, a button, or mouse motion; returns true if the mouse moved.
 bool wait_menu_input(void)
 {
