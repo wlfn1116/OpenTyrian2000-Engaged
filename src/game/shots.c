@@ -491,7 +491,7 @@ bool player_shot_move_and_draw(
 		                     ? shot->shotYM - SHOT_ATTACHED_VEL_REST : shot->shotYM;
 		const JE_word frame_now = shot->shotGr + shot->shotAni;
 		const bool on_playfield = player_shot_frame_on_playfield(frame_now, shot->shotY);
-		const bool casts_shadow = background2 && tmp_shotXM < 100 && frame_now <= 60000;
+		const bool casts_shadow = tmp_shotXM < 100 && frame_now <= 60000;
 		const bool trace_on_playfield = casts_shadow
 		    ? player_shot_frame_on_playfield(frame_now, shot->shotY + shadowYDist) : on_playfield;
 		if (shot->shotX < -34 || shot->shotX > PLAYFIELD_WIDTH + 34 ||
@@ -598,7 +598,7 @@ bool player_shot_move_and_draw(
 				shot->salvoBoost = 2;
 			}
 			// A tinted shot (a returned elite or champion bullet) is drawn as the enemy loop drew it.
-			const bool shadow = casts_shadow && *out_shoty + shadowYDist < 190;
+			const bool shadow = background2 && casts_shadow && *out_shoty + shadowYDist < 190;
 			draw_player_shot_sprite(*out_shotx + 1, *out_shoty, sprite_frame, shot->tint,
 			                        shot_draw_style(shot->playerNumber), shadow);
 		}

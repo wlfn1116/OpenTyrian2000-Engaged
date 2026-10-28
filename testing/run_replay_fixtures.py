@@ -105,8 +105,9 @@ def run_coop_flights(executable: Path, data_dir: Path, env: dict) -> bool:
                 print(result.stdout + result.stderr, end="")
                 ok = False
 
+        details = ("4", "3", "1")
         traces = []
-        for detail in ("4", "3"):
+        for detail in details:
             trace = work / f"detail_{detail}.trace"
             match, result = run_flight(executable, data_dir, env, work, DETAIL_FLIGHT,
                                        ["--test-replay-detail", detail,
@@ -116,10 +117,11 @@ def run_coop_flights(executable: Path, data_dir: Path, env: dict) -> bool:
                 ok = False
             traces.append(trace)
         if ok:
-            difference = first_sim_difference(traces[0], traces[1])
-            print(f"DETAIL LEVEL FLIGHT episode={DETAIL_FLIGHT[0]} level={DETAIL_FLIGHT[1]} "
-                  f"{'ok' if difference is None else 'FAILED: ' + difference}")
-            ok = difference is None
+            for detail, trace in zip(details[1:], traces[1:]):
+                difference = first_sim_difference(traces[0], trace)
+                print(f"DETAIL LEVEL FLIGHT episode={DETAIL_FLIGHT[0]} level={DETAIL_FLIGHT[1]} "
+                      f"detail={detail} {'ok' if difference is None else 'FAILED: ' + difference}")
+                ok = ok and difference is None
     return ok
 
 

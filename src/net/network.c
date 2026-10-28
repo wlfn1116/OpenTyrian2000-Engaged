@@ -127,7 +127,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       104          /* Top-edge culls wait until no sprite or shadow shows. */
+#define NET_VERSION       105          /* Shot culls ignore the local shadow setting. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

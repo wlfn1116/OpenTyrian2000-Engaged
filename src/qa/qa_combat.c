@@ -2485,36 +2485,37 @@ void qa_test_shot_exit_margin(void)
 		bool cell;
 		JE_word gr;
 		int y, ym, xm;
-		bool background2, stays;
+		bool stays;
 	} exits[] = {
-		{ false, 271, -39, -1, 0, true, true },
-		{ false, 271, -40, -1, 0, true, false },
-		{ false, 271, -16, 0, 0, true, true },
-		{ false, 271, -22, 0, 0, true, true },
-		{ false, 271, -23, 0, 0, true, false },
-		{ false, 271, -16, 0, 0, false, false },
-		{ false, 271, -16, 0, SHOT_ATTACHED_VEL_REST, true, false },
-		{ false, 1000 + 271, -23, 0, 0, true, false },
-		{ true, 1, -16, 0, 0, true, false },
-		{ true, 2, -23, 0, 0, true, true },
-		{ true, 2, -24, 0, 0, true, false },
+		{ false, 271, -39, -1, 0, true },
+		{ false, 271, -40, -1, 0, false },
+		{ false, 271, -16, 0, 0, true },
+		{ false, 271, -22, 0, 0, true },
+		{ false, 271, -23, 0, 0, false },
+		{ false, 271, -16, 0, SHOT_ATTACHED_VEL_REST, false },
+		{ false, 1000 + 271, -23, 0, 0, false },
+		{ true, 1, -16, 0, 0, false },
+		{ true, 2, -23, 0, 0, true },
+		{ true, 2, -24, 0, 0, false },
 	};
 	QaCellFrame cell;
 	const Sprite2_array cellSheet = qa_cell_sheet(&cell);
 	bool exitsRight = true;
 	for (size_t i = 0; i < COUNTOF(exits); ++i)
-	{
-		spriteSheet8 = exits[i].cell ? cellSheet : savedSheet;
-		background2 = exits[i].background2;
-		const JE_integer id = qa_exit_shot(exits[i].gr, exits[i].y, exits[i].ym, exits[i].xm);
-		if (id >= MAX_PWEAPON || (qa_shot_step(id) && shotAvail[id] != 0) != exits[i].stays)
-			exitsRight = false;
-		if (id < MAX_PWEAPON)
-			shotAvail[id] = 0;
-	}
+		for (int shadows = 0; shadows < 2; ++shadows)
+		{
+			spriteSheet8 = exits[i].cell ? cellSheet : savedSheet;
+			background2 = shadows != 0;
+			const JE_integer id = qa_exit_shot(exits[i].gr, exits[i].y, exits[i].ym, exits[i].xm);
+			if (id >= MAX_PWEAPON || (qa_shot_step(id) && shotAvail[id] != 0) != exits[i].stays)
+				exitsRight = false;
+			if (id < MAX_PWEAPON)
+				shotAvail[id] = 0;
+		}
 	spriteSheet8 = savedSheet;
 	qa_check(exitsRight,
-	         "a shot past the top edge stays exactly while its sprite or shadow can show");
+	         "a shot past the top edge stays exactly while its sprite or shadow can show, "
+	         "whether or not this machine draws shadows");
 
 	background2 = true;
 	const int ballH = sprite(OPTION_SHAPES, ballGr - 60001u)->height;
