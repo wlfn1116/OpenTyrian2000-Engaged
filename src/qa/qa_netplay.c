@@ -921,7 +921,7 @@ void qa_test_network_settings(void)
 		epDiffMode[i] = i % EPDIFF_MODE_COUNT;
 	zicaLaserBase = ZICA_BASE_EP4; wallopSecondBolt = SUPER_SPARKS_ON;
 	for (int i = 0; i < REWORK_COUNT; ++i)
-		reworkEnabled[i] = i % 2 == 0;
+		reworkEnabled[i] = i % 3 == 0;
 	chargeLaserCannon = true; restoreBaseDispensers = false;
 	arcadeLifeBoost = true; arcadeRandomBalls = false; arcadeRearGunScale = true;
 	centeredShotHitboxes = true; guidedShotScreenAim = true; extraParallax = true;
@@ -961,7 +961,7 @@ void qa_test_network_settings(void)
 	for (int i = 0; i < EDW_COUNT; ++i) epDiffMode[i] = EPDIFF_EP13;
 	zicaLaserBase = ZICA_BASE_AUTO; wallopSecondBolt = SUPER_SPARKS_OFF;
 	for (int i = 0; i < REWORK_COUNT; ++i)
-		reworkEnabled[i] = i % 2 != 0;
+		reworkEnabled[i] = i % 3 != 0;
 	chargeLaserCannon = false; restoreBaseDispensers = true;
 	arcadeLifeBoost = false; arcadeRandomBalls = true; arcadeRearGunScale = false;
 	centeredShotHitboxes = false; guidedShotScreenAim = false; extraParallax = false;
@@ -994,7 +994,7 @@ void qa_test_network_settings(void)
 	bool arraysMatch = true;
 	for (int i = 0; i < SSW_COUNT; ++i) arraysMatch &= superSparkMode[i] == i % SUPER_SPARKS_COUNT;
 	for (int i = 0; i < EDW_COUNT; ++i) arraysMatch &= epDiffMode[i] == i % EPDIFF_MODE_COUNT;
-	for (int i = 0; i < REWORK_COUNT; ++i) arraysMatch &= reworkEnabled[i] == (i % 2 == 0);
+	for (int i = 0; i < REWORK_COUNT; ++i) arraysMatch &= reworkEnabled[i] == (i % 3 == 0);
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_EP4 && wallopSecondBolt == SUPER_SPARKS_ON
 	         && chargeLaserCannon && !restoreBaseDispensers && arcadeLifeBoost
 	         && !arcadeRandomBalls && arcadeRearGunScale && centeredShotHitboxes && guidedShotScreenAim
@@ -1024,7 +1024,7 @@ void qa_test_network_settings(void)
 	arraysMatch = true;
 	for (int i = 0; i < SSW_COUNT; ++i) arraysMatch &= superSparkMode[i] == SUPER_SPARKS_OFF;
 	for (int i = 0; i < EDW_COUNT; ++i) arraysMatch &= epDiffMode[i] == EPDIFF_EP13;
-	for (int i = 0; i < REWORK_COUNT; ++i) arraysMatch &= reworkEnabled[i] == (i % 2 != 0);
+	for (int i = 0; i < REWORK_COUNT; ++i) arraysMatch &= reworkEnabled[i] == (i % 3 != 0);
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_AUTO && wallopSecondBolt == SUPER_SPARKS_OFF
 	         && !chargeLaserCannon && restoreBaseDispensers && !arcadeLifeBoost
 	         && arcadeRandomBalls && !arcadeRearGunScale && !centeredShotHitboxes && !guidedShotScreenAim
