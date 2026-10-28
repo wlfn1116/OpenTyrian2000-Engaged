@@ -141,8 +141,6 @@ enum
 #define SHIP_COLOR_CELL_H  24
 #define SHIP_COLOR_PITCH_X (SHIP_COLOR_CELL_W + 2)
 #define SHIP_COLOR_PITCH_Y (SHIP_COLOR_CELL_H + 2)
-#define SHIP_COLOR_TOGGLE_Y 156
-#define SHIP_COLOR_LEGEND_Y 170
 #define SHIP_COLOR_SIDEKICK_LABEL "Color Sidekicks"
 // Six glyph rows and a one-pixel shadow.
 #define SHIP_COLOR_LABEL_H   7
@@ -1180,7 +1178,7 @@ static void configure_outpost_debug_menus(void)
 	SDL_strlcpy(debug[0], "Debug", entrySize);
 	SDL_strlcpy(debug[1], "Debug Menu", entrySize);
 	SDL_strlcpy(debug[2], "Debug Level", entrySize);
-	SDL_strlcpy(debug[3], menuInt[3][OPTIONS_ROWS], entrySize);
+	SDL_strlcpy(debug[3], "Done", entrySize);
 	menuChoices[MENU_DEBUG] = 4;
 }
 
@@ -1284,6 +1282,50 @@ static JE_byte ship_color_step_row(JE_byte sel, int dir)
 	while (dir < 0 && target > 0 && target % SHIP_COLOR_COLS != ship_color_column)
 		--target;
 	return (JE_byte)(2 + target);
+}
+
+static int ship_color_toggle_y(void)
+{
+	const int rows = (ship_color_cells + SHIP_COLOR_COLS - 1) / SHIP_COLOR_COLS;
+	return SHIP_COLOR_Y0 + rows * SHIP_COLOR_PITCH_Y + 6;
+}
+
+static int ship_color_click_row(int x, int y)
+{
+	for (int i = 0; i < ship_color_cells; ++i)
+	{
+		int cx0, cy0, cx1, cy1;
+		ship_color_cell_rect(i, &cx0, &cy0, &cx1, &cy1);
+		if (x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1)
+			return i + 2;
+	}
+	const int toggleY = ship_color_toggle_y();
+	if (x >= SHIP_COLOR_X0 && y >= toggleY - 2 && y <= toggleY + 8)
+		return ship_color_toggle_row();
+	return menuChoices[MENU_SHIP_COLOR] + 1;
+}
+
+static int ship_color_partner_cell(void)
+{
+	return isNetworkGame ? ship_color_find_cell(netStylePeerColor()) : -1;
+}
+
+static void ship_color_partner_tag(char *tag, size_t size)
+{
+	snprintf(tag, size, "P%u", 2u - netStyleLocalSeat());
+}
+
+static int ship_color_label_y(int y0)
+{
+	return y0 + (SHIP_COLOR_CELL_H - SHIP_COLOR_LABEL_H) / 2 + 2;
+}
+
+static void ship_color_tag_origin(int cell, const char *tag, int *x, int *y)
+{
+	int x0, y0, x1, y1;
+	ship_color_cell_rect(cell, &x0, &y0, &x1, &y1);
+	*x = x1 - JE_textWidth(tag, TINY_FONT);
+	*y = y0 + 1;
 }
 
 enum
@@ -1704,6 +1746,69 @@ static const char *customize_fault(void)
 	if (labelRight + 4 > ONLINE_OPACITY_SWATCH_X)
 		return "the Color Sidekicks label runs into its On/Off";
 
+	const int gridCells = ship_color_cells;
+	const JE_byte gridChoices = menuChoices[MENU_SHIP_COLOR];
+	const char *layoutFault = NULL;
+	for (int cells = SHIP_COLOR_CELLS - 4; layoutFault == NULL && cells <= SHIP_COLOR_CELLS;
+	     cells += 4)
+	{
+		ship_color_cells = cells;
+		menuChoices[MENU_SHIP_COLOR] = (JE_byte)(cells + 2);
+		int lx0, ly0, lx1, ly1;
+		ship_color_cell_rect(cells - 1, &lx0, &ly0, &lx1, &ly1);
+		const int toggleGap = ship_color_toggle_y() - (ly1 + 1);
+		if (toggleGap <= 1 || toggleGap >= SHIP_COLOR_PITCH_Y
+		    || ship_color_toggle_y() + 8 > MENU_HELP_TEXT_Y)
+			layoutFault = "Color Sidekicks does not sit right under the color grid";
+		else if (ship_color_click_row(SHIP_COLOR_X0 + 4, ship_color_toggle_y() + 3)
+		         != ship_color_toggle_row())
+			layoutFault = "a tap on Color Sidekicks misses it";
+		for (int c = 0; layoutFault == NULL && c < cells; ++c)
+		{
+			int cx0, cy0, cx1, cy1;
+			ship_color_cell_rect(c, &cx0, &cy0, &cx1, &cy1);
+			const int midY = (cy0 + cy1) / 2;
+			if (ship_color_click_row((cx0 + cx1) / 2, midY) != c + 2)
+				layoutFault = "a tap on a color picks another cell";
+			else if (c % SHIP_COLOR_COLS != 0
+			         && ship_color_click_row(cx0 - 1, midY) <= menuChoices[MENU_SHIP_COLOR])
+				layoutFault = "a tap between two colors picks one";
+		}
+	}
+	ship_color_cells = gridCells;
+	menuChoices[MENU_SHIP_COLOR] = gridChoices;
+	if (layoutFault != NULL)
+		return layoutFault;
+
+	const bool netWas = isNetworkGame;
+	const uint playerWas = thisPlayerNum;
+	const int peerColorWas = netStyleSeatColor(1);
+	char tagOne[4], tagTwo[4];
+	isNetworkGame = false;
+	const int offlineCell = ship_color_partner_cell();
+	isNetworkGame = true;
+	thisPlayerNum = 1;
+	netStyleSetSeatColor(1, NET_SHIP_COLOR_NONE);
+	const int undyedCell = ship_color_partner_cell();
+	netStyleSetSeatColor(1, ship_color_cell[2]);
+	const int dyedCell = ship_color_partner_cell();
+	ship_color_partner_tag(tagTwo, sizeof(tagTwo));
+	thisPlayerNum = 2;
+	ship_color_partner_tag(tagOne, sizeof(tagOne));
+	netStyleSetSeatColor(1, peerColorWas);
+	thisPlayerNum = playerWas;
+	isNetworkGame = netWas;
+	if (offlineCell != -1 || undyedCell != 0 || dyedCell != 2)
+		return "the partner tag does not mark the partner's dye";
+	if (strcmp(tagTwo, "P2") != 0 || strcmp(tagOne, "P1") != 0)
+		return "the partner tag does not name the other seat";
+	int tagX, tagY, ox0, oy0, ox1, oy1;
+	ship_color_cell_rect(0, &ox0, &oy0, &ox1, &oy1);
+	ship_color_tag_origin(0, tagTwo, &tagX, &tagY);
+	if (tagX - 1 < ox0 || tagX + JE_textWidth(tagTwo, TINY_FONT) > ox1 + 1 || tagY - 1 < oy0
+	    || tagY + SHIP_COLOR_LABEL_H + 1 > ship_color_label_y(oy0))
+		return "the partner tag leaves its cell or crowds the Off label";
+
 	player[0].items.ship = EXTRA_SHIP_ID_BASE + 2;
 	stock_owned_items(&player[0].items);
 	const JE_byte *const shelf = itemAvail[itemAvailMap[0] - 1];
@@ -2083,8 +2188,9 @@ bool game_menu_test_outpost_rows(char *detail, size_t detailSize)
 	}
 	if (fault == NULL && (menuChoices[MENU_DEBUG] != 4
 	                      || strcmp(menuInt[MENU_DEBUG + 1][1], "Debug Menu") != 0
-	                      || strcmp(menuInt[MENU_DEBUG + 1][2], "Debug Level") != 0))
-		fault = "the Debug page lost its Debug Menu and Debug Level rows";
+	                      || strcmp(menuInt[MENU_DEBUG + 1][2], "Debug Level") != 0
+	                      || strcmp(menuInt[MENU_DEBUG + 1][3], "Done") != 0))
+		fault = "the Debug page lost its Debug Menu, Debug Level or Done rows";
 	if (fault == NULL)
 	{
 		curMenu = MENU_DEBUG;
@@ -2142,24 +2248,6 @@ static void ship_color_ramp(int x0, int y0, int x1, int y1, int color)
 	}
 }
 
-// Show the partner's dye so the player can avoid matching it.
-static void ship_color_partner_legend(void)
-{
-	const int swatchH = 9;
-	const int x0 = SHIP_COLOR_X0, y0 = SHIP_COLOR_LEGEND_Y;
-	const int x1 = x0 + SHIP_COLOR_CELL_W - 1, y1 = y0 + swatchH - 1;
-	const int color = netStylePeerColor();
-
-	// An empty outline for no dye, and otherwise the dye's shade ramp.
-	if (color == NET_SHIP_COLOR_NONE)
-		JE_rectangle(VGAScreen, x0, y0, x1, y1, ONLINE_CELL_LO);
-	else
-		ship_color_ramp(x0, y0, x1, y1, color);
-
-	draw_font_hv_shadow(VGAScreen, x1 + 6, y0 + 1, "Partner", small_font, left_aligned, 15, 3,
-	                    false, 1);
-}
-
 // The highlighted cell applies immediately; the last cell only returns.
 static void draw_ship_color_page(void)
 {
@@ -2171,6 +2259,10 @@ static void draw_ship_color_page(void)
 		netStyleSetSeatColor(seat, ship_color_cell[cell]);
 		network_player_look_publish();  // publish immediately instead of waiting for keep-alive
 	}
+
+	const int partnerCell = ship_color_partner_cell();
+	char partnerTag[4];
+	ship_color_partner_tag(partnerTag, sizeof(partnerTag));
 
 	for (int i = 0; i < ship_color_cells; ++i)
 	{
@@ -2188,19 +2280,24 @@ static void draw_ship_color_page(void)
 		{
 			fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, ONLINE_CELL_PANEL);
 			draw_font_hv_shadow(VGAScreen, (x0 + x1 + 1) / 2,
-			                    y0 + (SHIP_COLOR_CELL_H - SHIP_COLOR_LABEL_H) / 2,
+			                    ship_color_label_y(y0),
 			                    (i == 0) ? "Off" : ONLINE_PICKER_DONE, small_font, centered,
 			                    15, selected ? 6 : 3, false, 1);
 		}
 
 		JE_rectangle(VGAScreen, x0 - 1, y0 - 1, x1 + 1, y1 + 1,
 		             selected ? ONLINE_CELL_HI : ONLINE_CELL_LO);
+
+		if (i == partnerCell)
+		{
+			int tagX, tagY;
+			ship_color_tag_origin(i, partnerTag, &tagX, &tagY);
+			JE_outTextOutlined(VGAScreen, tagX, tagY, partnerTag, 15, 4);
+		}
 	}
 
-	picker_toggle(SHIP_COLOR_X0, SHIP_COLOR_TOGGLE_Y, SHIP_COLOR_SIDEKICK_LABEL,
+	picker_toggle(SHIP_COLOR_X0, ship_color_toggle_y(), SHIP_COLOR_SIDEKICK_LABEL,
 	              netStyleSidekickDye(seat), curSel[MENU_SHIP_COLOR] == ship_color_toggle_row());
-	if (isNetworkGame)
-		ship_color_partner_legend();
 
 	// Preview this ship's selected color at full opacity.
 	netStylePreviewSet(netStyleSeatColor(seat), NET_OPACITY_FULL);
@@ -4391,19 +4488,7 @@ void JE_itemScreen(void)
 				// The dye grid maps its own clicks; a press in a gap between cells is a miss.
 				if (curMenu == MENU_SHIP_COLOR)
 				{
-					for (int i = 0; i < ship_color_cells; ++i)
-					{
-						int cx0, cy0, cx1, cy1;
-						ship_color_cell_rect(i, &cx0, &cy0, &cx1, &cy1);
-						if (mouseX >= cx0 && mouseX <= cx1 && mouseY >= cy0 && mouseY <= cy1)
-						{
-							selection = i + 2;
-							break;
-						}
-					}
-					if (mouseX >= SHIP_COLOR_X0 && mouseY >= SHIP_COLOR_TOGGLE_Y - 2 &&
-					    mouseY <= SHIP_COLOR_TOGGLE_Y + 8)
-						selection = ship_color_toggle_row();
+					selection = ship_color_click_row(mouseX, mouseY);
 				}
 				else if (mouseX > 170 && mouseX < 308)
 				{
@@ -6583,12 +6668,21 @@ void JE_drawMainMenuHelpText(void)
 		else if (curMenu == MENU_SHIP_COLOR)
 		{
 			const int cell = curSel[MENU_SHIP_COLOR] - 2;
+			const bool theirs = cell == ship_color_partner_cell();
+			char partner[4];
+			ship_color_partner_tag(partner, sizeof(partner));
 			if (cell == ship_color_cells)
 				SDL_strlcpy(tempStr, "Dye your sidekicks along with your ship.", sizeof(tempStr));
 			else if (cell >= ship_color_cells - 1)
 				SDL_strlcpy(tempStr, "Keep this color and go back.", sizeof(tempStr));
+			else if (cell <= 0 && theirs)
+				snprintf(tempStr, sizeof(tempStr), "Fly the hull's own colors, as %s does.",
+				         partner);
 			else if (cell <= 0)
 				SDL_strlcpy(tempStr, "Fly the hull's own colors.", sizeof(tempStr));
+			else if (theirs)
+				snprintf(tempStr, sizeof(tempStr), "Color %d, flown by %s.  Enter keeps it.",
+				         ship_color_cell[cell], partner);
 			else
 				snprintf(tempStr, sizeof(tempStr), "Color %d.  Arrows try one, Enter keeps it.",
 				         ship_color_cell[cell]);
