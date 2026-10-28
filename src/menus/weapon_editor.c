@@ -847,7 +847,7 @@ static JE_word cwRangeShipLook(Sprite2_array **sheet)
 
 static int cwRangeDye(void)
 {
-	return NET_SHIP_COLOR_NONE;
+	return cwFromOutpost ? netStyleLocalWornColor() : NET_SHIP_COLOR_NONE;
 }
 
 static void cwDrawRangeShip(int x, int y)
@@ -3936,26 +3936,9 @@ static const char *cwSkinPreviewFault(void)
 
 static bool cwRangeDrawsWith(int dye)
 {
-	SDL_Surface *const shot = SDL_CreateRGBSurface(0, 96, 48, 8, 0, 0, 0, 0);
-	SDL_Surface *const want = SDL_CreateRGBSurface(0, 96, 48, 8, 0, 0, 0, 0);
-	bool same = false;
-	if (shot != NULL && want != NULL)
-	{
-		SDL_FillRect(shot, NULL, 0);
-		SDL_FillRect(want, NULL, 0);
-		SDL_Surface *const saved = VGAScreen;
-		VGAScreen = shot;
-		cwDrawRangeShip(36, 10);
-		VGAScreen = want;
-		Sprite2_array *sheet;
-		const JE_word gr = cwRangeShipLook(&sheet);
-		shop_draw_hull_dyed(sheet, gr, 36, 10, dye);
-		VGAScreen = saved;
-		same = memcmp(shot->pixels, want->pixels, (size_t)shot->pitch * (size_t)shot->h) == 0;
-	}
-	SDL_FreeSurface(shot);
-	SDL_FreeSurface(want);
-	return same;
+	Sprite2_array *sheet;
+	const JE_word gr = cwRangeShipLook(&sheet);
+	return shop_draw_matches_hull(cwDrawRangeShip, sheet, gr, dye);
 }
 
 static const char *cwRangeDyeFault(void)

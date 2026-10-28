@@ -49,6 +49,8 @@ const char *shop_ship_pick_name(int ship, char *buf, size_t n);
 void shop_ship_pick_draw(int ship, int dye, int x, int y, int w, int h);
 void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py);
 void shop_draw_hull_dyed(const Sprite2_array *sheet, JE_word gr, int px, int py, int dye);
+bool shop_draw_matches_hull(void (*draw)(int x, int y), const Sprite2_array *sheet, JE_word gr,
+                            int dye);
 
 // Item-list columns: the icon anchor, the label rows drawn beside it, and the last column a row
 // may paint (the scroll-bar track is at 306).

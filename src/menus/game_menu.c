@@ -1631,6 +1631,13 @@ static bool customize_offers(int kind)
 	return false;
 }
 
+static void shop_draw_talon(int x, int y)
+{
+	Sprite2_array *sheet;
+	const JE_word gr = shop_ship_hull(1, &sheet);
+	shop_draw_hull(sheet, gr, x, y);
+}
+
 static const char *customize_fault(void)
 {
 	static const struct
@@ -1728,21 +1735,30 @@ static const char *customize_fault(void)
 		if (!spritePickerTagFits(shipSkinName(skinOrder[i], longTag, sizeof(longTag))))
 			return "a Ship Skin name is cut short in the picker";
 
+	Sprite2_array *talonSheet;
+	const JE_word talon = shop_ship_hull(1, &talonSheet);
 	const int colorWas = netStyleSeatColor(0);
 	netStyleSetSeatColor(0, NET_SHIP_COLOR_NONE);
 	const bool bare = customize_ship_page(NULL, 0).dye == NET_SHIP_COLOR_NONE
-	               && customize_skin_page("In-Game", NULL, 0).dye == NET_SHIP_COLOR_NONE;
+	               && customize_skin_page("In-Game", NULL, 0).dye == NET_SHIP_COLOR_NONE
+	               && shop_draw_matches_hull(shop_draw_talon, talonSheet, talon,
+	                                         NET_SHIP_COLOR_NONE);
 	netStyleSetSeatColor(0, 6);
 	const int shipValues[] = { 1, SHIP_DRAGONWING, EXTRA_SHIP_ID_BASE + 1 };
 	const SpritePickerPage shipPage = customize_ship_page(shipValues, COUNTOF(shipValues));
 	const SpritePickerPage skinPage = customize_skin_page("In-Game", skinOrder, skinCount);
 	char dyeDetail[64] = "";
+	const bool shopWorn = shop_draw_matches_hull(shop_draw_talon, talonSheet, talon, 6)
+	                   && !shop_draw_matches_hull(shop_draw_talon, talonSheet, talon,
+	                                              NET_SHIP_COLOR_NONE);
 	const bool worn = shipPage.dye == 6 && skinPage.dye == 6
 	               && spritePickerDyeSelfTest(&shipPage, dyeDetail, sizeof(dyeDetail))
 	               && spritePickerDyeSelfTest(&skinPage, dyeDetail, sizeof(dyeDetail));
 	netStyleSetSeatColor(0, colorWas);
 	if (!bare)
-		return "the Customize pickers dye ships with no Ship Color applied";
+		return "the Customize pickers or the shop dye ships with no Ship Color applied";
+	if (!shopWorn)
+		return "the shop draws the ship without its Ship Color";
 	if (!worn)
 	{
 		snprintf(why, sizeof(why), "the Customize pickers skip the Ship Color%s%s",
@@ -5369,6 +5385,29 @@ void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py)
 void shop_draw_hull_dyed(const Sprite2_array *sheet, JE_word gr, int px, int py, int dye)
 {
 	shop_draw_hull_style(sheet, gr, px, py, netStyleDye(dye));
+}
+
+bool shop_draw_matches_hull(void (*draw)(int x, int y), const Sprite2_array *sheet, JE_word gr,
+                            int dye)
+{
+	SDL_Surface *const shot = SDL_CreateRGBSurface(0, 96, 48, 8, 0, 0, 0, 0);
+	SDL_Surface *const want = SDL_CreateRGBSurface(0, 96, 48, 8, 0, 0, 0, 0);
+	bool same = false;
+	if (shot != NULL && want != NULL)
+	{
+		SDL_FillRect(shot, NULL, 0);
+		SDL_FillRect(want, NULL, 0);
+		SDL_Surface *const saved = VGAScreen;
+		VGAScreen = shot;
+		draw(36, 10);
+		VGAScreen = want;
+		shop_draw_hull_dyed(sheet, gr, 36, 10, dye);
+		VGAScreen = saved;
+		same = memcmp(shot->pixels, want->pixels, (size_t)shot->pitch * (size_t)shot->h) == 0;
+	}
+	SDL_FreeSurface(shot);
+	SDL_FreeSurface(want);
+	return same;
 }
 
 static void draw_preview_hull(uint seat, int x, int y)
