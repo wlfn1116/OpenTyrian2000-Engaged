@@ -2061,15 +2061,21 @@ bool game_menu_test_outpost_rows(char *detail, size_t detailSize)
 			if (!debug)
 				SDL_strlcpy(quitLabel[i], rows[stock - 1], sizeof(quitLabel[i]));
 
-			if (menuChoices[menu] != stock + debug)
+			const int quitRow = stock + debug;
+			if (menuChoices[menu] != quitRow)
 				fault = "Debug Mode did not add exactly one outpost row";
+			else if (outpost_trailing_kind(menu, stock - 1) != OUTPOST_ROW_STOCK
+			         || outpost_trailing_kind(menu, quitRow) != OUTPOST_ROW_QUIT
+			         || outpost_trailing_kind(menu, quitRow + 1) != OUTPOST_ROW_STOCK)
+				fault = "an outpost's Quit row moved";
 			else if (debug && (strcmp(rows[stock - 1], "Debug") != 0
 			                   || strcmp(rows[stock], quitLabel[i]) != 0))
 				fault = "the Debug row does not sit directly above Quit";
 			else if (debug)
 			{
 				curMenu = menu;
-				if (!outpost_trailing_choice(stock) || curMenu != MENU_DEBUG
+				if (outpost_trailing_kind(menu, stock) != OUTPOST_ROW_DEBUG
+				    || !outpost_trailing_choice(stock) || curMenu != MENU_DEBUG
 				    || curSel[MENU_DEBUG] != 2)
 					fault = "the Debug row does not open the Debug page";
 			}
