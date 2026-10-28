@@ -104,7 +104,7 @@ enum
 	MENU_JOYSTICK_CONFIG = 12,
 	MENU_SUPER_TYRIAN = 13,
 	MENU_MOUSE_CONFIG = 14,  // T2000
-	// Retired debug-level grid. Keep the hole because menu tables are indexed by these IDs.
+	MENU_DEBUG = 15,
 	MENU_ESHOP = 16,
 	MENU_PERKS = 17,
 	// Customize and its picker pages.
@@ -235,17 +235,33 @@ static int outpost_menu(void)
 	return MENU_FULL_GAME;
 }
 
+static int outpost_entry(int menu)
+{
+	for (uint i = 0; i < COUNTOF(outpostMenus); ++i)
+		if (outpostMenus[i].menu == menu)
+			return (int)i;
+	return -1;
+}
+
 // Return the Customize row, or 0 when absent.
 static int outpost_customize_row(int menu)
 {
 	if (!isNetworkGame && twoPlayerMode)
 		return 0;
 
-	for (uint i = 0; i < COUNTOF(outpostMenus); ++i)
-		if (outpostMenus[i].menu == menu)
-			return outpostMenus[i].optionsRow;
+	const int entry = outpost_entry(menu);
+	return entry >= 0 ? outpostMenus[entry].optionsRow : 0;
+}
 
-	return 0;
+static int outpost_stock_rows(int menu)
+{
+	const int entry = outpost_entry(menu);
+	return entry >= 0 ? outpostMenus[entry].stockRows : 0;
+}
+
+static int outpost_debug_rows(void)
+{
+	return debugMode ? 1 : 0;
 }
 
 // Where an offline row lands on the menu now drawn.
@@ -286,6 +302,74 @@ static bool outpost_gaps_drawn(int menu)
 static int outpost_row_gap_px(int menu, int row)
 {
 	return outpost_gaps_drawn(menu) ? outpost_gap_px_raw(menu, row) : 0;
+}
+
+static int outpost_click_row(int menu, int selection)
+{
+	if (!outpost_gaps_drawn(menu))
+		return selection;
+
+	if (menu == MENU_2_PLAYER_ARCADE)
+	{
+		if (selection > 5)
+			selection--;
+		if (selection > 3)
+			selection--;
+	}
+	else if (menu == MENU_FULL_GAME)
+	{
+		// First row below the Start Level separator.
+		const int gap = outpost_row(menu, 7);
+		if (debugMode)
+		{
+			// The separator shifts the Debug row and Quit.
+			if (selection > gap)
+				selection--;
+		}
+		else
+		{
+			// Clamp the separator and everything below it to Quit.
+			if (selection > gap)
+				selection = gap;
+		}
+	}
+	return selection;
+}
+
+static void outpost_quit(bool haltOnline)
+{
+	if (!JE_quitRequest())
+		return;
+	if (haltOnline && isNetworkGame)
+		JE_tyrianHalt(0);
+	gameLoaded = true;
+	mainLevel = 0;
+}
+
+enum { OUTPOST_ROW_STOCK, OUTPOST_ROW_DEBUG, OUTPOST_ROW_QUIT };
+
+static int outpost_trailing_kind(int menu, int select)
+{
+	const int stock = outpost_stock_rows(menu);
+	if (stock == 0 || select < stock || select > stock + outpost_debug_rows())
+		return OUTPOST_ROW_STOCK;
+	return (select == stock && outpost_debug_rows() != 0) ? OUTPOST_ROW_DEBUG : OUTPOST_ROW_QUIT;
+}
+
+static bool outpost_trailing_choice(int select)
+{
+	switch (outpost_trailing_kind(curMenu, select))
+	{
+	case OUTPOST_ROW_DEBUG:
+		curSel[MENU_DEBUG] = 2;
+		curMenu = MENU_DEBUG;
+		return true;
+	case OUTPOST_ROW_QUIT:
+		outpost_quit(curMenu == MENU_SUPER_TYRIAN);
+		return true;
+	default:
+		return false;
+	}
 }
 
 uint JE_shopPlayerIndex(void)
@@ -383,7 +467,7 @@ static PlayerItems old_items[2];  // shared shop-entry snapshots
 static struct cube_struct cube[4];
 
 // Endless menu sizes are adjusted at runtime.
-static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5, 0, 0, 0, 0 };
+static const JE_MenuChoiceType menuChoicesDefault = { 7, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5, 0, 0, 0, 0 };
 
 // Pickers return to Customize; its Esc handler returns to the active outpost.
 static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 3, 1, 1, 1,
@@ -841,34 +925,6 @@ static void datacube_smooth_present(const struct cube_struct *c, JE_word from, J
 	while (remaining > 0);
 }
 
-/* Add or remove the two Debug Mode rows from the buy/sell menu. */
-static void configure_buysell_debug_menu(void)
-{
-	static char quitLabel[sizeof(menuInt[1][6])];
-	static bool quitLabelSaved = false;
-
-	if (!quitLabelSaved)
-	{
-		// menuInt[1][6] holds the stock "Quit Game" entry as loaded from the
-		// game's menu text (item 7 in the unmodified buy/sell menu).
-		SDL_strlcpy(quitLabel, menuInt[1][6], sizeof(quitLabel));
-		quitLabelSaved = true;
-	}
-
-	if (debugMode)
-	{
-		menuChoices[MENU_FULL_GAME] = 9;
-		SDL_strlcpy(menuInt[1][6], "Debug Menu", sizeof(menuInt[1][6]));
-		SDL_strlcpy(menuInt[1][7], "Debug Level", sizeof(menuInt[1][7]));
-		SDL_strlcpy(menuInt[1][8], quitLabel, sizeof(menuInt[1][8]));
-	}
-	else
-	{
-		menuChoices[MENU_FULL_GAME] = 7;
-		SDL_strlcpy(menuInt[1][6], quitLabel, sizeof(menuInt[1][6]));
-	}
-}
-
 /* Install Endless shop labels and restore captured campaign labels when leaving. */
 static void configure_endless_shop_menu(void)
 {
@@ -1097,43 +1153,35 @@ static void draw_endless_perk_list(void)
 	}
 }
 
-/* Insert debug rows before Quit and preserve the stock label for restoration.
- * menuIntIdx selects the menuInt row; defaultChoices includes the original Quit row. */
-static void configure_mode_debug_menu(int menu, int menuIntIdx, int defaultChoices,
-                                      char *savedQuit, bool *quitSaved)
+/* Insert the Debug row before Quit and preserve the stock label for restoration. */
+static void configure_outpost_debug_menus(void)
 {
+	static char savedQuit[COUNTOF(outpostMenus)][sizeof(menuInt[0][0])];
+	static bool quitSaved[COUNTOF(outpostMenus)];
 	const size_t entrySize = sizeof(menuInt[0][0]);
 
-	if (!*quitSaved)
+	for (uint i = 0; i < COUNTOF(outpostMenus); ++i)
 	{
-		SDL_strlcpy(savedQuit, menuInt[menuIntIdx][defaultChoices - 1], entrySize);
-		*quitSaved = true;
+		const int stock = outpostMenus[i].stockRows;
+		char (*rows)[24] = menuInt[outpostMenus[i].menu + 1];
+		if (!quitSaved[i])
+		{
+			SDL_strlcpy(savedQuit[i], rows[stock - 1], entrySize);
+			quitSaved[i] = true;
+		}
+
+		menuChoices[outpostMenus[i].menu] = (JE_byte)(stock + outpost_debug_rows());
+		SDL_strlcpy(rows[stock - 1], debugMode ? "Debug" : savedQuit[i], entrySize);
+		if (debugMode)
+			SDL_strlcpy(rows[stock], savedQuit[i], entrySize);
 	}
 
-	if (debugMode)
-	{
-		menuChoices[menu] = defaultChoices + 2;
-		SDL_strlcpy(menuInt[menuIntIdx][defaultChoices - 1], "Debug Menu",  entrySize);
-		SDL_strlcpy(menuInt[menuIntIdx][defaultChoices],     "Debug Level", entrySize);
-		SDL_strlcpy(menuInt[menuIntIdx][defaultChoices + 1], savedQuit,     entrySize);
-	}
-	else
-	{
-		menuChoices[menu] = defaultChoices;
-		SDL_strlcpy(menuInt[menuIntIdx][defaultChoices - 1], savedQuit, entrySize);
-	}
-}
-
-/* Set up the Debug Mode entries for the arcade / Super Tyrian mode menus (these use
- * their menuChoicesDefault item counts; the buy/sell menu is special-cased). */
-static void configure_arcade_debug_menus(void)
-{
-	static char quit1P[sizeof(menuInt[0][0])], quit2P[sizeof(menuInt[0][0])], quitST[sizeof(menuInt[0][0])];
-	static bool saved1P = false, saved2P = false, savedST = false;
-
-	configure_mode_debug_menu(MENU_1_PLAYER_ARCADE, MENU_1_PLAYER_ARCADE + 1, 4, quit1P, &saved1P);
-	configure_mode_debug_menu(MENU_2_PLAYER_ARCADE, MENU_2_PLAYER_ARCADE + 1, 6, quit2P, &saved2P);
-	configure_mode_debug_menu(MENU_SUPER_TYRIAN,    MENU_SUPER_TYRIAN + 1,    5, quitST, &savedST);
+	char (*debug)[24] = menuInt[MENU_DEBUG + 1];
+	SDL_strlcpy(debug[0], "Debug", entrySize);
+	SDL_strlcpy(debug[1], "Debug Menu", entrySize);
+	SDL_strlcpy(debug[2], "Debug Level", entrySize);
+	SDL_strlcpy(debug[3], menuInt[3][OPTIONS_ROWS], entrySize);
+	menuChoices[MENU_DEBUG] = 4;
 }
 
 /* Insert Sensitivity after Sound Volume in the options menu, then build the online page from it.
@@ -1954,17 +2002,14 @@ bool game_menu_test_outpost_rows(char *detail, size_t detailSize)
 			fault = "the local two-player arcade lost its stock numbering";
 	}
 
-	// Keep optional gaps when they fit; never let them reach the help line.
+	// Keep every blank line, Debug Mode included; never let a row reach the help line.
 	const JE_boolean savedDebug = debugMode;
 	for (uint i = 0; fault == NULL && i < COUNTOF(outpostMenus); ++i)
 	{
 		const int menu = outpostMenus[i].menu;
 
 		// Debug setup starts from these stock counts.
-		const int stockDefault = (menu == MENU_FULL_GAME)
-		                         ? menuChoicesDefault[menu] - 2   // default includes debug rows
-		                         : menuChoicesDefault[menu];
-		if (outpostMenus[i].stockRows != stockDefault)
+		if (outpostMenus[i].stockRows != menuChoicesDefault[menu])
 		{
 			fault = "an outpost menu's stock row count drifted from menuChoicesDefault";
 			break;
@@ -1978,20 +2023,75 @@ bool game_menu_test_outpost_rows(char *detail, size_t detailSize)
 				isNetworkGame = (online != 0);
 				twoPlayerMode = isNetworkGame || menu == MENU_2_PLAYER_ARCADE;
 
-				const int last = outpostMenus[i].stockRows + (debug ? 2 : 0)
+				const int last = outpostMenus[i].stockRows + outpost_debug_rows()
 				               + (outpost_customize_row(menu) != 0 ? 1 : 0);
 				menuChoices[menu] = (JE_byte)last;
 
 				if (OPTIONS_ROW_Y(last) + outpost_row_gap_px(menu, last) + MENU_ROW_H > MENU_HELP_TEXT_Y)
 					fault = "an outpost menu's last row reached the help line";
-				else if (!outpost_gaps_drawn(menu)
-				         && OPTIONS_ROW_Y(last) + outpost_gap_px_raw(menu, last) + MENU_ROW_H
-				            <= MENU_HELP_TEXT_Y)
-					fault = "an outpost menu dropped a blank line it had room for";
+				else if (!outpost_gaps_drawn(menu) && outpost_gap_px_raw(menu, last) != 0)
+					fault = "an outpost menu dropped its blank lines";
+
+				for (int row = 2; fault == NULL && row <= last; ++row)
+				{
+					const int y = OPTIONS_ROW_Y(row) + outpost_row_gap_px(menu, row)
+					            + MENU_ROW_H / 2;
+					if (outpost_click_row(menu, (y - 38) / MENU_ROW_H + 2) != row)
+						fault = "a click on an outpost row picks another row";
+				}
 			}
 		menuChoices[menu] = savedCount;
 	}
+
+	char quitLabel[COUNTOF(outpostMenus)][sizeof(menuInt[0][0])];
+	JE_byte savedChoices[MENU_MAX];
+	memcpy(savedChoices, menuChoices, sizeof(savedChoices));
+	PlayerItems savedOld[COUNTOF(old_items)];
+	memcpy(savedOld, old_items, sizeof(savedOld));
+	const int savedMenu = curMenu;
+	const JE_byte savedDebugSel = curSel[MENU_DEBUG];
+	for (int debug = 0; fault == NULL && debug <= 1; ++debug)
+	{
+		debugMode = (debug != 0);
+		configure_outpost_debug_menus();
+		for (uint i = 0; fault == NULL && i < COUNTOF(outpostMenus); ++i)
+		{
+			const int menu = outpostMenus[i].menu, stock = outpostMenus[i].stockRows;
+			char (*rows)[24] = menuInt[menu + 1];
+			if (!debug)
+				SDL_strlcpy(quitLabel[i], rows[stock - 1], sizeof(quitLabel[i]));
+
+			if (menuChoices[menu] != stock + debug)
+				fault = "Debug Mode did not add exactly one outpost row";
+			else if (debug && (strcmp(rows[stock - 1], "Debug") != 0
+			                   || strcmp(rows[stock], quitLabel[i]) != 0))
+				fault = "the Debug row does not sit directly above Quit";
+			else if (debug)
+			{
+				curMenu = menu;
+				if (!outpost_trailing_choice(stock) || curMenu != MENU_DEBUG
+				    || curSel[MENU_DEBUG] != 2)
+					fault = "the Debug row does not open the Debug page";
+			}
+		}
+	}
+	if (fault == NULL && (menuChoices[MENU_DEBUG] != 4
+	                      || strcmp(menuInt[MENU_DEBUG + 1][1], "Debug Menu") != 0
+	                      || strcmp(menuInt[MENU_DEBUG + 1][2], "Debug Level") != 0))
+		fault = "the Debug page lost its Debug Menu and Debug Level rows";
+	if (fault == NULL)
+	{
+		curMenu = MENU_DEBUG;
+		JE_menuFunction(menuChoices[MENU_DEBUG]);
+		if (curMenu != outpost_menu())
+			fault = "leaving the Debug page does not return to the outpost";
+	}
 	debugMode = savedDebug;
+	configure_outpost_debug_menus();
+	memcpy(menuChoices, savedChoices, sizeof(menuChoices));
+	memcpy(old_items, savedOld, sizeof(savedOld));
+	curMenu = savedMenu;
+	curSel[MENU_DEBUG] = savedDebugSel;
 
 	arcadeSeparateMode = savedSep;
 	coopEndlessMode = savedCoopE;
@@ -2197,7 +2297,7 @@ static void set_shop_phase(void)
 		"shop: joystick config",      // 12  MENU_JOYSTICK_CONFIG
 		"shop: SuperTyrian menu",     // 13  MENU_SUPER_TYRIAN
 		"shop: mouse config",         // 14  MENU_MOUSE_CONFIG
-		"shop: (retired slot 15)",    // 15  the removed debug play-level grid; unreachable
+		"shop: debug",                // 15  MENU_DEBUG
 		"shop: endless E-Shop",       // 16  MENU_ESHOP
 		"shop: endless perks",        // 17  MENU_PERKS
 		"shop: customize",            // 18  MENU_CUSTOMIZE
@@ -2972,8 +3072,7 @@ void JE_itemScreen(void)
 	VGAScreen = VGAScreenSeg;
 
 	memcpy(menuChoices, menuChoicesDefault, sizeof(menuChoices));
-	configure_buysell_debug_menu();
-	configure_arcade_debug_menus();
+	configure_outpost_debug_menus();
 	configure_outpost_customize_menu();
 	configure_options_sens_menu();
 	configure_customize_menu();
@@ -4331,31 +4430,7 @@ void JE_itemScreen(void)
 						            : menuChoices[curMenu] + 1;  // outside the visible list
 					}
 
-					if (curMenu == MENU_2_PLAYER_ARCADE && outpost_gaps_drawn(curMenu))
-					{
-						if (selection > 5)
-							selection--;
-						if (selection > 3)
-							selection--;
-					}
-
-					if (curMenu == MENU_FULL_GAME && outpost_gaps_drawn(curMenu))
-					{
-						// First row below the Start Level separator.
-						const int gap = outpost_row(curMenu, 7);
-						if (debugMode)
-						{
-							// The separator shifts the debug rows and Quit.
-							if (selection > gap)
-								selection--;
-						}
-						else
-						{
-							// Clamp the separator and everything below it to Quit.
-							if (selection > gap)
-								selection = gap;
-						}
-					}
+					selection = outpost_click_row(curMenu, selection);
 
 					/* is play next level screen? */
 					if (curMenu == MENU_PLAY_NEXT_LEVEL)
@@ -4502,18 +4577,15 @@ void JE_itemScreen(void)
 					curMenu = oldMenu;
 					newPal = oldPal;
 				}
-				else if (curMenu == MENU_LIMITED_OPTIONS || curMenu == MENU_CUSTOMIZE)
+				else if (curMenu == MENU_LIMITED_OPTIONS || curMenu == MENU_CUSTOMIZE ||
+				         curMenu == MENU_DEBUG)
 				{
 					newPal = 1;
 					curMenu = outpost_menu();
 				}
 				else if (menuEsc[curMenu] == 0)
 				{
-					if (JE_quitRequest())
-					{
-						gameLoaded = true;
-						mainLevel = 0;
-					}
+					outpost_quit(false);
 				}
 				else
 				{
@@ -6272,37 +6344,29 @@ void JE_drawMainMenuHelpText(void)
 	{
 		// Resolve inserted rows before using stock help indices.
 		const JE_byte sel = (JE_byte)outpost_stock_row(curMenu, curSel[curMenu]);
-		const int stockLast = outpost_stock_row(curMenu, menuChoices[curMenu]);
 		temp = (JE_byte)(sel - 2);
 
 		if (curSel[curMenu] == outpost_customize_row(curMenu))
 		{
 			SDL_strlcpy(tempStr, "Ship look, custom ships and the editors.", sizeof(tempStr));
 		}
-		else if (debugMode && curMenu == MENU_FULL_GAME && sel == 7)
+		else if (outpost_trailing_kind(curMenu, sel) == OUTPOST_ROW_DEBUG)
 		{
-			snprintf(tempStr, sizeof(tempStr), "Debug: equip your ship.");
+			SDL_strlcpy(tempStr, "Debug: equip your ship or pick a level.", sizeof(tempStr));
 		}
-		else if (debugMode && curMenu == MENU_FULL_GAME && sel == 8)
+		else if (outpost_trailing_kind(curMenu, sel) == OUTPOST_ROW_QUIT)
 		{
-			snprintf(tempStr, sizeof(tempStr), "Debug: select a level.");
+			const int quitHelp = menuHelp[curMenu][outpost_stock_rows(curMenu) - 2];
+			SDL_strlcpy(tempStr, mainMenuHelp[quitHelp - 1], sizeof(tempStr));
 		}
-		else if (debugMode && curMenu == MENU_FULL_GAME && sel == 9)
+		else if (curMenu == MENU_DEBUG)
 		{
-			SDL_strlcpy(tempStr, mainMenuHelp[5 - 1], sizeof(tempStr));
-		}
-		else if (debugMode &&
-		         (curMenu == MENU_1_PLAYER_ARCADE || curMenu == MENU_2_PLAYER_ARCADE || curMenu == MENU_SUPER_TYRIAN) &&
-		         sel >= stockLast - 2)
-		{
-			// The inserted Debug entries have no menuHelp[] slot (0 would index
-			// mainMenuHelp[-1]); supply their text, and read Quit's from its original slot.
-			if (sel == stockLast - 2)
-				snprintf(tempStr, sizeof(tempStr), "Debug: equip your ship.");
-			else if (sel == stockLast - 1)
-				snprintf(tempStr, sizeof(tempStr), "Debug: select a level.");
+			if (sel == 2)
+				SDL_strlcpy(tempStr, "Debug: equip your ship.", sizeof(tempStr));
+			else if (sel == 3)
+				SDL_strlcpy(tempStr, "Debug: select a level.", sizeof(tempStr));
 			else
-				SDL_strlcpy(tempStr, mainMenuHelp[menuHelp[curMenu][stockLast - 4] - 1], sizeof(tempStr));
+				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));
 		}
 		else if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && sel == 6)
 		{
@@ -6926,6 +6990,8 @@ void JE_menuFunction(JE_byte select)
 	switch (curMenu)
 	{
 	case MENU_FULL_GAME:
+		if (outpost_trailing_choice(select))
+			break;
 		switch (select)
 		{
 		case 2: //cubes -> endless: open the E-Shop submenu
@@ -7016,36 +7082,25 @@ void JE_menuFunction(JE_byte select)
 				strcpy(menuInt[4][x + 1], miscText[5]);
 			}
 			break;
-		case 7:
-			if (debugMode)
-			{
-				// Debug Menu (equipment): only present when Debug Mode is on.
-				JE_debugMenu(true);
-				ensure_equipped_items_visible();
-				old_items[shopPlayerIndex] = shopPlayer()->items;
-				shopPlayer()->last_items = shopPlayer()->items;
-			}
-			else
-			{
-				// With Debug Mode off, item 7 is the stock "Quit Game".
-				if (JE_quitRequest())
-				{
-					gameLoaded = true;
-					mainLevel = 0;
-				}
-			}
+		}
+		break;
+
+	case MENU_DEBUG:
+		switch (select)
+		{
+		case 2:
+			JE_debugMenu(true);
+			ensure_equipped_items_visible();
+			old_items[shopPlayerIndex] = shopPlayer()->items;
+			shopPlayer()->last_items = shopPlayer()->items;
 			break;
-		case 8: // debug play level (only reachable when Debug Mode is on)
+		case 3:
 			// Scrollable picker; on selection it arms the jump (jumpSection),
 			// so the buy/sell loop exits and the chosen level loads.
 			JE_debugLevelSelect();
 			break;
-		case 9: //quit (only reachable when Debug Mode is on)
-			if (JE_quitRequest())
-			{
-				gameLoaded = true;
-				mainLevel = 0;
-			}
+		default:
+			curMenu = outpost_menu();
 			break;
 		}
 		break;
@@ -7436,6 +7491,8 @@ void JE_menuFunction(JE_byte select)
 		break;
 
 	case MENU_2_PLAYER_ARCADE:
+		if (outpost_trailing_choice(select))
+			break;
 		switch (select)
 		{
 		case 2:
@@ -7460,36 +7517,12 @@ void JE_menuFunction(JE_byte select)
 		case 5:
 			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			break;
-		case 6:
-			if (debugMode)
-			{
-				// Debug Menu (equipment); only present when Debug Mode is on.
-				JE_debugMenu(true);
-				ensure_equipped_items_visible();
-				old_items[shopPlayerIndex] = shopPlayer()->items;
-				shopPlayer()->last_items = shopPlayer()->items;
-			}
-			else if (JE_quitRequest())
-			{
-				// With Debug Mode off, item 6 is the stock "Quit Game".
-				gameLoaded = true;
-				mainLevel = 0;
-			}
-			break;
-		case 7: // debug play level (only reachable when Debug Mode is on)
-			JE_debugLevelSelect();
-			break;
-		case 8: // quit (only reachable when Debug Mode is on)
-			if (JE_quitRequest())
-			{
-				gameLoaded = true;
-				mainLevel = 0;
-			}
-			break;
 		}
 		break;
 
 	case MENU_1_PLAYER_ARCADE:
+		if (outpost_trailing_choice(select))
+			break;
 		switch (select)
 		{
 		case 2:
@@ -7500,32 +7533,6 @@ void JE_menuFunction(JE_byte select)
 			curMenu = isNetworkGame
 				? MENU_LIMITED_OPTIONS
 				: MENU_OPTIONS;
-			break;
-		case 4:
-			if (debugMode)
-			{
-				// Debug Menu (equipment); only present when Debug Mode is on.
-				JE_debugMenu(true);
-				ensure_equipped_items_visible();
-				old_items[shopPlayerIndex] = shopPlayer()->items;
-				shopPlayer()->last_items = shopPlayer()->items;
-			}
-			else if (JE_quitRequest())
-			{
-				// With Debug Mode off, item 4 is the stock "Quit Game".
-				gameLoaded = true;
-				mainLevel = 0;
-			}
-			break;
-		case 5: // debug play level (only reachable when Debug Mode is on)
-			JE_debugLevelSelect();
-			break;
-		case 6: // quit (only reachable when Debug Mode is on)
-			if (JE_quitRequest())
-			{
-				gameLoaded = true;
-				mainLevel = 0;
-			}
 			break;
 		}
 		break;
@@ -7615,6 +7622,8 @@ joystick_assign_done:
 		break;
 
 	case MENU_SUPER_TYRIAN:
+		if (outpost_trailing_choice(select))
+			break;
 		switch (select)
 		{
 		case 2:
@@ -7626,40 +7635,6 @@ joystick_assign_done:
 			break;
 		case 4:
 			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
-			break;
-		case 5:
-			if (debugMode)
-			{
-				// Debug Menu (equipment); only present when Debug Mode is on.
-				JE_debugMenu(true);
-				ensure_equipped_items_visible();
-				old_items[shopPlayerIndex] = shopPlayer()->items;
-				shopPlayer()->last_items = shopPlayer()->items;
-			}
-			else if (JE_quitRequest())
-			{
-				// With Debug Mode off, item 5 is the stock "Quit Game".
-				if (isNetworkGame)
-				{
-					JE_tyrianHalt(0);
-				}
-				gameLoaded = true;
-				mainLevel = 0;
-			}
-			break;
-		case 6: // debug play level (only reachable when Debug Mode is on)
-			JE_debugLevelSelect();
-			break;
-		case 7: // quit (only reachable when Debug Mode is on)
-			if (JE_quitRequest())
-			{
-				if (isNetworkGame)
-				{
-					JE_tyrianHalt(0);
-				}
-				gameLoaded = true;
-				mainLevel = 0;
-			}
 			break;
 		}
 		break;
