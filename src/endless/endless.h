@@ -427,9 +427,11 @@ size_t endlessRunSerialize(Uint8 *out, size_t max);
 bool   endlessRunAdopt(const Uint8 *bytes, size_t len);
 // Redeal this seat's shop rows: the fallback when an adopted record carries no partner half.
 void endlessShopRedrawStock(void);
+bool endlessShopSeedSelfTest(void);
 /* Partner outpost state held for the local save. */
 #define ENDLESS_OUTPOST_BLOCK_SIZE (9 + 90 + 8)
 int  endlessPackOwnOutpost(Uint8 *buf);
+bool endlessSavedStockSelfTest(void);
 void endlessPartnerOutpostStash(uint seat, const Uint8 *block);
 void endlessPartnerOutpostClear(void);
 bool endlessLoadSlot(JE_byte slot);

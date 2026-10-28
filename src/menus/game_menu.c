@@ -571,16 +571,51 @@ static void stock_owned_items(PlayerItems *owned)
 	}
 }
 
-static void ensure_equipped_items_visible(void)
+static JE_byte shopStockAvail[COUNTOF(itemAvail)][COUNTOF(itemAvail[0])];
+static JE_byte shopStockAvailMax[COUNTOF(itemAvailMax)];
+static bool shopStockOpen;
+
+static void stock_own_items(const PlayerItems *owned)
 {
-	/* Restore equipped items to inventory after debug loadout edits. */
-	stock_owned_items(&shopPlayer()->items);
+	const PlayerItems *const standard = extraShipStandard(shopPlayerIndex);
+	PlayerItems own = (standard != NULL) ? *standard : *owned;
+	stock_owned_items(&own);
+}
+
+static void shop_stock_show(void)
+{
+	if (!shopStockOpen)
+		return;
+	memcpy(itemAvail, shopStockAvail, sizeof(itemAvail));
+	memcpy(itemAvailMax, shopStockAvailMax, sizeof(itemAvailMax));
+	Player *const shopper = &player[shopPlayerIndex];
+	stock_own_items(endlessMode ? &shopper->items : &shopper->last_items);
+	stock_owned_items(&shopper->items);
 	sort_shop_stock();
 }
 
-static void shop_stock_owned_items(void)
+static void shop_stock_open(void)
 {
-	stock_owned_items(endlessMode ? &shopPlayer()->items : &shopPlayer()->last_items);
+	memcpy(shopStockAvail, itemAvail, sizeof(shopStockAvail));
+	memcpy(shopStockAvailMax, itemAvailMax, sizeof(shopStockAvailMax));
+	shopStockOpen = true;
+	shop_stock_show();
+}
+
+static void shop_stock_close(bool shelvesReplaced)
+{
+	if (shopStockOpen && !shelvesReplaced)
+	{
+		memcpy(itemAvail, shopStockAvail, sizeof(itemAvail));
+		memcpy(itemAvailMax, shopStockAvailMax, sizeof(itemAvailMax));
+	}
+	shopStockOpen = false;
+}
+
+void shop_outpost_stock(JE_byte avail[9][10], JE_byte availMax[9])
+{
+	memcpy(avail, shopStockOpen ? shopStockAvail : itemAvail, sizeof(itemAvail));
+	memcpy(availMax, shopStockOpen ? shopStockAvailMax : itemAvailMax, sizeof(itemAvailMax));
 }
 
 /* Preview the post-purchase wallet; unaffordable rows may make it temporarily negative. */
@@ -1376,14 +1411,15 @@ static void shop_upgrade_commit(void)
 		extraShipPartBought(shopPlayerIndex, part);
 	endlessShopTradeCommit();
 	network_shop_send_transaction();
+	shop_stock_show();
 	curMenu = MENU_UPGRADES;
 }
 
 static void shop_commit_loadout(void)
 {
-	ensure_equipped_items_visible();
 	old_items[shopPlayerIndex] = shopPlayer()->items;
 	shopPlayer()->last_items = shopPlayer()->items;
+	shop_stock_show();
 	if (coop_mode_active())
 		network_shop_send_transaction();
 	else
@@ -1869,8 +1905,11 @@ static const char *customize_fault(void)
 	rear[1] = 0;
 	itemAvailMax[itemAvailMap[ITEM_PART_REAR] - 1] = 2;
 	player[0].items.weapon[REAR_WEAPON].id = 9;
-	ensure_equipped_items_visible();
-	if (itemAvailMax[itemAvailMap[ITEM_PART_REAR] - 1] != 3 || rear[2] != 0)
+	player[0].last_items = player[0].items;
+	shop_stock_open();
+	const bool noneLast = itemAvailMax[itemAvailMap[ITEM_PART_REAR] - 1] == 3 && rear[2] == 0;
+	shop_stock_close(false);
+	if (!noneLast)
 		return "a gun stocked mid-visit lands below None";
 	return NULL;
 }
@@ -1967,6 +2006,7 @@ bool game_menu_test_customize(char *detail, size_t detailSize)
 	memcpy(savedTable, extraShips, sizeof(savedTable));
 	ExtraShipReturn savedReturn[2];
 	extraShipReturnSave(savedReturn);
+	extraShipReturnReset();
 	const uint savedThis = thisPlayerNum, savedShopper = shopPlayerIndex;
 	const JE_integer savedMenu = curMenu;
 	JE_MenuChoiceType savedChoices;
@@ -3274,16 +3314,13 @@ void JE_itemScreen(void)
 	const ShopOutpostRoute outpostRoute = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
 
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
-	shop_stock_owned_items();
+	shop_stock_open();
 
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
 	keyboardUsed = false;
 	firstMenu9 = false;
 	backFromHelp = false;
-
-	/* JE: Sort items in merchant inventory (None sinks to the bottom of each list) */
-	sort_shop_stock();
 
 	do
 	{
@@ -5089,6 +5126,7 @@ void JE_itemScreen(void)
 
 	} while (!(quit || gameLoaded || jumpSection));
 
+	shop_stock_close(gameLoaded);
 	netStylePreviewClear();
 
 	if (gameLoaded)
@@ -7270,9 +7308,9 @@ void JE_menuFunction(JE_byte select)
 		{
 		case 2:
 			JE_debugMenu(true);
-			ensure_equipped_items_visible();
 			old_items[shopPlayerIndex] = shopPlayer()->items;
 			shopPlayer()->last_items = shopPlayer()->items;
+			shop_stock_show();
 			break;
 		case 3:
 			// Scrollable picker; on selection it arms the jump (jumpSection),
@@ -7343,8 +7381,8 @@ void JE_menuFunction(JE_byte select)
 			JE_playSampleNum(bought ? S_SELECT : S_SPRING);
 			if (bought)
 				network_shop_send_transaction();  // cash, drives, charges and tokens all live in the block
-			if (bought && select == 2)  // a reroll regenerated the stock: re-sort so None sinks to the bottom
-				sort_shop_stock();
+			if (bought && select == 2)  // a reroll regenerated the stock: reopen the shelves on it
+				shop_stock_open();
 			configure_endless_shop_menu();  // refresh prices / bought-state labels
 			// A free perk pick can only come from the Gamble (select 12); no other buy grants one.
 			if (bought && select == 12 && endlessGambleWonPerk())  // gamble handed us a free perk: open the pick menu now
@@ -8202,23 +8240,164 @@ void JE_weaponViewFrame(void)
 
 }
 
+static bool shop_stock_has(JE_byte avail[9][10], const JE_byte availMax[9], uint part, JE_byte item)
+{
+	const int row = itemAvailMap[part] - 1;
+	for (int i = 0; i < availMax[row]; ++i)
+		if (avail[row][i] == item)
+			return true;
+	return false;
+}
+
+static bool shop_shelf_has(uint part, JE_byte item)
+{
+	return shop_stock_has(itemAvail, itemAvailMax, part, item);
+}
+
+static void shop_shelf_set(uint part, JE_byte first, JE_byte second)
+{
+	JE_byte *const row = itemAvail[itemAvailMap[part] - 1];
+	row[0] = first;
+	row[1] = second;
+	itemAvailMax[itemAvailMap[part] - 1] = (second != 0) ? 2 : 1;
+}
+
+static const char *shop_custom_stock_fault(uint seat)
+{
+	const JE_byte customGun = 3, customShield = 2, customHull = EXTRA_SHIP_ID_BASE + 1;
+	const JE_byte stockGun = 5, stockGenerator = 2, ownGun = 7;
+
+	JE_byte *const record = &extraShips[0];
+	memset(record, 0, EXTRA_SHIP_RECORD);
+	record[EXTRA_SHIP_BYTE_FRONT] = customGun;
+	record[EXTRA_SHIP_BYTE_GENERATOR] = stockGenerator;
+	record[EXTRA_SHIP_BYTE_SHIELD] = customShield;
+
+	memset(itemAvail, 0, sizeof(itemAvail));
+	memset(itemAvailMax, 0, sizeof(itemAvailMax));
+	shop_shelf_set(ITEM_PART_HULL, 1, 2);
+	shop_shelf_set(ITEM_PART_FRONT, 1, stockGun);
+	shop_shelf_set(ITEM_PART_REAR, 0, 0);
+	shop_shelf_set(ITEM_PART_SHIELD, 1, 0);
+	shop_shelf_set(ITEM_PART_GENERATOR, 1, stockGenerator);
+	shop_shelf_set(ITEM_PART_LEFT, 0, 0);
+	shop_shelf_set(ITEM_PART_RIGHT, 0, 0);
+
+	PlayerItems *const items = &player[seat].items;
+	memset(items, 0, sizeof(*items));
+	items->ship = 1;
+	items->weapon[FRONT_WEAPON].id = ownGun;
+	items->weapon[FRONT_WEAPON].power = 1;
+	items->weapon[REAR_WEAPON].power = 1;
+	items->generator = 1;
+	items->shield = 1;
+	player[seat].last_items = *items;
+	shopPlayerIndex = seat;
+	curMenu = MENU_UPGRADES;
+	extraShipReturnReset();
+
+	shop_stock_open();
+	extraShipEquip(seat, 1);
+	shop_commit_loadout();
+	const bool worn = shop_shelf_has(ITEM_PART_FRONT, customGun)
+	               && shop_shelf_has(ITEM_PART_HULL, customHull)
+	               && shop_shelf_has(ITEM_PART_SHIELD, customShield);
+	curSel[MENU_UPGRADES] = 2 + ITEM_PART_FRONT;
+	const bool keptFree = shop_part_cost(customGun) == 0;
+
+	shop_stock_close(false);
+	const bool leftClean = !shop_shelf_has(ITEM_PART_FRONT, customGun)
+	                    && !shop_shelf_has(ITEM_PART_HULL, customHull);
+	shop_stock_open();
+	JE_byte avail[9][10], availMax[9];
+	shop_outpost_stock(avail, availMax);
+	const bool savedClean = !shop_stock_has(avail, availMax, ITEM_PART_FRONT, customGun)
+	                     && !shop_stock_has(avail, availMax, ITEM_PART_HULL, customHull)
+	                     && !shop_stock_has(avail, availMax, ITEM_PART_SHIELD, customShield);
+	const bool reshown = shop_shelf_has(ITEM_PART_FRONT, customGun)
+	                  && shop_shelf_has(ITEM_PART_HULL, customHull)
+	                  && shop_shelf_has(ITEM_PART_FRONT, ownGun);
+	const bool recorded = endlessMode || endlessSavedStockSelfTest();
+
+	extraShipRestoreStandard(seat);
+	shop_commit_loadout();
+	const bool gone = !shop_shelf_has(ITEM_PART_FRONT, customGun)
+	               && !shop_shelf_has(ITEM_PART_HULL, customHull)
+	               && !shop_shelf_has(ITEM_PART_SHIELD, customShield);
+	const bool stocked = shop_shelf_has(ITEM_PART_GENERATOR, stockGenerator)
+	                  && shop_shelf_has(ITEM_PART_FRONT, stockGun)
+	                  && shop_shelf_has(ITEM_PART_FRONT, ownGun)
+	                  && shop_shelf_has(ITEM_PART_HULL, 2);
+	curSel[MENU_UPGRADES] = 2 + ITEM_PART_GENERATOR;
+	const Sint64 price = JE_getCost(curSel[MENU_UPGRADES], stockGenerator);
+	const bool priced = price > 0 && shop_part_cost(stockGenerator) == price;
+
+	bool traded = true;
+	if (!endlessMode)
+	{
+		extraShipEquip(seat, 1);
+		shop_commit_loadout();
+		curSel[MENU_UPGRADES] = 2 + ITEM_PART_FRONT;
+		items->weapon[FRONT_WEAPON].id = stockGun;
+		shop_upgrade_commit();
+		traded = !shop_shelf_has(ITEM_PART_FRONT, customGun)
+		      && shop_shelf_has(ITEM_PART_FRONT, stockGun)
+		      && shop_shelf_has(ITEM_PART_FRONT, ownGun);
+		extraShipRestoreStandard(seat);
+		shop_commit_loadout();
+	}
+	shop_stock_close(false);
+
+	if (!worn)
+		return "the worn custom ship's parts are not on show";
+	if (!keptFree)
+		return "the worn custom ship's gun does not keep for free";
+	if (!leftClean || !savedClean)
+		return "the custom ship's parts outlive the visit in the outpost's own stock";
+	if (!reshown)
+		return "coming back to the outpost hides the custom ship still worn";
+	if (!recorded)
+		return "a save or the co-op handshake carries the custom ship's parts as stock";
+	if (!gone)
+		return "the custom ship's parts stay on sale after reverting";
+	if (!stocked)
+		return "reverting takes the outpost's own stock off the shelves";
+	if (!priced)
+		return "a stocked part the custom ship also had is not at its normal price";
+	if (!traded)
+		return "a custom ship's gun stays on sale after it is traded away";
+	return NULL;
+}
+
 void qa_test_endless_shop_stock(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedTwo = twoPlayerMode;
 	const JE_boolean savedOne = onePlayerAction, savedCoopEndless = coopEndlessMode;
+	const JE_boolean savedExtra = extraAvail;
 	const bool savedNet = isNetworkGame;
 	const uint savedNum = thisPlayerNum, savedShopIdx = shopPlayerIndex;
+	const JE_integer savedMenu = curMenu;
+	const JE_byte savedSel = curSel[MENU_UPGRADES];
+	const Sint64 savedUp = upgradeCost, savedDown = downgradeCost;
 	Player savedPlayers[COUNTOF(player)];
+	PlayerItems savedOld[COUNTOF(old_items)];
 	JE_byte savedAvail[9][10], savedAvailMax[9];
+	JE_ShipsType savedTable;
+	ExtraShipReturn savedReturn[2];
 	memcpy(savedPlayers, player, sizeof(savedPlayers));
+	memcpy(savedOld, old_items, sizeof(savedOld));
 	memcpy(savedAvail, itemAvail, sizeof(savedAvail));
 	memcpy(savedAvailMax, itemAvailMax, sizeof(savedAvailMax));
+	memcpy(savedTable, extraShips, sizeof(savedTable));
+	extraShipReturnSave(savedReturn);
+	extraShipReturnReset();
 
 	endlessMode = true;
 	coopEndlessMode = false;
 	twoPlayerMode = false;
 	onePlayerAction = false;
 	isNetworkGame = false;
+	extraAvail = true;
 	thisPlayerNum = 1;
 	shopPlayerIndex = 0;
 
@@ -8242,33 +8421,59 @@ void qa_test_endless_shop_stock(void)
 	itemAvail[shipRow][0] = player[0].items.ship;
 	itemAvailMax[shipRow] = 1;
 
-	shop_stock_owned_items();
-	qa_check(itemAvailMax[frontRow] == 2
-	         && itemAvail[frontRow][0] == carried && itemAvail[frontRow][1] == 45,
+	shop_stock_open();
+	qa_check(itemAvailMax[frontRow] == 2 && shop_shelf_has(ITEM_PART_FRONT, carried)
+	         && shop_shelf_has(ITEM_PART_FRONT, 45),
 	         "an Endless outpost does not restock the gear a purchase replaced");
 	qa_check(itemAvailMax[shipRow] == 1 && itemAvail[shipRow][0] == player[0].items.ship,
 	         "...including a custom ship, which nothing else stocks");
 
 	player[0].items.weapon[FRONT_WEAPON].id = absent;
-	shop_stock_owned_items();
-	qa_check(itemAvailMax[frontRow] == 3 && itemAvail[frontRow][2] == absent,
+	shop_stock_show();
+	qa_check(itemAvailMax[frontRow] == 3 && shop_shelf_has(ITEM_PART_FRONT, absent),
 	         "...but gear the ship carries and the shelves lack is still stocked");
+	shop_stock_close(false);
 
 	endlessMode = false;
+	player[0].items.weapon[FRONT_WEAPON].id = carried;
 	memset(itemAvail, 0, sizeof(itemAvail));
 	memset(itemAvailMax, 0, sizeof(itemAvailMax));
 	itemAvail[frontRow][0] = carried;
 	itemAvailMax[frontRow] = 1;
-	shop_stock_owned_items();
-	qa_check(itemAvailMax[frontRow] == 2 && itemAvail[frontRow][1] == tradedIn,
+	shop_stock_open();
+	qa_check(itemAvailMax[frontRow] == 2 && shop_shelf_has(ITEM_PART_FRONT, tradedIn),
 	         "a campaign shop keeps stocking from the last level's loadout");
+	shop_stock_close(false);
 
+	static const char *const modeName[2] = { "campaign", "Endless" };
+	for (int pass = 0; pass < 4; ++pass)
+	{
+		endlessMode = pass >= 2;
+		const char *const fault = shop_custom_stock_fault((uint)(pass % 2));
+		char label[192];
+		snprintf(label, sizeof(label),
+		         "%s outpost, seat %d: a custom ship's parts are on sale only while it is worn%s%s",
+		         modeName[pass / 2], pass % 2 + 1, fault != NULL ? ": " : "",
+		         fault != NULL ? fault : "");
+		qa_check(fault == NULL, label);
+	}
+	qa_check(endlessShopSeedSelfTest(),
+	         "an Endless reroll stocks the ship's own parts, never a custom ship's lent ones");
+
+	extraShipReturnRestore(savedReturn);
+	memcpy(extraShips, savedTable, sizeof(savedTable));
 	memcpy(itemAvailMax, savedAvailMax, sizeof(itemAvailMax));
 	memcpy(itemAvail, savedAvail, sizeof(itemAvail));
+	memcpy(old_items, savedOld, sizeof(savedOld));
 	memcpy(player, savedPlayers, sizeof(savedPlayers));
+	downgradeCost = savedDown;
+	upgradeCost = savedUp;
+	curSel[MENU_UPGRADES] = savedSel;
+	curMenu = savedMenu;
 	shopPlayerIndex = savedShopIdx;
 	thisPlayerNum = savedNum;
 	isNetworkGame = savedNet;
+	extraAvail = savedExtra;
 	coopEndlessMode = savedCoopEndless;
 	onePlayerAction = savedOne;
 	twoPlayerMode = savedTwo;

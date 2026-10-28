@@ -11,6 +11,7 @@
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "episodes.h"
+#include "extra_ships.h"
 #include "font.h"
 #include "game_menu.h"
 #include "game_state.h"
@@ -291,9 +292,10 @@ static void endlessFillShop(void)
 	if (endlessActiveMods & ENDLESS_MOD_CURSED)
 		return;
 
-	// Seed each category with the player's live equipped item, never the stale
-	// last_items, so a reroll keeps whatever is on the ship.
-	const PlayerItems *it = &shopper()->items;
+	// Seed each category with the player's own item, never the stale
+	// last_items, so a reroll keeps whatever the player owns.
+	const PlayerItems *const standard = extraShipStandard(me());
+	const PlayerItems *it = (standard != NULL) ? standard : &shopper()->items;
 
 	// Front and rear share one id pool: fill front first (holding back the equipped rear), then
 	// rear excluding the front row, so no weapon id lands in both menus at once.
@@ -314,6 +316,62 @@ static void endlessFillShop(void)
 void endlessShopRedrawStock(void)
 {
 	endlessFillShop();
+}
+
+bool endlessShopSeedSelfTest(void)
+{
+	const uint p = me();
+	const Uint64 savedRng = endlessPlayerRngState[p];
+	const Uint64 savedMods = endlessActiveMods;
+	const PlayerItems savedItems = shopper()->items;
+	JE_byte savedAvail[COUNTOF(itemAvail)][COUNTOF(itemAvail[0])];
+	JE_byte savedAvailMax[COUNTOF(itemAvailMax)];
+	memcpy(savedAvail, itemAvail, sizeof(savedAvail));
+	memcpy(savedAvailMax, itemAvailMax, sizeof(savedAvailMax));
+	ExtraShipReturn savedReturn[2];
+	extraShipReturnSave(savedReturn);
+
+	PlayerItems own = savedItems;
+	own.ship = 1;
+	own.weapon[FRONT_WEAPON].id = 1;
+	own.weapon[REAR_WEAPON].id = 0;
+	own.generator = 1;
+	own.shield = 1;
+	own.sidekick[LEFT_SIDEKICK] = 0;
+	own.sidekick[RIGHT_SIDEKICK] = 0;
+	PlayerItems lent = own;
+	lent.ship = EXTRA_SHIP_ID_BASE + 1;
+	lent.weapon[FRONT_WEAPON].id = 3;
+	lent.weapon[REAR_WEAPON].id = 5;
+	lent.generator = 2;
+	lent.shield = 2;
+	lent.sidekick[LEFT_SIDEKICK] = 1;
+	lent.sidekick[RIGHT_SIDEKICK] = 1;
+	endlessActiveMods &= ~(Uint64)ENDLESS_MOD_CURSED;
+
+	extraShipReturnReset();
+	shopper()->items = own;
+	endlessPlayerRngState[p] = savedRng;
+	endlessFillShop();
+	JE_byte plainAvail[COUNTOF(itemAvail)][COUNTOF(itemAvail[0])];
+	JE_byte plainAvailMax[COUNTOF(itemAvailMax)];
+	memcpy(plainAvail, itemAvail, sizeof(plainAvail));
+	memcpy(plainAvailMax, itemAvailMax, sizeof(plainAvailMax));
+
+	extraShipSetStandard(p, &own, EXTRA_SHIP_LENT_ALL);
+	shopper()->items = lent;
+	endlessPlayerRngState[p] = savedRng;
+	endlessFillShop();
+	const bool same = memcmp(plainAvail, itemAvail, sizeof(plainAvail)) == 0
+	               && memcmp(plainAvailMax, itemAvailMax, sizeof(plainAvailMax)) == 0;
+
+	extraShipReturnRestore(savedReturn);
+	memcpy(itemAvailMax, savedAvailMax, sizeof(itemAvailMax));
+	memcpy(itemAvail, savedAvail, sizeof(itemAvail));
+	shopper()->items = savedItems;
+	endlessActiveMods = savedMods;
+	endlessPlayerRngState[p] = savedRng;
+	return same;
 }
 
 // Outpost economy.

@@ -7,6 +7,7 @@
 
 #include "config.h"
 #include "episodes.h"
+#include "game_menu.h"
 #include "game_state.h"
 #include "level_load.h"
 #include "player.h"
@@ -712,11 +713,15 @@ endlessPartnerStash;
 // This machine's own outpost, packed for the save acknowledgement. Fixed width and endian-safe.
 int endlessPackOwnOutpost(Uint8 *buf)
 {
+	JE_byte avail[COUNTOF(itemAvail)][COUNTOF(itemAvail[0])];
+	JE_byte availMax[COUNTOF(itemAvailMax)];
+	shop_outpost_stock(avail, availMax);
+
 	int n = 0;
-	memcpy(&buf[n], itemAvailMax, sizeof(itemAvailMax));
-	n += (int)sizeof(itemAvailMax);
-	memcpy(&buf[n], itemAvail, sizeof(itemAvail));
-	n += (int)sizeof(itemAvail);
+	memcpy(&buf[n], availMax, sizeof(availMax));
+	n += (int)sizeof(availMax);
+	memcpy(&buf[n], avail, sizeof(avail));
+	n += (int)sizeof(avail);
 
 	const Uint64 rng = endlessPlayerRngState[endlessEconomyIndex()];
 	for (int b = 7; b >= 0; --b)
@@ -813,8 +818,7 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->lastSec = endlessLastSec;
 	r->forced  = endlessForced ? 1 : 0;
 
-	memcpy(r->itemAvail, itemAvail, sizeof(r->itemAvail));
-	memcpy(r->itemAvailMax, itemAvailMax, sizeof(r->itemAvailMax));
+	shop_outpost_stock(r->itemAvail, r->itemAvailMax);
 
 	SDL_strlcpy(r->seed, endlessRunSeed, sizeof(r->seed));
 
@@ -1188,6 +1192,22 @@ void endlessUnpackDebugBlock(const Uint8 *buf)
 	/* Refresh only changed masks; gravity refresh consumes RNG. */
 	if (modsMoved)
 		endlessRefreshModDerivedState();
+}
+
+bool endlessSavedStockSelfTest(void)
+{
+	JE_byte avail[COUNTOF(itemAvail)][COUNTOF(itemAvail[0])];
+	JE_byte availMax[COUNTOF(itemAvailMax)];
+	shop_outpost_stock(avail, availMax);
+
+	EndlessSlotRec rec;
+	endlessCaptureCurrent(&rec);
+	Uint8 packed[sizeof(availMax) + sizeof(avail) + sizeof(Uint64)];
+	endlessPackOwnOutpost(packed);
+	return memcmp(rec.itemAvail, avail, sizeof(avail)) == 0
+	    && memcmp(rec.itemAvailMax, availMax, sizeof(availMax)) == 0
+	    && memcmp(packed, availMax, sizeof(availMax)) == 0
+	    && memcmp(&packed[sizeof(availMax)], avail, sizeof(avail)) == 0;
 }
 
 /* Online resume uses the save text codec; personal shop stock is regenerated locally. */
