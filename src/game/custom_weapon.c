@@ -29,7 +29,6 @@ int  customWeaponChargeStages = 1;   // shot count (1 = no charging); option pwr
 
 int  customWeaponEditLevel = 0;
 int  customWeaponEditMode  = 0;
-bool customWeaponEnabled   = true;
 int  customWeaponPort      = 0;
 int  customSidekickSlot    = 0;
 
@@ -763,7 +762,7 @@ void customWeaponSelectMode(int mode)
 
 bool customWeaponEquip(void)
 {
-	if (!customWeaponEnabled || customWeaponPort <= 0 || customWeaponPort > PORT_NUM)
+	if (customWeaponPort <= 0 || customWeaponPort > PORT_NUM)
 		return false;
 
 	customWeaponMaterialize();

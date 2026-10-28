@@ -15,6 +15,7 @@
 #include "endless.h"
 #include "endless_internal.h"  // endlessPerkEffective, for reading a seat's row that is not ours
 #include "episodes.h"
+#include "extra_ships.h"
 #include "font.h"      // small_font, for measuring the picker's names against its columns
 #include "game_state.h"
 #include "helptext.h"  // superShips[]
@@ -1256,9 +1257,32 @@ static void qa_hostile_packets(void)
 	SDLNet_Write16(2, &raw[4]);        // sender: the peer
 	SDLNet_Write16(1000, &raw[6]);     // sequence, past anything seen
 	SDLNet_Write16(0, &raw[8]);        // flags
-	qa_inject_packet(raw, 44);
+	extraShipSetStandard(1, NULL, 0);
+	qa_inject_packet(raw, 54);
 	qa_check(network_shop_pump() && network_shop_peer_course() == -1,
 	         "an out-of-range charted course from a hostile packet reads as none");
+	qa_check(extraShipStandard(1) == NULL, "...and a stashed ship it cannot name is dropped");
+
+	coopEndlessMode = false;
+	memset(raw, 0, sizeof(raw));
+	SDLNet_Write16(PACKET_SEAT_LOADOUT, &raw[0]);
+	raw[4] = 2;
+	raw[5] = 9;
+	raw[18] = 1;
+	raw[19] = 0x15;
+	raw[20] = 4;
+	qa_inject_packet(raw, 33);
+	qa_check(network_shop_pump() && packet_in[0] == NULL && player[1].items.ship == 9
+	         && extraShipStandard(1) != NULL && extraShipStandard(1)->ship == 4
+	         && extraShipLentParts(1) == 0x15,
+	         "a seat loadout outside co-op hands over that seat's ship and its stash");
+	raw[4] = 1;
+	raw[5] = 11;
+	qa_inject_packet(raw, 33);
+	qa_check(network_shop_pump() && packet_in[0] == NULL && player[0].items.ship != 11,
+	         "...and this machine's own loadout coming back is ignored");
+	extraShipSetStandard(1, NULL, 0);
+	coopEndlessMode = true;
 
 	/* Truncated debug block: refused (the pump only adopts whole blocks), left for its caller. */
 	memset(raw, 0xEE, sizeof(raw));
@@ -1335,17 +1359,23 @@ static void qa_quit_notice_retire(void)
 	SDLNet_Write16(5000, &raw[6]);     // sequence, past anything seen
 	SDLNet_Write16(0, &raw[8]);        // flags: plain state, so the pump owes no reply
 	be_write64(4321, &raw[14]); // cash, the adopted field the check reads back
+	raw[39] = 1;
+	raw[40] = 0x22;
+	raw[41] = 7;
 	if (packet_in[1] == NULL)
 		packet_in[1] = SDLNet_AllocPacket(NET_PACKET_SIZE);
-	memcpy(packet_in[1]->data, raw, 44);
-	packet_in[1]->len = 44;
+	memcpy(packet_in[1]->data, raw, 54);
+	packet_in[1]->len = 54;
 
 	qa_check(!network_shop_pump() && network_shop_departure_pending(),
 	         "a queued quit blocks the outpost pump and reads as a departure");
 	qa_check(network_quit_notice_retire() && network_inbound_head() == PACKET_SHOP_SYNC,
 	         "opening the outpost retires the peer's quit notice");
-	qa_check(network_shop_pump() && packet_in[0] == NULL && player[1].cash == 4321,
-	         "...and the shop packet behind it is read");
+	qa_check(network_shop_pump() && packet_in[0] == NULL && player[1].cash == 4321 &&
+	         extraShipStandard(1) != NULL && extraShipStandard(1)->ship == 7 &&
+	         extraShipLentParts(1) == 0x22,
+	         "...and the shop packet behind it is read, stashed standard loadout and all");
+	extraShipSetStandard(1, NULL, 0);
 	qa_check(!network_quit_notice_retire(), "there is nothing to retire off an empty queue");
 
 	// A rollback menu release a level-end timeout stranded goes the same way as the quit.

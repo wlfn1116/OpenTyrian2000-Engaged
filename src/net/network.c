@@ -50,6 +50,7 @@
 #include "game_loop.h"
 #include "game_menu.h"
 #include "episodes.h"
+#include "extra_ships.h"
 #include "file.h"
 #include "font.h"
 #include "game_state.h"
@@ -126,7 +127,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       99           /* Co-op desync fixes, synced parallax and Christmas. */
+#define NET_VERSION       102          /* Customize loadouts and the stashed standard ship. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.
@@ -685,6 +686,7 @@ static int network_recv_one(void)
 					case PACKET_CUSTOM_WEAPON:
 					case PACKET_EXTRA_SHIPS:
 					case PACKET_CUSTOM_LEVEL:
+					case PACKET_SEAT_LOADOUT:
 					// Every packet the Endless co-op channel carries: the run transfer on resume, the
 					// death-prompt choice, and the "I have left the level" notice.
 					case PACKET_ENDLESS_RUN:
@@ -2296,6 +2298,26 @@ static int network_shop_unpack_items(PlayerItems *items, const Uint8 *buf)
 	return n;
 }
 
+enum { NET_ITEMS_BYTES = 13, NET_STANDARD_BYTES = 2 + NET_ITEMS_BYTES };
+
+static int network_pack_standard(Uint8 *buf, uint seat)
+{
+	const PlayerItems *const standard = extraShipStandard(seat);
+	PlayerItems none;
+	memset(&none, 0, sizeof(none));
+	buf[0] = standard != NULL;
+	buf[1] = extraShipLentParts(seat);
+	return 2 + network_shop_pack_items(&buf[2], standard != NULL ? standard : &none);
+}
+
+static int network_unpack_standard(const Uint8 *buf, uint seat)
+{
+	PlayerItems items;
+	const int n = 2 + network_shop_unpack_items(&items, &buf[2]);
+	extraShipSetStandard(seat, buf[0] != 0 ? &items : NULL, buf[1]);
+	return n;
+}
+
 static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 {
 	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
@@ -2322,6 +2344,7 @@ static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[22]);
 	SDLNet_Write16(acknowledge, &packet_out_temp->data[24]);
 	int len = 26 + network_shop_pack_items(&packet_out_temp->data[26], &this_player->items);
+	len += network_pack_standard(&packet_out_temp->data[len], (uint)(thisPlayerNum - 1));
 	if (coopEndlessMode)
 		len += endlessPackPlayerBlock(&packet_out_temp->data[len], thisPlayerNum - 1);
 	// Send personal outpost state with the save acknowledgement.
@@ -2408,6 +2431,19 @@ void network_shop_send_transaction(void)
 		return;
 
 	network_shop_send_packet(SHOP_SYNC_TRANSACTION, 0);
+}
+
+void network_seat_loadout_publish(void)
+{
+	if (!isNetworkGame || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	const uint seat = (uint)(thisPlayerNum - 1);
+	network_prepare(PACKET_SEAT_LOADOUT);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	int len = 5 + network_shop_pack_items(&packet_out_temp->data[5], &player[seat].items);
+	len += network_pack_standard(&packet_out_temp->data[len], seat);
+	network_send(len);
 }
 
 /* Endless run transfer. Same chunked shape as the custom weapon exchange above, and for the same
@@ -2614,18 +2650,20 @@ int network_player_look_pack(Uint8 *buf)
 	buf[7] = view.shipOpacity ? 1 : 0;
 	buf[8] = view.hpBars;
 	buf[9] = shipSkinGet(netStyleLocalSeat());
-	return 10;
+	buf[10] = netStyleSidekickDye(netStyleLocalSeat()) ? 1 : 0;
+	return 11;
 }
 
 void network_player_look_adopt(const Uint8 *buf, int len)
 {
 	// Repeated keep-alive announcements repair packet loss.
-	if (len < 10 || buf[4] < 1 || buf[4] > 2 || buf[4] == (Uint8)thisPlayerNum)
+	if (len < 11 || buf[4] < 1 || buf[4] > 2 || buf[4] == (Uint8)thisPlayerNum)
 		return;
 
 	const uint seat = buf[4] - 1u;
 	netStyleSetSeatColor(seat, buf[5]);
 	shipSkinSet(seat, buf[9]);
+	netStyleSetSidekickDye(seat, buf[10] != 0);
 
 	// Cache the sender's view for future saves; it does not affect this machine.
 	NetShipView view;
@@ -3189,6 +3227,21 @@ bool network_shop_pump(void)
 	if (custom_ships_multiplayer_mode() && packetType == PACKET_EXTRA_SHIPS)
 		return network_extra_ships_receive();
 
+	if (packetType == PACKET_SEAT_LOADOUT)
+	{
+		const uint sender = packet_in[0]->data[4];
+		if (packet_in[0]->len >= 5 + NET_ITEMS_BYTES + NET_STANDARD_BYTES &&
+		    sender >= 1 && sender <= 2 && sender != thisPlayerNum)
+		{
+			Player *const peer = &player[sender - 1];
+			const int at = 5 + network_shop_unpack_items(&peer->items, &packet_in[0]->data[5]);
+			peer->last_items = peer->items;
+			network_unpack_standard(&packet_in[0]->data[at], sender - 1);
+		}
+		network_update();
+		return true;
+	}
+
 	if (!coop_mode_active())
 		return false;
 
@@ -3207,7 +3260,7 @@ bool network_shop_pump(void)
 	if (packetType != PACKET_SHOP_SYNC)
 		return false;
 
-	if (packet_in[0]->len >= 39)
+	if (packet_in[0]->len >= 26 + NET_ITEMS_BYTES + NET_STANDARD_BYTES)
 	{
 		const uint sender = SDLNet_Read16(&packet_in[0]->data[4]);
 		const Uint16 sequence = SDLNet_Read16(&packet_in[0]->data[6]);
@@ -3218,10 +3271,11 @@ bool network_shop_pump(void)
 			network_shop_peer_sequence = sequence;
 			player_set_cash(peer, (Sint64)be_read64(&packet_in[0]->data[14]));
 			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[22]);
-			const int item_size = network_shop_unpack_items(&peer->items, &packet_in[0]->data[26]);
+			int at = 26 + network_shop_unpack_items(&peer->items, &packet_in[0]->data[26]);
 			peer->last_items = peer->items;
-			if (coopEndlessMode && packet_in[0]->len >= 26 + item_size + ENDLESS_PLAYER_BLOCK_SIZE)
-				endlessUnpackPlayerBlock(&packet_in[0]->data[26 + item_size], sender - 1);
+			at += network_unpack_standard(&packet_in[0]->data[at], sender - 1);
+			if (coopEndlessMode && packet_in[0]->len >= at + ENDLESS_PLAYER_BLOCK_SIZE)
+				endlessUnpackPlayerBlock(&packet_in[0]->data[at], sender - 1);
 
 			network_shop_peer_ready = (flags & SHOP_SYNC_DONE) != 0;
 			network_shop_peer_lock  = (flags & SHOP_SYNC_LOCK) != 0;
@@ -3256,7 +3310,7 @@ bool network_shop_pump(void)
 			{
 				/* The peer's outpost trails the acknowledgement, so the save can capture both
 				 * halves. See doc/notes.md#online-saves. */
-				const int tail = 26 + item_size + (coopEndlessMode ? ENDLESS_PLAYER_BLOCK_SIZE : 0);
+				const int tail = at + (coopEndlessMode ? ENDLESS_PLAYER_BLOCK_SIZE : 0);
 				if (coopEndlessMode && packet_in[0]->len >= tail + ENDLESS_OUTPOST_BLOCK_SIZE)
 					endlessPartnerOutpostStash(sender - 1, &packet_in[0]->data[tail]);
 
@@ -3812,12 +3866,12 @@ Uint32 network_sim_pools(NetSimPools *detail)
 	return combined;
 }
 
+SDL_COMPILE_TIME_ASSERT(sim_detail_enemies, NET_SIM_DETAIL_ENEMIES == COUNTOF(enemy));
+
 // Must sample exactly what network_sim_state() hashes, at the same call site, or the
 // dumped rows and the mismatching hash could disagree about what diverged.
 void network_sim_detail(NetSimDetail *out)
 {
-	SDL_COMPILE_TIME_ASSERT(sim_detail_enemies, NET_SIM_DETAIL_ENEMIES == COUNTOF(enemy));
-
 	for (uint i = 0; i < COUNTOF(player); ++i)
 		network_sim_player_row(&player[i], &out->p[i]);
 

@@ -23,6 +23,7 @@
 #include "debug_flags.h"
 #include "endless.h"
 #include "episodes.h"
+#include "extra_ships.h"
 #include "file.h"
 #include "game_state.h"
 #include "mtrand.h"
@@ -169,11 +170,28 @@ void JE_saveGame(JE_byte slot, const char *name)
 	{
 		saveFiles[slot - 1].shipColor[p] = (JE_byte)netStyleSeatColor(p);
 		saveFiles[slot - 1].shipSkin[p] = shipSkinGet(p);
+		saveFiles[slot - 1].sidekickPlain[p] = netStyleSidekickDye(p) ? 0 : 1;
 
 		const NetShipView view = netStyleView(p);
 		saveFiles[slot - 1].viewOpacity[p] = view.opacity;
 		saveFiles[slot - 1].viewShipOpacity[p] = view.shipOpacity ? 1 : 0;
 		saveFiles[slot - 1].viewHpBars[p] = view.hpBars;
+
+		const PlayerItems *const standard = extraShipStandard(p);
+		if (standard != NULL)
+		{
+			PlayerItems copy = *standard;
+			playeritems_to_pitems(saveFiles[slot - 1].standardItems[p], &copy, 0);
+		}
+		else
+		{
+			memset(saveFiles[slot - 1].standardItems[p], 0,
+			       sizeof(saveFiles[slot - 1].standardItems[p]));
+		}
+		saveFiles[slot - 1].standardLent[p] = extraShipLentParts(p);
+		for (uint w = 0; w < COUNTOF(saveFiles[slot - 1].standardPower[p]); ++w)
+			saveFiles[slot - 1].standardPower[p][w] =
+				(standard != NULL) ? standard->weapon[w].power : 0;
 	}
 
 	strcpy(saveFiles[slot-1].name, name);
@@ -210,6 +228,20 @@ void JE_saveGame(JE_byte slot, const char *name)
 void JE_loadGame(JE_byte slot)
 {
 	JE_loadGameRecord(&saveFiles[slot-1], (slot-1) > 10);
+}
+
+void save_record_restore_stash(const JE_SaveFileType *rec)
+{
+	for (uint p = 0; p < COUNTOF(rec->standardItems); ++p)
+	{
+		PlayerItems standard;
+		memset(&standard, 0, sizeof(standard));
+		pitems_to_playeritems(&standard, rec->standardItems[p], NULL);
+		for (uint w = 0; w < COUNTOF(standard.weapon); ++w)
+			standard.weapon[w].power = (rec->standardPower[p][w] != 0)
+			                         ? rec->standardPower[p][w] : player[p].items.weapon[w].power;
+		extraShipSetStandard(p, &standard, rec->standardLent[p]);
+	}
 }
 
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
@@ -295,6 +327,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	{
 		netStyleSetSeatColor(p, rec->shipColor[p]);
 		shipSkinSet(p, rec->shipSkin[p]);
+		netStyleSetSidekickDye(p, rec->sidekickPlain[p] == 0);
 	}
 
 	// Views are seat-indexed because thisPlayerNum may be assigned after loading.
@@ -334,6 +367,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		if (player[0].weapon_mode == 0) player[0].weapon_mode = 1;
 		if (player[1].weapon_mode == 0) player[1].weapon_mode = 1;
 	}
+	save_record_restore_stash(rec);
 
 	/* Which weapon bay each ship counts lives on depends on the shape of the session, and this is
 	 * the one path that installs a loadout without going through newGame(). */
@@ -495,11 +529,9 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 			config_set_int_option(section, "p2_weapon_mode", rec->dualMode[1]);
 		}
 		config_set_int_option(section, "online_seat", rec->onlinePlayerTwo ? 2 : 1);
-		for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
+		for (uint p = 0; p < COUNTOF(rec->viewOpacity); ++p)
 		{
 			char key[32];
-			snprintf(key, sizeof(key), "p%u_ship_color", p + 1);
-			config_set_int_option(section, key, rec->shipColor[p]);
 			snprintf(key, sizeof(key), "p%u_online_opacity", p + 1);
 			config_set_int_option(section, key, rec->viewOpacity[p]);
 			snprintf(key, sizeof(key), "p%u_online_ship_opacity", p + 1);
@@ -514,14 +546,33 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 		save_items_write(section, "last", rec->lastItems, NULL, NULL);
 	}
 
-	const uint skinSeats = twoP ? 2u : 1u;
-	for (uint p = 0; p < skinSeats; ++p)
+	const uint lookSeats = twoP ? 2u : 1u;
+	for (uint p = 0; p < lookSeats; ++p)
 	{
-		if (rec->shipSkin[p] == SHIP_SKIN_NONE)
-			continue;
 		char key[32];
-		snprintf(key, sizeof(key), "p%u_ship_skin", p + 1);
-		config_set_int_option(section, key, rec->shipSkin[p]);
+		if (rec->shipColor[p] != NET_SHIP_COLOR_NONE)
+		{
+			snprintf(key, sizeof(key), "p%u_ship_color", p + 1);
+			config_set_int_option(section, key, rec->shipColor[p]);
+		}
+		if (rec->shipSkin[p] != SHIP_SKIN_NONE)
+		{
+			snprintf(key, sizeof(key), "p%u_ship_skin", p + 1);
+			config_set_int_option(section, key, rec->shipSkin[p]);
+		}
+		if (rec->sidekickPlain[p] != 0)
+		{
+			snprintf(key, sizeof(key), "p%u_sidekicks_plain", p + 1);
+			config_set_int_option(section, key, 1);
+		}
+		if (rec->standardItems[p][11] != 0)
+		{
+			snprintf(key, sizeof(key), "p%u_standard", p + 1);
+			save_items_write(section, key, rec->standardItems[p], &rec->standardPower[p][0],
+			                 &rec->standardPower[p][1]);
+			snprintf(key, sizeof(key), "p%u_standard_lent", p + 1);
+			config_set_int_option(section, key, rec->standardLent[p]);
+		}
 	}
 
 	config_set_int_option(section, "input_p1", rec->input1);
@@ -591,14 +642,9 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 			}
 		}
 		rec->onlinePlayerTwo = save_get_int(section, "online_seat", 1) == 2;
-		for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
+		for (uint p = 0; p < COUNTOF(rec->viewOpacity); ++p)
 		{
 			char key[32];
-			snprintf(key, sizeof(key), "p%u_ship_color", p + 1);
-			const int color = save_get_int(section, key, NET_SHIP_COLOR_NONE);
-			rec->shipColor[p] = (JE_byte)((color < NET_SHIP_COLOR_NONE || color > NET_SHIP_COLORS)
-			                              ? NET_SHIP_COLOR_NONE : color);
-
 			// netStyleSetView snaps a hand-edited opacity to a picker step; keep the record raw.
 			snprintf(key, sizeof(key), "p%u_online_opacity", p + 1);
 			rec->viewOpacity[p] = (JE_byte)save_get_int(section, key, NET_OPACITY_FULL);
@@ -614,13 +660,27 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 		save_items_read(section, "last", rec->lastItems, NULL, NULL);
 	}
 
-	const uint skinSeats = twoP ? 2u : 1u;
-	for (uint p = 0; p < skinSeats; ++p)
+	const uint lookSeats = twoP ? 2u : 1u;
+	for (uint p = 0; p < lookSeats; ++p)
 	{
 		char key[32];
+		snprintf(key, sizeof(key), "p%u_ship_color", p + 1);
+		const int color = save_get_int(section, key, NET_SHIP_COLOR_NONE);
+		rec->shipColor[p] = (JE_byte)((color < NET_SHIP_COLOR_NONE || color > NET_SHIP_COLORS)
+		                              ? NET_SHIP_COLOR_NONE : color);
 		snprintf(key, sizeof(key), "p%u_ship_skin", p + 1);
 		const int skin = save_get_int(section, key, SHIP_SKIN_NONE);
 		rec->shipSkin[p] = (JE_byte)((skin < 0 || skin > UINT8_MAX) ? SHIP_SKIN_NONE : skin);
+		snprintf(key, sizeof(key), "p%u_sidekicks_plain", p + 1);
+		rec->sidekickPlain[p] = save_get_int(section, key, 0) != 0;
+		snprintf(key, sizeof(key), "p%u_standard", p + 1);
+		save_items_read(section, key, rec->standardItems[p], &rec->standardPower[p][0],
+		                &rec->standardPower[p][1]);
+		snprintf(key, sizeof(key), "p%u_standard_lent", p + 1);
+		const int lent = save_get_int(section, key, EXTRA_SHIP_LENT_ALL);
+		const bool lentOk = lent >= 0 && lent <= EXTRA_SHIP_LENT_ALL;
+		rec->standardLent[p] = (JE_byte)((rec->standardItems[p][11] == 0) ? 0
+		                                 : lentOk ? lent : EXTRA_SHIP_LENT_ALL);
 	}
 
 	rec->input1 = (JE_byte)save_get_int(section, "input_p1", 1);
@@ -964,6 +1024,13 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	one.cheatInfiniteArmor = true;
 	one.expertMode = true;
 	one.shipSkin[0] = 3;
+	one.shipColor[0] = 6;
+	one.sidekickPlain[0] = 1;
+	for (unsigned i = 0; i < sizeof(one.standardItems[0]); ++i)
+		one.standardItems[0][i] = (JE_byte)(i * 7 + 1);
+	one.standardLent[0] = 0x55;
+	one.standardPower[0][0] = 7;
+	one.standardPower[0][1] = 2;
 
 	two = one;
 	two.score2 = 123456789012LL;
@@ -980,6 +1047,13 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 		two.viewShipOpacity[p] = (JE_byte)(p == 0);
 		two.viewHpBars[p] = (JE_byte)(p == 0 ? NET_HP_BARS_ON_HIT : NET_HP_BARS_ALWAYS);
 		two.shipSkin[p] = (JE_byte)(9 + p * 12);
+		two.shipColor[p] = (JE_byte)(2 + p * 9);
+		two.sidekickPlain[p] = (JE_byte)(p == 1);
+		for (unsigned i = 0; i < sizeof(two.standardItems[p]); ++i)
+			two.standardItems[p][i] = (JE_byte)(i * 3 + 11 + p * 40);
+		two.standardLent[p] = (JE_byte)(0x15 + p * 0x20);
+		two.standardPower[p][0] = (JE_byte)(3 + p * 5);
+		two.standardPower[p][1] = (JE_byte)(1 + p * 9);
 	}
 
 	const char *fault = NULL;
@@ -1224,6 +1298,18 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	memcpy(p, rec->shipSkin, sizeof(rec->shipSkin));
 	p += sizeof(rec->shipSkin);
 
+	memcpy(p, rec->standardItems, sizeof(rec->standardItems));
+	p += sizeof(rec->standardItems);
+
+	memcpy(p, rec->standardLent, sizeof(rec->standardLent));
+	p += sizeof(rec->standardLent);
+
+	memcpy(p, rec->standardPower, sizeof(rec->standardPower));
+	p += sizeof(rec->standardPower);
+
+	memcpy(p, rec->sidekickPlain, sizeof(rec->sidekickPlain));
+	p += sizeof(rec->sidekickPlain);
+
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }
 
@@ -1290,6 +1376,18 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 
 	memcpy(rec->shipSkin, p, sizeof(rec->shipSkin));
 	p += sizeof(rec->shipSkin);
+
+	memcpy(rec->standardItems, p, sizeof(rec->standardItems));
+	p += sizeof(rec->standardItems);
+
+	memcpy(rec->standardLent, p, sizeof(rec->standardLent));
+	p += sizeof(rec->standardLent);
+
+	memcpy(rec->standardPower, p, sizeof(rec->standardPower));
+	p += sizeof(rec->standardPower);
+
+	for (uint i = 0; i < COUNTOF(rec->sidekickPlain); ++i)
+		rec->sidekickPlain[i] = *p++ != 0;
 
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }

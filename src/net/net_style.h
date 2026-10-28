@@ -78,12 +78,15 @@ void netStyleSessionReset(void);
 void netStyleSetSeatColor(uint seat, int color);
 int  netStyleSeatColor(uint seat);
 int  netStylePeerColor(void);
+void netStyleSetSidekickDye(uint seat, bool dyed);
+bool netStyleSidekickDye(uint seat);
 
 // True for kill-fire palette banks reserved by active Endless effects.
 bool netStyleColorReserved(int color);
 
-// Style for a player's body or its shots. Both are plain outside online play.
+// Style for a player's body, sidekicks or shots.
 NetShipStyle netStyleForSeat(uint seat);
+NetShipStyle netStyleForSidekick(uint seat);
 NetShipStyle netStyleForShot(uint seat);
 
 // Player seat flown by this machine.

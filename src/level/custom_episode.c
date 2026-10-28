@@ -380,7 +380,7 @@ void customEpisodeScan(void)
 
 		Uint8 hbuf[CLV_HEADER_SIZE];
 		ClvHeader h;
-		const bool ok = size >= CLV_HEADER_SIZE && size <= CLV_MAX_BYTES &&
+		const bool ok = size >= CLV_HEADER_SIZE && size <= (long)CLV_MAX_BYTES &&
 		                fread(hbuf, 1, CLV_HEADER_SIZE, f) == CLV_HEADER_SIZE &&
 		                clv_parse_header(hbuf, (Uint32)size, &h) &&
 		                clv_lvl_looks_sane(f, &h);
@@ -740,7 +740,7 @@ bool JE_initEpisodeCustom(int index)
 
 	Uint8 hbuf[CLV_HEADER_SIZE];
 	ClvHeader h;
-	if (size < CLV_HEADER_SIZE || size > CLV_MAX_BYTES ||
+	if (size < CLV_HEADER_SIZE || size > (long)CLV_MAX_BYTES ||
 	    fread(hbuf, 1, CLV_HEADER_SIZE, f) != CLV_HEADER_SIZE ||
 	    !clv_parse_header(hbuf, (Uint32)size, &h) ||
 	    !clv_lvl_looks_sane(f, &h))
@@ -796,7 +796,7 @@ Uint8 *customEpisodeReadWhole(int index, Uint32 *lenOut)
 	fseek(f, 0, SEEK_END);
 	const long size = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	if (size < CLV_HEADER_SIZE || size > CLV_MAX_BYTES)
+	if (size < CLV_HEADER_SIZE || size > (long)CLV_MAX_BYTES)
 	{
 		fclose(f);
 		return NULL;

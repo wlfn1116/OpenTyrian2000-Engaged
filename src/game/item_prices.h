@@ -24,7 +24,15 @@
 extern Sint64 upgradeCost;
 extern Sint64 downgradeCost;
 
+enum
+{
+	ITEM_PART_HULL, ITEM_PART_FRONT, ITEM_PART_REAR, ITEM_PART_SHIELD, ITEM_PART_GENERATOR,
+	ITEM_PART_LEFT, ITEM_PART_RIGHT, ITEM_PARTS
+};
+
 Sint64 weapon_upgrade_cost(Sint64 base_cost, unsigned int power);
+Sint64 weapon_level_cost(JE_word port, unsigned int level);
+Uint8 *playeritem_map(PlayerItems *items, uint i);
 Sint64 JE_getCost(JE_byte itemType, JE_word itemNum);
 Sint64 JE_totalScore(const Player *);
 

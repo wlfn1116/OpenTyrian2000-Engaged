@@ -64,7 +64,7 @@ void qa_test_fixed_pool_layout(void)
 	         && RL_ID_LINKGUN_BASE + 3 <= RL_ID_SHIP_SHADOW_BASE
 	         && RL_ID_SHIP_SHADOW_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
-	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 164
+	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 196
 	         && NETWORK_SETTINGS_SIZE == 48,
 	         "network wire-layout constants retain their protocol widths");
 }
@@ -103,6 +103,15 @@ void qa_test_save_record_wire(void)
 	src.viewShipOpacity[0] = 0; src.viewShipOpacity[1] = 1;
 	src.viewHpBars[0] = NET_HP_BARS_ALWAYS; src.viewHpBars[1] = NET_HP_BARS_ON_HIT;
 	src.shipSkin[0] = 12; src.shipSkin[1] = 200;
+	src.sidekickPlain[0] = 0; src.sidekickPlain[1] = 1;
+	for (unsigned i = 0; i < sizeof(src.standardItems[0]); ++i)
+	{
+		src.standardItems[0][i] = (JE_byte)(i * 5 + 3);
+		src.standardItems[1][i] = (JE_byte)(200 - i * 4);
+	}
+	src.standardLent[0] = 0x2a; src.standardLent[1] = 0x41;
+	src.standardPower[0][0] = 6; src.standardPower[0][1] = 2;
+	src.standardPower[1][0] = 11; src.standardPower[1][1] = 4;
 	strcpy(src.customEpFile, "qa_wire.clv");
 
 	memset(guarded, 0xa5, sizeof(guarded));
@@ -127,8 +136,13 @@ void qa_test_save_record_wire(void)
 	         && memcmp(dst.viewShipOpacity, src.viewShipOpacity, sizeof(src.viewShipOpacity)) == 0
 	         && memcmp(dst.viewHpBars, src.viewHpBars, sizeof(src.viewHpBars)) == 0,
 	         "...and both machines' views of the other ship, by seat");
-	qa_check(dst.shipSkin[0] == src.shipSkin[0] && dst.shipSkin[1] == src.shipSkin[1],
-	         "network save record carries both ships' skins");
+	qa_check(dst.shipSkin[0] == src.shipSkin[0] && dst.shipSkin[1] == src.shipSkin[1] &&
+	         dst.sidekickPlain[0] == 0 && dst.sidekickPlain[1] == 1,
+	         "network save record carries both ships' skins and Color Sidekicks choices");
+	qa_check(memcmp(dst.standardItems, src.standardItems, sizeof(src.standardItems)) == 0 &&
+	         memcmp(dst.standardLent, src.standardLent, sizeof(src.standardLent)) == 0 &&
+	         memcmp(dst.standardPower, src.standardPower, sizeof(src.standardPower)) == 0,
+	         "...and both ships' stashed standard loadouts with the parts their custom ships lent");
 	qa_check(dst.gameHasRepeated && dst.autoFireSpecial && dst.difficultyAdjust
 	         && dst.cheatInfiniteSidekickAmmo && !dst.cheatInfiniteShields
 	         && dst.cheatInfiniteArmor && dst.expertMode,
@@ -137,8 +151,11 @@ void qa_test_save_record_wire(void)
 	/* Hostile fixed-width strings still have to become safe C strings on receipt. */
 	memset(packed + 47, 'L', 11);
 	memset(packed + 58, 'N', 15);
-	const size_t customNameAt =
-		SAVE_RECORD_PACKED_SIZE - sizeof(src.shipSkin) - sizeof(src.customEpFile);
+	const size_t customNameAt = SAVE_RECORD_PACKED_SIZE - sizeof(src.sidekickPlain)
+	                           - sizeof(src.standardPower)
+	                           - sizeof(src.standardLent)
+	                           - sizeof(src.standardItems) - sizeof(src.shipSkin)
+	                           - sizeof(src.customEpFile);
 	memset(packed + customNameAt, 'C', sizeof(src.customEpFile));   // a shapeless custom name
 	save_record_unpack(&dst, packed);
 	qa_check(dst.levelName[sizeof(dst.levelName) - 1] == '\0'
@@ -241,14 +258,6 @@ void qa_test_enhancement_presets(void)
 		qa_check(enhancementPresetState() == presets[p], "an applied preset reads back as itself");
 	}
 
-	// Enhancement presets must not change the Extra menu's Custom Weapons setting.
-	customWeaponEnabled = false;
-	enhancementApplyPreset(ENH_PRESET_ENGAGED);
-	qa_check(!customWeaponEnabled, "the Engaged preset leaves the Extra custom-weapon toggle alone");
-	customWeaponEnabled = true;
-	enhancementApplyPreset(ENH_PRESET_VANILLA);
-	qa_check(customWeaponEnabled, "the Vanilla preset leaves the Extra custom-weapon toggle alone");
-
 	for (size_t i = 0; i < COUNTOF(probes); ++i)
 	{
 		enhancementApplyPreset(ENH_PRESET_ENGAGED);
@@ -291,7 +300,6 @@ void qa_test_enhancement_presets(void)
 
 	enhancementApplyPreset(ENH_PRESET_ENGAGED);
 	qa_check(enhancementPresetState() == ENH_PRESET_ENGAGED, "re-applying a preset clears Custom");
-	customWeaponEnabled = true;
 }
 
 void qa_test_save_fixtures(void)
@@ -315,8 +323,19 @@ void qa_test_save_fixtures(void)
 	// Customize is inserted without changing stock row mappings.
 	detail[0] = '\0';
 	const bool rows = game_menu_test_outpost_rows(detail, sizeof(detail));
-	snprintf(label, sizeof(label), "online outpost rows%s%s", detail[0] ? ": " : "", detail);
+	snprintf(label, sizeof(label), "outpost rows%s%s", detail[0] ? ": " : "", detail);
 	qa_check(rows, label);
+
+	detail[0] = '\0';
+	const bool customize = game_menu_test_customize(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "outpost Customize%s%s", detail[0] ? ": " : "", detail);
+	qa_check(customize, label);
+
+	detail[0] = '\0';
+	const bool prices = game_menu_test_power_prices(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "power levels cost what the upgrade screen shows%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(prices, label);
 
 	/* Import the upstream fixture, then restore the live save tables. */
 	JE_SaveFilesType savedSlots;

@@ -152,7 +152,7 @@ static bool load_sprite_array_file(const char *filename, Sprite_array *out)
 		sp->width  = SDL_SwapLE16(whs[0]);
 		sp->height = SDL_SwapLE16(whs[1]);
 		sp->size   = SDL_SwapLE16(whs[2]);
-		if (sp->size == 0 || sp->size > 64u * 1024u)  // sanity guard
+		if (sp->size == 0)  // sanity guard
 			break;
 
 		sp->data = malloc(sp->size);

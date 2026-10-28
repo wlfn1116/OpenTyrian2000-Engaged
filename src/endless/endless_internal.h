@@ -35,6 +35,8 @@ extern Uint64 endlessPlayerRngState[2];
 // Per-zone timers.
 #define ENDLESS_TURBODRIVE_TICKS 70
 #define ENDLESS_RETALIATION_TICKS 35
+#define ENDLESS_ATTRACT_SPEED_START 4
+#define ENDLESS_ATTRACT_SPEED_MAX   16
 extern int endlessZoneTicks;
 extern int endlessTurbodriveTimer[2];   // kill-fire window, per player
 extern int endlessRetaliationTimer;

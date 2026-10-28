@@ -34,7 +34,5 @@ EndlessDeathChoice;
 
 EndlessDeathChoice JE_endlessDeathMenu(void);
 bool extraShipsAllowedInGame(void);
-void extraShipReturnReset(void);
-void extraShipRememberStandard(uint pnum);
 
 #endif /* INGAME_MENU_H */

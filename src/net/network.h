@@ -69,9 +69,10 @@
 #define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
 #define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
 #define PACKET_ENDLESS_JUMP  0x38    // sender, armed, level pick, len, <Endless debug block>
-#define PACKET_PLAYER_LOOK   0x39    // sender, dye, view, skin; repeated and unacknowledged
+#define PACKET_PLAYER_LOOK   0x39    // sender, dye, view, skin, sidekick dye; repeated, no ack
 #define PACKET_EXTRA_SHIPS   0x3A    // owner, generation, chunk idx/count, len, <ship file chunk>
 #define PACKET_CUSTOM_LEVEL  0x3B    // Chunked *.clv transfer; see doc/notes.md.
+#define PACKET_SEAT_LOADOUT  0x3C
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -404,6 +405,7 @@ void network_end_screen_rendezvous(bool local_dismissed);
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
+void network_seat_loadout_publish(void);
 bool network_shop_pump(void);
 bool network_shop_peer_done(void);
 // True while the reliable queue holds a packet the level-start handshake is the one to read;
@@ -422,9 +424,6 @@ bool network_shop_peer_locked(void);
 
 // Publish the local custom weapon. Both machines need both designs for deterministic simulation.
 void network_custom_weapon_publish(void);
-/* A Campaign resume can enter gameplay without an outpost. Publish even when the editor feature is
- * locally disabled, because the loaded record may already have either custom slot equipped. */
-void network_custom_weapon_publish_resume(void);
 
 // Publish this machine's extra-ship file through the reliable session channel.
 void network_extra_ships_publish(void);

@@ -201,15 +201,27 @@ const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr)
 	return NULL;
 }
 
+static const struct { const char *stock, *endless; } endlessSpecialNames[] =
+{
+	{ "Pearl Wind",      "Pearl Shot" },
+	{ "8-Way Microbomb", "Microbomb" },
+};
+
 const char *JE_specialName(JE_byte id)
 {
 	if (id > SPECIAL_NUM)
 		return special[0].name;  // the "None" record
 
 	// Matched by record data so it holds for both the ep1-3 and the ep4/5 item table.
-	if (endlessFxActive() && special[id].stype == 1 &&
-	    strncmp(special[id].name, "Pearl Wind", 10) == 0)
-		return "Pearl Shot";
+	if (endlessFxActive() && special[id].stype == 1)
+	{
+		for (size_t i = 0; i < COUNTOF(endlessSpecialNames); ++i)
+		{
+			const char *const stock = endlessSpecialNames[i].stock;
+			if (strncmp(special[id].name, stock, strlen(stock)) == 0)
+				return endlessSpecialNames[i].endless;
+		}
+	}
 
 	return special[id].name;
 }

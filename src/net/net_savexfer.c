@@ -47,7 +47,7 @@
 #define SAVE_XFER_PORT   1332
 
 // Transfer kinds have independent protocol versions.
-#define SAVE_XFER_VERSION              5
+#define SAVE_XFER_VERSION              8
 #define CUSTOM_XFER_TRANSPORT_VERSION  2
 #define ALL_XFER_TRANSPORT_VERSION     3
 #define SHIPS_XFER_TRANSPORT_VERSION   4
@@ -660,7 +660,7 @@ static size_t customXferPackParts(Uint8 *out, Uint8 parts)
 	SDLNet_Write16(withLevels ? CUSTOM_XFER_VERSION_LEVELS : CUSTOM_XFER_VERSION,
 	               &out[CX_VERSION]);
 	out[CX_FLAGS] = parts;
-	if ((parts & CX_PART_WEAPONS) && customWeaponEnabled)
+	if (parts & CX_PART_WEAPONS)
 		out[CX_FLAGS] |= CX_FLAG_WEAPONS_ENABLED;
 	out[CX_RESERVED] = 0;
 
@@ -758,19 +758,15 @@ static bool customXferApply(const Uint8 *buf, size_t len, Uint8 parts)
 	if (!customXferParts(buf, len, parts, &weapons, &weaponsLen, &ships, &shipsLen, &levelParts))
 		return false;
 
-	if (parts & CX_PART_WEAPONS)
-	{
-		if (!customWeaponAdoptLibrary(weapons, weaponsLen))
-			return false;
-		customWeaponEnabled = (buf[CX_FLAGS] & CX_FLAG_WEAPONS_ENABLED) != 0;
-	}
+	if ((parts & CX_PART_WEAPONS) && !customWeaponAdoptLibrary(weapons, weaponsLen))
+		return false;
 	if ((parts & CX_PART_SHIPS) && !extraShipsAdoptLocal(ships, shipsLen))
 		return false;
 
 	// Container parts follow the envelope and are applied additively.
 	xfer_level_parts_pending = levelParts;
 
-	// Weapon adoption writes its library and the toggle in opentyrian.cfg.
+	// Weapon adoption writes its library and opentyrian.cfg.
 	return !(parts & CX_PART_WEAPONS) ||
 	       (customWeaponLibrarySave() && save_opentyrian_config());
 }
@@ -2015,7 +2011,7 @@ void qa_test_save_transfer(void)
 		         "...nor one that carries no broadcast");
 	}
 
-	qa_check(SX_ENDLESS == 176 && SXR_LEN == 45 && SXC_HDR == 12,
+	qa_check(SX_ENDLESS == 208 && SXR_LEN == 45 && SXC_HDR == 12,
 	         "save-transfer wire offsets retain their protocol widths");
 	qa_check(CX_DATA_V2 == 16 && CX_DATA_V3 == 20 &&
 	         xferPacketType(XFER_CUSTOM, PACKET_SAVE_ACK) == PACKET_CUSTOM_ACK,
@@ -2156,14 +2152,13 @@ void qa_test_save_transfer(void)
 	Uint8 *const after = malloc(CUSTOM_WEAPON_LIBRARY_WIRE_MAX);
 	const size_t beforeLen = before != NULL
 	                       ? customWeaponSerializeLibrary(before, CUSTOM_WEAPON_LIBRARY_WIRE_MAX) : 0;
-	const bool enabledBefore = customWeaponEnabled;
 	const bool shipsAdopted = shipsTotal > CX_DATA_V2 &&
 	                          customXferUnpackParts(shipsPayload, shipsTotal, CX_PART_SHIPS);
 	const size_t afterLen = after != NULL
 	                      ? customWeaponSerializeLibrary(after, CUSTOM_WEAPON_LIBRARY_WIRE_MAX) : 0;
 	qa_check(shipsAdopted && beforeLen > 0 && beforeLen == afterLen &&
-	         memcmp(before, after, beforeLen) == 0 && customWeaponEnabled == enabledBefore,
-	         "a Custom Ships transfer leaves custom weapons and their toggle untouched");
+	         memcmp(before, after, beforeLen) == 0,
+	         "a Custom Ships transfer leaves custom weapons untouched");
 	free(after);
 	free(before);
 

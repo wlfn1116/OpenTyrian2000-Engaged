@@ -43,7 +43,6 @@ void JE_analyzeLevel(void)
 		        levelFile, (unsigned int)lvlNum);
 		fclose(f);
 		JE_tyrianHalt(1);
-		return;
 	}
 
 	fread_s32_die(lvlPos, lvlNum, f);

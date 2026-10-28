@@ -345,20 +345,8 @@ void JE_mainKeyboardInput(void)
 				if (keysactive[x])
 				{
 					rollback_taint("edit-ship-1");
-					extraShipRememberStandard(0);
-					endlessNoteCustomShip();
-					int z = x - SDL_SCANCODE_1 + 1;
-					player[0].items.ship = 90 + z;                     /*Ships*/
-					z = (z - 1) * 15;
-					player[0].items.weapon[FRONT_WEAPON].id = extraShipResolvePort(0, extraShips[z + 1]);
-					player[0].items.weapon[REAR_WEAPON].id = extraShipResolvePort(0, extraShips[z + 2]);
-					player[0].items.special = extraShips[z + 3];
-					player[0].items.sidekick[LEFT_SIDEKICK] = extraShips[z + 4];
-					player[0].items.sidekick[RIGHT_SIDEKICK] = extraShips[z + 5];
-					player[0].items.generator = extraShips[z + 6];
-					/*Armor*/
-					player[0].items.shield = extraShips[z + 8];
-					extraShipLoadoutRefresh(0, true);
+					if (extraShipEquip(0, x - SDL_SCANCODE_1 + 1))
+						extraShipLoadoutRefresh(0, true);
 
 					keysactive[x] = false;
 				}
@@ -591,16 +579,20 @@ void JE_pauseGame(void)
 static uint ship_draw_seat = 0;
 
 // Combine the online style with kill-fire tint; kill-fire tint wins.
-static NetShipStyle ship_draw_style(void)
+static NetShipStyle ship_draw_tinted(NetShipStyle style)
 {
-	NetShipStyle style = netStyleForSeat(ship_draw_seat);
 	const int tint = endlessShipTintFilter();
 	if (tint)
 		style.bank = (Sint8)(tint >> 4);
 	return style;
 }
 
-// Shared hull, trim, and sidekick blits preserve the caller's render-list tag.
+static NetShipStyle ship_draw_style(void)
+{
+	return ship_draw_tinted(netStyleForSeat(ship_draw_seat));
+}
+
+// Shared hull and trim blits preserve the caller's render-list tag.
 static void blit_ship2x2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
 {
 	const NetShipStyle style = ship_draw_style();
@@ -2582,10 +2574,13 @@ redo:
 					rl_current_sub_x = dir * (ox - roundf(ox));
 					rl_current_sub_y = dir * (oy - roundf(oy));
 				}
+				const NetShipStyle look = ship_draw_tinted(netStyleForSidekick(ship_draw_seat));
 				if (this_player->sidekick[i].style == 1 || this_player->sidekick[i].style == 2)
-					blit_ship2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
+					blit_sprite2x2_alpha(VGAScreen, x - 6, y, spriteSheet10, sprite, look.bank,
+					                     look.opacity);
 				else
-					blit_ship2(VGAScreen, x, y, spriteSheet9, sprite);
+					blit_sprite2_alpha(VGAScreen, x, y, spriteSheet9, sprite, look.bank,
+					                   look.opacity);
 				rl_current_id = 0;
 				rl_shot_attach = 0;
 				rl_current_sub_x = rl_current_sub_y = 0.0f;
@@ -3738,9 +3733,9 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 	// Arm presentation-only gauge flashes only on the live pass; rollback must not restart them.
 	const int gi = (this_player == &player[1]) ? 1 : 0;
-	if (!rollback_resim && gaugeFlashShield && this_player->shield < oldShield)
+	if (!rollback_resim && gaugeFlashShield && this_player->shield < (uint)oldShield)
 		shieldGaugeFlash[gi] = GAUGE_FLASH_START;
-	if (!rollback_resim && gaugeFlashArmor && this_player->armor < oldArmor)
+	if (!rollback_resim && gaugeFlashArmor && this_player->armor < (uint)oldArmor)
 		armorGaugeFlash[gi] = GAUGE_FLASH_START;
 
 	// cmHullHit still marks a hull hit when the infinite-armor cheat keeps armor from dropping.
@@ -3757,18 +3752,18 @@ JE_byte JE_playerDamage(JE_byte temp,
 			const float severity = MIN((float)MAX(taken, 0) / 12.0f, 1.0f);
 			ship_rumble(this_player, 0.45f + 0.45f * severity, 0.3f + 0.3f * severity, 220);
 		}
-		else if (this_player->shield < oldShield)
+		else if (this_player->shield < (uint)oldShield)
 		{
 			ship_rumble(this_player, 0.25f, 0.15f, 120);
 		}
 	}
 
 	/* Kinetic Converter's generator share needs shield absorption; its other effects need any hit. */
-	if (endlessFxShip(this_player) && (this_player->shield < oldShield || cmHullHit))
+	if (endlessFxShip(this_player) && (this_player->shield < (uint)oldShield || cmHullHit))
 	{
 		// Re-cap at the generator ceiling: the tick's own recharge/cap already ran.
 		// shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
-		if (this_player->shield < oldShield)
+		if (this_player->shield < (uint)oldShield)
 		{
 			const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
 			                                           shields[this_player->items.shield].tpwr);
@@ -3808,8 +3803,8 @@ JE_byte JE_playerDamage(JE_byte temp,
 	if (endlessFxShip(this_player))
 	{
 		int lost = 0;
-		if (this_player->shield < oldShield) lost += oldShield - this_player->shield;
-		if (this_player->armor  < oldArmor)  lost += oldArmor  - this_player->armor;
+		if (this_player->shield < (uint)oldShield) lost += oldShield - this_player->shield;
+		if (this_player->armor  < (uint)oldArmor)  lost += oldArmor  - this_player->armor;
 		if (lost > 0)
 		{
 			const int drain = (int)endlessStaticDischargeDrain((unsigned)lost);

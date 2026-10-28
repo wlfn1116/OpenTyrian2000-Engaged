@@ -30,6 +30,13 @@ enum
 enum { EDITOR_TICK_DELAY = 3 };
 
 double editorTickMs(void);
+
+typedef void (*EditorMusicTick)(void);
+void editorServiceMusic(void);
+void editorEndMusicFade(void);
+EditorMusicTick editorMusicTick(bool fromOutpost);
+void editorServiceNetwork(void);
+
 void editorDrawHint(const char *text);
 void editorDrawPanel(int x0, int y0, int x1, int y1);
 void editorDrawWell(int x0, int y0, int x1, int y1, Uint8 fill, Uint8 rim, Uint8 clamp);

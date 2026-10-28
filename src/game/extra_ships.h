@@ -19,6 +19,7 @@
 #define EXTRA_SHIPS_H
 
 #include "opentyr.h"
+#include "player.h"
 #include "sprite.h"
 
 #include <stdio.h>
@@ -47,6 +48,8 @@ enum { EXTRA_SHIP_PREVIEW_BANK_MS = 220 };
 // Return a banking pose from -2 to 2 for menu and editor previews.
 int extraShipPreviewBank(Uint32 elapsed);
 
+enum { EXTRA_SHIPS_LOCAL_SEAT = 2 };
+
 // Online, each player reads that seat's exchanged file. Offline, both read the local file.
 JE_byte *extraShipsFor(uint playerIdx);
 Sprite2_array *extraShapesFor(uint playerIdx);
@@ -65,8 +68,37 @@ const char *extraShipGraphicLabel(int graphic, char *buf, size_t bufSize);
 #define EXTRA_SHIP_CUSTOM_PORT 255
 
 enum { EXTRA_SHIP_ID_BASE = 90, EXTRA_SHIP_SLOTS = 10 };
+enum
+{
+	EXTRA_SHIP_BYTE_GRAPHIC, EXTRA_SHIP_BYTE_FRONT, EXTRA_SHIP_BYTE_REAR, EXTRA_SHIP_BYTE_SPECIAL,
+	EXTRA_SHIP_BYTE_LEFT, EXTRA_SHIP_BYTE_RIGHT, EXTRA_SHIP_BYTE_GENERATOR, EXTRA_SHIP_BYTE_ARMOR,
+	EXTRA_SHIP_BYTE_SHIELD,
+	EXTRA_SHIP_RECORD = 15,
+};
 bool extraShipIdIsCustom(int ship);
 JE_byte extraShipResolvePort(uint seat, JE_byte port);
+bool extraShipFieldOk(int byte, int value);
+
+typedef struct
+{
+	PlayerItems items;
+	JE_byte lent;
+	bool valid;
+}
+ExtraShipReturn;
+
+enum { EXTRA_SHIP_LENT_ALL = 0x7F };
+
+void extraShipReturnReset(void);
+void extraShipReturnSave(ExtraShipReturn saved[2]);
+void extraShipReturnRestore(const ExtraShipReturn saved[2]);
+bool extraShipEquip(uint seat, int slot);
+bool extraShipRestoreStandard(uint seat);
+const PlayerItems *extraShipStandard(uint seat);
+void extraShipSetStandard(uint seat, const PlayerItems *items, JE_byte lent);
+JE_byte extraShipLentParts(uint seat);
+JE_byte extraShipLentPower(uint seat, uint port);
+void extraShipPartBought(uint seat, uint part);
 
 // True when a local ship record requires the custom weapon design on the wire.
 bool extraShipsUseCustomWeapon(void);
@@ -80,6 +112,9 @@ bool extraShipsPayloadValid(const Uint8 *buf, size_t len);
 bool extraShipsAdoptLocal(const Uint8 *buf, size_t len);
 void extraShipsNetInstallLocal(uint seat);
 void extraShipsNetWithdraw(uint seat);
+void extraShipsNetAcknowledged(uint seat);
+void extraShipsNetRevert(uint seat);
+bool extraShipsNetPeerHolds(void);
 void extraShipsNetReset(void);
 
 #endif /* EXTRA_SHIPS_H */

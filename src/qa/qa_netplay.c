@@ -660,17 +660,34 @@ void qa_test_online_ship_style(void)
 	endlessMode = false;
 	endlessCampaignMods = false;
 
-	// Offline rendering ignores online styles.
+	// Offline, the one ship wears its own dye; partner styles and stale seats are ignored.
 	isNetworkGame = false;
 	twoPlayerMode = false;
 	thisPlayerNum = 2;
+	netStyleSetSeatColor(0, NET_SHIP_COLOR_NONE);
 	netStyleSetSeatColor(1, 5);
 	qa_set_local_opacity(50);
-	qa_check(netStyleIsPlain(netStyleForSeat(0)) && netStyleIsPlain(netStyleForSeat(1)),
-	         "offline play ignores the online ship colours");
+	qa_check(netStyleLocalSeat() == 0 && netStyleIsPlain(netStyleForSeat(0))
+	         && netStyleIsPlain(netStyleForSeat(1)),
+	         "offline play ignores the online ship colours, whatever seat it last flew");
+	netStyleSetSeatColor(0, 6);
+	qa_check(netStyleForSeat(0).bank == 5 && netStyleForSeat(0).opacity == NET_STYLE_SOLID
+	         && netStyleIsPlain(netStyleForSeat(1)),
+	         "offline the one ship wears its own dye, solid");
+	netStyleSetSidekickDye(0, false);
+	qa_check(netStyleForSidekick(0).bank < 0 && netStyleForSidekick(0).opacity == NET_STYLE_SOLID
+	         && netStyleForSeat(0).bank == 5,
+	         "...and with Color Sidekicks off its sidekicks keep their own colors");
+	netStyleSetSidekickDye(0, true);
+	qa_check(netStyleForSidekick(0).bank == 5, "...and with it on they wear the dye");
+	twoPlayerMode = true;
+	qa_check(netStyleIsPlain(netStyleForSeat(0)), "...but a local two-player game stays undyed");
+	netStyleSetSeatColor(0, NET_SHIP_COLOR_NONE);
+	qa_set_local_opacity(NET_OPACITY_FULL);
 
 	isNetworkGame = true;
 	twoPlayerMode = true;
+	qa_set_local_opacity(50);
 	netStyleSetSeatColor(0, 3);
 
 	qa_check(netStyleLocalSeat() == 1, "seat two is this machine's ship");

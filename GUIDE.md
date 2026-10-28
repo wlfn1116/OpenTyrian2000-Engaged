@@ -10,9 +10,10 @@ online play, editors, restored content, and smoother rendering.
 | Start Endless | Main menu > 1 Player Endless |
 | Play online | Main menu > Online Multiplayer |
 | Transfer saves or custom data | Title screen > Extra > Transfer |
-| Edit ships | Title screen > Extra > Ship Editor |
-| Change your ship's look | Esc > Extra > Ship Skin, or your ship in the shop's ship list |
-| Design a weapon | Title screen > Extra > Weapon Editor |
+| Edit ships | Title screen > Extra > Ship Editor, or Customize at an outpost |
+| Fly a custom ship | Customize > Custom Ship at an outpost |
+| Change your ship's look | Customize at an outpost, or Esc > Extra > Ship Skin |
+| Design a weapon | Title screen > Extra > Weapon Editor, or Customize at an outpost |
 | Change graphics | Setup > Graphics |
 | Soften sound effects | Setup > Sound |
 | Turn on gamepad rumble | Setup > Rumble, with a rumble controller connected |
@@ -114,6 +115,15 @@ elites, and champions have a short repeat-hit lock.
 The Mega Cannon, Sonic Impulse, and Needle Laser always pierce. Dragon Frost
 and Dragon Flame gain piercing shots at power 9.
 
+### Specials
+
+- **Attractor** pulls every pickup you can collect onto your ship and follows
+  you as you move, so each one is collected. Special-weapon pickups and weapon
+  balls stay put, and a pickup is let go if your ship goes down. **Opening
+  Salvo** makes the pull start faster.
+- **8-Way Microbomb** is named **Microbomb** and **Pearl Wind** is named
+  **Pearl Shot**.
+
 ### Courses and modifiers
 
 Course cards are ordered by danger and payout. Red modifiers are threats; green
@@ -138,8 +148,9 @@ Milestone charts appear every 25 zones. Multiples of 100 include **The End**.
 
 ### Outpost
 
-The normal shop restocks each visit. **Data Cubes** opens the E-Shop and **Ship
-Specs** opens the perk list.
+The normal shop restocks each visit. Its prices, weapon power levels included,
+rise with depth. **Data Cubes** opens the E-Shop and **Ship Specs** opens the
+perk list.
 
 The weapon categories are **Primary Gun** and **Secondary Gun**; both draw from
 one pool. Each row is tagged **Front** or **Rear** for the gun's original bay
@@ -307,14 +318,16 @@ cannot be skipped online.
 
 ### Appearance
 
-Choose **Customize** at an online outpost.
+Online, [Customize](#customize) adds two rows for how the other player looks on
+your screen:
 
-- **Ship Color** dyes your hull and sidekicks.
-- **Partner Opacity** fades the other player's ship or shots on your screen.
+- **Partner Opacity** fades the other player's ship or shots.
 - **Partner HP Bars** shows the other player's shield and armour.
 
-Linked Arcade omits partner bars because its shared HUD already shows both
-players. Online saves keep both players' appearance choices.
+Ship Color shows the other player's dye beside **Partner**, so you can pick a
+different one. Your ship color, Color Sidekicks choice, and skin show on the
+other player's screen. Linked Arcade omits partner bars because its shared HUD
+already shows both players. Online saves keep both players' appearance choices.
 
 ### Saving and resuming
 
@@ -334,9 +347,53 @@ Linked Arcade sides remain as saved, even if the other machine hosts.
 Enable network logging under **Setup > Diagnostics**. Attach the matching log
 from both machines; each contains its local state for the disputed frame.
 
+## Customize
+
+**Customize** is on the outpost menu of every game except a local two-player
+one.
+
+| Row | Use |
+| --- | --- |
+| Custom Ship | Fly one of your Ship Editor ships, or return to your own ship |
+| Ship Skin | Wear another hull's look; stats stay the same |
+| Ship Color | Dye your ship; **Color Sidekicks** decides whether the sidekicks take the dye |
+| Partner Opacity, Partner HP Bars | Online only; see [Appearance](#appearance) |
+| Ship Editor | Edit your custom ships |
+| Weapon Editor | Design and equip a custom weapon in Campaign and Endless |
+
+Custom Ship and Ship Editor appear where custom ships are allowed (see
+[Extra menu and Ship Editor](#extra-menu-and-ship-editor)). A locked Endless
+sortie hides Custom Ship and Weapon Editor. Both editors keep the outpost music.
+
+### Custom ships
+
+**Custom Ship** opens a grid with your own ship, labelled **Stock**, and the ten
+Ship Editor slots. Choosing a slot equips that ship with its whole loadout. Your
+own ship waits with everything bought for it; choose **Stock** to go back
+exactly as you left it, weapon power included. A hull bought while flying a
+custom ship is listed as **Current**.
+
+While you fly a custom ship, **Upgrade Ship** trades as usual with these rules:
+
+- The parts the custom ship came with cost nothing to keep and sell for
+  nothing.
+- A gun the custom ship brings starts at your own ship's power. Those levels
+  are borrowed: free to keep and worth nothing when sold. Higher levels cost
+  the gun's normal price.
+- Buying a hull swaps only the hull. The other parts stay, and your own ship
+  still waits in Custom Ship.
+- Going back to your own ship drops everything bought for the custom ship.
+  Switching to another custom ship replaces the parts that ship names.
+
+Online, your ships reach the other player when the session starts, when you
+open Custom Ship after editing them, and before each level. A resumed save
+keeps everyone's custom ship.
+
 ## Weapon Editor
 
-Open **Title screen > Extra > Weapon Editor**. The library holds 32
+Open **Title screen > Extra > Weapon Editor**, or **Customize > Weapon Editor**
+at a Campaign or Endless outpost, where **Equip** mounts the design and returns
+to the shop. The library holds 32
 weapons with 11 power levels. A design can be equipped as a front gun, rear gun,
 or sidekick.
 
@@ -471,15 +528,16 @@ ship skins. Online, **Debug Codes** disables Hyper-Speed and Level Filter.
 
 Custom ships and skins are available in solo Campaign, Endless, and Arcade, plus
 online Campaign, Endless, and Separate Arcade. If a custom ship fails to reach
-the other player, both machines fly the USP Talon instead. Campaign and Endless
-send it again at the next outpost.
+the other player, both machines put that player back in their own ship, or the
+USP Talon when there is none. The ships are sent again before the next level.
 
 ### Edit ships
 
 The Ship Editor edits ten slots saved in `custom_ships.shp`; slot 10 uses the 0
-key. Put `User.shp` beside the game executable or in `data`, then choose
-**Import**. Its filename is case-insensitive. **Done** writes `custom_ships.shp`
-without changing the shipped `data/newsh$.shp`.
+key. Open it from **Title screen > Extra** or from **Customize** at an outpost.
+Put `User.shp` beside the game executable or in `data`, then choose **Import**.
+Its filename is case-insensitive. **Done** writes `custom_ships.shp` without
+changing the shipped `data/newsh$.shp`.
 
 Enter or a click on **Graphic** opens a hull grid with the built-in hulls under
 **In-Game** and the eight custom banks under **Custom**.
@@ -489,8 +547,9 @@ To change ship during play:
 - hold Tab and press a number in a solo game; or
 - use **Esc > Extra > Custom Ship** with keyboard, controller, or touch.
 
-**Standard** restores the loadout held before the switch. Damage is preserved as
-a percentage when maximum armour or shield changes.
+**Standard** restores the loadout held before the first switch, weapon power
+included. Damage is preserved as a percentage when maximum armour or shield
+changes. At an outpost, use [Customize > Custom Ship](#custom-ships).
 
 The sprite editor stores five banking poses per custom bank. Color 0 is
 transparent. Mouse controls use right-click to erase and middle-click to pick a
@@ -503,7 +562,7 @@ ships and any custom weapons they need.
 
 The sprite editor's **Import Image** button loads `custom-bank-<n>.png` from the
 [save folder](#files-and-logs) into the open bank. Left/Right on the button
-switches to **Export Image**, **Revert**, or **Random Song**.
+switches to **Export Image** or **Revert**.
 
 - **Export Image** writes the bank's five poses side by side, hard left to hard
   right, as a 120x28 PNG in the game palette. Colour 0 is saved as transparent.
@@ -521,15 +580,15 @@ switches to **Export Image**, **Revert**, or **Random Song**.
 
 ### Ship skins
 
-**Esc > Extra > Ship Skin** changes how your ship looks without changing its
-weapons, armour, or hitbox. Left/Right or a click cycles **Default**, then the
-in-game hulls, then custom banks that have artwork. The preview shows the skin
-in motion.
+**Customize > Ship Skin** at an outpost and **Esc > Extra > Ship Skin** change
+how your ship looks without changing its weapons, armour, or hitbox. Customize
+shows the skins in a grid with **In-Game** and **Custom** pages. Esc > Extra
+cycles **Default**, then the in-game hulls, then custom banks that have artwork,
+with Left/Right or a click, and its preview shows the skin in motion.
 
 - The skin is saved with the game and shows on the other player's screen online.
 - In the shop's ship list, your current ship shows the skin and "(Skin)" after
-  its name. Enter or Left/Right on that row cycles the skin, and the large ship
-  picture follows it. Enter on any other ship still buys it.
+  its name, and the large ship picture follows it.
 - The two-piece Dragonwing and Nort Ship can neither be worn as skins nor wear
   one.
 
@@ -671,7 +730,7 @@ builds and the same network. Transfers use UDP port 1332.
 | Save | One save; receiver chooses slot and name |
 | All Saves | Every save slot and Endless run |
 | Custom Ships | Ship Editor output |
-| Custom Weapons | Weapon library and enabled state |
+| Custom Weapons | Weapon library |
 | Custom Data | Ships and weapons |
 | Transfer All | Saves, scores, ships, and weapons |
 

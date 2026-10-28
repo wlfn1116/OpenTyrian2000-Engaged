@@ -1036,8 +1036,6 @@ static bool load_opentyrian_config(void)
 			config_get_int_option(section, expertSettings[i].cfgKey, expertSettings[i].value);
 		clamp_expert_settings();  // guard against a hand-edited or stale config
 
-		load_int_flag(section, "custom_weapon_enabled", &customWeaponEnabled);
-
 		customWeaponEditLevel = 0;
 		customWeaponEditMode = 0;
 	}
@@ -1235,7 +1233,7 @@ bool save_opentyrian_config(void)
 	enhancementSaveCustomSet(section);
 	config_set_int_option(section, "xmas", xmasMode);
 
-	config_set_int_option(section, "custom_weapon_enabled", customWeaponEnabled ? 1 : 0);
+	config_remove_option(section, "custom_weapon_enabled");
 
 	for (int i = 0; i < expertSettingsCount; ++i)
 		config_set_int_option(section, expertSettings[i].cfgKey, *expertSettings[i].value);

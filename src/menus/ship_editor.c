@@ -17,7 +17,6 @@
  */
 #include "ship_editor.h"
 
-#include "audio.h"
 #include "config.h"
 #include "custom_weapon.h"
 #include "debug_menu.h"
@@ -34,11 +33,8 @@
 #include "image_png.h"
 #include "joystick.h"
 #include "keyboard.h"
-#include "lds_play.h"
 #include "lvlmast.h"
 #include "mouse.h"
-#include "mtrand.h"
-#include "musmast.h"
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
@@ -136,44 +132,25 @@ bool JE_shipEditorConfirmationSelfTest(void)
 }
 
 // Bytes 0..6 follow the row order; armor and shield stay at file bytes 7 and 8.
+static int seFieldByte(int row)
+{
+	return (row == SE_ROW_ARMOR) ? EXTRA_SHIP_BYTE_ARMOR
+	     : (row == SE_ROW_SHIELD) ? EXTRA_SHIP_BYTE_SHIELD : row - SE_ROW_GRAPHIC;
+}
+
 static JE_byte *seField(int slot, int row)
 {
-	const int byte = (row == SE_ROW_ARMOR) ? 7
-	               : (row == SE_ROW_SHIELD) ? 8 : row - SE_ROW_GRAPHIC;
-	return &extraShips[(slot - 1) * 15 + byte];
+	return &extraShips[(slot - 1) * EXTRA_SHIP_RECORD + seFieldByte(row)];
 }
 
 static bool seCustomPortAvailable(void)
 {
-	return customWeaponEnabled && customWeaponPort > 0;
+	return customWeaponPort > 0;
 }
 
 static bool seValueOk(int row, int v)
 {
-	switch (row)
-	{
-	case SE_ROW_GRAPHIC:
-		return v >= 1 && v <= extraShipGraphicMax();
-	case SE_ROW_FRONT:
-		return v == EXTRA_SHIP_CUSTOM_PORT ||
-		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) != SHOP_BAY_UNKNOWN);
-	case SE_ROW_REAR:
-		return v == 0 || v == EXTRA_SHIP_CUSTOM_PORT ||
-		       (v >= 1 && v <= PORT_NUM && shop_weapon_port_bay(v) != SHOP_BAY_UNKNOWN);
-	case SE_ROW_SPECIAL:
-		// The HUD needs a valid icon for every equipped special.
-		return v == 0 || debug_special_is_safe(v);
-	case SE_ROW_LEFT:
-	case SE_ROW_RIGHT:
-		return v == 0 || (v <= OPTION_NUM && options[v].name[0] != '\0');
-	case SE_ROW_GENERATOR:
-		return v >= 1 && v <= POWER_NUM;
-	case SE_ROW_ARMOR:
-		return v >= 1 && v <= 30;
-	case SE_ROW_SHIELD:
-		return v >= 1 && v <= SHIELD_NUM;
-	}
-	return false;
+	return extraShipFieldOk(seFieldByte(row), v);
 }
 
 // Preserve a stored custom weapon when the editor cannot offer it for selection.
@@ -310,11 +287,27 @@ static void seDrawHull(int cx, int y, Sprite2_array *sheet, JE_word gr, int bank
 		blit_sprite2x2(VGAScreen, cx - SHOP_WIDE_HULL_HALF, y, *sheet, gr + pose);
 }
 
+static bool seFromOutpost;
+
+static EditorMusicTick seMusicTick(void)
+{
+	return editorMusicTick(seFromOutpost);
+}
+
+bool JE_shipEditorOutpostMusicSelfTest(void)
+{
+	const bool savedOutpost = seFromOutpost;
+	seFromOutpost = true;
+	const bool outpostKeepsSong = seMusicTick() == NULL;
+	seFromOutpost = false;
+	const bool setupShuffles = seMusicTick() == editorServiceMusic;
+	seFromOutpost = savedOutpost;
+	return outpostKeepsSong && setupShuffles;
+}
+
 static void sePickDraw(int graphic, int px, int py, int w, int h)
 {
-	Sprite2_array *sheet = &spriteSheet9;
-	const JE_word gr = extraShipGraphicSprite(0, graphic, &sheet);
-	spritePickerDrawHull(sheet, gr, px, py, w, h);
+	spritePickerDrawGraphic(EXTRA_SHIPS_LOCAL_SEAT, graphic, px, py, w, h);
 }
 
 static bool sePickGraphic(int slot)
@@ -336,7 +329,7 @@ static bool sePickGraphic(int slot)
 		spritePickerHullPage("Custom", banks, bankCount, sePickDraw, extraShipGraphicLabel),
 	};
 	const SpritePickerSpec spec = { .title = "Ship Graphic", .pages = pages, .pageCount = 2,
-	                                .tick = shipEditorServiceMusic };
+	                                .idle = editorServiceNetwork, .tick = seMusicTick() };
 	int value = *seField(slot, SE_ROW_GRAPHIC);
 	if (!spritePickerRun(&spec, &value) || !seValueOk(SE_ROW_GRAPHIC, value))
 		return false;
@@ -1601,7 +1594,7 @@ enum
 };
 enum { SES_GUIDES_OFF, SES_GUIDES_VERTICAL, SES_GUIDES_HORIZONTAL, SES_GUIDES_BOTH, SES_GUIDES_COUNT };
 enum { SES_FLIP_H, SES_FLIP_V, SES_FOLD_L, SES_FOLD_R, SES_FOLD_U, SES_FOLD_D, SES_FLIP_COUNT };
-enum { SES_BANK_IMPORT, SES_BANK_EXPORT, SES_BANK_REVERT, SES_BANK_SONG, SES_BANK_COUNT };
+enum { SES_BANK_IMPORT, SES_BANK_EXPORT, SES_BANK_REVERT, SES_BANK_COUNT };
 
 static const char *const sesToolName[SES_TOOL_COUNT] = {
 	"Paint", "Fill", "Pick", "Erase", "Shade", "Colorize"
@@ -1653,7 +1646,6 @@ static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
 static const struct { const char *label, *help; } sesBankAlt[SES_BANK_COUNT - 1] = {
 	{ "Export Image", "Save this bank's poses as a 120x28 PNG. Left/Right chooses." },
 	{ "Revert",       "Discard this bank's edits. Left/Right chooses." },
-	{ "Random Song",  "Play a random song. Left/Right chooses." },
 };
 
 static const char *const sesPoseName[SE_FRAMES] = { "Hard Left", "Left", "Center", "Right", "Hard Right" };
@@ -1840,65 +1832,6 @@ static int seCycleBankMode(int mode, int dir)
 static int seColorStep(int tool, bool wholeRow)
 {
 	return (tool == SES_TOOL_COLORIZE || wholeRow) ? 16 : 1;
-}
-
-// Jukebox-style music keeper: a track that ends or loops through fades into another random one.
-static bool seFadingSong = false;
-static int seFadeVolume;
-
-static void sePlayRandomSong(void)
-{
-	if (seFadingSong)
-	{
-		seFadingSong = false;
-		set_volume(tyrMusicVolume, fxVolume);
-	}
-
-	// play_song is a no-op on the song already selected; replay it explicitly.
-	const unsigned int song = mt_rand() % MUSIC_NUM;
-	if (song == song_playing)
-		restart_song();
-	else
-		play_song(song);
-}
-
-// Both editor loops run on setDelay(3) frames, so one call steps three classic ticks.
-void shipEditorServiceMusic(void)
-{
-	if (audio_disabled || music_disabled)
-		return;
-
-	if (songlooped && !seFadingSong)
-	{
-		seFadingSong = true;
-		seFadeVolume = tyrMusicVolume;
-	}
-
-	if (seFadingSong)
-	{
-		for (int t = 0; t < 3 && seFadingSong; ++t)
-		{
-			if (seFadeVolume > 5)
-				seFadeVolume -= 2;
-			else
-			{
-				seFadeVolume = tyrMusicVolume;
-				seFadingSong = false;
-			}
-		}
-		set_volume(seFadeVolume, fxVolume);
-	}
-
-	if (!playing || (songlooped && !seFadingSong))
-		sePlayRandomSong();
-}
-
-void shipEditorEndMusicFade(void)
-{
-	if (!seFadingSong)
-		return;
-	seFadingSong = false;
-	set_volume(tyrMusicVolume, fxVolume);
 }
 
 static void seTestPaintAlpha(SDL_Surface *s, int x, int y, int w, int h, SDL_Color c, Uint8 alpha)
@@ -2170,10 +2103,13 @@ static void seSpriteEditor(int bank)
 	mouseShiftKeepsCursor = true;
 	mouseTwoFingerRightClick = true;
 
+	const EditorMusicTick musicTick = seMusicTick();
 	while (!done)
 	{
 		setDelay(EDITOR_TICK_DELAY);
-		shipEditorServiceMusic();
+		editorServiceNetwork();
+		if (musicTick != NULL)
+			musicTick();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
@@ -2870,14 +2806,6 @@ static void seSpriteEditor(int bank)
 			break;
 		}
 		case SES_ACT_BANK:
-			if (bankMode == SES_BANK_SONG)
-			{
-				sePlayRandomSong();
-				if (song_playing < MUSIC_NUM)
-					snprintf(notice, sizeof(notice), "Playing %.30s", musicTitle[song_playing]);
-				JE_playSampleNum(S_SELECT);
-				break;
-			}
 			if (bankMode == SES_BANK_EXPORT || bankMode == SES_BANK_IMPORT)
 			{
 				const bool moved = (bankMode == SES_BANK_EXPORT)
@@ -2912,8 +2840,9 @@ static void seSpriteEditor(int bank)
 	wait_noinput_consume(false, false, true);
 }
 
-void JE_shipEditor(void)
+void JE_shipEditor(bool fromOutpost)
 {
+	seFromOutpost = fromOutpost;
 	// The title screen has not necessarily loaded item data or shop sprites.
 	if (weaponPort[1].name[0] == '\0')
 		JE_loadItemDat();
@@ -2979,15 +2908,19 @@ void JE_shipEditor(void)
 	wait_noinput_consume(false, false, true);
 	mouseTwoFingerRightClick = true;
 
+	const EditorMusicTick musicTick = seMusicTick();
 	while (!done)
 	{
 		setDelay(EDITOR_TICK_DELAY);
-		shipEditorServiceMusic();
+		editorServiceNetwork();
+		if (musicTick != NULL)
+			musicTick();
 
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
 		Sprite2_array *sheet = &spriteSheet9;
-		const JE_word gr = JE_SGr(0, slot, &sheet);  // the editor always edits the local file
+		// the editor always edits the local file
+		const JE_word gr = JE_SGr(EXTRA_SHIPS_LOCAL_SEAT, slot, &sheet);
 		const JE_byte graphic = *seField(slot, SE_ROW_GRAPHIC);
 		if (slot != previewSlot || graphic != previewGraphic)
 		{
@@ -3529,7 +3462,7 @@ void JE_shipEditor(void)
 	touch_ui_clear_layout();
 	wait_noinput(false, false, true);
 
-	shipEditorEndMusicFade();
+	editorEndMusicFade();
 	spritePickerRelease();
 
 	VGAScreen = temp_surface;

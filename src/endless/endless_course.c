@@ -761,12 +761,12 @@ static void endlessWidenHostileCombos(int dangerRamp)
 		int comboShare = 50 + dangerRamp * 20 / 100;
 		if (comboShare > 80)
 			comboShare = 80;
-		if (endlessRand() % 100 >= comboShare)
+		if (endlessRand() % 100 >= (Uint32)comboShare)
 			continue;
 		// The ramp raises the typical bit count from about 2.2 to 3.4, capped at four.
-		int want = 1 + (endlessRand() % 100 < 70 + dangerRamp * 8 / 100)
-		             + (endlessRand() % 100 < 40 + dangerRamp * 10 / 100)
-		             + (endlessRand() % 100 < 12 + dangerRamp * 8 / 100);
+		int want = 1 + (endlessRand() % 100 < (Uint32)(70 + dangerRamp * 8 / 100))
+		             + (endlessRand() % 100 < (Uint32)(40 + dangerRamp * 10 / 100))
+		             + (endlessRand() % 100 < (Uint32)(12 + dangerRamp * 8 / 100));
 		if (want > (int)COUNTOF(endlessCombinableMods))
 			want = (int)COUNTOF(endlessCombinableMods);
 		endlessCourseMod[c] = endlessWeightedModDraw(endlessCombinableMods,
@@ -827,7 +827,8 @@ static void endlessGraftGambits(int dangerRamp)
 		int gambitPct = 35 - dangerRamp * 20 / 100;  // falls from about 35 percent to a 5 percent floor
 		if (gambitPct < 5)
 			gambitPct = 5;
-		if (endlessRand() % 100 >= gambitPct)  // fewer mitigations grafted onto hostiles as the run deepens
+		// fewer mitigations grafted onto hostiles as the run deepens
+		if (endlessRand() % 100 >= (Uint32)gambitPct)
 			continue;
 		endlessCourseMod[c] |= endlessPickMixBoon(h);
 	}

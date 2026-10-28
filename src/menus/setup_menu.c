@@ -394,7 +394,6 @@ typedef enum
 	MENU_ITEM_DESTRUCT,
 	MENU_ITEM_SUPERTYRIAN,
 	MENU_ITEM_SHIP_EDITOR,
-	MENU_ITEM_CUSTOM_WEAPONS,
 	MENU_ITEM_WEAPON_EDITOR,
 	MENU_ITEM_TRANSFER_SAVE_UPLOAD,
 	MENU_ITEM_TRANSFER_SAVE_DOWNLOAD,
@@ -573,7 +572,6 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_GAUGE_FLASH_ARMOR:   return &gaugeFlashArmor;
 	case MENU_ITEM_TOUCH_SIDEKICKS:     return &touchSidekickButtons;
 	case MENU_ITEM_TOUCH_NAV:           return &touchNavButtons;
-	case MENU_ITEM_CUSTOM_WEAPONS:      return &customWeaponEnabled;
 	case MENU_ITEM_CHARGE_LASER:        return &chargeLaserCannon;
 	case MENU_ITEM_ZICA_LOCK:           return &zicaLaserLock;
 	case MENU_ITEM_ZICA_BUFF:           return &zicaLaserBuff;
@@ -1130,7 +1128,6 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Secret Modes...", "Play Destruct, SuperTyrian, or Super Arcade.", MENU_SECRET_MODES },
 				{ MENU_ITEM_SHIP_EDITOR, "Ship Editor...", "Design the Tab+Number custom ships." },
 				{ MENU_ITEM_WEAPON_EDITOR, "Weapon Editor...", "Design your own weapon with a live preview." },
-				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable custom weapons and their buy/sell slot." },
 				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
 				{ MENU_ITEM_SUBMENU, "Transfer...", "Copy saves or custom creations to another device.", MENU_TRANSFER },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
@@ -1957,7 +1954,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_SHIP_EDITOR:
 				{
 					JE_playSampleNum(S_SELECT);
-					JE_shipEditor();
+					JE_shipEditor(false);
 					restart = true;
 					break;
 				}

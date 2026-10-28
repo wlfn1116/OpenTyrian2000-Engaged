@@ -1075,15 +1075,15 @@ void networkStartScreen(void)
 	else if (network_game_type == NETWORK_GAME_CAMPAIGN)
 	{
 	/* Exchange custom designs before materializing a resumed Campaign loadout. */
-		network_custom_weapon_publish_resume();
+		network_custom_weapon_publish();
 	}
 
-	/* Separate Arcade has no outpost. Publish any referenced weapon, then exchange ships. */
-	if (custom_ships_multiplayer_mode() && !coop_mode_active())
+	/* Publish any referenced weapon, then exchange ships before the first outpost or level. */
+	if (custom_ships_multiplayer_mode())
 	{
 		customWeaponNetPrepare();
 		if (extraShipsUseCustomWeapon())
-			network_custom_weapon_publish_resume();
+			network_custom_weapon_publish();
 		network_extra_ships_publish();
 		network_custom_content_rendezvous();
 	}

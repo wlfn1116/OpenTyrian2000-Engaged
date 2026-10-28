@@ -48,8 +48,58 @@ Sint64 weapon_upgrade_cost(Sint64 base_cost, unsigned int power)
 	return base_cost * temp;
 }
 
+Uint8 *playeritem_map(PlayerItems *items, uint i)
+{
+	Uint8 *const map[] =
+	{
+		&items->ship,
+		&items->weapon[FRONT_WEAPON].id,
+		&items->weapon[REAR_WEAPON].id,
+		&items->shield,
+		&items->generator,
+		&items->sidekick[LEFT_SIDEKICK],
+		&items->sidekick[RIGHT_SIDEKICK],
+	};
+	assert(i < COUNTOF(map));
+	return map[i];
+}
+
+static int endless_price_percent(void)
+{
+	// Endless: shop prices inflate with depth (+19%/level, capped 100x) since income also
+	// scales; the first five zones ramp at half slope.
+	int pct;
+	if (endlessRunDepth < 5)
+		pct = 100 + endlessRunDepth * 19 / 2;                 // first 5 zones: gentle half-slope
+	else
+		pct = 100 + 4 * 19 / 2 + (endlessRunDepth - 4) * 19;  // then full +19%/depth (continuous at zone 5)
+	if (pct > 10000)
+		pct = 10000;                            // cap at 100x
+	pct += endlessShopTaxPercent();             // Loan Shark: a permanent debt tax on top of the depth cap
+	if (endlessActiveMods & ENDLESS_MOD_FAVOR)  // Merchant's Favor: the outpost slashes prices
+		pct = pct * 65 / 100;
+	// Financier perk: better terms, in basis points because the per-stack cut isn't a whole
+	// percent. Multiplies like Favor does, so the two compound instead of one overriding the other.
+	return pct * endlessPerkShopCostBp() / 10000;
+}
+
 /* Prices are Sint64 like the wallets they are checked against; the widest product here (a 16-bit
  * base cost, the power ladder, the expert and endless multipliers) stays far below 2^63. */
+static Sint64 shop_price(Sint64 cost, int expertMult)
+{
+	// purchase price scales with the shop knob; power upgrades with their own knob
+	if (expertMode)
+		cost = cost * expertMult;
+	if (endlessMode)
+		cost = cost * endless_price_percent() / 100;
+	return cost;
+}
+
+Sint64 weapon_level_cost(JE_word port, unsigned int level)
+{
+	return shop_price(weapon_upgrade_cost(weaponPort[port].cost, level), expertUpgradeCostMult);
+}
+
 Sint64 JE_getCost(JE_byte itemType, JE_word itemNum)
 {
 	Sint64 cost = 0;
@@ -68,8 +118,8 @@ Sint64 JE_getCost(JE_byte itemType, JE_word itemNum)
 		const uint port = itemType - 3,
 			item_power = player[JE_shopPlayerIndex()].items.weapon[port].power - 1;
 
-		downgradeCost = weapon_upgrade_cost(cost, item_power);
-		upgradeCost = weapon_upgrade_cost(cost, item_power + 1);
+		downgradeCost = weapon_level_cost(itemNum, item_power);
+		upgradeCost = weapon_level_cost(itemNum, item_power + 1);
 		break;
 	case 5:
 		cost = shields[itemNum].cost;
@@ -83,46 +133,7 @@ Sint64 JE_getCost(JE_byte itemType, JE_word itemNum)
 		break;
 	}
 
-	if (expertMode)
-	{
-		// purchase price scales with the shop knob; power upgrades with their own knob
-		cost = cost * expertShopCostMult;
-
-		if (itemType == 3 || itemType == 4)
-		{
-			downgradeCost = downgradeCost * expertUpgradeCostMult;
-			upgradeCost = upgradeCost * expertUpgradeCostMult;
-		}
-	}
-
-	if (endlessMode)
-	{
-		// Endless: shop prices inflate with depth (+19%/level, capped 100x) since income also
-		// scales; the first five zones ramp at half slope.
-		int pct;
-		if (endlessRunDepth < 5)
-			pct = 100 + endlessRunDepth * 19 / 2;                 // first 5 zones: gentle half-slope
-		else
-			pct = 100 + 4 * 19 / 2 + (endlessRunDepth - 4) * 19;  // then full +19%/depth (continuous at zone 5)
-		if (pct > 10000)
-			pct = 10000;                            // cap at 100x
-		pct += endlessShopTaxPercent();             // Loan Shark: a permanent debt tax on top of the depth cap
-		if (endlessActiveMods & ENDLESS_MOD_FAVOR)  // Merchant's Favor: the outpost slashes prices
-			pct = pct * 65 / 100;
-		// Financier perk: better terms, in basis points because the per-stack cut isn't a whole
-		// percent. Multiplies like Favor does, so the two compound instead of one overriding the other.
-		pct = pct * endlessPerkShopCostBp() / 10000;
-
-		cost = cost * pct / 100;
-
-		if (itemType == 3 || itemType == 4)
-		{
-			downgradeCost = downgradeCost * pct / 100;
-			upgradeCost   = upgradeCost * pct / 100;
-		}
-	}
-
-	return cost;
+	return shop_price(cost, expertShopCostMult);
 }
 
 Sint64 JE_totalScore(const Player *this_player)

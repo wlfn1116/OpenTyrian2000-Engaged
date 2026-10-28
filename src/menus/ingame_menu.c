@@ -56,16 +56,6 @@
 
 static Uint8 debug_menu_backup[DEBUG_MENU_WIDTH * DEBUG_MENU_HEIGHT];
 
-typedef struct
-{
-	PlayerItems items;
-	bool valid;
-}
-ExtraShipReturn;
-
-// Each seat keeps its standard loadout for restoration.
-static ExtraShipReturn extraShipReturn[2];
-
 static JE_boolean JE_inGameSetup(void);
 
 static bool extraShipsAllowedForMode(bool network, bool twoPlayer, bool coop, bool separate,
@@ -81,36 +71,6 @@ bool extraShipsAllowedInGame(void)
 	return extraShipsAllowedForMode(isNetworkGame, twoPlayerMode, coop_mode_active(),
 	                                arcade_separate_mode(), timedBattleMode,
 	                                superTyrian, superArcadeMode);
-}
-
-void extraShipReturnReset(void)
-{
-	memset(extraShipReturn, 0, sizeof(extraShipReturn));
-}
-
-void extraShipRememberStandard(uint pnum)
-{
-	if (pnum >= COUNTOF(extraShipReturn) || extraShipIdIsCustom(player[pnum].items.ship))
-		return;
-
-	extraShipReturn[pnum].items = player[pnum].items;
-	extraShipReturn[pnum].valid = true;
-}
-
-static bool extraShipRestoreStandard(uint pnum)
-{
-	if (pnum >= COUNTOF(extraShipReturn) || !extraShipReturn[pnum].valid)
-		return false;
-
-	PlayerItems *const items = &player[pnum].items;
-	PlayerItems restored = extraShipReturn[pnum].items;
-	for (uint i = 0; i < COUNTOF(restored.weapon); ++i)
-		restored.weapon[i].power = items->weapon[i].power;
-	restored.sidekick_series = items->sidekick_series;
-	restored.sidekick_level = items->sidekick_level;
-	restored.super_arcade_mode = items->super_arcade_mode;
-	*items = restored;
-	return true;
 }
 
 void JE_doInGameSetup(void)
@@ -288,35 +248,13 @@ static int extraMenuNextCustomShipSlot(int slot, int dir, bool canReturn)
 // Switch loadouts while preserving the live armor and shield ratios.
 static void extraMenuCycleCustomShip(uint pnum, int dir)
 {
-	Player *const p = &player[pnum];
-	const JE_byte *const table = extraShipsFor(pnum);
-
-	int slot = extraShipIdIsCustom(p->items.ship) ? p->items.ship - EXTRA_SHIP_ID_BASE : 0;
-	extraShipRememberStandard(pnum);
-	slot = extraMenuNextCustomShipSlot(slot, dir, extraShipReturn[pnum].valid);
+	const JE_byte ship = player[pnum].items.ship;
+	const int current = extraShipIdIsCustom(ship) ? ship - EXTRA_SHIP_ID_BASE : 0;
+	const int slot = extraMenuNextCustomShipSlot(current, dir, extraShipStandard(pnum) != NULL);
 
 	rollback_taint(pnum == 0 ? "edit-ship-1" : "edit-ship-2");
-	if (slot == 0)
-	{
-		if (extraShipRestoreStandard(pnum))
-			extraShipLoadoutRefresh(pnum, true);
-		return;
-	}
-
-	const int base = (slot - 1) * 15;
-	endlessNoteCustomShip();  // an Endless record earns its "C" for a custom hull too
-
-	p->items.ship = (JE_byte)(90 + slot);
-	p->items.weapon[FRONT_WEAPON].id = extraShipResolvePort(pnum, table[base + 1]);
-	p->items.weapon[REAR_WEAPON].id = extraShipResolvePort(pnum, table[base + 2]);
-	// A file from another machine may name a special whose icon the HUD cannot draw.
-	p->items.special = debug_special_is_safe(table[base + 3]) ? table[base + 3] : 0;
-	p->items.sidekick[LEFT_SIDEKICK] = table[base + 4];
-	p->items.sidekick[RIGHT_SIDEKICK] = table[base + 5];
-	p->items.generator = table[base + 6];
-	p->items.shield = table[base + 8];
-
-	extraShipLoadoutRefresh(pnum, true);
+	if (slot == 0 ? extraShipRestoreStandard(pnum) : extraShipEquip(pnum, slot))
+		extraShipLoadoutRefresh(pnum, true);
 }
 
 static void extraMenuDrawShipPreview(uint pnum, int cx, int y, int banking, bool skinned)
@@ -365,8 +303,8 @@ void qa_test_extra_ship_return(void)
 {
 	Player savedPlayers[COUNTOF(player)];
 	memcpy(savedPlayers, player, sizeof(savedPlayers));
-	ExtraShipReturn savedReturn[COUNTOF(extraShipReturn)];
-	memcpy(savedReturn, extraShipReturn, sizeof(savedReturn));
+	ExtraShipReturn savedReturn[2];
+	extraShipReturnSave(savedReturn);
 
 	extraShipReturnReset();
 	PlayerItems standard = player[0].items;
@@ -378,8 +316,10 @@ void qa_test_extra_ship_return(void)
 	standard.sidekick[LEFT_SIDEKICK] = 16;
 	standard.sidekick[RIGHT_SIDEKICK] = 17;
 	standard.special = 8;
+	standard.weapon[FRONT_WEAPON].power = 4;
+	standard.weapon[REAR_WEAPON].power = 2;
 	player[0].items = standard;
-	extraShipRememberStandard(0);
+	extraShipSetStandard(0, &standard, EXTRA_SHIP_LENT_ALL);
 
 	player[0].items.ship = 91;
 	player[0].items.generator = 9;
@@ -390,30 +330,29 @@ void qa_test_extra_ship_return(void)
 	player[0].items.sidekick[LEFT_SIDEKICK] = 13;
 	player[0].items.sidekick[RIGHT_SIDEKICK] = 14;
 	player[0].items.special = 15;
-	extraShipRememberStandard(0);  // an extra ship must not replace the return point
 	const bool restored = extraShipRestoreStandard(0);
-	PlayerItems expected = standard;
-	expected.weapon[FRONT_WEAPON].power = 9;
-	qa_check(restored && memcmp(&player[0].items, &expected, sizeof(expected)) == 0,
+	qa_check(restored && memcmp(&player[0].items, &standard, sizeof(standard)) == 0,
 	         "the extra-ship return point restores every item the custom ship replaced");
-	qa_check(player[0].items.weapon[FRONT_WEAPON].power == 9,
-	         "returning to the standard loadout keeps upgrades earned after the switch");
+	qa_check(player[0].items.weapon[FRONT_WEAPON].power == 4,
+	         "reverting to the standard loadout brings back its own weapon power");
+	qa_check(extraShipStandard(0) == NULL && !extraShipRestoreStandard(0),
+	         "...and spends the return point, so a second return does nothing");
 
 	PlayerItems standard2 = player[1].items;
 	standard2.ship = 8;
 	standard2.generator = 4;
 	standard2.shield = 7;
+	standard2.weapon[FRONT_WEAPON].power = 3;
+	standard2.weapon[REAR_WEAPON].power = 1;
 	player[1].items = standard2;
-	extraShipRememberStandard(1);
+	extraShipSetStandard(1, &standard2, EXTRA_SHIP_LENT_ALL);
 	player[0].items.ship = 91;
 	player[1].items.ship = 92;
 	player[1].items.generator = 10;
 	player[1].items.weapon[FRONT_WEAPON].power = 8;
 	const PlayerItems seat0Custom = player[0].items;
-	PlayerItems expected2 = standard2;
-	expected2.weapon[FRONT_WEAPON].power = 8;
 	qa_check(extraShipRestoreStandard(1)
-	         && memcmp(&player[1].items, &expected2, sizeof(expected2)) == 0
+	         && memcmp(&player[1].items, &standard2, sizeof(standard2)) == 0
 	         && memcmp(&player[0].items, &seat0Custom, sizeof(seat0Custom)) == 0,
 	         "each online seat restores its own standard loadout without changing the other seat");
 
@@ -470,7 +409,7 @@ void qa_test_extra_ship_return(void)
 	}
 
 	memcpy(player, savedPlayers, sizeof(savedPlayers));
-	memcpy(extraShipReturn, savedReturn, sizeof(extraShipReturn));
+	extraShipReturnRestore(savedReturn);
 }
 
 static bool JE_extraMenu(void)

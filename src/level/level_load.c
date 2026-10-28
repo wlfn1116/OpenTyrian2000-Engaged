@@ -1103,7 +1103,6 @@ new_game:
 		fprintf(stderr, "error: episode %u references missing level file %u (available: 1-%u)\n",
 		        (unsigned int)episodeNum, (unsigned int)lvlFileNum, (unsigned int)(lvlNum / 2));
 		JE_tyrianHalt(1);
-		return;
 	}
 
 	FILE* level_f = dir_fopen_die(JE_episodeDir(), levelFile, "rb");
@@ -1113,7 +1112,6 @@ new_game:
 		        (unsigned int)episodeNum, (unsigned int)lvlFileNum);
 		fclose(level_f);
 		JE_tyrianHalt(1);
-		return;
 	}
 
 	JE_char char_mapFile;
@@ -1131,7 +1129,6 @@ new_game:
 		        (unsigned int)episodeNum, (unsigned int)lvlFileNum, (unsigned int)levelEnemyMax);
 		fclose(level_f);
 		JE_tyrianHalt(1);
-		return;
 	}
 	fread_u16_die(levelEnemy, levelEnemyMax, level_f);
 
@@ -1141,7 +1138,6 @@ new_game:
 		        (unsigned int)episodeNum, (unsigned int)lvlFileNum, (unsigned int)maxEvent);
 		fclose(level_f);
 		JE_tyrianHalt(1);
-		return;
 	}
 
 	/* Map shape lookup table; each map follows its level data. */

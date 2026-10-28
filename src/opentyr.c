@@ -182,7 +182,7 @@ void JE_tyrianHalt(JE_byte code)
 }
 
 #ifdef _MSC_VER
-// Some compilers do not infer that JE_tyrianHalt exits; suppress C4702 around main's end.
+// JE_tyrianHalt never returns, so main's closing return is unreachable; suppress C4702 there.
 #pragma warning(push)
 #pragma warning(disable: 4702)
 #endif

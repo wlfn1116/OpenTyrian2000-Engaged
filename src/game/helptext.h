@@ -24,7 +24,7 @@
 
 #include <stdio.h>
 
-#define MENU_MAX 22  // base 16, E-Shop, Perks, and four Online pages
+#define MENU_MAX 22  // base 16, E-Shop, Perks, and four Customize pages
 
 #define DESTRUCT_MODES 5
 

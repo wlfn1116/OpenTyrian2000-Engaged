@@ -46,6 +46,16 @@ MSBuild visualc\opentyrian.vcxproj /t:Rebuild /p:Configuration=Release /p:Platfo
 Check range warnings instead of hiding them. `OT_ASSUME` belongs after a real
 bounds check.
 
+`make debug` compiles C99 with `-Wall -Wextra -Werror`, so GCC rejects what MSVC
+lets through:
+
+- Compare signed and unsigned values with an explicit cast on one side.
+- `COMPILE_TIME_ASSERT` expands to an enum and works inside a function.
+  `SDL_COMPILE_TIME_ASSERT` is a local typedef under C99; use it only at file
+  scope.
+- `JE_tyrianHalt` and `JE_tyrianExitWithoutSaving` are `OT_NORETURN`. Code after
+  their calls is unreachable and draws MSVC C4702.
+
 ### Source layout
 
 `src/` groups the game by topic: `audio`, `core`, `destruct`, `endless`,
@@ -623,6 +633,12 @@ Seeded pickup sparks are presentation only and stay off silent rollback passes.
 The Orange Shield orbit is an Endless effect; campaign play keeps the shipped
 special path.
 
+The Endless Attractor (`endlessAttractorFire`, `endlessAttractorTick`) keeps its
+target and speed in two bytes of enemy padding, so the registry layout did not
+move. The tick runs in the simulation after chain reactions. It skips
+`endlessSpecialPickup()` items and weapon balls (`evalue` 30000 and up) and lets
+go when the target ship dies.
+
 ### Modifiers and courses
 
 `endlessModTable` owns modifier text, danger, payout, and class. Adding a
@@ -707,6 +723,10 @@ earned - spent == wallet
 Wallets and prices are `Sint64` bounded by `CASH_MAX`. `JE_cashLeft` may be
 negative only while previewing an unaffordable row.
 
+Item prices and weapon power levels share one scaling path in `item_prices.c`:
+the expert multipliers, then the depth percentage. `JE_cashLeft` charges each
+power level with `weapon_level_cost`, the figure the upgrade screen shows.
+
 Sabotage charges are shared. Prices, perk rows, shop RNG, and paid-perk counters
 are personal. Extra Perk pricing depends on held stacks, total bought picks, and
 picks bought during the current visit. Wallet size and income do not affect it.
@@ -768,6 +788,12 @@ Useful layout limits:
 
 Seven rows fit above a classic help line. Debug headings are not selectable.
 Boss and enemy bars use playfield coordinates.
+
+`configure_customize_menu` rebuilds the outpost's Customize page each visit;
+`customizeKind[]` maps its rows to actions, so rows can differ by mode. Its
+pickers return to Customize, and Esc from Customize returns to the active
+outpost. Shelves stocked during a visit re-sort through `sort_shop_stock`, which
+keeps None last.
 
 Press edges (`newkey`, `newmouse`) survive until `service_SDL_events(true)` or
 an explicit clear. Keyboard repeat can re-arm `newkey`.
@@ -876,7 +902,9 @@ or `NETWORK_KEEP_ALIVE()`.
 ### Session and outpost
 
 Each player owns their shop state. `PACKET_SHOP_SYNC` mirrors cash, loadout,
-route, and mode after a committed purchase.
+the stashed standard loadout, route, and mode after a committed purchase. Modes
+without a shared shop send a Customize change with `PACKET_SEAT_LOADOUT`: the
+sender's items and stash. A copy of this machine's own seat is ignored.
 
 A shared outpost has two departure states:
 
@@ -891,9 +919,14 @@ Content publication can receive `PACKET_WAITING` before its transfer ack. Carry
 that readiness into the level barrier, but leave a second marker queued for the
 next boundary.
 
-A custom weapon or ship that the peer never acknowledges is dropped on both
-machines until the next publish. The sender withholds its own copy with
-`customWeaponWithholdLocal` or `extraShipsNetWithdraw`.
+Co-op and Separate Arcade publish custom ships, and any custom weapon they
+reference, at session start and again before each level. Customize > Custom
+Ship publishes on demand and offers slots only while `extraShipsNetPeerHolds()`.
+
+A custom weapon the peer never acknowledges is dropped on both machines until
+the next publish; the sender withholds its own copy with
+`customWeaponWithholdLocal`. An unacknowledged ship file falls back to the last
+acknowledged copy (`extraShipsNetRevert`), or is withdrawn when there is none.
 
 In online Endless, seed, depth, course, and difficulty are shared. Wallets,
 equipment, shop stock, perks, revive, personal modifiers, and outpost RNG belong
@@ -902,7 +935,12 @@ to a player. Fold the selected course only after both purchase sets are known.
 ### Online appearance
 
 Ship dye and view settings are local presentation choices, published per seat.
-Dye affects the hull and sidekicks, never shots. A kill-fire tint takes priority.
+Dye affects the hull, and the sidekicks unless that seat turned Color Sidekicks
+off; never shots. A kill-fire tint takes priority on both. Offline, only the
+solo ship wears its dye; a local two-player game stays undyed.
+
+`PACKET_PLAYER_LOOK` is 11 bytes: sender, dye, the three view fields, skin, and
+the Color Sidekicks byte.
 
 Opacity is not rollback state. Shield-hit effects follow hull opacity, while
 health bars and other view choices remain local. Linked Arcade has no partner
@@ -961,11 +999,13 @@ new epoch each round.
 ### Online saves
 
 Online saves use slots 12 through 22. Slot 22 is the read-only `LAST LEVEL`
-backup. `save_record_pack` and `save_record_unpack` define the 164-byte wire
+backup. `save_record_pack` and `save_record_unpack` define the 196-byte wire
 record. It was 97 bytes through `NET_VERSION` 86. Version 87 appended the
 64-byte custom-episode file name. Version 94 replaced the packed 32-bit
 dual-ship tag with five bytes: the session kind, two weapon powers, and two
-weapon modes. Version 97 appended one ship-skin byte per seat.
+weapon modes. Version 97 appended one ship-skin byte per seat. Version 102
+appended each seat's stashed standard loadout (12 item bytes), its lent-part
+mask, its two weapon powers, and the Color Sidekicks bytes.
 
 A save writes only to the local machine. The peer acknowledgement supplies the
 other outpost half. Preserve player numbers on resume and restore both co-op mode
@@ -1005,10 +1045,11 @@ time. Later episodes, repeats, and deaths do not replace it.
   container additions.
 - Large payloads pause every 16 chunks to poll acknowledgements and cancellation.
 
-The single-save `OTSV` payload uses version 5. After its fixed header and
-164-byte save record come the Endless bytes, a 16-bit dependency length, and
-the colon-separated dependency string. Version 4 carried a 162-byte record and
-version 3 a 161-byte record; version 2 ended after the Endless bytes.
+The single-save `OTSV` payload uses version 8. After its fixed header and
+196-byte save record come the Endless bytes, a 16-bit dependency length, and
+the colon-separated dependency string. Version 5 carried a 164-byte record,
+version 4 a 162-byte record, and version 3 a 161-byte record; version 2 ended
+after the Endless bytes.
 
 Custom-level transfer negotiates transfer-kind version 7 and uses `OTCL`
 version 2. Multi-byte envelope fields use network byte order:
@@ -1085,8 +1126,26 @@ Online Campaign, Endless, and Separate Arcade exchange one ship file per seat.
 Use `extraShipsFor(seat)` for simulation lookups.
 
 Weapon byte 255 refers to the custom weapon owned by the same seat. Resolve it at
-equip time because reserved ports differ by player. The reference works even
-when the local Custom Weapons setting is off.
+equip time because reserved ports differ by player.
+
+`extraShipEquip` stashes the standard loadout, weapon power included, once per
+seat; later custom ships keep that stash. The stash carries a lent mask over the
+`ITEM_PART_*` parts:
+
+- The first equip lends every part; later equips lend the parts they change,
+  and a gun they change takes the stash's power.
+- A committed shop purchase that changes a part clears its bit
+  (`extraShipPartBought`).
+- The shop prices an owned lent part at zero both ways, and on a lent gun the
+  levels below the stash's power (`shop_first_paid_power`). Anything else lets
+  a player sell free parts, revert, and keep the cash.
+- `extraShipRestoreStandard` puts the stash back exactly, except sidekick
+  series, sidekick level, and Super Arcade mode. `JE_getShipInfo` calls it when
+  a seat's ship file is unavailable, and falls back to ship 1 without a stash.
+
+Slots save the stash, mask, and powers per seat (`pN_standard*`,
+`pN_standard_lent`). A save without stash powers treats the powers flown at the
+time as borrowed (`save_record_restore_stash`).
 
 Bank images are `custom-bank-<n>.png` in the user directory: 120x28, the five
 poses left to right, index 0 transparent. The name uses hyphens because the tiny
@@ -1129,15 +1188,17 @@ and refuses headers over 16384 pixels a side or 4M pixels before allocating.
   seat's ship file and some artwork, so a cleared bank draws the real hull.
 - Store the received byte raw and validate it at use, because item data can load
   after a save or packet arrives. `JE_initPlayerData` resets both seats.
-- In the shop's ship list, Enter and Left/Right on the owned ship's row cycle
-  its skin in place (`shop_skin_row_step`). Enter on any other row still buys
-  and jumps to Done.
+- The shop's ship list shows the owned ship's skin and "(Skin)"; Enter on that
+  row goes to Done. Customize > Ship Skin is the outpost picker.
 
 Slots write `p1_ship_skin` and `p2_ship_skin` only when nonzero. The packed save
 record carries both seats' bytes; each `PACKET_PLAYER_LOOK` carries only the
 sender's.
 
 ### Custom weapons
+
+Custom weapons are always enabled. Saving the configuration removes the old
+`custom_weapon_enabled` key.
 
 Reserve one port, sidekick, and scratch range per player. Claim only placeholder
 slots and materialize again after every item-data reload.

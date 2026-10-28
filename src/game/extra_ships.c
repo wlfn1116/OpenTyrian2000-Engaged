@@ -19,12 +19,17 @@
 
 #include "be_bytes.h"
 #include "custom_weapon.h"
+#include "debug_menu.h"
+#include "endless.h"
 #include "episodes.h"
 #include "file.h"
+#include "game_menu.h"
 #include "game_state.h"
+#include "item_prices.h"
 #include "lvlmast.h"
 #include "network.h"
 #include "opentyr.h"
+#include "player.h"
 #include "sprite.h"
 
 #include "SDL.h"
@@ -559,19 +564,30 @@ bool extraShipsAdoptLocal(const Uint8 *buf, size_t len)
 	return saved;
 }
 
+static JE_ShipsType extraShipsAcked;
+static Sprite2_array extraShapesAcked;
+static bool extraAckedAvail, extraAckedHeld;
+
+static void extraShipsCopy(JE_byte *dstTable, Sprite2_array *dstShapes, bool *dstAvail,
+                           const JE_byte *srcTable, const Sprite2_array *srcShapes, bool srcAvail)
+{
+	memcpy(dstTable, srcTable, sizeof(JE_ShipsType));
+	free_sprite2s(dstShapes);
+	if (srcAvail && srcShapes->size > 0)
+	{
+		dstShapes->size = srcShapes->size;
+		dstShapes->data = malloc_die(srcShapes->size);
+		memcpy(dstShapes->data, srcShapes->data, srcShapes->size);
+	}
+	*dstAvail = srcAvail;
+}
+
 void extraShipsNetInstallLocal(uint seat)
 {
 	if (seat >= COUNTOF(extraShipsNet))
 		return;
-	memcpy(extraShipsNet[seat], extraShips, sizeof(JE_ShipsType));
-	free_sprite2s(&extraShapesNet[seat]);
-	if (extraAvail && extraShapes.size > 0)
-	{
-		extraShapesNet[seat].size = extraShapes.size;
-		extraShapesNet[seat].data = malloc_die(extraShapes.size);
-		memcpy(extraShapesNet[seat].data, extraShapes.data, extraShapes.size);
-	}
-	extraNetAvail[seat] = extraAvail;
+	extraShipsCopy(extraShipsNet[seat], &extraShapesNet[seat], &extraNetAvail[seat],
+	               extraShips, &extraShapes, extraAvail);
 }
 
 void extraShipsNetWithdraw(uint seat)
@@ -583,10 +599,40 @@ void extraShipsNetWithdraw(uint seat)
 	extraNetAvail[seat] = false;
 }
 
+void extraShipsNetAcknowledged(uint seat)
+{
+	if (seat >= COUNTOF(extraShipsNet))
+		return;
+	extraShipsCopy(extraShipsAcked, &extraShapesAcked, &extraAckedAvail,
+	               extraShipsNet[seat], &extraShapesNet[seat], extraNetAvail[seat]);
+	extraAckedHeld = true;
+}
+
+void extraShipsNetRevert(uint seat)
+{
+	if (seat >= COUNTOF(extraShipsNet))
+		return;
+	if (!extraAckedHeld)
+	{
+		extraShipsNetWithdraw(seat);
+		return;
+	}
+	extraShipsCopy(extraShipsNet[seat], &extraShapesNet[seat], &extraNetAvail[seat],
+	               extraShipsAcked, &extraShapesAcked, extraAckedAvail);
+}
+
+bool extraShipsNetPeerHolds(void)
+{
+	return extraAckedHeld && extraAckedAvail;
+}
+
 void extraShipsNetReset(void)
 {
 	for (uint seat = 0; seat < COUNTOF(extraShipsNet); ++seat)
 		extraShipsNetWithdraw(seat);
+	memset(extraShipsAcked, 0, sizeof(extraShipsAcked));
+	free_sprite2s(&extraShapesAcked);
+	extraAckedAvail = extraAckedHeld = false;
 }
 
 // Write the SHIPEDIT layout: sprite blob, then encrypted ship table.
@@ -610,7 +656,7 @@ bool JE_saveExtraShapes(void)
 	return ok;
 }
 
-// Resolve the sentinel independently of the machine-local Custom Weapons setting.
+// Resolve the sentinel to the seat's reserved custom weapon port.
 JE_byte extraShipResolvePort(uint seat, JE_byte port)
 {
 	if (port != EXTRA_SHIP_CUSTOM_PORT)
@@ -618,6 +664,163 @@ JE_byte extraShipResolvePort(uint seat, JE_byte port)
 
 	const int reserved = (seat < CUSTOM_WEAPON_OWNERS) ? customWeaponOwnerPort[seat] : 0;
 	return (reserved > 0) ? (JE_byte)reserved : 0;
+}
+
+static bool extraShipPortOk(int value)
+{
+	return value == EXTRA_SHIP_CUSTOM_PORT ||
+	       (value >= 1 && value <= PORT_NUM &&
+	        shop_weapon_port_bay((JE_word)value) != SHOP_BAY_UNKNOWN);
+}
+
+bool extraShipFieldOk(int byte, int value)
+{
+	switch (byte)
+	{
+	case EXTRA_SHIP_BYTE_GRAPHIC:
+		return value >= 1 && value <= extraShipGraphicMax();
+	case EXTRA_SHIP_BYTE_FRONT:
+		return extraShipPortOk(value);
+	case EXTRA_SHIP_BYTE_REAR:
+		return value == 0 || extraShipPortOk(value);
+	case EXTRA_SHIP_BYTE_SPECIAL:
+		// The HUD needs a valid icon for every equipped special.
+		return value == 0 || debug_special_is_safe(value);
+	case EXTRA_SHIP_BYTE_LEFT:
+	case EXTRA_SHIP_BYTE_RIGHT:
+		return value == 0 || (value <= OPTION_NUM && options[value].name[0] != '\0');
+	case EXTRA_SHIP_BYTE_GENERATOR:
+		return value >= 1 && value <= POWER_NUM;
+	case EXTRA_SHIP_BYTE_ARMOR:
+		return value >= 1 && value <= 30;
+	case EXTRA_SHIP_BYTE_SHIELD:
+		return value >= 1 && value <= SHIELD_NUM;
+	}
+	return false;
+}
+
+// Each seat keeps its standard loadout for restoration.
+static ExtraShipReturn extraShipReturn[2];
+
+SDL_COMPILE_TIME_ASSERT(extra_ship_lent_all, EXTRA_SHIP_LENT_ALL == (1 << ITEM_PARTS) - 1);
+
+void extraShipReturnReset(void)
+{
+	memset(extraShipReturn, 0, sizeof(extraShipReturn));
+}
+
+void extraShipReturnSave(ExtraShipReturn saved[2])
+{
+	memcpy(saved, extraShipReturn, sizeof(extraShipReturn));
+}
+
+void extraShipReturnRestore(const ExtraShipReturn saved[2])
+{
+	memcpy(extraShipReturn, saved, sizeof(extraShipReturn));
+}
+
+static JE_byte extraShipRecordValue(const JE_byte *record, int byte, JE_byte fallback)
+{
+	return extraShipFieldOk(byte, record[byte]) ? record[byte] : fallback;
+}
+
+bool extraShipEquip(uint seat, int slot)
+{
+	if (seat >= COUNTOF(extraShipReturn) || slot < 1 || slot > EXTRA_SHIP_SLOTS ||
+	    !extraAvailFor(seat))
+		return false;
+
+	ExtraShipReturn *const stash = &extraShipReturn[seat];
+	PlayerItems *const items = &player[seat].items;
+	if (!stash->valid && !extraShipIdIsCustom(items->ship))
+	{
+		stash->items = *items;
+		stash->lent = EXTRA_SHIP_LENT_ALL;
+		stash->valid = true;
+	}
+	endlessNoteCustomShip();  // an Endless record earns its "C" for a custom hull too
+	PlayerItems before = *items;
+
+	const JE_byte *const record = &extraShipsFor(seat)[(slot - 1) * EXTRA_SHIP_RECORD];
+	items->ship = (JE_byte)(EXTRA_SHIP_ID_BASE + slot);
+	items->weapon[FRONT_WEAPON].id = extraShipResolvePort(seat,
+		extraShipRecordValue(record, EXTRA_SHIP_BYTE_FRONT, items->weapon[FRONT_WEAPON].id));
+	items->weapon[REAR_WEAPON].id = extraShipResolvePort(seat,
+		extraShipRecordValue(record, EXTRA_SHIP_BYTE_REAR, 0));
+	items->special = extraShipRecordValue(record, EXTRA_SHIP_BYTE_SPECIAL, 0);
+	items->sidekick[LEFT_SIDEKICK] = extraShipRecordValue(record, EXTRA_SHIP_BYTE_LEFT, 0);
+	items->sidekick[RIGHT_SIDEKICK] = extraShipRecordValue(record, EXTRA_SHIP_BYTE_RIGHT, 0);
+	items->generator = extraShipRecordValue(record, EXTRA_SHIP_BYTE_GENERATOR, items->generator);
+	items->shield = extraShipRecordValue(record, EXTRA_SHIP_BYTE_SHIELD, items->shield);
+
+	if (stash->valid)
+	{
+		for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+			if (items->weapon[i].id != before.weapon[i].id)
+				items->weapon[i].power = stash->items.weapon[i].power;
+		for (uint part = 0; part < ITEM_PARTS; ++part)
+			if (*playeritem_map(items, part) != *playeritem_map(&before, part))
+				stash->lent |= (JE_byte)(1u << part);
+	}
+	return true;
+}
+
+bool extraShipRestoreStandard(uint seat)
+{
+	if (seat >= COUNTOF(extraShipReturn) || !extraShipReturn[seat].valid)
+		return false;
+
+	PlayerItems *const items = &player[seat].items;
+	PlayerItems restored = extraShipReturn[seat].items;
+	restored.sidekick_series = items->sidekick_series;
+	restored.sidekick_level = items->sidekick_level;
+	restored.super_arcade_mode = items->super_arcade_mode;
+	*items = restored;
+	extraShipReturn[seat].valid = false;
+	return true;
+}
+
+const PlayerItems *extraShipStandard(uint seat)
+{
+	return (seat < COUNTOF(extraShipReturn) && extraShipReturn[seat].valid)
+	       ? &extraShipReturn[seat].items : NULL;
+}
+
+void extraShipSetStandard(uint seat, const PlayerItems *items, JE_byte lent)
+{
+	if (seat >= COUNTOF(extraShipReturn))
+		return;
+	extraShipReturn[seat].valid =
+		items != NULL && items->ship >= 1 && items->ship <= SHIP_DRAGONWING;
+	if (extraShipReturn[seat].valid)
+	{
+		extraShipReturn[seat].items = *items;
+		extraShipReturn[seat].lent = lent & EXTRA_SHIP_LENT_ALL;
+		for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+			extraShipReturn[seat].items.weapon[i].power =
+				(JE_byte)MIN(MAX(items->weapon[i].power, 1), 11);
+	}
+}
+
+JE_byte extraShipLentParts(uint seat)
+{
+	if (seat >= COUNTOF(extraShipReturn) || !extraShipReturn[seat].valid)
+		return 0;
+	return extraShipReturn[seat].lent;
+}
+
+JE_byte extraShipLentPower(uint seat, uint port)
+{
+	if (seat >= COUNTOF(extraShipReturn) || !extraShipReturn[seat].valid ||
+	    port >= COUNTOF(extraShipReturn[seat].items.weapon))
+		return 1;
+	return extraShipReturn[seat].items.weapon[port].power;
+}
+
+void extraShipPartBought(uint seat, uint part)
+{
+	if (seat < COUNTOF(extraShipReturn) && part < ITEM_PARTS)
+		extraShipReturn[seat].lent &= (JE_byte)~(1u << part);
 }
 
 bool extraShipsUseCustomWeapon(void)

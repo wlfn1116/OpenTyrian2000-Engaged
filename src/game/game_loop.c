@@ -4200,6 +4200,7 @@ draw_player_shot_loop_end:
 	// Chain Reaction perk: drain the queued death-pulses now that the player-shot loop is done, so a
 	// chain kill can neither recurse nor disturb the loop's per-linkgroup kill bookkeeping.
 	chain_reaction_process();
+	endlessAttractorTick();
 
 	/* Player movement indicators for shots that track your ship */
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -5741,6 +5742,7 @@ static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 
 	enemy_note_full_armor(enemy);   // any other spawn takes its scaled armor as full
 	enemy->eliteState = 0;  // endless: elite undecided until first processed (see JE_drawEnemy)
 	enemy->groupHomed = false;
+	enemy->attractedBy = 0;
 	// Only an enemy that can actually track draws for a side, so the roll costs the shared RNG
 	// stream nothing on the score pickups and straight-line traffic that make up most of a zone.
 	enemy->homeTarget = (enemy->xaccel || enemy->yaccel) ? (JE_byte)endlessRollHomingTarget() : 0;

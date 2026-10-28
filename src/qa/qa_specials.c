@@ -993,3 +993,184 @@ void qa_test_special_state_reset(void)
 	button[0] = false;
 	JE_resetTwiddleClocks();
 }
+
+static void qa_attract_item(int slot, int value, int x, int y)
+{
+	memset(&enemy[slot], 0, sizeof(enemy[slot]));
+	enemyAvail[slot] = 2;
+	enemy[slot].evalue = (JE_integer)value;
+	enemy[slot].scoreitem = true;
+	enemy[slot].ex = (JE_integer)x;
+	enemy[slot].ey = (JE_integer)y;
+	enemy[slot].exc = 50;
+	enemy[slot].eyc = -40;
+}
+
+static bool qa_attract_step_closes(int before, int after)
+{
+	return after == 0 || ((after > 0) == (before > 0) && abs(after) <= abs(before));
+}
+
+void qa_test_endless_attractor(void)
+{
+	if (VGAScreenSeg == NULL || game_screen == NULL)
+		return;
+
+	static JE_MultiEnemyType savedEnemies;
+	JE_EnemyAvailType savedAvail;
+	memcpy(savedEnemies, enemy, sizeof(enemy));
+	memcpy(savedAvail, enemyAvail, sizeof(enemyAvail));
+	Player savedShips[2];
+	memcpy(savedShips, player, sizeof(savedShips));
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode, savedTwo = twoPlayerMode;
+	const JE_byte savedStype = special[SPECIAL_NUM].stype;
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	twoPlayerMode = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	special[SPECIAL_NUM].stype = 4;
+	memset(enemyAvail, 1, sizeof(enemyAvail));
+	player[0].is_alive = true;
+	player[0].x = 150;
+	player[0].y = 140;
+	const long cashBefore = player[0].cash;
+
+	qa_attract_item(0, 150, 20, 20);
+	enemy[0].mapoffset = 10;
+	qa_attract_item(1, -1, 270, 180);
+	qa_attract_item(2, 1, 150, 40);
+	qa_attract_item(3, 10500, 60, 60);
+	qa_attract_item(4, 32105, 90, 60);
+	qa_attract_item(5, 0, 120, 60);
+	enemy[5].scoreitem = false;
+	enemyAvail[5] = 0;
+	JE_specialComplete(1, SPECIAL_NUM);
+
+	qa_check(enemy[0].attractedBy == 1 && enemy[1].attractedBy == 1 &&
+	         enemy[0].exc == 0 && enemy[0].eyc == 0,
+	         "the Endless Attractor locks each collectible pickup onto the ship and stops it");
+	bool skipped = true;
+	for (int s = 2; s <= 5; ++s)
+		skipped = skipped && enemy[s].attractedBy == 0;
+	qa_check(skipped, "...but leaves special pickups, weapon balls and enemies where they are");
+
+	bool closing = true;
+	for (int tick = 0; tick < 40; ++tick)
+	{
+		if (tick < 12)
+			player[0].x += 5;
+
+		int dx[2], dy[2];
+		for (int s = 0; s < 2; ++s)
+		{
+			dx[s] = player[0].x - (enemy[s].ex + enemy[s].mapoffset);
+			dy[s] = player[0].y - enemy[s].ey;
+		}
+		endlessAttractorTick();
+		for (int s = 0; s < 2; ++s)
+		{
+			const int nowX = player[0].x - (enemy[s].ex + enemy[s].mapoffset);
+			const int nowY = player[0].y - enemy[s].ey;
+			closing = closing && qa_attract_step_closes(dx[s], nowX) &&
+			          qa_attract_step_closes(dy[s], nowY);
+		}
+	}
+	bool docked = true;
+	for (int s = 0; s < 2; ++s)
+		docked = docked && enemy[s].ex + enemy[s].mapoffset == player[0].x &&
+		         enemy[s].ey == player[0].y;
+	qa_check(closing && docked,
+	         "...hauls them after a moving ship, never carrying one past it, and docks them on it");
+	qa_check(enemy[2].ex == 150 && enemy[3].ex == 60 && enemy[4].ex == 90 && enemy[5].ex == 120,
+	         "...while the pickups it skipped stay put");
+
+	JE_playerCollide(&player[0], 1);
+	qa_check(enemyAvail[0] == 1 && enemyAvail[1] == 1 && player[0].cash > cashBefore,
+	         "...where the ship collects every one of them");
+
+	qa_attract_item(6, 150, 30, 30);
+	endlessAttractorFire(0, 1);
+	player[0].is_alive = false;
+	endlessAttractorTick();
+	qa_check(enemy[6].attractedBy == 0 && enemy[6].ex == 30 && enemy[6].ey == 30,
+	         "a pickup whose ship goes down is let go where it is");
+
+	player[0].is_alive = true;
+	qa_attract_item(7, 150, 30, 30);
+	endlessAttractorFire(0, 3);
+	const JE_byte salvoStart = enemy[7].attractSpeed;
+	for (int tick = 0; tick < ENDLESS_ATTRACT_SPEED_MAX; ++tick)
+		endlessAttractorTick();
+	qa_check(salvoStart == ENDLESS_ATTRACT_SPEED_START * 3 &&
+	         enemy[7].attractSpeed == ENDLESS_ATTRACT_SPEED_MAX,
+	         "Opening Salvo starts the haul three times faster; every haul tops out at one speed");
+
+	coopEndlessMode = true;
+	twoPlayerMode = true;
+	player[1].is_alive = true;
+	player[1].x = 60;
+	player[1].y = 150;
+	qa_attract_item(8, 150, 200, 30);
+	JE_specialComplete(2, SPECIAL_NUM);
+	qa_check(enemy[8].attractedBy == 2, "in co-op the pickups go to the ship that fired");
+
+	endlessMode = false;
+	coopEndlessMode = false;
+	twoPlayerMode = false;
+	memset(enemyAvail, 1, sizeof(enemyAvail));
+	qa_attract_item(9, 150, 100, 100);
+	enemy[9].exc = 0;
+	enemy[9].eyc = 0;
+	JE_specialComplete(1, SPECIAL_NUM);
+	const bool stockNudge = enemy[9].attractedBy == 0 && enemy[9].exc == 1 && enemy[9].eyc == 1;
+	enemy[9].attractedBy = 1;
+	endlessAttractorTick();
+	qa_check(stockNudge && enemy[9].ex == 100 && enemy[9].ey == 100,
+	         "outside Endless the Attractor keeps its stock nudge and no haul runs");
+
+	special[SPECIAL_NUM].stype = savedStype;
+	twoPlayerMode = savedTwo;
+	coopEndlessMode = savedCoop;
+	endlessCampaignMods = savedMods;
+	endlessMode = savedEndless;
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	memcpy(player, savedShips, sizeof(savedShips));
+	memcpy(enemyAvail, savedAvail, sizeof(enemyAvail));
+	memcpy(enemy, savedEnemies, sizeof(enemy));
+}
+
+void qa_test_endless_special_names(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+
+	int microbomb = 0, pearlShot = 0, pearlField = 0;
+	for (int id = 1; id < SPECIAL_NUM; ++id)
+	{
+		if (strncmp(special[id].name, "8-Way Microbomb", 15) == 0)
+			microbomb = id;
+		else if (strncmp(special[id].name, "Pearl Wind", 10) == 0)
+			*(special[id].stype == 1 ? &pearlShot : &pearlField) = id;
+	}
+
+	endlessMode = false;
+	endlessCampaignMods = false;
+	const bool stock = microbomb > 0 && pearlShot > 0 &&
+	                   JE_specialName((JE_byte)microbomb) == special[microbomb].name &&
+	                   JE_specialName((JE_byte)pearlShot) == special[pearlShot].name;
+	endlessMode = true;
+	qa_check(stock && strcmp(JE_specialName((JE_byte)microbomb), "Microbomb") == 0,
+	         "Endless calls the 8-Way Microbomb what it fires, a Microbomb");
+	qa_check(strcmp(JE_specialName((JE_byte)pearlShot), "Pearl Shot") == 0 &&
+	         (pearlField == 0 || JE_specialName((JE_byte)pearlField) == special[pearlField].name),
+	         "...still names the instant Pearl Wind a Pearl Shot, and leaves the field one alone");
+
+	endlessCampaignMods = savedMods;
+	endlessMode = savedEndless;
+}

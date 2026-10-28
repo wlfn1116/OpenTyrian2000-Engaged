@@ -26,6 +26,7 @@
 #include "ingame_menu.h"
 #include "lvlmast.h"
 #include "mtrand.h"
+#include "net_style.h"
 #include "network.h"
 #include "ship_skin.h"
 #include "sprite.h"
@@ -344,7 +345,7 @@ void JE_getShipInfo(void)
 
 	// Extra ships require a file known to both peers.
 	for (uint i = 0; i < COUNTOF(player); ++i)
-		if (player[i].items.ship > 90 && !extraAvailFor(i))
+		if (player[i].items.ship > 90 && !extraAvailFor(i) && !extraShipRestoreStandard(i))
 			player[i].items.ship = 1;
 
 	extraShip = player[0].items.ship > 90;
@@ -419,6 +420,7 @@ void JE_initPlayerData(void)
 	/* JE: New Game Items/Data */
 	extraShipReturnReset();
 	shipSkinReset();
+	netStyleSessionReset();
 
 	player[0].items.ship = 1;                     // USP Talon
 	player[0].items.weapon[FRONT_WEAPON].id = 1;  // Pulse Cannon

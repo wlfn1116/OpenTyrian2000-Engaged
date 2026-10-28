@@ -116,6 +116,9 @@ void qa_test_twiddle_charges(void);
 void qa_test_flare_grade_ownership(void);
 void qa_test_zinglon_pillar(void);
 void qa_test_special_state_reset(void);
+void qa_test_endless_attractor(void);
+void qa_test_custom_ship_equip(void);
+void qa_test_endless_special_names(void);
 
 void qa_test_present_paths(void);
 void qa_test_scaled_sprite_blocks(void);

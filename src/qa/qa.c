@@ -240,7 +240,6 @@ void qa_net_apply_loadout(int profile)
 		const JE_byte chargeKick = qa_first_sidekick_with_charge();
 		JE_byte customKick = 0;
 
-		customWeaponEnabled = true;
 		customWeaponNetPrepare();
 		Uint8 *const stream = malloc(CUSTOM_WEAPON_WIRE_MAX);
 		if (stream != NULL)
@@ -451,6 +450,9 @@ int qa_run_unit_suite(void)
 	qa_test_flare_grade_ownership();
 	qa_test_zinglon_pillar();
 	qa_test_special_state_reset();
+	qa_test_endless_attractor();
+	qa_test_custom_ship_equip();
+	qa_test_endless_special_names();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();

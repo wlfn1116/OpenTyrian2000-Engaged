@@ -19,6 +19,7 @@
 
 #include "draw.h"
 #include "editor_ui.h"
+#include "extra_ships.h"
 #include "font.h"
 #include "game_menu.h"
 #include "joystick.h"
@@ -303,6 +304,13 @@ void spritePickerDrawHull(const Sprite2_array *sheet, JE_word gr, int x, int y, 
 		spDraw2x2(VGAScreen, sheet, gr, x, y, w, h);
 }
 
+void spritePickerDrawGraphic(uint seat, int graphic, int x, int y, int w, int h)
+{
+	Sprite2_array *sheet = &spriteSheet9;
+	const JE_word gr = extraShipGraphicSprite(seat, graphic, &sheet);
+	spritePickerDrawHull(sheet, gr, x, y, w, h);
+}
+
 SpritePickerPage spritePickerHullPage(const char *name, const int *values, int count,
                                       void (*draw)(int value, int x, int y, int w, int h),
                                       const char *(*label)(int value, char *buf, size_t n))
@@ -495,6 +503,39 @@ static int spDrawWrapped(int x, int y, const char *text, Sint8 value)
 	return 1;
 }
 
+static void spInfoNumber(const SpState *s, int cursor, char *line, size_t n)
+{
+	const SpritePickerPage *const p = spPage(s);
+	if (p->listTag != NULL)
+	{
+		line[0] = '\0';
+		if (spSelectable(p, cursor))
+		{
+			const char *const tag = p->listTag(spValue(p, cursor), line, n);
+			if (tag != line)
+				SDL_strlcpy(line, tag, n);
+		}
+	}
+	else if (s->typed[0] != '\0')
+		snprintf(line, n, "No. %s%s", s->typed, (SDL_GetTicks() / 400) % 2 == 0 ? "_" : "");
+	else if (spSelectable(p, cursor))
+		snprintf(line, n, "No. %d", spValue(p, cursor));
+	else
+		line[0] = '\0';
+}
+
+static const char *spInfoLabel(const SpritePickerPage *p, int cursor, char *name, size_t n)
+{
+	if (p->kind == SPRITE_PICKER_LIST && p->listName != NULL && spSelectable(p, cursor))
+		return p->listName(spValue(p, cursor), name, n);
+	return (p->listTag != NULL || p->name == NULL) ? "" : p->name;
+}
+
+static bool spShowsWas(const SpState *s)
+{
+	return s->originalPage >= 0 && s->spec.pages[s->originalPage].listTag == NULL;
+}
+
 static void spDraw(const SpState *s)
 {
 	const SpritePickerSpec *const spec = &s->spec;
@@ -542,29 +583,23 @@ static void spDraw(const SpState *s)
 		              SP_INFO_H - 2);
 
 	char line[48];
-	if (s->typed[0] != '\0')
-		snprintf(line, sizeof(line), "No. %s%s", s->typed,
-		         (SDL_GetTicks() / 400) % 2 == 0 ? "_" : "");
-	else if (spSelectable(p, cursor))
-		snprintf(line, sizeof(line), "No. %d", spValue(p, cursor));
-	else
-		line[0] = '\0';
+	spInfoNumber(s, cursor, line, sizeof(line));
 	spDrawText(mid, iy1 + 5, line, s->typed[0] != '\0' ? 7 : 6);
 
 	char name[48];
-	const char *label = p->name;
-	if (p->kind == SPRITE_PICKER_LIST && p->listName != NULL && spSelectable(p, cursor))
-		label = p->listName(spValue(p, cursor), name, sizeof(name));
-	const int nameLines = spDrawWrapped(mid, iy1 + 15, (label != NULL) ? label : "", 3);
+	const char *const label = spInfoLabel(p, cursor, name, sizeof(name));
+	const int nameLines = spDrawWrapped(mid, iy1 + 15, label, 3);
 
-	if (s->originalPage >= 0)
+	if (spShowsWas(s))
 	{
 		snprintf(line, sizeof(line), "Was %d",
 		         spValue(&spec->pages[s->originalPage], s->originalCell));
 		spDrawText(mid, iy1 + 15 + 10 * nameLines, line, 2);
 	}
 
-	const char *const hint = (spec->pageCount > 1)
+	const char *const hint = (p->listTag != NULL)
+	                       ? "Tap or Enter picks, drag scrolls. Esc cancels."
+	                       : (spec->pageCount > 1)
 	                       ? "Tap or Enter picks, drag scrolls, type a number, Tab pages."
 	                       : "Tap or Enter picks, drag scrolls, type a number. Esc cancels.";
 	editorDrawHint(hint);
@@ -763,6 +798,8 @@ static void spHandleMouse(SpState *s, int *prevX, int *prevY, bool *done, bool *
 
 static void spHandleText(SpState *s)
 {
+	if (spPage(s)->listTag != NULL)
+		return;
 	for (size_t i = 0; last_text[i] != '\0'; ++i)
 	{
 		const size_t len = strlen(s->typed);
@@ -989,6 +1026,56 @@ static const char *spBlocksFault(SpState *s)
 	if (fault == NULL)
 		fault = spKeyFault(s, SDL_SCANCODE_RETURN, typed, spValue(p, 1));
 	return fault;
+}
+
+static const char *spTestTag(int value, char *buf, size_t n)
+{
+	snprintf(buf, n, "Tag %d", value);
+	return buf;
+}
+
+static const char *spTagFault(SpState *s, SpritePickerPage *page)
+{
+	char line[48], name[48];
+	spInfoNumber(s, 0, line, sizeof(line));
+	if (strcmp(line, "Tag 7") != 0)
+		return "a labelled page still shows the value number";
+	if (spInfoLabel(page, 0, name, sizeof(name))[0] != '\0')
+		return "a labelled page without names shows its page name";
+	if (spShowsWas(s))
+		return "a labelled page still shows the number it was opened on";
+	SDL_strlcpy(last_text, "12", sizeof(last_text));
+	spHandleText(s);
+	if (s->typed[0] != '\0')
+		return "typing digits still jumps on a labelled page";
+
+	page->listTag = NULL;
+	spInfoNumber(s, 0, line, sizeof(line));
+	if (strcmp(line, "No. 7") != 0 || !spShowsWas(s))
+		return "an unlabelled page lost its number or the number it was opened on";
+	return NULL;
+}
+
+bool spritePickerTagSelfTest(char *detail, size_t detailSize)
+{
+	static const int values[] = { 7, 9 };
+	SpritePickerPage page = spritePickerHullPage("Tags", values, COUNTOF(values), NULL, NULL);
+	page.listTag = spTestTag;
+	SpState s;
+	memset(&s, 0, sizeof(s));
+	s.spec.pages = &page;
+	s.spec.pageCount = 1;
+	s.originalPage = 0;
+	s.originalCell = 1;
+
+	char savedText[sizeof(last_text)];
+	memcpy(savedText, last_text, sizeof(savedText));
+	const char *const fault = spTagFault(&s, &page);
+	memcpy(last_text, savedText, sizeof(savedText));
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }
 
 bool spritePickerBlocksSelfTest(const SpritePickerPage *page, char *detail, size_t detailSize)

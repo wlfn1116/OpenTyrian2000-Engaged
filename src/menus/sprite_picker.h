@@ -46,6 +46,7 @@ typedef struct
 	const int *values;
 	void (*listDraw)(int value, int x, int y, int w, int h);
 	const char *(*listName)(int value, char *buf, size_t n);
+	const char *(*listTag)(int value, char *buf, size_t n);
 } SpritePickerPage;
 
 typedef struct
@@ -64,11 +65,13 @@ void spritePickerRelease(void);
 void spritePickerDrawFit(SDL_Surface *dst, unsigned int table, unsigned int index, int x, int y,
                          int w, int h, int maxScale);
 void spritePickerDrawHull(const Sprite2_array *sheet, JE_word gr, int x, int y, int w, int h);
+void spritePickerDrawGraphic(uint seat, int graphic, int x, int y, int w, int h);
 SpritePickerPage spritePickerHullPage(const char *name, const int *values, int count,
                                       void (*draw)(int value, int x, int y, int w, int h),
                                       const char *(*label)(int value, char *buf, size_t n));
 int spritePickerIndexOf(const int *values, int count, int value);
 int spritePickerCycle(const int *values, int count, int current, int dir);
 bool spritePickerBlocksSelfTest(const SpritePickerPage *page, char *detail, size_t detailSize);
+bool spritePickerTagSelfTest(char *detail, size_t detailSize);
 
 #endif // SPRITE_PICKER_H

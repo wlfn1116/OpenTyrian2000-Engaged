@@ -62,9 +62,6 @@ extern int  customWeaponChargeStages;
 extern int customWeaponEditLevel;   // 0 .. CUSTOM_POWER_LEVELS-1
 extern int customWeaponEditMode;    // 0 .. CUSTOM_WEAPON_MODES-1
 
-// Master feature toggle (shows the "Custom" buy/sell row; gates equipping).
-extern bool customWeaponEnabled;
-
 // Port index claimed for this machine's own custom weapon (resolved at init). 0 = none free.
 extern int customWeaponPort;
 

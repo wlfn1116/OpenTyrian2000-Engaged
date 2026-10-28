@@ -21,6 +21,7 @@
 #include "player.h"
 #include "player_ship.h"
 #include "rollback.h"
+#include "savegame.h"
 #include "ship_editor.h"
 #include "ship_skin.h"
 #include "specials.h"
@@ -777,31 +778,22 @@ void qa_test_ship_editor_file(void)
 	}
 
 	{
-		const bool savedEnabled = customWeaponEnabled;
 		const int savedPorts[CUSTOM_WEAPON_OWNERS] = { customWeaponOwnerPort[0], customWeaponOwnerPort[1] };
 
 		qa_check(extraShipResolvePort(0, 12) == 12, "an ordinary weapon byte resolves to itself");
 
-		customWeaponEnabled = true;
 		customWeaponOwnerPort[0] = 60;
 		customWeaponOwnerPort[1] = 59;
 		qa_check(extraShipResolvePort(0, EXTRA_SHIP_CUSTOM_PORT) == 60 &&
 		         extraShipResolvePort(1, EXTRA_SHIP_CUSTOM_PORT) == 59,
 		         "each seat resolves the sentinel to its own reserved port");
 
-		customWeaponEnabled = false;
-		qa_check(extraShipResolvePort(0, EXTRA_SHIP_CUSTOM_PORT) == 60 &&
-		         extraShipResolvePort(1, EXTRA_SHIP_CUSTOM_PORT) == 59,
-		         "the sentinel resolves the same with the local toggle off");
-
-		customWeaponEnabled = true;
 		customWeaponOwnerPort[0] = 0;
 		qa_check(extraShipResolvePort(0, EXTRA_SHIP_CUSTOM_PORT) == 0,
 		         "...and where no port was free for that seat");
 
 		customWeaponOwnerPort[0] = savedPorts[0];
 		customWeaponOwnerPort[1] = savedPorts[1];
-		customWeaponEnabled = savedEnabled;
 	}
 
 	{
@@ -972,15 +964,19 @@ void qa_test_ship_skins(void)
 	const uint savedThis = thisPlayerNum;
 	const int savedColor = netStyleSeatColor(1);
 	const NetShipView savedView = netStyleView(1);
+	const bool savedSidekicks = netStyleSidekickDye(1);
 	const NetShipView sentView = { NET_OPACITY_MIN, false, NET_HP_BARS_ALWAYS };
+	isNetworkGame = true;
 	thisPlayerNum = 2;
 	shipSkinSet(1, 21);
 	netStyleSetSeatColor(1, 5);
 	netStyleSetView(1, sentView);
+	netStyleSetSidekickDye(1, false);
 	Uint8 lookPacket[NET_PACKET_SIZE] = { 0 };
 	const int lookLen = network_player_look_pack(lookPacket);
 	shipSkinSet(1, SHIP_SKIN_NONE);
 	netStyleSetSeatColor(1, NET_SHIP_COLOR_NONE);
+	netStyleSetSidekickDye(1, true);
 	netStyleSetView(1, (NetShipView){ NET_OPACITY_FULL, true, NET_HP_BARS_OFF });
 	network_player_look_adopt(lookPacket, lookLen);
 	const bool echoIgnored = shipSkinGet(1) == SHIP_SKIN_NONE;
@@ -991,19 +987,27 @@ void qa_test_ship_skins(void)
 	const NetShipView got = netStyleView(1);
 	qa_check(echoIgnored && shortIgnored && shipSkinGet(1) == 21 && netStyleSeatColor(1) == 5 &&
 	         got.opacity == sentView.opacity && got.shipOpacity == sentView.shipOpacity &&
-	         got.hpBars == sentView.hpBars,
-	         "the look packet hands the sender's dye, view, and skin to the other machine");
+	         got.hpBars == sentView.hpBars && !netStyleSidekickDye(1),
+	         "the look packet hands over the sender's dye, view, skin and sidekick dye");
 	netStyleSetSeatColor(1, savedColor);
 	netStyleSetView(1, savedView);
+	netStyleSetSidekickDye(1, savedSidekicks);
 	thisPlayerNum = savedThis;
+	isNetworkGame = false;
 
 	char detail[96] = "";
 	char label[192];
-	const bool cycles = game_menu_test_skin_cycling(detail, sizeof(detail));
+	const bool shows = game_menu_test_skin_row(detail, sizeof(detail));
 	snprintf(label, sizeof(label),
-	         "the outpost's owned ship cycles skins on Enter, Left and Right, online too%s%s",
+	         "the outpost's owned ship row wears its skin and Enter goes to Done, online too%s%s",
 	         detail[0] ? ": " : "", detail);
-	qa_check(cycles, label);
+	qa_check(shows, label);
+
+	detail[0] = '\0';
+	const bool tagged = spritePickerTagSelfTest(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "a labelled picker page shows names, not item numbers%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(tagged, label);
 
 	detail[0] = '\0';
 	const bool previews = weaponEditorSkinPreviewSelfTest(detail, sizeof(detail));
@@ -1113,4 +1117,149 @@ void qa_test_partner_repair_special(void)
 	special[SPECIAL_NUM].stype = savedStype; temp2 = savedTemp2;
 	twoPlayerMode = savedTwo; coopCampaignMode = savedCoop; arcadeSeparateMode = savedSep;
 	player[0] = saved0; player[1] = saved1;
+}
+
+void qa_test_custom_ship_equip(void)
+{
+	JE_ShipsType savedTable;
+	memcpy(savedTable, extraShips, sizeof(savedTable));
+	const JE_boolean savedAvail = extraAvail;
+	const bool savedNet = isNetworkGame;
+	Player savedPlayers[COUNTOF(player)];
+	memcpy(savedPlayers, player, sizeof(savedPlayers));
+	ExtraShipReturn savedReturn[2];
+	extraShipReturnSave(savedReturn);
+
+	isNetworkGame = false;
+	extraAvail = true;
+	extraShipReturnReset();
+	JE_byte *const one = &extraShips[0];
+	JE_byte *const two = &extraShips[EXTRA_SHIP_RECORD];
+	memset(one, 0, EXTRA_SHIP_RECORD);
+	memset(two, 0, EXTRA_SHIP_RECORD);
+	one[EXTRA_SHIP_BYTE_FRONT] = 2;
+	one[EXTRA_SHIP_BYTE_GENERATOR] = 2;
+	one[EXTRA_SHIP_BYTE_SHIELD] = 3;
+	two[EXTRA_SHIP_BYTE_LEFT] = 250;
+	two[EXTRA_SHIP_BYTE_SPECIAL] = 255;
+	two[EXTRA_SHIP_BYTE_SHIELD] = 200;
+
+	PlayerItems standard = player[0].items;
+	standard.ship = 1;
+	standard.weapon[FRONT_WEAPON].id = 1;
+	standard.weapon[REAR_WEAPON].id = 0;
+	standard.generator = 1;
+	standard.shield = 1;
+	standard.special = 0;
+	standard.sidekick[LEFT_SIDEKICK] = 0;
+	standard.sidekick[RIGHT_SIDEKICK] = 0;
+	standard.weapon[FRONT_WEAPON].power = 5;
+	standard.weapon[REAR_WEAPON].power = 1;
+	player[0].items = standard;
+
+	const bool equipped = extraShipEquip(0, 1);
+	const PlayerItems *held = extraShipStandard(0);
+	qa_check(equipped && player[0].items.ship == EXTRA_SHIP_ID_BASE + 1
+	         && player[0].items.weapon[FRONT_WEAPON].id == 2 && player[0].items.generator == 2
+	         && player[0].items.shield == 3 && held != NULL
+	         && memcmp(held, &standard, sizeof(standard)) == 0
+	         && extraShipLentParts(0) == EXTRA_SHIP_LENT_ALL,
+	         "equipping a custom ship fits its loadout, lends its parts, and stashes the original");
+
+	extraShipPartBought(0, ITEM_PART_FRONT);
+	extraShipPartBought(0, ITEM_PART_SHIELD);
+	player[0].items.weapon[FRONT_WEAPON].power = 9;
+	extraShipEquip(0, 2);
+	held = extraShipStandard(0);
+	qa_check(player[0].items.ship == EXTRA_SHIP_ID_BASE + 2
+	         && player[0].items.weapon[FRONT_WEAPON].id == 2 && player[0].items.generator == 2
+	         && player[0].items.shield == 3 && player[0].items.sidekick[LEFT_SIDEKICK] == 0
+	         && player[0].items.special == 0 && held != NULL
+	         && memcmp(held, &standard, sizeof(standard)) == 0,
+	         "a broken record keeps the parts it cannot name, and the original stays stashed");
+	qa_check(extraShipLentParts(0) == (EXTRA_SHIP_LENT_ALL & ~((1u << ITEM_PART_FRONT) |
+	                                                         (1u << ITEM_PART_SHIELD))),
+	         "...and a part bought for the last custom ship stays bought when the next keeps it");
+	qa_check(player[0].items.weapon[FRONT_WEAPON].power == 9,
+	         "...and a gun the next custom ship keeps keeps its power");
+
+	player[0].items.ship = 2;
+	extraShipPartBought(0, ITEM_PART_HULL);
+	extraShipEquip(0, 1);
+	qa_check(extraShipStandard(0) != NULL && extraShipStandard(0)->ship == standard.ship,
+	         "a hull bought on a custom ship never replaces the original to revert to");
+
+	JE_byte *const three = &extraShips[2 * EXTRA_SHIP_RECORD];
+	memset(three, 0, EXTRA_SHIP_RECORD);
+	three[EXTRA_SHIP_BYTE_FRONT] = 1;
+	extraShipEquip(0, 3);
+	qa_check(player[0].items.weapon[FRONT_WEAPON].id == 1 &&
+	         player[0].items.weapon[FRONT_WEAPON].power == 5,
+	         "a custom ship with another gun borrows the original's power, not the last ship's");
+
+	player[0].items.weapon[FRONT_WEAPON].power = 7;
+	const bool restored = extraShipRestoreStandard(0);
+	qa_check(restored && memcmp(&player[0].items, &standard, sizeof(standard)) == 0
+	         && extraShipStandard(0) == NULL,
+	         "reverting brings back the original ship, parts and power, and spends the stash");
+
+	PlayerItems bogus = standard;
+	bogus.ship = EXTRA_SHIP_ID_BASE + 3;
+	extraShipSetStandard(1, &bogus, EXTRA_SHIP_LENT_ALL);
+	const bool customRefused = extraShipStandard(1) == NULL;
+	bogus.ship = 0;
+	extraShipSetStandard(1, &bogus, EXTRA_SHIP_LENT_ALL);
+	qa_check(customRefused && extraShipStandard(1) == NULL,
+	         "only a real standard ship can be stashed as the one to return to");
+
+	extraAvail = false;
+	qa_check(!extraShipEquip(0, 1) && player[0].items.ship == standard.ship,
+	         "no custom ship is equipped without a ship file");
+	extraAvail = true;
+
+	isNetworkGame = true;
+	extraShipsNetReset();
+	qa_check(!extraShipsNetPeerHolds(), "a fresh session holds no acknowledged custom ships");
+	extraShipsNetInstallLocal(0);
+	extraShipsNetAcknowledged(0);
+	const JE_byte acked = extraShipsFor(0)[EXTRA_SHIP_BYTE_GENERATOR];
+	extraShips[EXTRA_SHIP_BYTE_GENERATOR] = (JE_byte)(acked == 3 ? 4 : 3);
+	extraShipsNetInstallLocal(0);
+	const bool previewed = extraShipsFor(0)[EXTRA_SHIP_BYTE_GENERATOR] != acked;
+	extraShipsNetRevert(0);
+	qa_check(extraShipsNetPeerHolds() && previewed && extraAvailFor(0)
+	         && extraShipsFor(0)[EXTRA_SHIP_BYTE_GENERATOR] == acked,
+	         "an edit the peer never acknowledged falls back to the ships it holds");
+	extraShipsNetReset();
+	extraShipsNetInstallLocal(0);
+	extraShipsNetRevert(0);
+	qa_check(!extraAvailFor(0) && !extraShipsNetPeerHolds(),
+	         "...and with nothing acknowledged the seat flies no custom ship");
+	extraShipsNetReset();
+
+	enum { QA_STASH_SLOT = 22 };
+	isNetworkGame = false;
+	extraAvail = true;
+	extraShipReturnReset();
+	player[0].items = standard;
+	extraShipEquip(0, 1);
+	player[0].items.weapon[FRONT_WEAPON].power = 6;
+	player[0].items.weapon[REAR_WEAPON].power = 10;
+	const JE_SaveFileType savedSlot = saveFiles[QA_STASH_SLOT - 1];
+	JE_saveGame(QA_STASH_SLOT, "QA STASH POWER");
+	JE_SaveFileType *const rec = &saveFiles[QA_STASH_SLOT - 1];
+	const bool written = rec->standardPower[0][0] == 5 && rec->standardPower[0][1] == 1;
+	memset(rec->standardPower, 0, sizeof(rec->standardPower));
+	extraShipReturnReset();
+	save_record_restore_stash(rec);
+	qa_check(written && extraShipLentPower(0, FRONT_WEAPON) == 6 &&
+	         extraShipLentPower(0, REAR_WEAPON) == 10,
+	         "a save without stash power counts the power flown then as borrowed");
+	saveFiles[QA_STASH_SLOT - 1] = savedSlot;
+
+	isNetworkGame = savedNet;
+	extraAvail = savedAvail;
+	memcpy(extraShips, savedTable, sizeof(savedTable));
+	memcpy(player, savedPlayers, sizeof(savedPlayers));
+	extraShipReturnRestore(savedReturn);
 }

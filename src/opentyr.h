@@ -85,7 +85,7 @@ extern const char *opentyrian_str;
 extern const char *opentyrian_version;
 extern const char *opentyrian_commit;
 
-void JE_tyrianHalt(JE_byte code); /* This ends the game */
+OT_NORETURN void JE_tyrianHalt(JE_byte code); /* This ends the game */
 OT_NORETURN void JE_tyrianExitWithoutSaving(int code);
 
 #endif /* OPENTYR_H */

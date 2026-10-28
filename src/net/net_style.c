@@ -24,6 +24,7 @@
 
 // One dye per player seat.
 static int shipColor[2] = { NET_SHIP_COLOR_NONE, NET_SHIP_COLOR_NONE };
+static bool sidekickUndyed[2];
 
 // Each seat owns the view chosen on that player's machine.
 #define NET_SHIP_VIEW_DEFAULT { .opacity = NET_OPACITY_FULL, .shipOpacity = true, .hpBars = NET_HP_BARS_OFF }
@@ -84,6 +85,7 @@ void netStyleSessionReset(void)
 	for (unsigned int i = 0; i < COUNTOF(shipColor); ++i)
 	{
 		shipColor[i] = NET_SHIP_COLOR_NONE;
+		sidekickUndyed[i] = false;
 		shipView[i] = defaultView;
 	}
 }
@@ -97,6 +99,17 @@ void netStyleSetSeatColor(uint seat, int color)
 int netStyleSeatColor(uint seat)
 {
 	return (seat < COUNTOF(shipColor)) ? clampColor(shipColor[seat]) : NET_SHIP_COLOR_NONE;
+}
+
+void netStyleSetSidekickDye(uint seat, bool dyed)
+{
+	if (seat < COUNTOF(sidekickUndyed))
+		sidekickUndyed[seat] = !dyed;
+}
+
+bool netStyleSidekickDye(uint seat)
+{
+	return seat >= COUNTOF(sidekickUndyed) || !sidekickUndyed[seat];
 }
 
 int netStylePeerColor(void)
@@ -138,11 +151,11 @@ void netStylePreviewClear(void)
 // Linked Arcade still assigns one seat to each machine through thisPlayerNum.
 uint netStyleLocalSeat(void)
 {
-	return (thisPlayerNum >= 1 && thisPlayerNum <= 2) ? thisPlayerNum - 1u : 0u;
+	return (isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= 2) ? thisPlayerNum - 1u : 0u;
 }
 
 // Preview state overrides the session. Only body styles carry dyes.
-static NetShipStyle seatStyle(uint seat, bool body)
+static NetShipStyle seatStyle(uint seat, bool body, bool dyed)
 {
 	int color = NET_SHIP_COLOR_NONE, opacity = NET_OPACITY_FULL;
 	// Only the local seat's view affects rendering.
@@ -159,6 +172,10 @@ static NetShipStyle seatStyle(uint seat, bool body)
 		if (seat != netStyleLocalSeat())
 			opacity = local.opacity;
 	}
+	else if (!isNetworkGame && !twoPlayerMode && seat == 0)
+	{
+		color = netStyleSeatColor(seat);
+	}
 	else
 	{
 		return plainStyle;
@@ -166,7 +183,7 @@ static NetShipStyle seatStyle(uint seat, bool body)
 
 	NetShipStyle style = plainStyle;
 
-	if (body && color != NET_SHIP_COLOR_NONE && !netStyleColorReserved(color))
+	if (dyed && color != NET_SHIP_COLOR_NONE && !netStyleColorReserved(color))
 		style.bank = (Sint8)(color - 1);
 
 	if (opacity < NET_OPACITY_FULL && (!body || local.shipOpacity))
@@ -180,10 +197,15 @@ static NetShipStyle seatStyle(uint seat, bool body)
 
 NetShipStyle netStyleForSeat(uint seat)
 {
-	return seatStyle(seat, true);
+	return seatStyle(seat, true, true);
+}
+
+NetShipStyle netStyleForSidekick(uint seat)
+{
+	return seatStyle(seat, true, netStyleSidekickDye(seat));
 }
 
 NetShipStyle netStyleForShot(uint seat)
 {
-	return seatStyle(seat, false);
+	return seatStyle(seat, false, false);
 }

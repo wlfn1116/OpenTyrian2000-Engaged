@@ -46,7 +46,7 @@
  * \param[in] name the unique identifier of the assertion
  * \param[in] cond the condition
  */
-#define COMPILE_TIME_ASSERT(name, cond) typedef int assert_ ## name[(cond) * 2 - 1]
+#define COMPILE_TIME_ASSERT(name, cond) enum { assert_ ## name = sizeof(char[(cond) * 2 - 1]) }
 #endif
 
 #ifndef COUNTOF

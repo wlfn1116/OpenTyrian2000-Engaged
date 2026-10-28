@@ -8,6 +8,7 @@
 #include "episodes.h"
 #include "extra_ships.h"
 #include "network.h"
+#include "ship_editor.h"
 #include "sprite.h"
 #include "weapon_editor.h"
 
@@ -340,6 +341,8 @@ void qa_test_weapon_editor(void)
 	         "the outpost editor previews a custom ship only while custom ships are listed");
 	qa_check(weaponEditorOutpostMusicSelfTest(),
 	         "the outpost weapon editor keeps the outpost's song; the Setup one shuffles songs");
+	qa_check(JE_shipEditorOutpostMusicSelfTest(),
+	         "the Customize ship editor keeps the outpost's song; the Setup one shuffles songs");
 
 	char detail[96] = "";
 	char label[192];

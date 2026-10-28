@@ -127,7 +127,9 @@ struct JE_SingleEnemyType
 	JE_integer  xmaxbounce;
 	JE_integer  yminbounce;
 	JE_integer  ymaxbounce;
-	JE_byte     fill[3]; /* [1..3] */
+	JE_byte     attractedBy;
+	JE_byte     attractSpeed;
+	JE_byte     fill[1];
 	/* Last Chain Reaction wave to land here; one lands once (enemy_death.c). */
 	JE_word     chainWave;
 	JE_integer  approach_debt_y100;

@@ -17,12 +17,89 @@
  */
 #include "editor_ui.h"
 
+#include "audio.h"
 #include "draw.h"
 #include "font.h"
+#include "lds_play.h"
+#include "mtrand.h"
+#include "musmast.h"
+#include "network.h"
+#include "sfx.h"
 #include "timing.h"
 #include "video.h"
 
 #include <math.h>
+
+// Jukebox-style music keeper: a track that ends or loops through fades into another random one.
+static bool editorFadingSong = false;
+static int editorFadeVolume;
+
+static void editorPlayRandomSong(void)
+{
+	if (editorFadingSong)
+	{
+		editorFadingSong = false;
+		set_volume(tyrMusicVolume, fxVolume);
+	}
+
+	// play_song is a no-op on the song already selected; replay it explicitly.
+	const unsigned int song = mt_rand() % MUSIC_NUM;
+	if (song == song_playing)
+		restart_song();
+	else
+		play_song(song);
+}
+
+// Both editor loops run on setDelay(3) frames, so one call steps three classic ticks.
+void editorServiceMusic(void)
+{
+	if (audio_disabled || music_disabled)
+		return;
+
+	if (songlooped && !editorFadingSong)
+	{
+		editorFadingSong = true;
+		editorFadeVolume = tyrMusicVolume;
+	}
+
+	if (editorFadingSong)
+	{
+		for (int t = 0; t < 3 && editorFadingSong; ++t)
+		{
+			if (editorFadeVolume > 5)
+				editorFadeVolume -= 2;
+			else
+			{
+				editorFadeVolume = tyrMusicVolume;
+				editorFadingSong = false;
+			}
+		}
+		set_volume(editorFadeVolume, fxVolume);
+	}
+
+	if (!playing || (songlooped && !editorFadingSong))
+		editorPlayRandomSong();
+}
+
+void editorEndMusicFade(void)
+{
+	if (!editorFadingSong)
+		return;
+	editorFadingSong = false;
+	set_volume(tyrMusicVolume, fxVolume);
+}
+
+EditorMusicTick editorMusicTick(bool fromOutpost)
+{
+	return fromOutpost ? NULL : editorServiceMusic;
+}
+
+void editorServiceNetwork(void)
+{
+	NETWORK_KEEP_ALIVE();
+	while (network_shop_pump())
+		;
+}
 
 double editorTickMs(void)
 {

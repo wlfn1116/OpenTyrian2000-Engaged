@@ -20,14 +20,13 @@
 
 #include "opentyr.h"
 
-void JE_shipEditor(void);
-void shipEditorServiceMusic(void);
-void shipEditorEndMusicFade(void);
+void JE_shipEditor(bool fromOutpost);
 bool JE_shapeCodecSelfTest(void);
 bool JE_legacyUserShapeSelfTest(void);
 bool JE_captureHullListSelfTest(void);
 bool JE_shipEditorGraphicCycleSelfTest(void);
 bool JE_shipEditorConfirmationSelfTest(void);
+bool JE_shipEditorOutpostMusicSelfTest(void);
 bool JE_shipStripImageSelfTest(void);
 bool JE_shipStripColorSelfTest(void);
 

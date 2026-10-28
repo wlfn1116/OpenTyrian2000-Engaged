@@ -39,7 +39,6 @@
 #include "player.h"
 #include "render_list.h"
 #include "sfx.h"
-#include "ship_editor.h"
 #include "ship_skin.h"
 #include "shots.h"
 #include "sndmast.h"
@@ -798,13 +797,6 @@ static JE_word cwToggleSparks(JE_word sg)
 	return (JE_word)(((bank > 0) ? bank : CW_SPARK_GREY) * 1000 + sg);
 }
 
-static const char *cwShipName(int ship, char *buf, size_t n)
-{
-	if (extraShipIdIsCustom(ship))
-		return shop_ship_name((JE_word)ship, buf, n);
-	return JE_shipShortName((JE_word)ship, buf, n);
-}
-
 static int cwRangeShipOrder(int *order, int *inGame)
 {
 	JE_byte hulls[SHIP_DRAGONWING];
@@ -1049,7 +1041,7 @@ static void cwFieldValue(int f, char *buf, size_t n)
 		snprintf(buf, n, "%s", customWeaponSpreadName(customWeaponSpread));
 		break;
 	case CWF_PREVIEW_SHIP:
-		cwShipName(cwRange.ship, buf, n);
+		shop_ship_pick_name(cwRange.ship, buf, n);
 		break;
 	default:
 		buf[0] = '\0';
@@ -1747,18 +1739,9 @@ static bool cwFieldHasPicker(int f)
 	return f == CWF_B_SPRITE || f == CWF_ICON || f == CWF_SK_SPRITE || f == CWF_PREVIEW_SHIP;
 }
 
-static void cwServiceNetwork(void)
+static EditorMusicTick cwMusicTick(void)
 {
-	NETWORK_KEEP_ALIVE();
-	while (network_shop_pump())
-		;
-}
-
-typedef void (*CwMusicTick)(void);
-
-static CwMusicTick cwMusicTick(void)
-{
-	return cwFromOutpost ? NULL : shipEditorServiceMusic;
+	return editorMusicTick(cwFromOutpost);
 }
 
 static SpritePickerPage cwSheetPage(const char *name, const Sprite2_array *sheet, bool big,
@@ -1778,13 +1761,6 @@ static SpritePickerPage cwIconPage(void)
 	return page;
 }
 
-static void cwPickShipDraw(int value, int px, int py, int w, int h)
-{
-	Sprite2_array *sheet;
-	const JE_word gr = shop_ship_hull((JE_word)value, &sheet);
-	spritePickerDrawHull(sheet, gr, px, py, w, h);
-}
-
 static void cwOpenPicker(int f)
 {
 	if (!cwFieldActive(f))
@@ -1797,7 +1773,7 @@ static void cwOpenPicker(int f)
 	JE_WeaponType *const w = cwCur();
 	const int bullet = cwBulletIndex();
 	SpritePickerPage pages[3];
-	SpritePickerSpec spec = { .pages = pages, .idle = cwServiceNetwork, .tick = cwMusicTick() };
+	SpritePickerSpec spec = { .pages = pages, .idle = editorServiceNetwork, .tick = cwMusicTick() };
 	int rangeShips[CW_RANGE_SHIPS_MAX], rangeCount = 0, value = 0;
 	switch (f)
 	{
@@ -1836,12 +1812,12 @@ static void cwOpenPicker(int f)
 		int inGame;
 		rangeCount = cwRangeShipOrder(rangeShips, &inGame);
 		spec.title = "Range Ship";
-		pages[spec.pageCount++] =
-		    spritePickerHullPage("In-Game", rangeShips, inGame, cwPickShipDraw, cwShipName);
+		pages[spec.pageCount++] = spritePickerHullPage("In-Game", rangeShips, inGame,
+		                                               shop_ship_pick_draw, shop_ship_pick_name);
 		if (rangeCount > inGame)
 			pages[spec.pageCount++] = spritePickerHullPage("Custom", rangeShips + inGame,
-			                                               rangeCount - inGame, cwPickShipDraw,
-			                                               cwShipName);
+			                                               rangeCount - inGame, shop_ship_pick_draw,
+			                                               shop_ship_pick_name);
 		value = cwRange.ship;
 		break;
 	}
@@ -3796,7 +3772,7 @@ bool JE_weaponEditor(bool fromOutpost)
 	mouse_scroll = 0;
 	mouseTwoFingerRightClick = true;
 
-	const CwMusicTick musicTick = cwMusicTick();
+	const EditorMusicTick musicTick = cwMusicTick();
 	const double tick_ms = editorTickMs();
 	double nextTick_ms = SDL_GetTicks();
 	Uint32 clock_ms = 0, clockLast_ms = SDL_GetTicks();
@@ -3807,7 +3783,7 @@ bool JE_weaponEditor(bool fromOutpost)
 	{
 		// A design session lasts minutes. The peer needs the keep-alives, and this machine
 		// still owes acknowledgements and adoption for whatever the partner does meanwhile.
-		cwServiceNetwork();
+		editorServiceNetwork();
 
 		Uint32 now = SDL_GetTicks();
 		if (tick_schedule_due(&nextTick_ms, tick_ms, now))
@@ -3864,7 +3840,7 @@ bool JE_weaponEditor(bool fromOutpost)
 		explosions[j].ttl = 0;
 	rl_set_ship_override(0, 0.0f, 0.0f);
 	rl_set_ship_vel(0, 0, 0);
-	shipEditorEndMusicFade();
+	editorEndMusicFade();
 	rl_forget_previous();
 	mouseTwoFingerRightClick = false;
 	touch_ui_clear_layout();
@@ -3905,7 +3881,7 @@ bool weaponEditorOutpostMusicSelfTest(void)
 	cwFromOutpost = true;
 	const bool outpostKeepsSong = cwMusicTick() == NULL;
 	cwFromOutpost = false;
-	const bool setupShuffles = cwMusicTick() == shipEditorServiceMusic;
+	const bool setupShuffles = cwMusicTick() == editorServiceMusic;
 	cwFromOutpost = savedOutpost;
 	return outpostKeepsSong && setupShuffles;
 }

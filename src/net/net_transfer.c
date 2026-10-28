@@ -183,11 +183,10 @@ bool network_custom_weapon_receive(void)
 	return true;
 }
 
-/* Publish while both peers pump incoming packets. `force` includes a referenced design when
- * Custom Weapons is disabled. */
-static void network_custom_weapon_publish_internal(bool force)
+/* Publish while both peers pump incoming packets. */
+void network_custom_weapon_publish(void)
 {
-	if (!isNetworkGame || !custom_ships_multiplayer_mode() || (!customWeaponEnabled && !force) ||
+	if (!isNetworkGame || !custom_ships_multiplayer_mode() ||
 	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
 		return;
 
@@ -281,16 +280,6 @@ static void network_custom_weapon_publish_internal(bool force)
 	customWeaponWithholdLocal(!network_custom_acked);
 
 	free(stream);
-}
-
-void network_custom_weapon_publish(void)
-{
-	network_custom_weapon_publish_internal(false);
-}
-
-void network_custom_weapon_publish_resume(void)
-{
-	network_custom_weapon_publish_internal(true);
 }
 
 /* Chunked per-seat extra-ship file exchange. See doc/notes.md#extra-ships. */
@@ -493,9 +482,14 @@ void network_extra_ships_publish(void)
 	}
 
 	if (network_ships_acked)
+	{
 		network_ships_out_hash = hash;
+		extraShipsNetAcknowledged((uint)(thisPlayerNum - 1));
+	}
 	else
-		extraShipsNetWithdraw((uint)(thisPlayerNum - 1));
+	{
+		extraShipsNetRevert((uint)(thisPlayerNum - 1));
+	}
 
 	free(stream);
 }

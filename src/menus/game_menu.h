@@ -32,7 +32,9 @@ void JE_itemScreen(void);
 bool game_menu_test_outpost_rows(char *detail, size_t detailSize);
 bool game_menu_test_skin_row_name(void);
 bool game_menu_test_ship_specs(void);
-bool game_menu_test_skin_cycling(char *detail, size_t detailSize);
+bool game_menu_test_skin_row(char *detail, size_t detailSize);
+bool game_menu_test_customize(char *detail, size_t detailSize);
+bool game_menu_test_power_prices(char *detail, size_t detailSize);
 
 // Release the shop preview's supersampled frames. Called from JE_tyrianShutdown.
 void game_menu_deinit(void);
@@ -43,6 +45,8 @@ bool load_cube(int cube_slot, int cube_index);
 void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y);
 const char *shop_ship_name(JE_word ship, char *buf, size_t n);
 JE_word shop_ship_hull(JE_word ship, Sprite2_array **sheet);
+const char *shop_ship_pick_name(int ship, char *buf, size_t n);
+void shop_ship_pick_draw(int ship, int x, int y, int w, int h);
 void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py);
 
 // Item-list columns: the icon anchor, the label rows drawn beside it, and the last column a row

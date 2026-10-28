@@ -19,6 +19,7 @@
 #include "sprite.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Combo count remains uncapped; only derived bonuses cap.
@@ -847,6 +848,61 @@ bool endlessSpecialPickup(int slot)
 
 	// Secret orb. enemyAvail 2 excludes an armored one until it is shot open; balls sit above 20000.
 	return value > 10000 && value <= 20000 && enemyAvail[slot] == 2;
+}
+
+static bool endlessAttractorTakes(int slot)
+{
+	const int value = enemy[slot].evalue;
+	return enemyAvail[slot] != 1 && enemy[slot].scoreitem && value != 0 && value < 30000 &&
+	       !endlessSpecialPickup(slot);
+}
+
+void endlessAttractorFire(uint target, int pull)
+{
+	const int start = MIN(ENDLESS_ATTRACT_SPEED_START * pull, ENDLESS_ATTRACT_SPEED_MAX);
+
+	for (int i = 0; i < (int)COUNTOF(enemy); ++i)
+	{
+		if (!endlessAttractorTakes(i))
+			continue;
+
+		if (enemy[i].attractedBy == 0 || enemy[i].attractSpeed < start)
+			enemy[i].attractSpeed = (JE_byte)start;
+		enemy[i].attractedBy = (JE_byte)(target + 1);
+		enemy[i].exc = enemy[i].eyc = 0;
+		enemy[i].excc = enemy[i].eycc = 0;
+	}
+}
+
+void endlessAttractorTick(void)
+{
+	if (!endlessFxActive())
+		return;
+
+	for (int i = 0; i < (int)COUNTOF(enemy); ++i)
+	{
+		if (enemy[i].attractedBy == 0 || enemyAvail[i] == 1)
+			continue;
+
+		const Player *const ship = &player[enemy[i].attractedBy - 1];
+		if (!ship->is_alive)
+		{
+			enemy[i].attractedBy = 0;
+			continue;
+		}
+
+		const int dx = ship->x - (enemy[i].ex + enemy[i].mapoffset);
+		const int dy = ship->y - enemy[i].ey;
+		const int reach = MAX(abs(dx), abs(dy));
+		const int speed = enemy[i].attractSpeed;
+		const int stepX = (reach <= speed) ? dx : dx * speed / reach;
+		const int stepY = (reach <= speed) ? dy : dy * speed / reach;
+		enemy[i].ex = (JE_integer)(enemy[i].ex + stepX);
+		enemy[i].ey = (JE_integer)(enemy[i].ey + stepY);
+
+		if (enemy[i].attractSpeed < ENDLESS_ATTRACT_SPEED_MAX)
+			++enemy[i].attractSpeed;
+	}
 }
 
 // Weapon power-up substitutions. All three IDs use sprite bank 21.

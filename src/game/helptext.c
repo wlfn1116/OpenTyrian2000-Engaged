@@ -210,7 +210,7 @@ void JE_HBox(SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsign
 
 void JE_loadHelpText(void)
 {
-	// E-Shop, Perks, and Online pages are populated at runtime.
+	// E-Shop, Perks, and Customize pages are populated at runtime.
 	const unsigned int menuInt_entries[MENU_MAX + 1] = { -1, 7, 9, 9, -1, -1, 11, -1, -1, -1, 6, 4, 7, 7, 5, 6, 0, 0, 0, 0, 0, 0, 0 };
 	const unsigned int setup_entries[10] = {10, 5, 4, 4, 5, 7, 7, 21, 3, 3};
 	

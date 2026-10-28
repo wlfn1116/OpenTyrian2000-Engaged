@@ -542,7 +542,6 @@ void service_SDL_events(JE_boolean clear_new)
 
 			case SDL_QUIT:
 				JE_tyrianHalt(0);
-				break;
 		}
 	}
 }

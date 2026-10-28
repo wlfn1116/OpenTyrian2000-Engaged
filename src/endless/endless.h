@@ -615,6 +615,9 @@ void endlessGrantSpecial(uint p);
 // (player_ship.c). Reads enemy state, writes none.
 bool endlessSpecialPickup(int slot);
 
+void endlessAttractorFire(uint target, int pull);
+void endlessAttractorTick(void);
+
 // Unknown-item glyph extent and pickup padding from the enemy anchor.
 #define ENDLESS_SPECIAL_PICKUP_ICON 125
 #define ENDLESS_SPECIAL_GLYPH_INK_X0 2
