@@ -1113,10 +1113,12 @@ void networkStartScreen(void)
 		network_test_mem_mark();
 		fprintf(stderr, "net gameplay: details settled, starting the game\n");
 		// Verify both peers received the same per-ship Arcade rulesets.
-		fprintf(stderr, "net session flags: shared=%d doubled=%d separate=%d st=%d sa1=%d sa2=%d\n",
+		fprintf(stderr,
+		        "net session flags: shared=%d doubled=%d separate=%d st=%d sa1=%d sa2=%d coop=%d\n",
 		        coop_credit_is_shared() ? 1 : 0, coop_earnings_are_doubled() ? 1 : 0,
 		        arcade_separate_mode() ? 1 : 0, superTyrian ? 1 : 0,
-		        (int)player[0].items.super_arcade_mode, (int)player[1].items.super_arcade_mode);
+		        (int)player[0].items.super_arcade_mode, (int)player[1].items.super_arcade_mode,
+		        coop_mode_active() ? 1 : 0);
 		fflush(stderr);
 	}
 }

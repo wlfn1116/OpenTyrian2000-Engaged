@@ -128,6 +128,7 @@ run.
 | 26 | custom-lifecycle | A collection survives role swaps and rejects incomplete resumes |
 | 27 | custom-device-transfer | Level-carrying Transfer items stream complete collections by pull and direct push |
 | 28 | custom-disconnect-save | A disconnect save keeps both players and re-hosts cleanly |
+| 29 | campaign-desync-recovery | Deliberate corruption is detected and repaired in campaign co-op |
 
 Each peer runs in its own temporary directory. The runner drains output while
 the processes run so a full pipe cannot stall network service.

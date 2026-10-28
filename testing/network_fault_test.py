@@ -50,6 +50,7 @@ SCENARIOS = (
     (26, "custom-lifecycle", 0, 480, True),
     (27, "custom-device-transfer", 0, 240, True),
     (28, "custom-disconnect-save", 0, 480, True),
+    (29, "campaign-desync-recovery", 0, 90, True),
 )
 
 
@@ -198,11 +199,13 @@ def run_scenario(
         "--test-net-rounds", str(rounds),
         "--test-net-scenario", str(scenario),
     ]
-    if scenario in (5, 6, 8, 9):
+    if scenario in (5, 6, 8, 9, 29):
         common += ["--test-net-gameplay-ticks", "700"]
-    if scenario == 6:
+    if scenario in (6, 29):
         # Both peers know a desync is expected; only the joiner actually bends the frame.
         common += ["--test-net-corrupt-frame", "300"]
+    if scenario == 29:
+        common += ["--test-net-game-type", "1"]
     if scenario == 11:
         common += ["--test-net-gameplay-ticks", "700", "--test-net-menu-frame", "300"]
     if scenario == 12:
@@ -496,6 +499,12 @@ def run_scenario(
                 return 1, transcript, injected
             if "NET DELAY PASS" not in out:
                 print(f"network fault test: the {who} did not complete Delay-Based gameplay")
+                return 1, transcript, injected
+    if scenario == 29:
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            flags = [l for l in out.splitlines() if l.startswith("net session flags:")]
+            if not flags or not flags[-1].endswith(" coop=1"):
+                print(f"network fault test: the {who} did not fly campaign co-op")
                 return 1, transcript, injected
     if scenario == 20:
         for out, who, dismissal in ((host_out, "host", "peer"),
