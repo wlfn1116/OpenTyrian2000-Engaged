@@ -335,8 +335,7 @@ extern bool gaugeFlashArmor;
 // Presentation-only full-screen tint for flare-family specials.
 extern bool specialScreenTint;
 
-// Zica level 11 settings: shot layout, bolt length, and an optional level 10 beam.
-// Auto, Short, and off preserve the episode defaults.
+// Zica level 11 shot layout. Auto keeps each episode's own; Endless plays Auto as Ep 4.
 enum
 {
 	ZICA_BASE_AUTO = 0,  // per-episode default: ep1-3 columns, ep4+ spread (vanilla)
@@ -344,17 +343,22 @@ enum
 	ZICA_BASE_EP4,       // force the ep4 centred-spread pattern in every episode
 	ZICA_BASE_COUNT
 };
-enum
-{
-	ZICA_LEN_SHORT = 0,  // vanilla fast bolts
-	ZICA_LEN_LONG,       // beams as long as the Lv10 shot
-	ZICA_LEN_COUNT
-};
 
 extern int  zicaLaserBase;      // ZICA_BASE_* : Lv11 horizontal shot pattern
-extern int  zicaLaserLength;    // ZICA_LEN_*  : Lv11 shot length
-extern bool zicaLaserLock;      // Length=Long: lock the side beams to the ship (like the Lv10 beam)
-extern bool zicaLaserBuff;      // also fire the Lv10 beam alongside the Lv11 shots
+
+typedef enum
+{
+	REWORK_ZICA_BUFF = 0,
+	REWORK_ATTRACTOR,
+	REWORK_ORANGE_SHIELD,
+	REWORK_RAMMING,
+	REWORK_ITEM_NAMES,
+	REWORK_COUNT
+} Rework;
+extern bool reworkEnabled[REWORK_COUNT];
+void reworkConfigLoad(const ConfigSection *section);
+void reworkConfigSave(ConfigSection *section);
+
 extern bool chargeLaserCannon;  // re-add the cut DOS "Charge-Laser Cannon" sidekick to shops
 // Wakes dormant dispenser bases 80-83. Endless rolls this per zone instead.
 extern bool restoreBaseDispensers;

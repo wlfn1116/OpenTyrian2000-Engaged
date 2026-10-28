@@ -168,9 +168,7 @@ extern JE_boolean bonusLevel;
 extern JE_boolean jumpBackToEpisode1;
 extern JE_byte chargeLaserSlot;  // option slot of the re-added Charge-Laser Cannon (0 = none)
 
-// Scratch weapon slots for the long Zica Lv11 side beams.
-#define ZICA_LONG_WEAP_LEFT  906
-#define ZICA_LONG_WEAP_RIGHT 907
+enum { ZICA_LASER_PORT = 5, ZICA_LV10_OP = 9, ZICA_LV11_OP = 10 };
 
 void JE_loadItemDat(void);
 void JE_initEpisode(JE_byte newEpisode);

@@ -18,6 +18,7 @@ online play, editors, restored content, and smoother rendering.
 | Soften sound effects | Setup > Sound |
 | Turn on gamepad rumble | Setup > Rumble, with a rumble controller connected |
 | Choose restored content | Setup > Enhancements |
+| Use Endless item reworks elsewhere | Setup > Enhancements > Reworks |
 | Configure network logs | Setup > Diagnostics |
 | Open Destruct or SuperTyrian | Title screen > Extra |
 | Use solo cheats | Esc > Extra |
@@ -117,12 +118,17 @@ and Dragon Flame gain piercing shots at power 9.
 
 ### Specials
 
-- **Attractor** pulls every pickup you can collect onto your ship and follows
-  you as you move, so each one is collected. Special-weapon pickups and weapon
-  balls stay put, and a pickup is let go if your ship goes down. **Opening
-  Salvo** makes the pull start faster.
+Endless always plays the item [reworks](#reworks). For specials:
+
+- **Attractor** pulls pickups onto your ship and follows you as you move, so
+  each one is collected. Specials, weapon orbs, and the data cubes and secret
+  orbs that grant specials here stay put, and a pickup is let go if your ship
+  goes down. **Opening Salvo** makes the pull start faster.
+- The **Orange Shield** ring circles your ship.
 - **8-Way Microbomb** is named **Microbomb** and **Pearl Wind** is named
   **Pearl Shot**.
+- The **Zica Laser** Lv11 also fires the Lv10 beam, and its Auto pattern is the
+  Ep 4-5 spread.
 
 ### Courses and modifiers
 
@@ -437,7 +443,8 @@ Endless send it again at the next outpost.
 | Heads-Up Display | Enemy bars, boss bars, gauges, touch buttons |
 | Weapons | Charge-Laser, autofire, spark trails |
 | Gameplay | Hitboxes, Guided Aim, Ice Base Shots, Arcade options |
-| Episode Versions | Data choices that differ between episode sets |
+| Episode Versions | Data choices that differ between episode sets, and the Zica Laser Lv11 pattern |
+| Reworks | Endless versions of stock items, for the other modes |
 
 ### Presets
 
@@ -450,8 +457,9 @@ Endless send it again at the next outpost.
 Changing an enhancement stores the result as Custom. Sidekick Autofire, touch
 button settings, and the CRT Filter settings stay outside presets.
 
-Episode Versions rows accept Auto, Ep 1-3, or Ep 4+. Auto follows the current
-episode. Online sessions use the host's choices.
+Episode Versions rows accept Auto, Ep 1-3, or Ep 4-5. Auto follows the current
+episode, except that Endless plays the Zica Laser Lv11 on Auto as Ep 4-5.
+Online sessions use the host's choices.
 
 Useful individual settings:
 
@@ -466,6 +474,26 @@ Useful individual settings:
 
 The special-weapon HUD light is a charge meter. It drains during use, fills
 during recharge, and flashes when ready.
+
+### Reworks
+
+Endless reworks some stock items. **Enhancements > Reworks** brings each one to
+the other modes:
+
+| Rework | Effect |
+| --- | --- |
+| Zica Laser Buff | Zica Laser Lv11 also fires the Lv10 beam, at no extra power |
+| Attractor | Hauls pickups onto your ship until it collects them |
+| Orange Shield | The shield ring circles your ship instead of the air above it |
+| Ramming | Ram kills pay and drop like kills; invulnerable ships ram every tenth tick |
+| Item Names | Endless names, such as Microbomb, Pearl Shot, and Front Multi-Cannon |
+
+Endless always plays every rework. Vanilla turns them all off, and Engaged turns
+them all on. Online sessions use the host's choices.
+
+The reworked Attractor leaves specials, secret-level orbs, and weapon orbs where
+they are. It hauls purple orbs, except in Super Arcade, where every orb stays
+put.
 
 ### CRT Filter
 

@@ -591,6 +591,9 @@ must never become a denominator.
 
 `endlessMode` controls run flow, saves, prices, and pickup replacement.
 `endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
+`reworkActive()` gates the Endless reworks of stock items: on wherever
+`endlessFxActive()` is, and elsewhere per `reworkEnabled[]` (Setup >
+Enhancements > Reworks). A rework must add no unregistered simulation state.
 
 ### Health and tiers
 
@@ -630,14 +633,14 @@ follows the visible glyph, so changing the box is a wire change and requires a
 `NET_VERSION` bump.
 
 Seeded pickup sparks are presentation only and stay off silent rollback passes.
-The Orange Shield orbit is an Endless effect; campaign play keeps the shipped
-special path.
+The Orange Shield orbit is a rework; without it the shipped special path runs.
 
-The Endless Attractor (`endlessAttractorFire`, `endlessAttractorTick`) keeps its
-target and speed in two bytes of enemy padding, so the registry layout did not
-move. The tick runs in the simulation after chain reactions. It skips
-`endlessSpecialPickup()` items and weapon balls (`evalue` 30000 and up) and lets
-go when the target ship dies.
+The reworked Attractor (`endlessAttractorFire`, `endlessAttractorTick`) keeps
+its target and speed in two bytes of enemy padding, so the registry layout did
+not move. The tick runs in the simulation after chain reactions. It skips
+`endlessSpecialPickup()` items, secret-level orbs (`evalue` 10001 to 20000),
+and every `evalue` from 30000 up except the purple orb (30000) outside Super
+Arcade. It lets go when the target ship dies.
 
 ### Modifiers and courses
 
@@ -836,8 +839,9 @@ Local choices must not reach the simulation:
 - A skipped draw still advances simulation state. When the detail level skips
   background layer 2, `skip_background_2` still paces and scrolls it, because
   enemies ride that layer.
-- Extra Parallax and Christmas Mode do change the simulation, so the settings
-  block carries them. Christmas travels as the host's effective state; the
+- Extra Parallax, Christmas Mode, and the reworks do change the simulation, so
+  the settings block carries them; the reworks ride one bit each in the word at
+  byte 8. Christmas travels as the host's effective state; the
   joiner swaps its shape tables and voices with `xmas_set` and restores its own
   on leave. Centered shot hitboxes read those sprites.
 - Debug key codes that change the simulation are ignored online.
@@ -1219,8 +1223,13 @@ idempotent. Settings that affect a gun usually apply to all eleven weapon
 records in its port.
 
 Projectile graphics above 1000 encode a superspark palette bank and base sprite.
-A temporary `poweruse == 0` removes generator cost; extra beams still fire only
-when the primary shot succeeds.
+`player_shot_fire_port` fires a gun level for both the game and the shop
+preview. A temporary `poweruse == 0` removes the cost of its Zica Lv11 buff
+beam, which fires only when the primary shot succeeds.
+
+The Zica Lv11 pattern is baked at item apply: Auto restores the episode's own,
+and Endless plays Auto as the Ep 4 spread. Endless re-applies item data at every
+zone and outpost, so leaving a run restores the campaign pattern.
 
 The Dragonwing is synthesized as ship 19 after each item load. Only Endless
 shops list it. IDs 20 through 90 remain invalid normal ship rows.

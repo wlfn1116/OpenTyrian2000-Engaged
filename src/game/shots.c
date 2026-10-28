@@ -32,6 +32,8 @@
 #include "sprite.h"
 #include "video.h"
 
+#include <limits.h>
+
 // The extra entry preserves the original allocation size.
 PlayerShotDataType playerShotData[MAX_PWEAPON + 1]; /* [1..MaxPWeapon+1] */
 JE_byte shotAvail[MAX_PWEAPON]; /* [1..MaxPWeapon] */   /*0:Avail 1-255:Duration left*/
@@ -142,13 +144,13 @@ static void draw_player_shot_special(int x, int y, unsigned int frame, NetShipSt
 		blit_sprite_alpha(VGAScreen, x, y, OPTION_SHAPES, frame, -1, (Uint8)(style.opacity / 2));
 }
 
-// Draw one shot with its returned-shot tint and owner opacity. Faded shots omit shadows.
 Sprite2_array *shot_sprite_sheet(unsigned int sprite_frame, unsigned int *index)
 {
 	*index = (sprite_frame > 500) ? sprite_frame - 500 : sprite_frame;
 	return (sprite_frame > 500) ? &spriteSheet12 : &spriteSheet8;
 }
 
+// Draw one shot with its returned-shot tint and owner opacity. Faded shots omit shadows.
 static void draw_player_shot_sprite(int x, int y, JE_word sprite_frame, Uint8 tint,
                                     NetShipStyle style, bool shadow)
 {
@@ -398,6 +400,24 @@ void enemy_shot_hit_offset(JE_word sgr, JE_word animate, int *out_dx, int *out_d
 		sprite2_center_offset(spriteSheet8, sgr + animate, out_dx, out_dy);
 }
 
+static bool player_shot_frame_on_playfield(JE_word sprite_frame, int y)
+{
+	if (y >= 0)
+		return true;
+	if (sprite_frame > 60000)
+	{
+		const Sprite *const special = special_shot_sprite(sprite_frame);
+		return y + (special != NULL ? special->height : 14) > 0;
+	}
+
+	unsigned int frame;
+	const Sprite2_array *const sheet =
+	    shot_sprite_sheet(sprite_frame > 1000 ? sprite_frame % 1000 : sprite_frame, &frame);
+	if (sprite2_is_blank(*sheet, frame))
+		return y + 14 > 0;
+	return sprite2_has_pixel_in_window(0, y, *sheet, frame, INT_MIN, INT_MAX, 0, INT_MAX);
+}
+
 bool player_shot_move_and_draw(
 		int shot_id, bool* out_is_special,
 		int* out_shotx, int* out_shoty,
@@ -469,9 +489,14 @@ bool player_shot_move_and_draw(
 		// Wide cull margins preserve interpolated exits and returning shot arcs.
 		const int ym_drift = shot->shotYM >= SHOT_ATTACHED_VEL_MIN
 		                     ? shot->shotYM - SHOT_ATTACHED_VEL_REST : shot->shotYM;
+		const JE_word frame_now = shot->shotGr + shot->shotAni;
+		const bool on_playfield = player_shot_frame_on_playfield(frame_now, shot->shotY);
+		const bool casts_shadow = background2 && tmp_shotXM < 100 && frame_now <= 60000;
+		const bool trace_on_playfield = casts_shadow
+		    ? player_shot_frame_on_playfield(frame_now, shot->shotY + shadowYDist) : on_playfield;
 		if (shot->shotX < -34 || shot->shotX > PLAYFIELD_WIDTH + 34 ||
-			shot->shotY < -40 || shot->shotY > 240 ||
-			(shot->shotY < -15 && ym_drift >= 0))
+			(shot->shotY < -40 && !trace_on_playfield) || shot->shotY > 240 ||
+			(shot->shotY < -15 && ym_drift >= 0 && !trace_on_playfield))
 		{
 			shotAvail[shot_id] = 0;
 			return false;
@@ -492,7 +517,7 @@ bool player_shot_move_and_draw(
 				player_shot_aim_step(shot);
 		}
 
-		JE_word sprite_frame = shot->shotGr + shot->shotAni;
+		JE_word sprite_frame = frame_now;
 		if (++shot->shotAni == shot->shotAniMax)
 			shot->shotAni = 0;
 
@@ -573,7 +598,7 @@ bool player_shot_move_and_draw(
 				shot->salvoBoost = 2;
 			}
 			// A tinted shot (a returned elite or champion bullet) is drawn as the enemy loop drew it.
-			const bool shadow = background2 && *out_shoty + shadowYDist < 190 && tmp_shotXM < 100;
+			const bool shadow = casts_shadow && *out_shoty + shadowYDist < 190;
 			draw_player_shot_sprite(*out_shotx + 1, *out_shoty, sprite_frame, shot->tint,
 			                        shot_draw_style(shot->playerNumber), shadow);
 		}
@@ -837,9 +862,10 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 				shot->shotY -= player[shot->playerNumber-1].delta_y_shot_move;
 		}
 
-		// Endless: a special pinned to the ship on both axes and spun by circlesize is a shield ring.
+		// A special pinned to the ship on both axes and spun by circlesize is a shield ring.
 		// See doc/notes.md#special-pickups.
-		if (endlessFxActive() && (bay_i == SHOT_SPECIAL || bay_i == SHOT_SPECIAL2) &&
+		if (reworkActive(REWORK_ORANGE_SHIELD) &&
+		    (bay_i == SHOT_SPECIAL || bay_i == SHOT_SPECIAL2) &&
 		    shot->shotComplicated && shot->shotXM > 100 && shot->shotYM > 100)
 		{
 			shot->shotX -= weapon->bx[shotMultiPos[bay_i]-1]
@@ -935,6 +961,26 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	}
 
 	return shot_id;
+}
+
+JE_integer player_shot_fire_port(JE_word portNum, uint bay_i, JE_word PX, JE_word PY,
+                                 JE_word mouseX, JE_word mouseY, uint mode, uint power,
+                                 JE_byte playerNum)
+{
+	const JE_integer first = player_shot_create(portNum, bay_i, PX, PY, mouseX, mouseY,
+	                                            weaponPort[portNum].op[mode][power], playerNum);
+
+	if (first < MAX_PWEAPON && portNum == ZICA_LASER_PORT && power == ZICA_LV11_OP &&
+	    reworkActive(REWORK_ZICA_BUFF))
+	{
+		const JE_word poweruse = weaponPort[portNum].poweruse;
+		weaponPort[portNum].poweruse = 0;
+		player_shot_create(portNum, bay_i, PX, PY, mouseX, mouseY,
+		                   weaponPort[portNum].op[mode][ZICA_LV10_OP], playerNum);
+		weaponPort[portNum].poweruse = poweruse;
+	}
+
+	return first;
 }
 
 /* Endless Twin Pods, contract in shots.h: a second full player_shot_create from the same gun,

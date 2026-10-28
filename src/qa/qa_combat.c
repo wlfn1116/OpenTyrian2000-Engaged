@@ -5,6 +5,7 @@
 #include "qa_internal.h"
 
 #include "config.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "enemy_death.h"
 #include "episodes.h"
@@ -26,32 +27,41 @@
 
 #include "SDL.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* A 12-pixel test cell with two four-pixel rows exercises the packed sprite controls. */
+static const Uint8 qa_cell_body[] = {
+	0x0c,                                // row 0: 12 transparent columns, then the next row
+	0x42, 0x11, 0x11, 0x11, 0x11, 0x06,  // row 1: skip 2, four pixels, skip the rest
+	0x42, 0x11, 0x11, 0x11, 0x11, 0x06,  // row 2: the same
+	0x0f,
+};
+
+typedef union
+{
+	Uint16 align;  // the offset table is read as Uint16, which needs the storage aligned
+	Uint8 bytes[2 + sizeof(qa_cell_body)];
+} QaCellFrame;
+
+static Sprite2_array qa_cell_sheet(QaCellFrame *frame)
+{
+	frame->bytes[0] = 2;  // one-entry offset table, little-endian, pointing just past itself
+	frame->bytes[1] = 0;
+	memcpy(frame->bytes + 2, qa_cell_body, sizeof(qa_cell_body));
+	return (Sprite2_array){ sizeof(frame->bytes), frame->bytes };
+}
 
 /* Where a projectile is collided from. The geometry comes from sprite data alone, so a synthetic
  * frame pins it exactly; the shot loops in game_loop.c add the target's own middle to the
  * answer. */
 void qa_test_shot_hitboxes(void)
 {
-	/* A 12-pixel test cell with two four-pixel rows exercises the packed sprite controls. */
-	static const Uint8 body[] = {
-		0x0c,                                // row 0: 12 transparent columns, then the next row
-		0x42, 0x11, 0x11, 0x11, 0x11, 0x06,  // row 1: skip 2, four pixels, skip the rest
-		0x42, 0x11, 0x11, 0x11, 0x11, 0x06,  // row 2: the same
-		0x0f,
-	};
-	union {
-		Uint16 align;  // the offset table is read as Uint16, which needs the storage aligned
-		Uint8 bytes[2 + sizeof(body)];
-	} frame;
-	frame.bytes[0] = 2;  // one-entry offset table, little-endian, pointing just past itself
-	frame.bytes[1] = 0;
-	memcpy(frame.bytes + 2, body, sizeof(body));
-
-	const Sprite2_array sheet = { sizeof(frame.bytes), frame.bytes };
+	QaCellFrame frame;
+	const Sprite2_array sheet = qa_cell_sheet(&frame);
 
 	int dx = -1, dy = -1;
 	sprite2_center_offset(sheet, 1, &dx, &dy);
@@ -95,6 +105,17 @@ static JE_integer qa_guidance_fire(uint bay, JE_word gun)
 static bool qa_guidance_marked(JE_integer id)
 {
 	return id < MAX_PWEAPON && (playerShotData[id].aimDelayMax & SHOT_AIM_GUIDANCE) != 0;
+}
+
+static bool qa_shot_step(JE_integer id)
+{
+	bool special;
+	int x, y, hitDx, hitDy;
+	JE_integer damage;
+	JE_byte blast, chain, owner;
+	JE_word radiusW, radiusH;
+	return player_shot_move_and_draw(id, &special, &x, &y, &damage, &blast, &chain, &owner,
+	                                 &radiusW, &radiusH, &hitDx, &hitDy);
 }
 
 /* Check Guidance Package targeting without changing stock weapon-table homing. */
@@ -311,25 +332,14 @@ void qa_test_guidance_perk(void)
 	const int savedDeltaY = player[0].delta_y_shot_move;
 	player[0].delta_x_shot_move = 0;
 	player[0].delta_y_shot_move = 0;
-	bool outSpecial;
-	int outX, outY, outHitDx, outHitDy;
-	JE_integer outDmg;
-	JE_byte outBlast, outChain, outOwner;
-	JE_word outRadiusW, outRadiusH;
 	s->shotTrail = 255;
 	s->shotX = 100;
 	s->shotY = -20;
-	qa_check(player_shot_move_and_draw(id, &outSpecial, &outX, &outY, &outDmg, &outBlast,
-	                                   &outChain, &outOwner, &outRadiusW, &outRadiusH,
-	                                   &outHitDx, &outHitDy)
-	         && shotAvail[id] != 0,
+	qa_check(qa_shot_step(id) && shotAvail[id] != 0,
 	         "above the screen a re-encoded beam still ascends and survives to the deep margin");
 	s->shotY = -20;
 	s->shotYM = SHOT_ATTACHED_VEL_REST;
-	qa_check(!player_shot_move_and_draw(id, &outSpecial, &outX, &outY, &outDmg, &outBlast,
-	                                    &outChain, &outOwner, &outRadiusW, &outRadiusH,
-	                                    &outHitDx, &outHitDy)
-	         && shotAvail[id] == 0,
+	qa_check(!qa_shot_step(id) && shotAvail[id] == 0,
 	         "...while one resting beside the ship is retired at the early one");
 	player[0].delta_x_shot_move = savedDeltaX;
 	player[0].delta_y_shot_move = savedDeltaY;
@@ -781,12 +791,20 @@ void qa_test_reinforced_prow_perk(void)
 	qa_check(endlessPerkProwRamDamage(2) == 10, "...while the holder rams at its stacks");
 	coopEndlessMode = false;
 
-	// An invulnerable ship lands a ram every tenth tick of its window in Endless, never outside it.
+	// An invulnerable ship lands a ram every tenth tick of its window in Endless, and outside it
+	// only with the Ramming rework.
 	qa_check(endlessRamWhileInvulnerable(20) && endlessRamWhileInvulnerable(10)
 	         && !endlessRamWhileInvulnerable(19) && !endlessRamWhileInvulnerable(1),
 	         "an invulnerable ship rams on the tick cadence");
+	const bool savedRamming = reworkEnabled[REWORK_RAMMING];
 	endlessMode = false;
-	qa_check(!endlessRamWhileInvulnerable(20), "...and outside Endless never");
+	reworkEnabled[REWORK_RAMMING] = false;
+	qa_check(!endlessRamWhileInvulnerable(20),
+	         "...and outside Endless never without the Ramming rework");
+	reworkEnabled[REWORK_RAMMING] = true;
+	qa_check(endlessRamWhileInvulnerable(20) && !endlessRamWhileInvulnerable(19),
+	         "...which brings the same cadence to the other modes");
+	reworkEnabled[REWORK_RAMMING] = savedRamming;
 	endlessMode = true;
 
 	/* The Endless ram kill: enemy_kill_group takes a lone enemy and pays it out, and takes a linked
@@ -2275,4 +2293,299 @@ void qa_test_kinetic_converter(void)
 	endlessPerkRederive();
 	coopEndlessMode = savedCoop;
 	endlessMode = savedEndless;
+}
+
+static int qa_live_player_shots(void)
+{
+	int live = 0;
+	for (int i = 0; i < MAX_PWEAPON; ++i)
+		live += shotAvail[i] != 0;
+	return live;
+}
+
+void qa_test_zica_buff_fire(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const bool savedBuff = reworkEnabled[REWORK_ZICA_BUFF];
+	const bool savedInfinite = cheatInfiniteGenerator;
+	const uint savedPower = power;
+	const JE_word lv10 = weaponPort[ZICA_LASER_PORT].op[0][ZICA_LV10_OP];
+	const JE_word lv11 = weaponPort[ZICA_LASER_PORT].op[0][ZICA_LV11_OP];
+
+	endlessCampaignMods = false;
+	cheatInfiniteGenerator = false;
+
+	int shots[3];
+	uint spent[3];
+	for (int run = 0; run < 3; ++run)
+	{
+		endlessMode = run == 2;
+		reworkEnabled[REWORK_ZICA_BUFF] = run == 1;
+		memset(shotAvail, 0, sizeof(shotAvail));
+		shotMultiPos[SHOT_FRONT] = 0;
+		power = 10000;
+		player_shot_fire_port(ZICA_LASER_PORT, SHOT_FRONT, 100, 150, 0, 0, 0, ZICA_LV11_OP, 1);
+		spent[run] = 10000 - power;
+		shots[run] = qa_live_player_shots();
+	}
+	qa_check(shots[0] == weapons[lv11].multi && shots[1] == shots[0] + weapons[lv10].multi,
+	         "the Zica Laser Buff rework adds the Lv10 beam to a Lv11 volley");
+	qa_check(spent[0] > 0 && spent[1] == spent[0], "...at no extra generator cost");
+	qa_check(shots[2] == shots[1], "Endless always fires the buffed volley");
+
+	endlessMode = false;
+	reworkEnabled[REWORK_ZICA_BUFF] = true;
+	memset(shotAvail, 0, sizeof(shotAvail));
+	shotMultiPos[SHOT_FRONT] = 0;
+	power = 10000;
+	player_shot_fire_port(ZICA_LASER_PORT, SHOT_FRONT, 100, 150, 0, 0, 0, ZICA_LV10_OP, 1);
+	qa_check(qa_live_player_shots() == weapons[lv10].multi, "...and leaves the other levels alone");
+
+	memset(shotAvail, 0, sizeof(shotAvail));
+	power = savedPower;
+	cheatInfiniteGenerator = savedInfinite;
+	reworkEnabled[REWORK_ZICA_BUFF] = savedBuff;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedEndless;
+}
+
+void qa_test_orange_shield_rework(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const bool savedRing = reworkEnabled[REWORK_ORANGE_SHIELD];
+	const JE_word ringGun = 749;
+	qa_check(weapons[ringGun].circlesize != 0 && weapons[ringGun].sx[0] == SHOT_ATTACHED_VEL_REST
+	         && weapons[ringGun].sy[0] == SHOT_ATTACHED_VEL_REST,
+	         "the Orange Shield test's ring gun is the one it assumes");
+
+	endlessCampaignMods = false;
+	int x[3], y[3];
+	for (int run = 0; run < 3; ++run)
+	{
+		endlessMode = run == 0;
+		reworkEnabled[REWORK_ORANGE_SHIELD] = run == 1;
+		memset(shotAvail, 0, sizeof(shotAvail));
+		shotMultiPos[SHOT_SPECIAL2] = 0;
+		const JE_integer id = player_shot_create(0, SHOT_SPECIAL2, 100, 150, 0, 0, ringGun, 1);
+		x[run] = id < MAX_PWEAPON ? playerShotData[0].shotX : -1;
+		y[run] = id < MAX_PWEAPON ? playerShotData[0].shotY : -1;
+	}
+	qa_check(x[0] != -1 && x[1] == x[0] && y[1] == y[0],
+	         "the Orange Shield rework centres the ring on the ship, as Endless does");
+	qa_check(x[2] != x[0] || y[2] != y[0], "...and without it the ring keeps its shipped offset");
+
+	memset(shotAvail, 0, sizeof(shotAvail));
+	reworkEnabled[REWORK_ORANGE_SHIELD] = savedRing;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedEndless;
+}
+
+void qa_test_ramming_rework(void)
+{
+	static const struct
+	{
+		bool rework;
+		uint invulnerable;
+		bool rams, pays;
+		const char *what;
+	} rows[] = {
+		{ false, 0,  true,  false, "without the rework a ram removes the enemy and pays nothing" },
+		{ true,  0,  true,  true,  "the Ramming rework pays a ram kill and counts it" },
+		{ false, 20, false, false, "an invulnerable ship does not ram without the rework" },
+		{ true,  20, true,  true,  "...but rams on the rework's cadence" },
+		{ true,  19, false, false, "...and only on that cadence" },
+	};
+
+	static JE_MultiEnemyType savedEnemies;
+	JE_EnemyAvailType savedAvail;
+	memcpy(savedEnemies, enemy, sizeof(enemy));
+	memcpy(savedAvail, enemyAvail, sizeof(enemyAvail));
+	const Player savedShip = player[0];
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const bool savedRamming = reworkEnabled[REWORK_RAMMING];
+	const JE_byte savedRate = damageRate, savedNoclip = noclipMode;
+	const JE_word savedKilled = enemyKilled;
+
+	endlessMode = false;
+	endlessCampaignMods = false;
+	damageRate = 10;
+	noclipMode = 0;
+	for (size_t r = 0; r < COUNTOF(rows); ++r)
+	{
+		memset(enemyAvail, 1, sizeof(enemyAvail));
+		memset(&enemy[0], 0, sizeof(enemy[0]));
+		enemyAvail[0] = 0;
+		enemy[0].ex = 100;
+		enemy[0].ey = 150;
+		enemy[0].armorleft = 1;
+		enemy[0].enemytype = 1;
+		enemy[0].evalue = 300;
+		player[0].x = 100;
+		player[0].y = 150;
+		player[0].is_alive = true;
+		player[0].armor = 28;
+		player[0].invulnerable_ticks = rows[r].invulnerable;
+		reworkEnabled[REWORK_RAMMING] = rows[r].rework;
+
+		const Sint64 cash = player[0].cash;
+		const JE_word killed = enemyKilled;
+		JE_playerCollide(&player[0], 1);
+		const bool rammed = enemyAvail[0] == 1;
+		const bool paid = player[0].cash == cash + 300 && enemyKilled == killed + 1;
+		qa_check(rammed == rows[r].rams && paid == rows[r].pays, rows[r].what);
+	}
+	JE_resetSP();
+	memset(explosions, 0, sizeof(explosions));
+
+	enemyKilled = savedKilled;
+	noclipMode = savedNoclip;
+	damageRate = savedRate;
+	reworkEnabled[REWORK_RAMMING] = savedRamming;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedEndless;
+	player[0] = savedShip;
+	memcpy(enemyAvail, savedAvail, sizeof(enemyAvail));
+	memcpy(enemy, savedEnemies, sizeof(enemy));
+}
+
+static JE_integer qa_exit_shot(JE_word gr, int y, int ym, int xm)
+{
+	const JE_integer id = player_shot_create(0, SHOT_SPECIAL, 100, 100, 0, 0, 29, 1);
+	if (id < MAX_PWEAPON)
+	{
+		PlayerShotDataType *const s = &playerShotData[id];
+		s->shotTrail = 255;
+		s->shotGr = gr;
+		s->shotAni = 0;
+		s->shotAniMax = 1;
+		s->shotX = 100;
+		s->shotY = y;
+		s->shotYM = ym;
+		s->shotXM = xm;
+	}
+	return id;
+}
+
+void qa_test_shot_exit_margin(void)
+{
+	const uint savedPower = power;
+	const JE_boolean savedBackground2 = background2;
+	const Sprite2_array savedSheet = spriteSheet8;
+	power = 10000;
+	memset(shotAvail, 0, sizeof(shotAvail));
+	shotMultiPos[SHOT_SPECIAL] = 0;
+
+	const JE_word ballGr = weapons[720].sg[0];
+	qa_check(weapons[29].sy[0] == 1 && weapons[29].sg[0] == 271
+	         && ballGr > 60000 && ballGr - 60001u < sprite_table[OPTION_SHAPES].count,
+	         "the exit-margin test's MineField mine and Xega Ball are the ones it assumes");
+
+	static const struct
+	{
+		bool cell;
+		JE_word gr;
+		int y, ym, xm;
+		bool background2, stays;
+	} exits[] = {
+		{ false, 271, -39, -1, 0, true, true },
+		{ false, 271, -40, -1, 0, true, false },
+		{ false, 271, -16, 0, 0, true, true },
+		{ false, 271, -22, 0, 0, true, true },
+		{ false, 271, -23, 0, 0, true, false },
+		{ false, 271, -16, 0, 0, false, false },
+		{ false, 271, -16, 0, SHOT_ATTACHED_VEL_REST, true, false },
+		{ false, 1000 + 271, -23, 0, 0, true, false },
+		{ true, 1, -16, 0, 0, true, false },
+		{ true, 2, -23, 0, 0, true, true },
+		{ true, 2, -24, 0, 0, true, false },
+	};
+	QaCellFrame cell;
+	const Sprite2_array cellSheet = qa_cell_sheet(&cell);
+	bool exitsRight = true;
+	for (size_t i = 0; i < COUNTOF(exits); ++i)
+	{
+		spriteSheet8 = exits[i].cell ? cellSheet : savedSheet;
+		background2 = exits[i].background2;
+		const JE_integer id = qa_exit_shot(exits[i].gr, exits[i].y, exits[i].ym, exits[i].xm);
+		if (id >= MAX_PWEAPON || (qa_shot_step(id) && shotAvail[id] != 0) != exits[i].stays)
+			exitsRight = false;
+		if (id < MAX_PWEAPON)
+			shotAvail[id] = 0;
+	}
+	spriteSheet8 = savedSheet;
+	qa_check(exitsRight,
+	         "a shot past the top edge stays exactly while its sprite or shadow can show");
+
+	background2 = true;
+	const int ballH = sprite(OPTION_SHAPES, ballGr - 60001u)->height;
+	const JE_integer tall = qa_exit_shot(ballGr, 2 - ballH, -1, 0);
+	const bool tallStays = tall < MAX_PWEAPON && qa_shot_step(tall) && shotAvail[tall] != 0;
+	const bool tallGoes = tall < MAX_PWEAPON && !qa_shot_step(tall) && shotAvail[tall] == 0;
+	qa_check(ballH > 41 && tallStays && tallGoes,
+	         "a special taller than the deep margin stays while its last row shows, then goes");
+
+	memset(shotAvail, 0, sizeof(shotAvail));
+	background2 = savedBackground2;
+	power = savedPower;
+}
+
+void qa_test_shot_shadow_edge(void)
+{
+	const uint savedPower = power;
+	const JE_boolean savedBackground2 = background2;
+	power = 10000;
+	memset(shotAvail, 0, sizeof(shotAvail));
+	shotMultiPos[SHOT_SPECIAL] = 0;
+
+	const size_t bytes = (size_t)VGAScreen->pitch * (size_t)VGAScreen->h;
+	Uint8 *const savedScreen = malloc(bytes);
+	Uint8 *const plain = malloc(bytes);
+	const JE_integer id = player_shot_create(0, SHOT_SPECIAL, 100, 100, 0, 0, 29, 1);
+	qa_check(savedScreen != NULL && plain != NULL && id < MAX_PWEAPON,
+	         "the shadow-edge test's buffers and MineField mine are ready");
+	if (savedScreen != NULL && plain != NULL && id < MAX_PWEAPON)
+	{
+		memcpy(savedScreen, VGAScreen->pixels, bytes);
+		PlayerShotDataType *const s = &playerShotData[id];
+		s->shotTrail = 255;
+		s->shotY = 0;
+		bool tracksShadow = true, sawEdge = false;
+		for (int tick = 0; tick < 60 && shotAvail[id] != 0; ++tick)
+		{
+			const PlayerShotDataType before = *s;
+			const JE_byte avail = shotAvail[id];
+			const JE_word frame = s->shotGr + s->shotAni;
+
+			memset(VGAScreen->pixels, 0x57, bytes);
+			background2 = false;
+			qa_shot_step(id);
+			memcpy(plain, VGAScreen->pixels, bytes);
+
+			*s = before;
+			shotAvail[id] = avail;
+			memset(VGAScreen->pixels, 0x57, bytes);
+			background2 = true;
+			qa_shot_step(id);
+			if (shotAvail[id] == 0)
+				break;
+
+			const int shadowY = s->shotY + shadowYDist;
+			const bool drawn = memcmp(plain, VGAScreen->pixels, bytes) != 0;
+			const bool showing = sprite2_has_pixel_in_window(0, shadowY, spriteSheet8, frame,
+			                                                 INT_MIN, INT_MAX, 0, INT_MAX);
+			if (drawn != showing)
+				tracksShadow = false;
+			if (showing && shadowY < 0)
+				sawEdge = true;
+		}
+		qa_check(tracksShadow && sawEdge,
+		         "a rising shot's shadow is drawn exactly while any row of it is on screen");
+		memcpy(VGAScreen->pixels, savedScreen, bytes);
+	}
+
+	free(savedScreen);
+	free(plain);
+	memset(shotAvail, 0, sizeof(shotAvail));
+	background2 = savedBackground2;
+	power = savedPower;
 }

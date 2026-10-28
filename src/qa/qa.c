@@ -407,6 +407,7 @@ int qa_run_unit_suite(void)
 	JE_loadItemDat();
 	JE_initPlayerData();
 	qa_test_config_option_removal();
+	qa_test_rework_config();
 	qa_test_rollback();
 	qa_test_rollback_wire_seats();
 	qa_test_course_tables();
@@ -451,15 +452,21 @@ int qa_run_unit_suite(void)
 	qa_test_zinglon_pillar();
 	qa_test_special_state_reset();
 	qa_test_endless_attractor();
+	qa_test_attractor_targets();
 	qa_test_custom_ship_equip();
 	qa_test_endless_special_names();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
+	qa_test_shot_exit_margin();
+	qa_test_shot_shadow_edge();
 	qa_test_guidance_perk();
+	qa_test_zica_buff_fire();
+	qa_test_orange_shield_rework();
 	qa_test_surveyor_drop_perk();
 	qa_test_twin_pods_perk();
 	qa_test_reinforced_prow_perk();
+	qa_test_ramming_rework();
 	qa_test_knife_fight_perk();
 	qa_test_deflector_perk();
 	qa_test_afterburner_perk();
@@ -513,6 +520,7 @@ int qa_run_unit_suite(void)
 	qa_test_course_reroll_dodge();
 	qa_test_level_event_scripts();
 	qa_test_item_data_settings();
+	qa_test_zica_lv11_pattern();
 	qa_test_firing_sound_levels();
 	qa_test_sfx_filter();
 	qa_test_controller_hotplug();

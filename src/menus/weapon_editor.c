@@ -477,7 +477,7 @@ typedef struct
 
 #define CW_RANGE_DEFAULTS                                                                         \
 	{ .stats = true, .targets = 3, .targetSize = 8, .targetSpread = 32, .targetY = 36,             \
-	  .targetX = 76, .targetArmor = 120, .ship = SHIP_GENCORE_II, .shipX = 70, .shipY = 116 }
+	  .targetX = 76, .targetArmor = 120, .ship = SHIP_GENCORE_II, .shipX = 70, .shipY = 104 }
 
 enum { CW_RANGE_SHIPS_MAX = SHIP_DRAGONWING + EXTRA_SHIP_SLOTS };
 

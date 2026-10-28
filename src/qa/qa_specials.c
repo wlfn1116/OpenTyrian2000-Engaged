@@ -18,6 +18,7 @@
 
 #include "SDL.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1027,6 +1028,7 @@ void qa_test_endless_attractor(void)
 	const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
 	const JE_boolean savedCoop = coopEndlessMode, savedTwo = twoPlayerMode;
 	const JE_byte savedStype = special[SPECIAL_NUM].stype;
+	const bool savedAttractor = reworkEnabled[REWORK_ATTRACTOR];
 
 	endlessMode = true;
 	endlessCampaignMods = false;
@@ -1123,6 +1125,7 @@ void qa_test_endless_attractor(void)
 	endlessMode = false;
 	coopEndlessMode = false;
 	twoPlayerMode = false;
+	reworkEnabled[REWORK_ATTRACTOR] = false;
 	memset(enemyAvail, 1, sizeof(enemyAvail));
 	qa_attract_item(9, 150, 100, 100);
 	enemy[9].exc = 0;
@@ -1134,6 +1137,14 @@ void qa_test_endless_attractor(void)
 	qa_check(stockNudge && enemy[9].ex == 100 && enemy[9].ey == 100,
 	         "outside Endless the Attractor keeps its stock nudge and no haul runs");
 
+	reworkEnabled[REWORK_ATTRACTOR] = true;
+	enemy[9].attractedBy = 0;
+	JE_specialComplete(1, SPECIAL_NUM);
+	endlessAttractorTick();
+	qa_check(enemy[9].attractedBy == 1 && (enemy[9].ex != 100 || enemy[9].ey != 100),
+	         "...while the Attractor rework hauls it there too");
+
+	reworkEnabled[REWORK_ATTRACTOR] = savedAttractor;
 	special[SPECIAL_NUM].stype = savedStype;
 	twoPlayerMode = savedTwo;
 	coopEndlessMode = savedCoop;
@@ -1146,9 +1157,84 @@ void qa_test_endless_attractor(void)
 	memcpy(enemy, savedEnemies, sizeof(enemy));
 }
 
+void qa_test_attractor_targets(void)
+{
+	static const struct
+	{
+		int value;
+		bool endless, regular, superArcade;
+		const char *what;
+	} pickups[] = {
+		{ 150,   true,  true,  true,  "cash" },
+		{ -1,    true,  true,  true,  "a front weapon capsule" },
+		{ -2,    true,  true,  true,  "a rear weapon capsule" },
+		{ 20005, true,  true,  true,  "armor" },
+		{ 1,     false, true,  true,  "a data cube" },
+		{ 10500, false, false, false, "a secret level orb" },
+		{ 30000, true,  true,  false, "a purple orb" },
+		{ 30005, false, false, false, "a front weapon orb" },
+		{ 31005, false, false, false, "a rear weapon orb" },
+		{ 32005, false, false, false, "a sidekick orb" },
+		{ 32105, false, false, false, "a special weapon" },
+	};
+	static const char *const modes[] = { "Endless", "Campaign and Arcade", "Super Arcade" };
+
+	static JE_MultiEnemyType savedEnemies;
+	JE_EnemyAvailType savedAvail;
+	memcpy(savedEnemies, enemy, sizeof(enemy));
+	memcpy(savedAvail, enemyAvail, sizeof(enemyAvail));
+	const Player savedShip = player[0];
+	const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode, savedTwo = twoPlayerMode;
+	const JE_byte savedStype = special[SPECIAL_NUM].stype;
+	const JE_byte savedSuperArcade = superArcadeMode;
+	const bool savedAttractor = reworkEnabled[REWORK_ATTRACTOR];
+
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	twoPlayerMode = false;
+	special[SPECIAL_NUM].stype = 4;
+	reworkEnabled[REWORK_ATTRACTOR] = true;
+	player[0].is_alive = true;
+	player[0].x = 150;
+	player[0].y = 140;
+
+	char label[128];
+	for (int mode = 0; mode < (int)COUNTOF(modes); ++mode)
+	{
+		endlessMode = mode == 0;
+		superArcadeMode = mode == 2 ? SA_NORTSHIPZ : SA_NONE;
+		memset(enemyAvail, 1, sizeof(enemyAvail));
+		for (int i = 0; i < (int)COUNTOF(pickups); ++i)
+			qa_attract_item(i, pickups[i].value, 20 + 10 * i, 30);
+		JE_specialComplete(1, SPECIAL_NUM);
+
+		for (int i = 0; i < (int)COUNTOF(pickups); ++i)
+		{
+			const bool hauled = mode == 0 ? pickups[i].endless
+			                 : mode == 1 ? pickups[i].regular : pickups[i].superArcade;
+			snprintf(label, sizeof(label), "%s: the Attractor %s %s", modes[mode],
+			         hauled ? "hauls" : "leaves", pickups[i].what);
+			qa_check((enemy[i].attractedBy != 0) == hauled, label);
+		}
+	}
+
+	reworkEnabled[REWORK_ATTRACTOR] = savedAttractor;
+	superArcadeMode = savedSuperArcade;
+	special[SPECIAL_NUM].stype = savedStype;
+	twoPlayerMode = savedTwo;
+	coopEndlessMode = savedCoop;
+	endlessCampaignMods = savedMods;
+	endlessMode = savedEndless;
+	player[0] = savedShip;
+	memcpy(enemyAvail, savedAvail, sizeof(enemyAvail));
+	memcpy(enemy, savedEnemies, sizeof(enemy));
+}
+
 void qa_test_endless_special_names(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+	const bool savedNames = reworkEnabled[REWORK_ITEM_NAMES];
 
 	int microbomb = 0, pearlShot = 0, pearlField = 0;
 	for (int id = 1; id < SPECIAL_NUM; ++id)
@@ -1161,6 +1247,7 @@ void qa_test_endless_special_names(void)
 
 	endlessMode = false;
 	endlessCampaignMods = false;
+	reworkEnabled[REWORK_ITEM_NAMES] = false;
 	const bool stock = microbomb > 0 && pearlShot > 0 &&
 	                   JE_specialName((JE_byte)microbomb) == special[microbomb].name &&
 	                   JE_specialName((JE_byte)pearlShot) == special[pearlShot].name;
@@ -1171,6 +1258,17 @@ void qa_test_endless_special_names(void)
 	         (pearlField == 0 || JE_specialName((JE_byte)pearlField) == special[pearlField].name),
 	         "...still names the instant Pearl Wind a Pearl Shot, and leaves the field one alone");
 
+	endlessMode = false;
+	reworkEnabled[REWORK_ITEM_NAMES] = true;
+	qa_check(strcmp(JE_specialName((JE_byte)microbomb), "Microbomb") == 0
+	         && strcmp(JE_weaponPortName(2), "Front Multi-Cannon") == 0
+	         && strcmp(JE_shipName(11), "TX SilverCloud") == 0,
+	         "the Item Names rework gives the other modes the Endless names");
+	reworkEnabled[REWORK_ITEM_NAMES] = false;
+	qa_check(JE_weaponPortName(2) == weaponPort[2].name && JE_shipName(11) == ships[11].name,
+	         "...and without it the shop keeps the stock names");
+
+	reworkEnabled[REWORK_ITEM_NAMES] = savedNames;
 	endlessCampaignMods = savedMods;
 	endlessMode = savedEndless;
 }

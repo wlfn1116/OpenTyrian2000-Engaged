@@ -199,7 +199,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			// so clamp below; a wrapped speed would fling the pickup the wrong way.
 			const int pull = endlessOpeningSalvoScale(1);
 			salvo_special_burst(playerNum);
-			if (endlessFxActive())
+			if (reworkActive(REWORK_ATTRACTOR))
 			{
 				endlessAttractorFire((uint)(this_player - player), pull);
 				break;

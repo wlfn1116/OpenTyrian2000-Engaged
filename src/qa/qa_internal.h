@@ -25,6 +25,7 @@ void qa_test_course_reroll_dodge(void);
 void qa_test_custom_endless_pool(void);
 
 void qa_test_config_option_removal(void);
+void qa_test_rework_config(void);
 void qa_test_weapon_editor(void);
 void qa_test_custom_weapon_wire(void);
 void qa_test_fixed_pool_layout(void);
@@ -41,10 +42,15 @@ void qa_test_arcade_scaling(void);
 void qa_test_effect_gates(void);
 
 void qa_test_shot_hitboxes(void);
+void qa_test_shot_exit_margin(void);
+void qa_test_shot_shadow_edge(void);
 void qa_test_guidance_perk(void);
+void qa_test_zica_buff_fire(void);
+void qa_test_orange_shield_rework(void);
 void qa_test_surveyor_drop_perk(void);
 void qa_test_twin_pods_perk(void);
 void qa_test_reinforced_prow_perk(void);
+void qa_test_ramming_rework(void);
 void qa_test_knife_fight_perk(void);
 void qa_test_deflector_perk(void);
 void qa_test_afterburner_perk(void);
@@ -70,6 +76,7 @@ void qa_test_vaporised_shot_sparks(void);
 void qa_test_knife_fight_blood(void);
 
 void qa_test_item_data_settings(void);
+void qa_test_zica_lv11_pattern(void);
 void qa_test_firing_sound_levels(void);
 void qa_test_sfx_filter(void);
 void qa_test_controller_hotplug(void);
@@ -117,6 +124,7 @@ void qa_test_flare_grade_ownership(void);
 void qa_test_zinglon_pillar(void);
 void qa_test_special_state_reset(void);
 void qa_test_endless_attractor(void);
+void qa_test_attractor_targets(void);
 void qa_test_custom_ship_equip(void);
 void qa_test_endless_special_names(void);
 

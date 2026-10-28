@@ -127,7 +127,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       102          /* Customize loadouts and the stashed standard ship. */
+#define NET_VERSION       104          /* Top-edge culls wait until no sprite or shadow shows. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.
@@ -1805,6 +1805,7 @@ COMPILE_TIME_ASSERT(net_settings_block_fits,
 COMPILE_TIME_ASSERT(net_settings_epdiff_fits,
                     NET_SET_EPDIFF_TAIL_BIT + 2 * (EDW_COUNT - NET_SET_EPDIFF_PACKED - 1)
                     <= NET_SET_GUIDED_AIM_BIT);
+COMPILE_TIME_ASSERT(net_settings_reworks_fit, REWORK_COUNT <= 16);
 
 /* Where epdiff entry i (i >= NET_SET_EPDIFF_PACKED) sits in flags2. Entry 8 keeps its original
  * bits 1-2, below the shot-hitbox flag; the rest run from NET_SET_EPDIFF_TAIL_BIT up. */
@@ -1873,8 +1874,8 @@ static struct
 {
 	int  superSparkMode[SSW_COUNT];
 	int  epDiffMode[EDW_COUNT];
-	int  zicaLaserBase, zicaLaserLength;
-	bool zicaLaserLock, zicaLaserBuff;
+	int  zicaLaserBase;
+	bool reworkEnabled[REWORK_COUNT];
 	int  wallopSecondBolt;
 	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
 	bool arcadeRearGunScale, centeredShotHitboxes, guidedShotScreenAim, extraParallax;
@@ -1916,14 +1917,16 @@ int network_settings_pack(Uint8 *buf)
 	for (int i = NET_SET_EPDIFF_PACKED - 1; i >= 0; --i)
 		epdiff = (epdiff << 2) | (epDiffMode[i] & 3);
 
+	Uint16 reworks = 0;
+	for (int i = REWORK_COUNT - 1; i >= 0; --i)
+		reworks = (Uint16)((reworks << 1) | (reworkEnabled[i] ? 1 : 0));
+
 	// Destruct brings its own rollback and its own recovery (destruct_rollback.c), so both rows
 	// mean the same thing for every game type.
 	const bool rollback_applies = net_rollback;
 	const bool recovery_applies = net_desync_recovery && rollback_applies;
 
 	Uint16 flags = 0;
-	flags |= zicaLaserLock         ? 1 << 0 : 0;
-	flags |= zicaLaserBuff         ? 1 << 1 : 0;
 	flags |= chargeLaserCannon     ? 1 << 2 : 0;
 	flags |= restoreBaseDispensers ? 1 << 3 : 0;
 	flags |= rollback_applies      ? 1 << 4 : 0;  // rollback vs lockstep; host decides
@@ -1945,7 +1948,7 @@ int network_settings_pack(Uint8 *buf)
 	SDLNet_Write16(epdiff,                   &buf[2]);
 	SDLNet_Write16(flags,                    &buf[4]);
 	SDLNet_Write16(zicaLaserBase,            &buf[6]);
-	SDLNet_Write16(zicaLaserLength,          &buf[8]);
+	SDLNet_Write16(reworks,                  &buf[8]);
 	SDLNet_Write16(wallopSecondBolt,         &buf[10]);
 	SDLNet_Write16((Uint16)(xmas ? 2 : 1),   &buf[12]);  // live xmas as xmasMode 0..1; bias to 1..2
 	SDLNet_Write16(gameSpeed,                &buf[14]);
@@ -2007,9 +2010,7 @@ static void network_settings_stash(void)
 	memcpy(settings_local.superSparkMode, superSparkMode, sizeof(superSparkMode));
 	memcpy(settings_local.epDiffMode, epDiffMode, sizeof(epDiffMode));
 	settings_local.zicaLaserBase        = zicaLaserBase;
-	settings_local.zicaLaserLength      = zicaLaserLength;
-	settings_local.zicaLaserLock        = zicaLaserLock;
-	settings_local.zicaLaserBuff        = zicaLaserBuff;
+	memcpy(settings_local.reworkEnabled, reworkEnabled, sizeof(reworkEnabled));
 	settings_local.wallopSecondBolt     = wallopSecondBolt;
 	settings_local.chargeLaserCannon    = chargeLaserCannon;
 	settings_local.restoreBaseDispensers = restoreBaseDispensers;
@@ -2107,8 +2108,6 @@ int network_settings_adopt(const Uint8 *buf)
 			epDiffMode[i] = EPDIFF_AUTO;
 	}
 
-	zicaLaserLock         = (flags & (1 << 0)) != 0;
-	zicaLaserBuff         = (flags & (1 << 1)) != 0;
 	chargeLaserCannon     = (flags & (1 << 2)) != 0;
 	restoreBaseDispensers = (flags & (1 << 3)) != 0;
 	arcadeLifeBoost       = (flags & (1 << 7)) != 0;
@@ -2132,16 +2131,17 @@ int network_settings_adopt(const Uint8 *buf)
 		network_host_battle_level = 1;
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
-	zicaLaserLength  = SDLNet_Read16(&buf[8]);
 	wallopSecondBolt = SDLNet_Read16(&buf[10]);
 	xmasMode         = (int)SDLNet_Read16(&buf[12]) - 1;
 	gameSpeed        = (JE_byte)SDLNet_Read16(&buf[14]);
 
+	const Uint16 reworks = SDLNet_Read16(&buf[8]);
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		reworkEnabled[i] = ((reworks >> i) & 1) != 0;
+
 	// Clamp everything: a malformed or hostile packet must not index past an array.
 	if (zicaLaserBase < 0 || zicaLaserBase >= ZICA_BASE_COUNT)
 		zicaLaserBase = ZICA_BASE_AUTO;
-	if (zicaLaserLength < 0 || zicaLaserLength >= ZICA_LEN_COUNT)
-		zicaLaserLength = ZICA_LEN_SHORT;
 	if (wallopSecondBolt < 0 || wallopSecondBolt >= SUPER_SPARKS_COUNT)
 		wallopSecondBolt = SUPER_SPARKS_AUTO;
 	if (xmasMode < 0 || xmasMode > 1)
@@ -2955,7 +2955,7 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 	}
 }
 
-// Separate Arcade has no outpost. Settle both custom-content streams before its first level.
+// Settle both custom-content streams before the first outpost or level.
 void network_custom_content_rendezvous(void)
 {
 	if (!isNetworkGame || !custom_ships_multiplayer_mode())
@@ -3448,9 +3448,7 @@ void network_settings_restore(void)
 	memcpy(superSparkMode, settings_local.superSparkMode, sizeof(superSparkMode));
 	memcpy(epDiffMode, settings_local.epDiffMode, sizeof(epDiffMode));
 	zicaLaserBase         = settings_local.zicaLaserBase;
-	zicaLaserLength       = settings_local.zicaLaserLength;
-	zicaLaserLock         = settings_local.zicaLaserLock;
-	zicaLaserBuff         = settings_local.zicaLaserBuff;
+	memcpy(reworkEnabled, settings_local.reworkEnabled, sizeof(reworkEnabled));
 	wallopSecondBolt      = settings_local.wallopSecondBolt;
 	chargeLaserCannon     = settings_local.chargeLaserCannon;
 	restoreBaseDispensers = settings_local.restoreBaseDispensers;

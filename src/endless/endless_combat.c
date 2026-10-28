@@ -716,7 +716,7 @@ int endlessEliteContactPercent(int eliteState)
 #define ENDLESS_RAM_INVULN_CADENCE 10
 bool endlessRamWhileInvulnerable(uint invulnerableTicks)
 {
-	return endlessFxActive() && invulnerableTicks % ENDLESS_RAM_INVULN_CADENCE == 0;
+	return reworkActive(REWORK_RAMMING) && invulnerableTicks % ENDLESS_RAM_INVULN_CADENCE == 0;
 }
 
 // The link latch pays one bounty per logical enemy.
@@ -853,8 +853,11 @@ bool endlessSpecialPickup(int slot)
 static bool endlessAttractorTakes(int slot)
 {
 	const int value = enemy[slot].evalue;
-	return enemyAvail[slot] != 1 && enemy[slot].scoreitem && value != 0 && value < 30000 &&
-	       !endlessSpecialPickup(slot);
+	if (enemyAvail[slot] == 1 || !enemy[slot].scoreitem || value == 0 || endlessSpecialPickup(slot))
+		return false;
+	if (value >= 30000)
+		return value == 30000 && superArcadeMode == SA_NONE;
+	return value <= 10000 || value > 20000;
 }
 
 void endlessAttractorFire(uint target, int pull)
@@ -876,7 +879,7 @@ void endlessAttractorFire(uint target, int pull)
 
 void endlessAttractorTick(void)
 {
-	if (!endlessFxActive())
+	if (!reworkActive(REWORK_ATTRACTOR))
 		return;
 
 	for (int i = 0; i < (int)COUNTOF(enemy); ++i)

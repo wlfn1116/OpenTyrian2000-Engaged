@@ -377,12 +377,12 @@ bool gaugeFlashArmor   = true;
 /* Let a burning flare special grade the whole screen its colour, as shipped (the paint is in
    game_loop.c; the flare that installs it is JE_doSpecialShot in specials.c). */
 bool specialScreenTint = true;
-/* Zica Laser Lv11 tweaks (JE_applyZicaLaserConfig in episodes.c; front-weapon fire
-   loop in player_ship.c). */
+/* Zica Laser Lv11 pattern (JE_applyZicaLaserConfig in episodes.c). */
 int zicaLaserBase = ZICA_BASE_EP4;      /* ZICA_BASE_*: Lv11 shot pattern */
-int zicaLaserLength = ZICA_LEN_SHORT;   /* ZICA_LEN_* : Lv11 shot length */
-bool zicaLaserLock = false;             /* Length=Long: ship-lock the side beams (default = free) */
-bool zicaLaserBuff = true;              /* also fire the Lv10 beam alongside the Lv11 shots */
+bool reworkEnabled[REWORK_COUNT] = {
+	[REWORK_ZICA_BUFF] = true, [REWORK_ATTRACTOR] = true, [REWORK_ORANGE_SHIELD] = true,
+	[REWORK_RAMMING] = true, [REWORK_ITEM_NAMES] = true,
+};
 /* Re-add the cut DOS "Charge-Laser Cannon" sidekick to its original shops + the debug
    menu (JE_applyChargeLaserCannon in episodes.c). */
 bool chargeLaserCannon = true;
@@ -472,11 +472,13 @@ static const EnhancementSetting enhancementSettings[] = {
 	{ .boolSetting = &arcadeRandomBalls,  .vanilla = false, .engaged = true },
 	{ .boolSetting = &arcadeRearGunScale, .vanilla = false, .engaged = true },
 
-	/* Zica Laser Lv11. */
+	/* Zica Laser Lv11, and the Endless reworks. */
 	{ .intSetting = &zicaLaserBase,   .vanilla = ZICA_BASE_AUTO, .engaged = ZICA_BASE_EP4 },
-	{ .intSetting = &zicaLaserLength, .vanilla = ZICA_LEN_SHORT, .engaged = ZICA_LEN_SHORT },
-	{ .boolSetting = &zicaLaserLock,  .vanilla = false,          .engaged = false },
-	{ .boolSetting = &zicaLaserBuff,  .vanilla = false,          .engaged = true },
+	{ .boolSetting = &reworkEnabled[REWORK_ZICA_BUFF],     .vanilla = false, .engaged = true },
+	{ .boolSetting = &reworkEnabled[REWORK_ATTRACTOR],     .vanilla = false, .engaged = true },
+	{ .boolSetting = &reworkEnabled[REWORK_ORANGE_SHIELD], .vanilla = false, .engaged = true },
+	{ .boolSetting = &reworkEnabled[REWORK_RAMMING],       .vanilla = false, .engaged = true },
+	{ .boolSetting = &reworkEnabled[REWORK_ITEM_NAMES],    .vanilla = false, .engaged = true },
 
 	/* Vanilla uses Auto throughout. Engaged pins the Xega Ball and presentation rows listed in
 	 * GUIDE.md; the other gameplay changes stay on Auto. */
@@ -648,6 +650,26 @@ static void load_int_flag(const ConfigSection *section, const char *key, bool *f
 	int value = *flag ? 1 : 0;
 	config_get_int_option(section, key, &value);
 	*flag = (value != 0);
+}
+
+static const char *const reworkKeys[] = {
+	"zica_laser_buff", "rework_attractor", "rework_orange_shield", "rework_ramming",
+	"rework_item_names"
+};
+COMPILE_TIME_ASSERT(rework_keys_cover_reworks, COUNTOF(reworkKeys) == REWORK_COUNT);
+
+void reworkConfigLoad(const ConfigSection *section)
+{
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		load_int_flag(section, reworkKeys[i], &reworkEnabled[i]);
+}
+
+void reworkConfigSave(ConfigSection *section)
+{
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		config_set_int_option(section, reworkKeys[i], reworkEnabled[i] ? 1 : 0);
+	config_remove_option(section, "zica_l11_length");
+	config_remove_option(section, "zica_l11_lock");
 }
 
 static bool load_opentyrian_config(void)
@@ -979,12 +1001,7 @@ static bool load_opentyrian_config(void)
 		if (zicaLaserBase < 0 || zicaLaserBase >= ZICA_BASE_COUNT)
 			zicaLaserBase = ZICA_BASE_EP4;
 
-		config_get_int_option(section, "zica_l11_length", &zicaLaserLength);
-		if (zicaLaserLength < 0 || zicaLaserLength >= ZICA_LEN_COUNT)
-			zicaLaserLength = ZICA_LEN_SHORT;
-
-		load_int_flag(section, "zica_l11_lock", &zicaLaserLock);
-		load_int_flag(section, "zica_laser_buff", &zicaLaserBuff);
+		reworkConfigLoad(section);
 		load_int_flag(section, "charge_laser_cannon", &chargeLaserCannon);
 		load_int_flag(section, "restore_base_dispensers", &restoreBaseDispensers);
 		load_int_flag(section, "arcade_life_boost", &arcadeLifeBoost);
@@ -1217,9 +1234,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "gauge_flash_armor", gaugeFlashArmor ? 1 : 0);
 	config_set_int_option(section, "special_screen_tint", specialScreenTint ? 1 : 0);
 	config_set_int_option(section, "zica_l11_base", zicaLaserBase);
-	config_set_int_option(section, "zica_l11_length", zicaLaserLength);
-	config_set_int_option(section, "zica_l11_lock", zicaLaserLock ? 1 : 0);
-	config_set_int_option(section, "zica_laser_buff", zicaLaserBuff ? 1 : 0);
+	reworkConfigSave(section);
 	config_set_int_option(section, "charge_laser_cannon", chargeLaserCannon ? 1 : 0);
 	config_set_int_option(section, "restore_base_dispensers", restoreBaseDispensers ? 1 : 0);
 	config_set_int_option(section, "arcade_life_boost", arcadeLifeBoost ? 1 : 0);

@@ -379,6 +379,24 @@ void qa_test_effect_gates(void)
 	         && endlessMartyrdomBurstShots(1, 3) == 0 && !endlessSeekerActive()
 	         && endlessStaticDischargeDrain(10) == 0,
 	         "Endless reactive combat effects cannot leak into normal play");
+
+	bool savedReworks[REWORK_COUNT];
+	memcpy(savedReworks, reworkEnabled, sizeof(savedReworks));
+	memset(reworkEnabled, 0, sizeof(reworkEnabled));
+	bool reworksOff = true;
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		reworksOff = reworksOff && !reworkActive((Rework)i);
+	reworkEnabled[REWORK_ATTRACTOR] = true;
+	const bool oneOn = reworkActive(REWORK_ATTRACTOR) && !reworkActive(REWORK_RAMMING);
+	memset(reworkEnabled, 0, sizeof(reworkEnabled));
+	endlessMode = true;
+	bool endlessAll = true;
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		endlessAll = endlessAll && reworkActive((Rework)i);
+	qa_check(reworksOff && oneOn && endlessAll,
+	         "outside Endless each rework follows its own toggle, and Endless keeps every one on");
+	memcpy(reworkEnabled, savedReworks, sizeof(savedReworks));
+
 	endlessMode = savedMode;
 	endlessCampaignMods = savedCampaign;
 	endlessActiveMods = savedMods;

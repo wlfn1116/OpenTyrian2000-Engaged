@@ -213,7 +213,7 @@ const char *JE_specialName(JE_byte id)
 		return special[0].name;  // the "None" record
 
 	// Matched by record data so it holds for both the ep1-3 and the ep4/5 item table.
-	if (endlessFxActive() && special[id].stype == 1)
+	if (reworkActive(REWORK_ITEM_NAMES) && special[id].stype == 1)
 	{
 		for (size_t i = 0; i < COUNTOF(endlessSpecialNames); ++i)
 		{
@@ -230,7 +230,7 @@ const char *JE_specialName(JE_byte id)
 // Test range (48..60), so an id match is safe for every loaded table.
 const char *JE_weaponPortName(JE_word id)
 {
-	if (endlessMode)
+	if (reworkActive(REWORK_ITEM_NAMES))
 	{
 		switch (id)
 		{
@@ -251,7 +251,7 @@ const char *JE_shipName(JE_word id)
 		return ships[0].name;  // the "None" record; a shipedit ship is named by its caller
 
 	// Three hulls the Endless shop renames after their Super Arcade counterparts.
-	if (endlessMode)
+	if (reworkActive(REWORK_ITEM_NAMES))
 	{
 		switch (id)
 		{
@@ -426,68 +426,33 @@ static void JE_applyChargeLaserCannon(void)
 static JE_shortint zicaNativeSx[8], zicaNativeBx[8];
 static bool zicaNativeCaptured = false;
 
-// Prepare the configured Zica Lv11 short pattern and long side-beam templates. Fire-time code
-// selects the templates and optional center beam.
+// Shape the configured Zica Lv11 pattern. Endless plays Auto as the Ep 4 spread.
 static void JE_applyZicaLaserConfig(void)
 {
-	const int wn11 = weaponPort[5].op[0][10];  // Zica Laser (port 5), Lv11 weapon (209)
-	const int wn10 = weaponPort[5].op[0][9];   // Lv10 weapon (208); the long-beam template
-	if (wn11 <= 0 || wn11 > WEAP_NUM || wn10 <= 0 || wn10 > WEAP_NUM)
+	const int wn11 = weaponPort[ZICA_LASER_PORT].op[0][ZICA_LV11_OP];  // weapon 209
+	if (wn11 <= 0 || wn11 > WEAP_NUM)
 		return;
 
-	// Effective horizontal pattern: spread (ep4) vs two straight columns (ep1-3).
-	bool spread;
-	if (zicaLaserBase == ZICA_BASE_EP13)
-		spread = false;
-	else if (zicaLaserBase == ZICA_BASE_EP4)
-		spread = true;
-	else  // ZICA_BASE_AUTO: whatever this episode's data shipped with
-		spread = zicaNativeCaptured ? (zicaNativeSx[0] != 0) : true;
+	const bool endlessAuto = zicaLaserBase == ZICA_BASE_AUTO && endlessMode;
+	const int base = endlessAuto ? ZICA_BASE_EP4 : zicaLaserBase;
 
 	static const JE_shortint sx_spread[8]   = { -1, -1, -1, -1,  1,  1,  1,  1 };
 	static const JE_shortint bx_spread[8]   = {  0,  0,  0,  0,  0,  0,  0,  0 };
 	static const JE_shortint sx_straight[8] = {  0,  0,  0,  0,  0,  0,  0,  0 };
 	static const JE_shortint bx_straight[8] = { -8, -8, -8, -8,  8,  8,  8,  8 };
 
-	// Shape the short level 11 weapon. Auto restores vanilla; forced modes replace
+	// Shape the level 11 weapon. Auto restores vanilla; forced modes replace
 	// horizontal layout. Copy only the eight source slots.
-	if (zicaLaserBase == ZICA_BASE_AUTO && zicaNativeCaptured)
+	if (base == ZICA_BASE_AUTO && zicaNativeCaptured)
 	{
 		memcpy(weapons[wn11].sx, zicaNativeSx, sizeof(zicaNativeSx));
 		memcpy(weapons[wn11].bx, zicaNativeBx, sizeof(zicaNativeBx));
 	}
-	else if (zicaLaserBase != ZICA_BASE_AUTO)
+	else if (base != ZICA_BASE_AUTO)
 	{
+		const bool spread = base == ZICA_BASE_EP4;
 		memcpy(weapons[wn11].sx, spread ? sx_spread : sx_straight, sizeof(sx_spread));
 		memcpy(weapons[wn11].bx, spread ? bx_spread : bx_straight, sizeof(bx_spread));
-	}
-
-	// Build long side beams from the Lv10 template. Lock keeps them ship-bound; otherwise columns
-	// travel straight and the spread pattern drifts outward.
-	memcpy(&weapons[ZICA_LONG_WEAP_LEFT],  &weapons[wn10], sizeof(JE_WeaponType));
-	memcpy(&weapons[ZICA_LONG_WEAP_RIGHT], &weapons[wn10], sizeof(JE_WeaponType));
-	for (int i = 0; i < 8; ++i)
-	{
-		JE_shortint lsx, rsx, lbx, rbx;
-		if (zicaLaserLock)
-		{
-			lsx = rsx = 120;         // ship-locked (sentinel), glued to the ship
-			lbx = -8; rbx = 8;       // 8px left/right so both columns are visible
-		}
-		else if (spread)
-		{
-			lsx = -1; rsx = 1;       // drift out from the centre (ep4)
-			lbx = 0;  rbx = 0;
-		}
-		else
-		{
-			lsx = rsx = 0;           // straight up (ep1-3)
-			lbx = -8; rbx = 8;
-		}
-		weapons[ZICA_LONG_WEAP_LEFT].sx[i]  = lsx;
-		weapons[ZICA_LONG_WEAP_RIGHT].sx[i] = rsx;
-		weapons[ZICA_LONG_WEAP_LEFT].bx[i]  = lbx;
-		weapons[ZICA_LONG_WEAP_RIGHT].bx[i] = rbx;
 	}
 }
 
@@ -1007,7 +972,7 @@ void JE_loadItemDat(void)
 	// Capture the Zica Lv11 native pattern now, while wpn 209 still holds freshly-loaded
 	// data, so ZICA_BASE_AUTO can restore it later (JE_applyZicaLaserConfig may reshape it).
 	{
-		const int wn11 = weaponPort[5].op[0][10];
+		const int wn11 = weaponPort[ZICA_LASER_PORT].op[0][ZICA_LV11_OP];
 		if (wn11 > 0 && wn11 <= WEAP_NUM)
 		{
 			memcpy(zicaNativeSx, weapons[wn11].sx, sizeof(zicaNativeSx));
@@ -1016,7 +981,7 @@ void JE_loadItemDat(void)
 		}
 	}
 
-	JE_applyZicaLaserConfig();      // shape the configured Lv11 pattern + build the long beams
+	JE_applyZicaLaserConfig();      // shape the configured Lv11 pattern
 
 	JE_applySuperSparks();          // restore the ep4/5 superspark trails on the ep1-3 weapons
 

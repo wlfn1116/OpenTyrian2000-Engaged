@@ -478,29 +478,40 @@ static void spDrawText(int x, int y, const char *text, Sint8 value)
 	                    small_font, centered, 15, value, false, 1);
 }
 
-static int spDrawWrapped(int x, int y, const char *text, Sint8 value)
+static const char *spWrapSplit(const char *text, char *first, size_t n)
 {
-	char first[48];
-	SDL_strlcpy(first, text, sizeof(first));
+	SDL_strlcpy(first, text, n);
 	if (JE_textWidth(first, small_font) <= SP_INFO_X1 - SP_INFO_X0)
-	{
-		spDrawText(x, y, first, value);
-		return 1;
-	}
+		return NULL;
 	for (size_t cut = strlen(first); cut > 0; --cut)
 	{
 		if (first[cut] != ' ')
 			continue;
 		first[cut] = '\0';
 		if (JE_textWidth(first, small_font) <= SP_INFO_X1 - SP_INFO_X0)
-		{
-			spDrawText(x, y, first, value);
-			spDrawText(x, y + 10, text + cut + 1, value);
-			return 2;
-		}
+			return text + cut + 1;
 	}
-	spDrawText(x, y, text, value);
-	return 1;
+	SDL_strlcpy(first, text, n);
+	return NULL;
+}
+
+static int spDrawWrapped(int x, int y, const char *text, Sint8 value)
+{
+	char first[48];
+	const char *const rest = spWrapSplit(text, first, sizeof(first));
+	spDrawText(x, y, first, value);
+	if (rest == NULL)
+		return 1;
+	spDrawText(x, y + 10, rest, value);
+	return 2;
+}
+
+bool spritePickerTagFits(const char *tag)
+{
+	char first[48];
+	const char *const rest = spWrapSplit(tag, first, sizeof(first));
+	return JE_textWidth(first, small_font) <= SP_INFO_X1 - SP_INFO_X0
+	    && (rest == NULL || JE_textWidth(rest, small_font) <= SP_INFO_X1 - SP_INFO_X0);
 }
 
 static void spInfoNumber(const SpState *s, int cursor, char *line, size_t n)
@@ -584,17 +595,18 @@ static void spDraw(const SpState *s)
 
 	char line[48];
 	spInfoNumber(s, cursor, line, sizeof(line));
-	spDrawText(mid, iy1 + 5, line, s->typed[0] != '\0' ? 7 : 6);
+	const Sint8 tagValue = s->typed[0] != '\0' ? 7 : 6;
+	const int nameY = iy1 + 5 + 10 * spDrawWrapped(mid, iy1 + 5, line, tagValue);
 
 	char name[48];
 	const char *const label = spInfoLabel(p, cursor, name, sizeof(name));
-	const int nameLines = spDrawWrapped(mid, iy1 + 15, label, 3);
+	const int nameLines = spDrawWrapped(mid, nameY, label, 3);
 
 	if (spShowsWas(s))
 	{
 		snprintf(line, sizeof(line), "Was %d",
 		         spValue(&spec->pages[s->originalPage], s->originalCell));
-		spDrawText(mid, iy1 + 15 + 10 * nameLines, line, 2);
+		spDrawText(mid, nameY + 10 * nameLines, line, 2);
 	}
 
 	const char *const hint = (p->listTag != NULL)

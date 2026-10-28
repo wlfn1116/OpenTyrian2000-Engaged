@@ -111,7 +111,7 @@ run.
 | 9 | peer-vanish | Host exits cleanly after the joiner disappears |
 | 10 | sidekick-combos | Four mount combinations, including charge and custom weapons |
 | 11 | menu-race | Both players press Esc on the same rollback frame |
-| 12 | endless-zones | Ten zones cover the modifier registry and wallet parity |
+| 12 | endless-zones | Ten zones cover the modifier registry and wallet parity once both purchases land |
 | 13 | campaign-shop | Shop protocol, online Save routing, custom weapons, and episode transition |
 | 14 | double-earnings | Host publishes settings and the joiner adopts them |
 | 15 | soak | Long accelerated flight with working-set checks |

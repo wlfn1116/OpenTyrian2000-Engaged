@@ -853,8 +853,9 @@ void qa_test_network_settings(void)
 	int savedSpark[SSW_COUNT], savedEpDiff[EDW_COUNT];
 	memcpy(savedSpark, superSparkMode, sizeof(savedSpark));
 	memcpy(savedEpDiff, epDiffMode, sizeof(savedEpDiff));
-	const int savedZicaBase = zicaLaserBase, savedZicaLength = zicaLaserLength;
-	const bool savedZicaLock = zicaLaserLock, savedZicaBuff = zicaLaserBuff;
+	const int savedZicaBase = zicaLaserBase;
+	bool savedReworks[REWORK_COUNT];
+	memcpy(savedReworks, reworkEnabled, sizeof(savedReworks));
 	const int savedWallop = wallopSecondBolt;
 	const bool savedCharge = chargeLaserCannon, savedDispensers = restoreBaseDispensers;
 	const bool savedLifeBoost = arcadeLifeBoost, savedRandomBalls = arcadeRandomBalls;
@@ -918,8 +919,9 @@ void qa_test_network_settings(void)
 		superSparkMode[i] = i % SUPER_SPARKS_COUNT;
 	for (int i = 0; i < EDW_COUNT; ++i)
 		epDiffMode[i] = i % EPDIFF_MODE_COUNT;
-	zicaLaserBase = ZICA_BASE_EP4; zicaLaserLength = ZICA_LEN_LONG;
-	zicaLaserLock = true; zicaLaserBuff = false; wallopSecondBolt = SUPER_SPARKS_ON;
+	zicaLaserBase = ZICA_BASE_EP4; wallopSecondBolt = SUPER_SPARKS_ON;
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		reworkEnabled[i] = i % 2 == 0;
 	chargeLaserCannon = true; restoreBaseDispensers = false;
 	arcadeLifeBoost = true; arcadeRandomBalls = false; arcadeRearGunScale = true;
 	centeredShotHitboxes = true; guidedShotScreenAim = true; extraParallax = true;
@@ -957,8 +959,9 @@ void qa_test_network_settings(void)
 	/* A joiner has different local preferences before it adopts the host block. */
 	for (int i = 0; i < SSW_COUNT; ++i) superSparkMode[i] = SUPER_SPARKS_OFF;
 	for (int i = 0; i < EDW_COUNT; ++i) epDiffMode[i] = EPDIFF_EP13;
-	zicaLaserBase = ZICA_BASE_AUTO; zicaLaserLength = ZICA_LEN_SHORT;
-	zicaLaserLock = false; zicaLaserBuff = true; wallopSecondBolt = SUPER_SPARKS_OFF;
+	zicaLaserBase = ZICA_BASE_AUTO; wallopSecondBolt = SUPER_SPARKS_OFF;
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		reworkEnabled[i] = i % 2 != 0;
 	chargeLaserCannon = false; restoreBaseDispensers = true;
 	arcadeLifeBoost = false; arcadeRandomBalls = true; arcadeRearGunScale = false;
 	centeredShotHitboxes = false; guidedShotScreenAim = false; extraParallax = false;
@@ -991,8 +994,8 @@ void qa_test_network_settings(void)
 	bool arraysMatch = true;
 	for (int i = 0; i < SSW_COUNT; ++i) arraysMatch &= superSparkMode[i] == i % SUPER_SPARKS_COUNT;
 	for (int i = 0; i < EDW_COUNT; ++i) arraysMatch &= epDiffMode[i] == i % EPDIFF_MODE_COUNT;
-	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_EP4 && zicaLaserLength == ZICA_LEN_LONG
-	         && zicaLaserLock && !zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_ON
+	for (int i = 0; i < REWORK_COUNT; ++i) arraysMatch &= reworkEnabled[i] == (i % 2 == 0);
+	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_EP4 && wallopSecondBolt == SUPER_SPARKS_ON
 	         && chargeLaserCannon && !restoreBaseDispensers && arcadeLifeBoost
 	         && !arcadeRandomBalls && arcadeRearGunScale && centeredShotHitboxes && guidedShotScreenAim
 	         && extraParallax && xmasMode == 1 && xmas && gameSpeed == 2
@@ -1021,8 +1024,8 @@ void qa_test_network_settings(void)
 	arraysMatch = true;
 	for (int i = 0; i < SSW_COUNT; ++i) arraysMatch &= superSparkMode[i] == SUPER_SPARKS_OFF;
 	for (int i = 0; i < EDW_COUNT; ++i) arraysMatch &= epDiffMode[i] == EPDIFF_EP13;
-	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_AUTO && zicaLaserLength == ZICA_LEN_SHORT
-	         && !zicaLaserLock && zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_OFF
+	for (int i = 0; i < REWORK_COUNT; ++i) arraysMatch &= reworkEnabled[i] == (i % 2 != 0);
+	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_AUTO && wallopSecondBolt == SUPER_SPARKS_OFF
 	         && !chargeLaserCannon && restoreBaseDispensers && !arcadeLifeBoost
 	         && arcadeRandomBalls && !arcadeRearGunScale && !centeredShotHitboxes && !guidedShotScreenAim
 	         && !extraParallax && xmasMode == -1 && !xmas && gameSpeed == 5
@@ -1072,7 +1075,7 @@ void qa_test_network_settings(void)
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		malformedClamped &= *expertSettings[i].value == expertSettings[i].hi;
 	qa_check(malformedClamped && zicaLaserBase == ZICA_BASE_AUTO
-	         && zicaLaserLength == ZICA_LEN_SHORT && wallopSecondBolt == SUPER_SPARKS_AUTO
+	         && wallopSecondBolt == SUPER_SPARKS_AUTO
 	         && xmasMode == 0 && !xmas && gameSpeed == 4 && noclipMode < NOCLIP_NUM
 	         && chargeSidekickAutofire < CHARGE_AUTOFIRE_NUM
 	         && debugTwiddleSpecial <= SPECIAL_NUM,
@@ -1082,8 +1085,8 @@ void qa_test_network_settings(void)
 
 	memcpy(superSparkMode, savedSpark, sizeof(savedSpark));
 	memcpy(epDiffMode, savedEpDiff, sizeof(savedEpDiff));
-	zicaLaserBase = savedZicaBase; zicaLaserLength = savedZicaLength;
-	zicaLaserLock = savedZicaLock; zicaLaserBuff = savedZicaBuff; wallopSecondBolt = savedWallop;
+	zicaLaserBase = savedZicaBase; wallopSecondBolt = savedWallop;
+	memcpy(reworkEnabled, savedReworks, sizeof(savedReworks));
 	chargeLaserCannon = savedCharge; restoreBaseDispensers = savedDispensers;
 	arcadeLifeBoost = savedLifeBoost; arcadeRandomBalls = savedRandomBalls;
 	arcadeRearGunScale = savedRearScale; centeredShotHitboxes = savedCenteredHitboxes;

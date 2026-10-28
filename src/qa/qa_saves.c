@@ -17,6 +17,7 @@
 #include "render_list.h"
 #include "save_menu.h"
 #include "savegame.h"
+#include "setup_menu.h"
 #include "shots.h"
 
 #include "SDL.h"
@@ -48,6 +49,57 @@ void qa_test_config_option_removal(void)
 
 	config_deinit(&config);
 	qa_check(config.sections_count == 0 && config.sections == NULL, "config teardown resets section ownership");
+}
+
+void qa_test_rework_config(void)
+{
+	bool saved[REWORK_COUNT];
+	memcpy(saved, reworkEnabled, sizeof(saved));
+
+	Config config = {0};
+	ConfigSection *section = config_find_or_add_section(&config, "test", NULL);
+	qa_check(section != NULL, "the rework config test creates its section");
+	if (section != NULL)
+	{
+		config_set_option(section, "zica_l11_length", "1");
+		config_set_option(section, "zica_l11_lock", "1");
+		config_set_option(section, "zica_laser_buff", "0");
+
+		for (int i = 0; i < REWORK_COUNT; ++i)
+			reworkEnabled[i] = true;
+		reworkConfigLoad(section);
+		bool kept = !reworkEnabled[REWORK_ZICA_BUFF];
+		for (int i = 0; i < REWORK_COUNT; ++i)
+			kept = kept && (i == REWORK_ZICA_BUFF || reworkEnabled[i]);
+		qa_check(kept, "an old Zica Lv11 buff choice loads as the Zica Laser Buff rework, and "
+		         "reworks with no key keep their values");
+
+		for (int i = 0; i < REWORK_COUNT; ++i)
+			reworkEnabled[i] = i % 2 != 0;
+		reworkConfigSave(section);
+		qa_check(config_get_option(section, "zica_l11_length") == NULL
+		         && config_get_option(section, "zica_l11_lock") == NULL,
+		         "saving drops the retired Zica Lv11 length and lock keys");
+
+		for (int i = 0; i < REWORK_COUNT; ++i)
+			reworkEnabled[i] = i % 2 == 0;
+		reworkConfigLoad(section);
+		bool roundTrip = true;
+		for (int i = 0; i < REWORK_COUNT; ++i)
+			roundTrip = roundTrip && reworkEnabled[i] == (i % 2 != 0);
+		qa_check(roundTrip, "every rework toggle survives a config round trip");
+	}
+
+	config_deinit(&config);
+	memcpy(reworkEnabled, saved, sizeof(saved));
+
+	char detail[96] = "";
+	const bool wired = setupMenuSelfTest(detail, sizeof(detail));
+	char label[160];
+	snprintf(label, sizeof(label),
+	         "Setup's Reworks and Zica Laser Lv11 rows edit their own settings%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(wired, label);
 }
 
 void qa_test_fixed_pool_layout(void)
@@ -243,7 +295,8 @@ void qa_test_enhancement_presets(void)
 		{ .boolSetting = &guidedShotScreenAim, .poke = true, .name = "Guided Aim" },
 		{ .boolSetting = &arcadeLifeBoost, .poke = false, .name = "Arcade Modes" },
 		{ .intSetting = &epDiffMode[EDW_FLARE], .poke = EPDIFF_EP13, .name = "Item Data" },
-		{ .intSetting = &zicaLaserLength, .poke = ZICA_LEN_LONG, .name = "Zica Laser" },
+		{ .boolSetting = &reworkEnabled[REWORK_ZICA_BUFF], .poke = false, .name = "Zica Buff" },
+		{ .boolSetting = &reworkEnabled[REWORK_ATTRACTOR], .poke = false, .name = "Reworks" },
 		{ .intSetting = &epDiffMode[EDW_NEEDLE_LASER], .poke = EPDIFF_EP13, .name = "Firing Sounds" },
 		{ .intSetting = &epDiffMode[EDW_SOLAR_SHIELD], .poke = EPDIFF_EP13, .name = "Solar Shield icon" },
 		{ .intSetting = &epDiffMode[EDW_USHIP_PIC], .poke = EPDIFF_EP45, .name = "Shop Pictures" },
@@ -257,6 +310,17 @@ void qa_test_enhancement_presets(void)
 		enhancementApplyPreset(presets[p]);
 		qa_check(enhancementPresetState() == presets[p], "an applied preset reads back as itself");
 	}
+
+	enhancementApplyPreset(ENH_PRESET_VANILLA);
+	bool vanillaReworks = false;
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		vanillaReworks = vanillaReworks || reworkEnabled[i];
+	enhancementApplyPreset(ENH_PRESET_ENGAGED);
+	bool engagedAll = true;
+	for (int i = 0; i < REWORK_COUNT; ++i)
+		engagedAll = engagedAll && reworkEnabled[i];
+	qa_check(!vanillaReworks && engagedAll,
+	         "Vanilla turns every rework off; Engaged turns every one on");
 
 	for (size_t i = 0; i < COUNTOF(probes); ++i)
 	{

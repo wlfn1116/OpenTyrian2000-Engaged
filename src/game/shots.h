@@ -91,6 +91,11 @@ JE_integer player_shot_create(
 	JE_word mousex, JE_word mousey,
 	JE_word wpnum, JE_byte playernum);
 
+JE_integer player_shot_fire_port(
+	JE_word portnum, uint shot_i, JE_word px, JE_word py,
+	JE_word mousex, JE_word mousey,
+	uint mode, uint power, JE_byte playernum);
+
 /** Fire the Twin Pods follow-up at \a x + \a twindx after a successful primary shot. Returns the
  * new slot or MAX_PWEAPON; the caller spends the round. */
 JE_integer player_shot_create_twin(

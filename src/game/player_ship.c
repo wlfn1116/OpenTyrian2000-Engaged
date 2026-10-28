@@ -186,7 +186,7 @@ const JE_byte shipCombos[19][3] /* [0..12, 1..3] */ =
 JE_byte SFCurrentCode[2][21]; /* [1..2, 1..21] */
 JE_byte SFExecuted[2]; /* [1..2] */
 
-const uint shadowYDist = 10;
+const int shadowYDist = 10;
 
 JE_real optionSatelliteRotate;
 
@@ -2262,27 +2262,11 @@ redo:
 								const uint item_power = galagaMode ? 0 : arcade_weapon_power(this_player, temp) - 1,
 								           item_mode = (temp == REAR_WEAPON) ? this_player->weapon_mode - 1 : 0;
 
-								// Zica Lv11: Long uses side beams; Buff adds the center beam. Extras share one power cost.
-								const bool zica_l11 = (item == 5 && item_power == 10);
-								JE_word l11_primary = weaponPort[item].op[item_mode][item_power];
-								if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
-									l11_primary = ZICA_LONG_WEAP_LEFT;
-
 								// Opening Salvo was armed for this tick's whole volley before the
 								// special went out; see endlessArmOpeningSalvoForTick.
-								b = player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, l11_primary, playerNum_);
-
-								// Extra beams fire only when the primary shot succeeds.
-								if (b < MAX_PWEAPON && zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
-								{
-									JE_word saved_poweruse = weaponPort[item].poweruse;
-									weaponPort[item].poweruse = 0;
-									if (zicaLaserLength == ZICA_LEN_LONG)
-										player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, ZICA_LONG_WEAP_RIGHT, playerNum_);
-									if (zicaLaserBuff)
-										player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, weaponPort[item].op[item_mode][9], playerNum_);
-									weaponPort[item].poweruse = saved_poweruse;
-								}
+								b = player_shot_fire_port(item, temp, this_player->x,
+								                          this_player->y, *mouseX_, *mouseY_,
+								                          item_mode, item_power, playerNum_);
 							}
 						}
 					}
@@ -3348,7 +3332,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					if (playerHit > 255)
 						playerHit = 255;
-					// An invulnerable ship (Endless, on the cadence above) rams without being rammed.
+					// On the Ramming cadence above, an invulnerable ship rams without being rammed.
 					if (this_player->invulnerable_ticks == 0)
 						JE_playerDamage((JE_byte)playerHit, this_player);
 
@@ -3387,9 +3371,9 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						}
 						soundQueue[5] = S_ENEMY_HIT;
 					}
-					else if (endlessFxActive())
+					else if (reworkActive(REWORK_RAMMING))
 					{
-						// Endless: a ram kill is a kill, taken the way a killing shot takes it and
+						// A ram kill is a kill, taken the way a killing shot takes it and
 						// credited to the ship that rammed.
 						enemy_kill_group((unsigned)z, (int)playerNum_ - 1, (int)playerNum_ - 1);
 					}

@@ -178,3 +178,60 @@ void qa_test_firing_sound_levels(void)
 	memcpy(epDiffMode, savedMode, sizeof(savedMode));
 	JE_applyItemDataSettings();
 }
+
+static bool qa_zica_pattern_is(const JE_WeaponType *lv11, const JE_shortint *sx,
+                               const JE_shortint *bx)
+{
+	return memcmp(lv11->sx, sx, 8) == 0 && memcmp(lv11->bx, bx, 8) == 0;
+}
+
+void qa_test_zica_lv11_pattern(void)
+{
+	static const JE_shortint spreadSx[8]  = { -1, -1, -1, -1, 1, 1, 1, 1 };
+	static const JE_shortint columnsBx[8] = { -8, -8, -8, -8, 8, 8, 8, 8 };
+	static const JE_shortint flat[8]      = { 0 };
+
+	const int wn11 = weaponPort[ZICA_LASER_PORT].op[0][ZICA_LV11_OP];
+	qa_check(wn11 > 0 && wn11 <= WEAP_NUM, "the loaded item data has a Zica Laser Lv11 weapon");
+	if (wn11 <= 0 || wn11 > WEAP_NUM)
+		return;
+	const JE_WeaponType *const lv11 = &weapons[wn11];
+
+	const int savedBase = zicaLaserBase;
+	const JE_boolean savedEndless = endlessMode;
+
+	endlessMode = false;
+	zicaLaserBase = ZICA_BASE_AUTO;
+	JE_applyItemDataSettings();
+	JE_shortint nativeSx[8], nativeBx[8];
+	memcpy(nativeSx, lv11->sx, sizeof(nativeSx));
+	memcpy(nativeBx, lv11->bx, sizeof(nativeBx));
+	qa_check(qa_zica_pattern_is(lv11, spreadSx, flat) || qa_zica_pattern_is(lv11, flat, columnsBx),
+	         "Auto outside Endless keeps one of the two shipped Lv11 patterns");
+
+	zicaLaserBase = ZICA_BASE_EP13;
+	JE_applyItemDataSettings();
+	qa_check(qa_zica_pattern_is(lv11, flat, columnsBx), "Ep 1-3 forces the two straight columns");
+	zicaLaserBase = ZICA_BASE_EP4;
+	JE_applyItemDataSettings();
+	qa_check(qa_zica_pattern_is(lv11, spreadSx, flat), "Ep 4-5 forces the spread");
+
+	endlessMode = true;
+	zicaLaserBase = ZICA_BASE_AUTO;
+	JE_applyItemDataSettings();
+	qa_check(qa_zica_pattern_is(lv11, spreadSx, flat), "Endless plays Auto as the Ep 4-5 spread");
+	zicaLaserBase = ZICA_BASE_EP13;
+	JE_applyItemDataSettings();
+	qa_check(qa_zica_pattern_is(lv11, flat, columnsBx),
+	         "...while an Ep 1-3 pick still holds in Endless");
+
+	endlessMode = false;
+	zicaLaserBase = ZICA_BASE_AUTO;
+	JE_applyItemDataSettings();
+	qa_check(qa_zica_pattern_is(lv11, nativeSx, nativeBx),
+	         "leaving Endless puts the episode's own pattern back");
+
+	zicaLaserBase = savedBase;
+	endlessMode = savedEndless;
+	JE_applyItemDataSettings();
+}

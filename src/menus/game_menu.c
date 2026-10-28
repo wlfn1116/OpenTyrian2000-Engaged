@@ -1615,6 +1615,20 @@ static const char *customize_fault(void)
 	const SpritePickerPage skins = customize_skin_page("In-Game", NULL, 0);
 	if (skins.listTag != shipSkinName || skins.listName != NULL)
 		return "the Ship Skin picker shows graphic numbers instead of skin names";
+	char longTag[48];
+	for (int slot = 1; slot <= EXTRA_SHIP_SLOTS; ++slot)
+	{
+		customize_ship_tag(EXTRA_SHIP_ID_BASE + slot, longTag, sizeof(longTag));
+		if (!spritePickerTagFits(longTag))
+			return "a Custom Ship tag is cut short in the picker";
+	}
+	Sprite2_array *skinSheet;
+	const JE_word skinHull = player_seat_hull(0, &skinSheet);
+	int skinOrder[SHIP_SKIN_ORDER_MAX];
+	const int skinCount = shipSkinOrder(0, skinSheet, skinHull, skinOrder, COUNTOF(skinOrder));
+	for (int i = 0; i < skinCount; ++i)
+		if (!spritePickerTagFits(shipSkinName(skinOrder[i], longTag, sizeof(longTag))))
+			return "a Ship Skin name is cut short in the picker";
 
 	configure_ship_color_grid();
 	curMenu = MENU_SHIP_COLOR;
@@ -2787,6 +2801,19 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 
 /* Wire gameplay drives the real outpost protocol without menu input. It covers
  * purchases, perks, weapon designs, course selection, and the start barrier. */
+static void qa_report_zone_wallets(void)
+{
+	if (!endlessMode)
+		return;
+
+	/* Report both derived wallets for cross-peer comparison. */
+	printf("NET ZONE WALLETS depth=%d p1=%lld p2=%lld bounty=%llu mods=%016llx\n",
+	       endlessRunDepth, (long long)player[0].cash, (long long)player[1].cash,
+	       (unsigned long long)endlessCashBySource[ENDLESS_CASH_BOUNTY],
+	       (unsigned long long)endlessActiveMods);
+	fflush(stdout);
+}
+
 static void qa_shop_auto_visit(void)
 {
 	const ShopOutpostRoute route = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
@@ -2813,19 +2840,10 @@ static void qa_shop_auto_visit(void)
 		saveRouteTested = true;
 	}
 
-	if (endlessMode)
-	{
-		/* Report both derived wallets for cross-peer comparison. */
-		printf("NET ZONE WALLETS depth=%d p1=%lld p2=%lld bounty=%llu mods=%016llx\n",
-		       endlessRunDepth, (long long)player[0].cash, (long long)player[1].cash,
-		       (unsigned long long)endlessCashBySource[ENDLESS_CASH_BOUNTY],
-		       (unsigned long long)endlessActiveMods);
-		fflush(stdout);
-	}
-
 	// Hold a final barrier before ending the scheduled network test.
 	if (qa_net_zones > 0 && qa_net_zones_cleared >= qa_net_zones)
 	{
+		qa_report_zone_wallets();
 		network_prepare(PACKET_WAITING);
 		network_send(4);  // PACKET_WAITING (final barrier)
 
@@ -2906,6 +2924,7 @@ static void qa_shop_auto_visit(void)
 	}
 
 	shopLeaveOutpost(&route);
+	qa_report_zone_wallets();
 
 	fprintf(stderr, "net gameplay: outpost auto-visit done (mainLevel %d)\n", (int)mainLevel);
 	fflush(stderr);
@@ -7917,25 +7936,8 @@ void JE_weaponViewFrame(void)
 			           item_power = shopPlayer()->items.weapon[i].power - 1,
 			           item_mode = (i == REAR_WEAPON) ? shopPlayer()->weapon_mode - 1 : 0;
 
-			// Zica Laser Lv11 tweaks: mirror the in-game fire (JE_mainGamePlayerFunctions) so the
-			// preview matches.
-			const bool zica_l11 = (item == 5 && item_power == 10);
-			JE_word l11_primary = weaponPort[item].op[item_mode][item_power];
-			if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
-				l11_primary = ZICA_LONG_WEAP_LEFT;
-
-			b = player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, l11_primary, 1);
-
-			if (b < MAX_PWEAPON && zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
-			{
-				JE_word saved_poweruse = weaponPort[item].poweruse;
-				weaponPort[item].poweruse = 0;
-				if (zicaLaserLength == ZICA_LEN_LONG)
-					player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, ZICA_LONG_WEAP_RIGHT, 1);
-				if (zicaLaserBuff)
-					player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, weaponPort[item].op[item_mode][9], 1);
-				weaponPort[item].poweruse = saved_poweruse;
-			}
+			b = player_shot_fire_port(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY,
+			                          item_mode, item_power, 1);
 		}
 	}
 

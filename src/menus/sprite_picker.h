@@ -73,5 +73,6 @@ int spritePickerIndexOf(const int *values, int count, int value);
 int spritePickerCycle(const int *values, int count, int current, int dir);
 bool spritePickerBlocksSelfTest(const SpritePickerPage *page, char *detail, size_t detailSize);
 bool spritePickerTagSelfTest(char *detail, size_t detailSize);
+bool spritePickerTagFits(const char *tag);
 
 #endif // SPRITE_PICKER_H

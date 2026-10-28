@@ -13,6 +13,7 @@
 
 // Combat effects can be enabled in a campaign without enabling Endless run flow.
 static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
+static inline bool reworkActive(Rework r) { return endlessFxActive() || reworkEnabled[r]; }
 
 /* Co-op shares the route and modifiers, but each player owns their economy and upgrades.
  * See doc/notes.md#session-and-outpost. */

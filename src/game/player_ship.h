@@ -53,7 +53,7 @@ extern const JE_byte keyboardCombos[26][8];
 extern const JE_byte shipCombos[19][3];
 extern JE_byte SFCurrentCode[2][21];
 extern JE_byte SFExecuted[2];
-extern const uint shadowYDist;
+extern const int shadowYDist;
 extern JE_real optionSatelliteRotate;
 extern JE_integer optionAttachmentMove[2];                               // per sidekick slot (LEFT/RIGHT)
 extern JE_boolean optionAttachmentLinked[2], optionAttachmentReturn[2];  // so both front options can launch

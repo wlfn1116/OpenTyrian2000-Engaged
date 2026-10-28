@@ -180,8 +180,6 @@ static const char *const gaugeGradNames[] = { "Up", "Down", "Left", "Right" };
 // Shared episode-data labels; the small font lacks a plus glyph, so use "Ep 4-5".
 static const char *const episodeNames[] = { "Auto", "Ep 1-3", "Ep 4-5" };
 
-static const char *const zicaLengthNames[] = { "Short", "Long" };
-
 // Indexed by the SUPER_SPARKS_* enum (config.h).
 static const char *const sparkModeNames[] = { "Auto", "On", "Off" };
 
@@ -221,7 +219,6 @@ NAME_PICKER(enemyBarLayout, enemyBarLayoutNames)
 NAME_PICKER(enemyBarPosition, enemyBarPositionNames)
 NAME_PICKER(gaugeGrad, gaugeGradNames)
 NAME_PICKER(episode, episodeNames)
-NAME_PICKER(zicaLength, zicaLengthNames)
 NAME_PICKER(sparkMode, sparkModeNames)
 NAME_PICKER(customEndless, customEndlessNames)
 NAME_PICKER(sfxFilter, sfxFilterNames)
@@ -369,9 +366,6 @@ typedef enum
 
 	/* Enhancements -> Episode Versions. */
 	MENU_ITEM_ZICA_BASE,
-	MENU_ITEM_ZICA_LENGTH,
-	MENU_ITEM_ZICA_LOCK,
-	MENU_ITEM_ZICA_BUFF,
 
 	/* Enhancements -> Gameplay. */
 	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (game_loop.c)
@@ -418,7 +412,9 @@ typedef enum
 	MENU_ITEM_SPARKS_MODE_BASE,                                              // +0..SSW_COUNT-1
 	MENU_ITEM_SPARKS_CAP_BASE = MENU_ITEM_SPARKS_MODE_BASE + SSW_COUNT,      // +0..SSW_COUNT-1
 	MENU_ITEM_EPDIFF_BASE     = MENU_ITEM_SPARKS_CAP_BASE + SSW_COUNT,       // +0..EDW_COUNT-1
-	MENU_ITEM_ARCADE_SHIP_BASE = MENU_ITEM_EPDIFF_BASE + EDW_COUNT,  // keep LAST: +0..+8 are the 9 arcade ships
+	MENU_ITEM_REWORK_BASE     = MENU_ITEM_EPDIFF_BASE + EDW_COUNT,
+	// keep LAST: +0..+8 are the 9 arcade ships
+	MENU_ITEM_ARCADE_SHIP_BASE = MENU_ITEM_REWORK_BASE + REWORK_COUNT,
 } MenuItemId;
 
 typedef enum
@@ -440,9 +436,9 @@ typedef enum
 	MENU_GAMEPLAY,
 	MENU_ARCADE_MODES,  // Gameplay -> Arcade Modes (settings); MENU_ARCADE below is the ship picker
 	MENU_EPISODE_VERSIONS,
-	MENU_ZICA_LASER,
 	MENU_FIRING_SOUNDS,
 	MENU_SHOP_PICTURES,
+	MENU_REWORKS,
 	MENU_DIAGNOSTICS,
 	MENU_EXTRA,
 	MENU_SECRET_MODES,
@@ -525,7 +521,6 @@ static int *menuItemIntSetting(MenuItemId id)
 	case MENU_ITEM_GAUGE_GRAD_SHIELD: return &gaugeGradShield;
 	case MENU_ITEM_GAUGE_GRAD_ARMOR: return &gaugeGradArmor;
 	case MENU_ITEM_ZICA_BASE:        return &zicaLaserBase;
-	case MENU_ITEM_ZICA_LENGTH:      return &zicaLaserLength;
 	case MENU_ITEM_WALLOP_BOLT:      return &wallopSecondBolt;
 	case MENU_ITEM_CUSTOM_ENDLESS:   return &customEndlessMode;
 	case MENU_ITEM_SFX_FILTER:       return &sfx_filter;
@@ -553,9 +548,12 @@ static bool subpixelFxAvailable(void)
 /* Plain toggles stop here; toggles with side effects keep dedicated cases below. */
 static bool *menuItemBoolSetting(MenuItemId id)
 {
-	const int slot = menuItemRunSlot(id, MENU_ITEM_SPARKS_CAP_BASE, SSW_COUNT);
-	if (slot >= 0)
+	int slot;
+
+	if ((slot = menuItemRunSlot(id, MENU_ITEM_SPARKS_CAP_BASE, SSW_COUNT)) >= 0)
 		return &superSparkClassicCap[slot];
+	if ((slot = menuItemRunSlot(id, MENU_ITEM_REWORK_BASE, REWORK_COUNT)) >= 0)
+		return &reworkEnabled[slot];
 
 	switch (id)
 	{
@@ -573,8 +571,6 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_TOUCH_SIDEKICKS:     return &touchSidekickButtons;
 	case MENU_ITEM_TOUCH_NAV:           return &touchNavButtons;
 	case MENU_ITEM_CHARGE_LASER:        return &chargeLaserCannon;
-	case MENU_ITEM_ZICA_LOCK:           return &zicaLaserLock;
-	case MENU_ITEM_ZICA_BUFF:           return &zicaLaserBuff;
 	case MENU_ITEM_GUIDED_AIM:          return &guidedShotScreenAim;
 	case MENU_ITEM_BASE_DISPENSERS:     return &restoreBaseDispensers;
 	case MENU_ITEM_ARCADE_LIFE_BOOST:   return &arcadeLifeBoost;
@@ -885,7 +881,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				MENU_DONE_ROW
 			},
 		},
-		/* Each enhancement setting belongs to one of five submenus. */
+		/* Each enhancement setting belongs to one of six submenus. */
 		[MENU_ENHANCEMENTS] = {
 			.header = "Enhancements",
 			.items = {
@@ -896,6 +892,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Weapons...", "Restored gear, sidekick autofire, and spark trails.", MENU_WEAPONS },
 				{ MENU_ITEM_SUBMENU, "Gameplay...", "Collision, homing, restored enemies, and arcade rules.", MENU_GAMEPLAY },
 				{ MENU_ITEM_SUBMENU, "Episode Versions...", "Items that differ between Ep 1-3 and Ep 4-5.", MENU_EPISODE_VERSIONS },
+				{ MENU_ITEM_SUBMENU, "Reworks...",
+				  "Endless item reworks, for the other modes too.", MENU_REWORKS },
 				MENU_DONE_ROW
 			},
 		},
@@ -1055,26 +1053,16 @@ static bool runOptionsMenu(MenuId startMenu)
 			// episode as it shipped; the other two force one version everywhere.
 			.header = "Episode Versions",
 			.items = {
-				{ MENU_ITEM_SUBMENU, "Zica Laser...", "Zica Laser Lv11 pattern, length, lock, and buff.", MENU_ZICA_LASER },
 				{ MENU_ITEM_SUBMENU, "Firing Sounds...", "Weapons whose firing sound differs per episode.", MENU_FIRING_SOUNDS },
 				{ MENU_ITEM_SUBMENU, "Shop Pictures...", "Shop artwork that differs between the two sets.", MENU_SHOP_PICTURES },
+				{ MENU_ITEM_ZICA_BASE, "Zica Laser Lv11:",
+				  "Ep1-3 columns vs Ep4-5 spread. Endless Auto: Ep4-5.", EPISODE_PICKER },
 				{ MENU_ITEM_EPDIFF_BASE + EDW_XEGA_BALL, "Xega Ball:",
 				  "Ep1-3 two weak balls vs Ep4-5 one strong ball.", EPISODE_PICKER },
 				{ MENU_ITEM_EPDIFF_BASE + EDW_MICROSOL_OPT5, "MicroSol Opt 5:",
 				  "Ep1-3 8-way fan vs Ep4-5 twin shot (MicroSol ship).", EPISODE_PICKER },
 				{ MENU_ITEM_EPDIFF_BASE + EDW_FLARE, "Flare Blast:",
 				  "Which episode's blast sprite the Flare uses.", EPISODE_PICKER },
-				MENU_DONE_ROW
-			},
-		},
-		[MENU_ZICA_LASER] = {
-			.header = "Zica Laser",
-			.items = {
-				{ MENU_ITEM_ZICA_BASE, "Lv11 Pattern:", "Lv11 shot pattern: Ep1-3 columns or Ep4 spread.", EPISODE_PICKER },
-				{ MENU_ITEM_ZICA_LENGTH, "Lv11 Length:", "Lv11 length; Long is as long as the L10 shot.",
-				  .getPickerItemsCount = zicaLengthCount, .getPickerItem = zicaLengthItem },
-				{ MENU_ITEM_ZICA_LOCK, "Lv11 Lock:", "Long beams follow the ship (Length=Long only)." },
-				{ MENU_ITEM_ZICA_BUFF, "Lv11 Buff:", "Also fire the L10 beam alongside the L11 shots." },
 				MENU_DONE_ROW
 			},
 		},
@@ -1105,6 +1093,22 @@ static bool runOptionsMenu(MenuId startMenu)
 				  "Ep1-3 Gencore hull vs Ep4-5 USP delta in the shop.", EPISODE_PICKER },
 				{ MENU_ITEM_EPDIFF_BASE + EDW_NORTSHIP_PIC, "Nort Ship Picture:",
 				  "Ep1-3 Stalker hull vs Ep4-5 USP delta in the shop.", EPISODE_PICKER },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_REWORKS] = {
+			.header = "Reworks",
+			.items = {
+				{ MENU_ITEM_REWORK_BASE + REWORK_ZICA_BUFF, "Zica Laser Buff:",
+				  "Zica Laser Lv11 also fires the Lv10 beam." },
+				{ MENU_ITEM_REWORK_BASE + REWORK_ATTRACTOR, "Attractor:",
+				  "Hauls pickups to your ship until they are collected." },
+				{ MENU_ITEM_REWORK_BASE + REWORK_ORANGE_SHIELD, "Orange Shield:",
+				  "The shield ring circles your ship, not above it." },
+				{ MENU_ITEM_REWORK_BASE + REWORK_RAMMING, "Ramming:",
+				  "Ram kills pay as kills; you ram while invulnerable." },
+				{ MENU_ITEM_REWORK_BASE + REWORK_ITEM_NAMES, "Item Names:",
+				  "Endless names, such as Microbomb and Pearl Shot." },
 				MENU_DONE_ROW
 			},
 		},
@@ -1865,7 +1869,7 @@ static bool runOptionsMenu(MenuId startMenu)
 					else
 					{
 						*boolSetting = !*boolSetting;
-						JE_applyItemDataSettings();  // covers the Zica Lv11 lock and buff rows
+						JE_applyItemDataSettings();  // covers the Charge-Laser row
 						JE_playSampleNum(S_CLICK);
 					}
 				}
@@ -2449,4 +2453,20 @@ static bool runOptionsMenu(MenuId startMenu)
 			}
 		}
 	}
+}
+
+bool setupMenuSelfTest(char *detail, size_t detailSize)
+{
+	const char *fault = NULL;
+	for (int i = 0; i < REWORK_COUNT && fault == NULL; ++i)
+		if (menuItemBoolSetting((MenuItemId)(MENU_ITEM_REWORK_BASE + i)) != &reworkEnabled[i])
+			fault = "a Reworks row does not toggle its own rework";
+	if (fault == NULL && menuItemIntSetting(MENU_ITEM_ZICA_BASE) != &zicaLaserBase)
+		fault = "the Zica Laser Lv11 row does not pick the Lv11 pattern";
+	if (fault == NULL && menuItemBoolSetting(MENU_ITEM_ARCADE_SHIP_BASE) != NULL)
+		fault = "the arcade ship rows overlap the Reworks rows";
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }
