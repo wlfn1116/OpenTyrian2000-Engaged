@@ -105,7 +105,7 @@ def run_coop_flights(executable: Path, data_dir: Path, env: dict) -> bool:
                 print(result.stdout + result.stderr, end="")
                 ok = False
 
-        details = ("4", "3", "1")
+        details = ("4", "1", "2", "3", "5", "6")
         traces = []
         for detail in details:
             trace = work / f"detail_{detail}.trace"
