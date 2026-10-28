@@ -74,6 +74,12 @@ static inline bool netStyleIsPlain(NetShipStyle style)
 	return style.bank < 0 && style.opacity >= NET_STYLE_SOLID;
 }
 
+static inline NetShipStyle netStyleDye(int color)
+{
+	const NetShipStyle style = { .bank = (Sint8)(color - 1), .opacity = NET_STYLE_SOLID };
+	return style;
+}
+
 void netStyleSessionReset(void);
 void netStyleSetSeatColor(uint seat, int color);
 int  netStyleSeatColor(uint seat);
@@ -88,6 +94,7 @@ bool netStyleColorReserved(int color);
 NetShipStyle netStyleForSeat(uint seat);
 NetShipStyle netStyleForSidekick(uint seat);
 NetShipStyle netStyleForShot(uint seat);
+int netStyleLocalWornColor(void);
 
 // Player seat flown by this machine.
 uint netStyleLocalSeat(void);

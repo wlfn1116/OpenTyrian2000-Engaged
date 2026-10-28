@@ -181,10 +181,8 @@ static NetShipStyle seatStyle(uint seat, bool body, bool dyed)
 		return plainStyle;
 	}
 
-	NetShipStyle style = plainStyle;
-
-	if (dyed && color != NET_SHIP_COLOR_NONE && !netStyleColorReserved(color))
-		style.bank = (Sint8)(color - 1);
+	NetShipStyle style =
+	    netStyleDye((dyed && !netStyleColorReserved(color)) ? color : NET_SHIP_COLOR_NONE);
 
 	if (opacity < NET_OPACITY_FULL && (!body || local.shipOpacity))
 	{
@@ -208,4 +206,9 @@ NetShipStyle netStyleForSidekick(uint seat)
 NetShipStyle netStyleForShot(uint seat)
 {
 	return seatStyle(seat, false, false);
+}
+
+int netStyleLocalWornColor(void)
+{
+	return netStyleForSeat(netStyleLocalSeat()).bank + 1;
 }

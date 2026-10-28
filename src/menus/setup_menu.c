@@ -1132,8 +1132,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Secret Modes...", "Play Destruct, SuperTyrian, or Super Arcade.", MENU_SECRET_MODES },
 				{ MENU_ITEM_SHIP_EDITOR, "Ship Editor...", "Design the Tab+Number custom ships." },
 				{ MENU_ITEM_WEAPON_EDITOR, "Weapon Editor...", "Design your own weapon with a live preview." },
-				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
 				{ MENU_ITEM_SUBMENU, "Transfer...", "Copy saves or custom creations to another device.", MENU_TRANSFER },
+				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},

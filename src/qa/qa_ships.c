@@ -1005,14 +1005,17 @@ void qa_test_ship_skins(void)
 
 	detail[0] = '\0';
 	const bool tagged = spritePickerTagSelfTest(detail, sizeof(detail));
-	snprintf(label, sizeof(label), "a labelled picker page shows names, not item numbers%s%s",
+	snprintf(label, sizeof(label),
+	         "a labelled picker page shows names, not item numbers, and says when ships are "
+	         "colored%s%s",
 	         detail[0] ? ": " : "", detail);
 	qa_check(tagged, label);
 
 	detail[0] = '\0';
 	const bool previews = weaponEditorSkinPreviewSelfTest(detail, sizeof(detail));
 	snprintf(label, sizeof(label),
-	         "the outpost weapon editor previews the equipped ship in its skin, online too%s%s",
+	         "the outpost weapon editor previews the equipped ship in its skin and every range "
+	         "ship in the Ship Color, online too%s%s",
 	         detail[0] ? ": " : "", detail);
 	qa_check(previews, label);
 

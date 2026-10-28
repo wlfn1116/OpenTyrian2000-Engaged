@@ -1411,6 +1411,15 @@ static const char *customize_ship_name(int ship, char *buf, size_t n)
 	return JE_shipShortName((JE_word)ship, buf, n);
 }
 
+static SpritePickerPage customize_ship_page(const int *ships, int count)
+{
+	SpritePickerPage page =
+		spritePickerHullPage("Ships", ships, count, shop_ship_pick_draw, customize_ship_name);
+	page.listTag = customize_ship_tag;
+	page.dye = netStyleLocalWornColor();
+	return page;
+}
+
 static void customize_pick_ship(void)
 {
 	const uint seat = netStyleLocalSeat();
@@ -1436,9 +1445,7 @@ static void customize_pick_ship(void)
 	}
 
 	customizePickOriginal = original;
-	SpritePickerPage page =
-		spritePickerHullPage("Ships", ships, count, shop_ship_pick_draw, customize_ship_name);
-	page.listTag = customize_ship_tag;
+	const SpritePickerPage page = customize_ship_page(ships, count);
 	const SpritePickerSpec spec = { .title = "Custom Ship", .pages = &page, .pageCount = 1,
 	                                .idle = editorServiceNetwork };
 	int value = current;
@@ -1455,23 +1462,24 @@ static void customize_pick_ship(void)
 	configure_customize_menu();
 }
 
-static void customize_skin_draw(int graphic, int x, int y, int w, int h)
+static void customize_skin_draw(int graphic, int dye, int x, int y, int w, int h)
 {
 	const uint seat = netStyleLocalSeat();
 	if (graphic != SHIP_SKIN_NONE)
 	{
-		spritePickerDrawGraphic(seat, graphic, x, y, w, h);
+		spritePickerDrawGraphic(seat, graphic, dye, x, y, w, h);
 		return;
 	}
 	Sprite2_array *sheet;
 	const JE_word gr = player_seat_hull(seat, &sheet);
-	spritePickerDrawHull(sheet, gr, x, y, w, h);
+	spritePickerDrawHull(sheet, gr, dye, x, y, w, h);
 }
 
 static SpritePickerPage customize_skin_page(const char *name, const int *values, int count)
 {
 	SpritePickerPage page = spritePickerHullPage(name, values, count, customize_skin_draw, NULL);
 	page.listTag = shipSkinName;
+	page.dye = netStyleLocalWornColor();
 	return page;
 }
 
@@ -1719,6 +1727,28 @@ static const char *customize_fault(void)
 	for (int i = 0; i < skinCount; ++i)
 		if (!spritePickerTagFits(shipSkinName(skinOrder[i], longTag, sizeof(longTag))))
 			return "a Ship Skin name is cut short in the picker";
+
+	const int colorWas = netStyleSeatColor(0);
+	netStyleSetSeatColor(0, NET_SHIP_COLOR_NONE);
+	const bool bare = customize_ship_page(NULL, 0).dye == NET_SHIP_COLOR_NONE
+	               && customize_skin_page("In-Game", NULL, 0).dye == NET_SHIP_COLOR_NONE;
+	netStyleSetSeatColor(0, 6);
+	const int shipValues[] = { 1, SHIP_DRAGONWING, EXTRA_SHIP_ID_BASE + 1 };
+	const SpritePickerPage shipPage = customize_ship_page(shipValues, COUNTOF(shipValues));
+	const SpritePickerPage skinPage = customize_skin_page("In-Game", skinOrder, skinCount);
+	char dyeDetail[64] = "";
+	const bool worn = shipPage.dye == 6 && skinPage.dye == 6
+	               && spritePickerDyeSelfTest(&shipPage, dyeDetail, sizeof(dyeDetail))
+	               && spritePickerDyeSelfTest(&skinPage, dyeDetail, sizeof(dyeDetail));
+	netStyleSetSeatColor(0, colorWas);
+	if (!bare)
+		return "the Customize pickers dye ships with no Ship Color applied";
+	if (!worn)
+	{
+		snprintf(why, sizeof(why), "the Customize pickers skip the Ship Color%s%s",
+		         dyeDetail[0] ? ": " : "", dyeDetail);
+		return why;
+	}
 
 	configure_ship_color_grid();
 	curMenu = MENU_SHIP_COLOR;
@@ -5304,30 +5334,41 @@ bool load_cube(int cube_slot, int cube_index)
 	return true;
 }
 
-// Apply the previewed seat's style only to ship art.
-static void blit_preview_ship2x2(SDL_Surface *surface, int x, int y, Sprite2_array sheet, unsigned int index)
+static void blit_preview_ship2x2(SDL_Surface *surface, int x, int y, Sprite2_array sheet,
+                                 unsigned int index, NetShipStyle style)
 {
-	const NetShipStyle style = netStyleForSeat(shop_draw_seat());
 	blit_sprite2x2_alpha(surface, x, y, sheet, index, style.bank, style.opacity);
 }
 
 // Graphics 0 and 1 are the wide Dragonwing and Nort Ship sentinels.
-void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py)
+static void shop_draw_hull_style(const Sprite2_array *sheet, JE_word gr, int px, int py,
+                                 NetShipStyle style)
 {
 	if (gr == 0)
 	{
-		blit_preview_ship2x2(VGAScreen, px - SHOP_WIDE_HULL_HALF, py, *sheet, 13);
-		blit_preview_ship2x2(VGAScreen, px + SHOP_WIDE_HULL_HALF, py, *sheet, 51);
+		blit_preview_ship2x2(VGAScreen, px - SHOP_WIDE_HULL_HALF, py, *sheet, 13, style);
+		blit_preview_ship2x2(VGAScreen, px + SHOP_WIDE_HULL_HALF, py, *sheet, 51, style);
 	}
 	else if (gr == 1)
 	{
-		blit_preview_ship2x2(VGAScreen, px - SHOP_WIDE_HULL_HALF, py, *sheet, 220);
-		blit_preview_ship2x2(VGAScreen, px + SHOP_WIDE_HULL_HALF, py, *sheet, 222);
+		blit_preview_ship2x2(VGAScreen, px - SHOP_WIDE_HULL_HALF, py, *sheet, 220, style);
+		blit_preview_ship2x2(VGAScreen, px + SHOP_WIDE_HULL_HALF, py, *sheet, 222, style);
 	}
 	else
 	{
-		blit_preview_ship2x2(VGAScreen, px, py, *sheet, gr);
+		blit_preview_ship2x2(VGAScreen, px, py, *sheet, gr, style);
 	}
+}
+
+// Apply the previewed seat's style only to ship art.
+void shop_draw_hull(const Sprite2_array *sheet, JE_word gr, int px, int py)
+{
+	shop_draw_hull_style(sheet, gr, px, py, netStyleForSeat(shop_draw_seat()));
+}
+
+void shop_draw_hull_dyed(const Sprite2_array *sheet, JE_word gr, int px, int py, int dye)
+{
+	shop_draw_hull_style(sheet, gr, px, py, netStyleDye(dye));
 }
 
 static void draw_preview_hull(uint seat, int x, int y)
@@ -5511,11 +5552,11 @@ const char *shop_ship_pick_name(int ship, char *buf, size_t n)
 	return JE_shipShortName((JE_word)ship, buf, n);
 }
 
-void shop_ship_pick_draw(int ship, int x, int y, int w, int h)
+void shop_ship_pick_draw(int ship, int dye, int x, int y, int w, int h)
 {
 	Sprite2_array *sheet;
 	const JE_word gr = shop_ship_hull((JE_word)ship, &sheet);
-	spritePickerDrawHull(sheet, gr, x, y, w, h);
+	spritePickerDrawHull(sheet, gr, dye, x, y, w, h);
 }
 
 JE_word shop_ship_hull(JE_word ship, Sprite2_array **sheet)

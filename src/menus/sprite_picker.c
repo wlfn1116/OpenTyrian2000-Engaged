@@ -25,6 +25,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "net_style.h"
 #include "sfx.h"
 #include "sndmast.h"
 #include "timing.h"
@@ -50,6 +51,7 @@ enum
 	SP_CELL_MAX = 64, SP_MARGIN = 2,
 	SP_PAGES_MAX = 4, SP_TYPED_MAX = 5,
 	SP_DRAG_PX = 4,
+	SP_INFO_LINES = 6,
 };
 
 enum
@@ -76,6 +78,12 @@ typedef struct
 	float pressScroll, fling;
 	Uint32 lastMs;
 } SpState;
+
+typedef struct
+{
+	char text[48];
+	Sint8 value;
+} SpInfoLine;
 
 static SDL_Surface *spScratch, *spStrip;
 
@@ -286,33 +294,38 @@ void spritePickerDrawFit(SDL_Surface *dst, unsigned int table, unsigned int inde
 	}
 }
 
-static void spDraw2x2(SDL_Surface *dst, const Sprite2_array *sheet, unsigned int index, int x,
-                      int y, int w, int h)
+static void spDraw2x2(SDL_Surface *dst, const Sprite2_array *sheet, unsigned int index, int dye,
+                      int x, int y, int w, int h)
 {
 	if ((int)index + SP_SHEET_COLS + 1 > sprite2_count(sheet))
 		return;
 	const int scale = (w >= 4 * SP_TILE_W && h >= 4 * SP_TILE_H) ? 2 : 1;
+	const bool dyed = (dye != NET_SHIP_COLOR_NONE);
 	blit_sprite2x2_scaled(dst, x + (w - 2 * SP_TILE_W * scale) / 2,
-	                      y + (h - 2 * SP_TILE_H * scale) / 2, *sheet, index, scale, BLIT2_COPY, 0);
+	                      y + (h - 2 * SP_TILE_H * scale) / 2, *sheet, index, scale,
+	                      dyed ? BLIT2_FILTER : BLIT2_COPY,
+	                      dyed ? (Uint8)(netStyleDye(dye).bank << 4) : 0);
 }
 
-void spritePickerDrawHull(const Sprite2_array *sheet, JE_word gr, int x, int y, int w, int h)
+void spritePickerDrawHull(const Sprite2_array *sheet, JE_word gr, int dye, int x, int y, int w,
+                          int h)
 {
 	if (gr <= 1)
-		shop_draw_hull(sheet, gr, x + w / 2 - SHOP_WIDE_HULL_HALF, y + (h - 2 * SP_TILE_H) / 2);
+		shop_draw_hull_dyed(sheet, gr, x + w / 2 - SHOP_WIDE_HULL_HALF,
+		                    y + (h - 2 * SP_TILE_H) / 2, dye);
 	else
-		spDraw2x2(VGAScreen, sheet, gr, x, y, w, h);
+		spDraw2x2(VGAScreen, sheet, gr, dye, x, y, w, h);
 }
 
-void spritePickerDrawGraphic(uint seat, int graphic, int x, int y, int w, int h)
+void spritePickerDrawGraphic(uint seat, int graphic, int dye, int x, int y, int w, int h)
 {
 	Sprite2_array *sheet = &spriteSheet9;
 	const JE_word gr = extraShipGraphicSprite(seat, graphic, &sheet);
-	spritePickerDrawHull(sheet, gr, x, y, w, h);
+	spritePickerDrawHull(sheet, gr, dye, x, y, w, h);
 }
 
 SpritePickerPage spritePickerHullPage(const char *name, const int *values, int count,
-                                      void (*draw)(int value, int x, int y, int w, int h),
+                                      void (*draw)(int value, int dye, int x, int y, int w, int h),
                                       const char *(*label)(int value, char *buf, size_t n))
 {
 	const SpritePickerPage page = { .name = name, .kind = SPRITE_PICKER_LIST, .count = count,
@@ -349,7 +362,7 @@ static void spDrawCell(SDL_Surface *dst, const SpritePickerPage *p, int cell, in
 			blit_sprite2(dst, x, y, *p->sheet, (unsigned int)cell + 1);
 		break;
 	case SPRITE_PICKER_BLOCKS:
-		spDraw2x2(dst, p->sheet, (unsigned int)spBlockBase(cell), x, y, w, h);
+		spDraw2x2(dst, p->sheet, (unsigned int)spBlockBase(cell), NET_SHIP_COLOR_NONE, x, y, w, h);
 		break;
 	case SPRITE_PICKER_TABLE:
 		spritePickerDrawFit(dst, p->table, (unsigned int)(p->first + cell), x + 1, y + 1, w - 2,
@@ -357,7 +370,7 @@ static void spDrawCell(SDL_Surface *dst, const SpritePickerPage *p, int cell, in
 		break;
 	default:
 		if (p->listDraw != NULL)
-			p->listDraw(spValue(p, cell), x, y, w, h);
+			p->listDraw(spValue(p, cell), p->dye, x, y, w, h);
 		break;
 	}
 }
@@ -373,7 +386,7 @@ static void spDrawPreview(const SpritePickerPage *p, int cell, int x0, int y0, i
 	if (p->kind == SPRITE_PICKER_LIST)
 	{
 		if (p->listDraw != NULL)
-			p->listDraw(spValue(p, cell), x0, y0, w, h);
+			p->listDraw(spValue(p, cell), p->dye, x0, y0, w, h);
 		return;
 	}
 
@@ -383,7 +396,7 @@ static void spDrawPreview(const SpritePickerPage *p, int cell, int x0, int y0, i
 		return;
 	if (p->big || blocks)
 	{
-		spDraw2x2(VGAScreen, p->sheet, index, x0, y0, w, h);
+		spDraw2x2(VGAScreen, p->sheet, index, NET_SHIP_COLOR_NONE, x0, y0, w, h);
 		return;
 	}
 
@@ -495,15 +508,18 @@ static const char *spWrapSplit(const char *text, char *first, size_t n)
 	return NULL;
 }
 
-static int spDrawWrapped(int x, int y, const char *text, Sint8 value)
+static int spInfoAdd(SpInfoLine *lines, int count, const char *text, Sint8 value)
 {
-	char first[48];
-	const char *const rest = spWrapSplit(text, first, sizeof(first));
-	spDrawText(x, y, first, value);
-	if (rest == NULL)
-		return 1;
-	spDrawText(x, y + 10, rest, value);
-	return 2;
+	if (count >= SP_INFO_LINES)
+		return count;
+	const char *const rest = spWrapSplit(text, lines[count].text, sizeof(lines[count].text));
+	lines[count++].value = value;
+	if (rest != NULL && count < SP_INFO_LINES)
+	{
+		SDL_strlcpy(lines[count].text, rest, sizeof(lines[count].text));
+		lines[count++].value = value;
+	}
+	return count;
 }
 
 bool spritePickerTagFits(const char *tag)
@@ -545,6 +561,27 @@ static const char *spInfoLabel(const SpritePickerPage *p, int cursor, char *name
 static bool spShowsWas(const SpState *s)
 {
 	return s->originalPage >= 0 && s->spec.pages[s->originalPage].listTag == NULL;
+}
+
+static int spInfoLines(const SpState *s, int cursor, SpInfoLine *lines)
+{
+	const SpritePickerPage *const p = spPage(s);
+	char text[48], name[48];
+	spInfoNumber(s, cursor, text, sizeof(text));
+	int count = spInfoAdd(lines, 0, text, s->typed[0] != '\0' ? 7 : 6);
+
+	const char *const label = spInfoLabel(p, cursor, name, sizeof(name));
+	if (label[0] != '\0')
+		count = spInfoAdd(lines, count, label, 3);
+	if (p->dye != NET_SHIP_COLOR_NONE && spSelectable(p, cursor))
+		count = spInfoAdd(lines, count, "(colored)", 2);
+	if (spShowsWas(s))
+	{
+		snprintf(text, sizeof(text), "Was %d",
+		         spValue(&s->spec.pages[s->originalPage], s->originalCell));
+		count = spInfoAdd(lines, count, text, 2);
+	}
+	return count;
 }
 
 static void spDraw(const SpState *s)
@@ -593,21 +630,10 @@ static void spDraw(const SpState *s)
 		spDrawPreview(p, cursor, SP_INFO_X0 + 1, SP_INFO_Y0 + 1, SP_INFO_X1 - SP_INFO_X0 - 1,
 		              SP_INFO_H - 2);
 
-	char line[48];
-	spInfoNumber(s, cursor, line, sizeof(line));
-	const Sint8 tagValue = s->typed[0] != '\0' ? 7 : 6;
-	const int nameY = iy1 + 5 + 10 * spDrawWrapped(mid, iy1 + 5, line, tagValue);
-
-	char name[48];
-	const char *const label = spInfoLabel(p, cursor, name, sizeof(name));
-	const int nameLines = spDrawWrapped(mid, nameY, label, 3);
-
-	if (spShowsWas(s))
-	{
-		snprintf(line, sizeof(line), "Was %d",
-		         spValue(&spec->pages[s->originalPage], s->originalCell));
-		spDrawText(mid, nameY + 10 * nameLines, line, 2);
-	}
+	SpInfoLine lines[SP_INFO_LINES];
+	const int lineCount = spInfoLines(s, cursor, lines);
+	for (int i = 0; i < lineCount; ++i)
+		spDrawText(mid, iy1 + 5 + 10 * i, lines[i].text, lines[i].value);
 
 	const char *const hint = (p->listTag != NULL)
 	                       ? "Tap or Enter picks, drag scrolls. Esc cancels."
@@ -1068,6 +1094,38 @@ static const char *spTagFault(SpState *s, SpritePickerPage *page)
 	return NULL;
 }
 
+static bool spInfoShows(const SpState *s, int cursor, const char *const *want, int wantCount)
+{
+	SpInfoLine lines[SP_INFO_LINES];
+	if (spInfoLines(s, cursor, lines) != wantCount)
+		return false;
+	for (int i = 0; i < wantCount; ++i)
+		if (strcmp(lines[i].text, want[i]) != 0)
+			return false;
+	return true;
+}
+
+static const char *spDyeLineFault(SpState *s, SpritePickerPage *page)
+{
+	static const char *const tagged[] = { "Tag 7", "(colored)" };
+	static const char *const named[] = { "No. 7", "Tags", "(colored)", "Was 9" };
+	static const char *const unpicked[] = { "", "Tags", "Was 9" };
+	static const char *const undyed[] = { "No. 7", "Tags", "Was 9" };
+	page->listTag = spTestTag;
+	page->dye = 5;
+	if (!spInfoShows(s, 0, tagged, COUNTOF(tagged)))
+		return "a dyed page does not say (colored) right under the ship's tag";
+	page->listTag = NULL;
+	if (!spInfoShows(s, 0, named, COUNTOF(named)))
+		return "(colored) does not sit between the ship's name and the number it was opened on";
+	if (!spInfoShows(s, 2, unpicked, COUNTOF(unpicked)))
+		return "(colored) shows with no ship to preview";
+	page->dye = NET_SHIP_COLOR_NONE;
+	if (!spInfoShows(s, 0, undyed, COUNTOF(undyed)))
+		return "an undyed page says (colored)";
+	return NULL;
+}
+
 bool spritePickerTagSelfTest(char *detail, size_t detailSize)
 {
 	static const int values[] = { 7, 9 };
@@ -1082,8 +1140,101 @@ bool spritePickerTagSelfTest(char *detail, size_t detailSize)
 
 	char savedText[sizeof(last_text)];
 	memcpy(savedText, last_text, sizeof(savedText));
-	const char *const fault = spTagFault(&s, &page);
+	const char *fault = spTagFault(&s, &page);
+	if (fault == NULL)
+		fault = spDyeLineFault(&s, &page);
 	memcpy(last_text, savedText, sizeof(savedText));
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+static void spDyeRender(SDL_Surface *const pair[2], const SpritePickerPage *p, int cell,
+                        bool preview)
+{
+	SpGrid g;
+	spGrid(p, &g);
+	SDL_Surface *const saved = VGAScreen;
+	for (int i = 0; i < 2; ++i)
+	{
+		SDL_FillRect(pair[i], NULL, i == 0 ? 0x00 : 0xff);
+		VGAScreen = pair[i];
+		if (preview)
+			spDrawPreview(p, cell, 0, 0, SP_INFO_X1 - SP_INFO_X0 - 1, SP_INFO_H - 2);
+		else
+			spDrawCell(pair[i], p, cell, 0, 0, g.cellW, g.cellH);
+	}
+	VGAScreen = saved;
+}
+
+static int spDyedPixels(SDL_Surface *const raw[2], SDL_Surface *const look[2], int dye)
+{
+	const bool dyed = (dye != NET_SHIP_COLOR_NONE);
+	const Uint8 bank = dyed ? (Uint8)(netStyleDye(dye).bank << 4) : 0;
+	int drawn = 0;
+	for (int y = 0; y < raw[0]->h; ++y)
+	{
+		const Uint8 *const r0 = (const Uint8 *)raw[0]->pixels + y * raw[0]->pitch;
+		const Uint8 *const r1 = (const Uint8 *)raw[1]->pixels + y * raw[1]->pitch;
+		const Uint8 *const l0 = (const Uint8 *)look[0]->pixels + y * look[0]->pitch;
+		const Uint8 *const l1 = (const Uint8 *)look[1]->pixels + y * look[1]->pitch;
+		for (int x = 0; x < raw[0]->w; ++x)
+		{
+			const bool ink = (r0[x] == r1[x]);
+			if (ink != (l0[x] == l1[x]))
+				return -1;
+			if (ink && l0[x] != (dyed ? (Uint8)(bank | (r0[x] & 0x0f)) : r0[x]))
+				return -1;
+			drawn += ink ? 1 : 0;
+		}
+	}
+	return drawn;
+}
+
+static const char *spDyeDrawFault(const SpritePickerPage *page, SDL_Surface *const raw[2],
+                                  SDL_Surface *const look[2])
+{
+	if (page->kind != SPRITE_PICKER_LIST || page->dye == NET_SHIP_COLOR_NONE)
+		return "the page wears no Ship Color";
+	SpritePickerPage plain = *page;
+	plain.dye = NET_SHIP_COLOR_NONE;
+	const int shopDye = page->dye % NET_SHIP_COLORS + 1;
+	int drawn[2] = { 0, 0 };
+	for (int cell = 0; cell < spCells(page); ++cell)
+		for (int preview = 0; preview < 2; ++preview)
+		{
+			spDyeRender(raw, &plain, cell, preview != 0);
+			spDyeRender(look, page, cell, preview != 0);
+			const int dyed = spDyedPixels(raw, look, page->dye);
+			netStylePreviewSet(shopDye, NET_OPACITY_FULL);
+			spDyeRender(look, &plain, cell, preview != 0);
+			netStylePreviewClear();
+			if (dyed < 0)
+				return preview ? "the preview draws a ship outside the Ship Color"
+				               : "the grid draws a ship outside the Ship Color";
+			if (spDyedPixels(raw, look, NET_SHIP_COLOR_NONE) < 0)
+				return "an undyed picker draws a ship in the shop's Ship Color";
+			drawn[preview] += dyed;
+		}
+	return (drawn[0] > 0 && drawn[1] > 0) ? NULL : "the page draws no ships";
+}
+
+bool spritePickerDyeSelfTest(const SpritePickerPage *page, char *detail, size_t detailSize)
+{
+	SDL_Surface *raw[2], *look[2];
+	for (int i = 0; i < 2; ++i)
+	{
+		raw[i] = SDL_CreateRGBSurface(0, SP_INFO_X1 - SP_INFO_X0, SP_INFO_H, 8, 0, 0, 0, 0);
+		look[i] = SDL_CreateRGBSurface(0, SP_INFO_X1 - SP_INFO_X0, SP_INFO_H, 8, 0, 0, 0, 0);
+	}
+	const bool made = raw[0] != NULL && raw[1] != NULL && look[0] != NULL && look[1] != NULL;
+	const char *const fault = made ? spDyeDrawFault(page, raw, look) : "out of memory";
+	for (int i = 0; i < 2; ++i)
+	{
+		SDL_FreeSurface(raw[i]);
+		SDL_FreeSurface(look[i]);
+	}
 
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);

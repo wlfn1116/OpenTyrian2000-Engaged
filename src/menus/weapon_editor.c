@@ -33,6 +33,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "net_style.h"
 #include "network.h"
 #include "palette.h"
 #include "picload.h"
@@ -844,11 +845,16 @@ static JE_word cwRangeShipLook(Sprite2_array **sheet)
 	return gr;
 }
 
+static int cwRangeDye(void)
+{
+	return NET_SHIP_COLOR_NONE;
+}
+
 static void cwDrawRangeShip(int x, int y)
 {
 	Sprite2_array *sheet;
 	const JE_word gr = cwRangeShipLook(&sheet);
-	shop_draw_hull(sheet, gr, x, y);
+	shop_draw_hull_dyed(sheet, gr, x, y, cwRangeDye());
 }
 
 static void cwFieldValue(int f, char *buf, size_t n)
@@ -1761,6 +1767,14 @@ static SpritePickerPage cwIconPage(void)
 	return page;
 }
 
+static SpritePickerPage cwRangePage(const char *name, const int *ships, int count)
+{
+	SpritePickerPage page =
+	    spritePickerHullPage(name, ships, count, shop_ship_pick_draw, shop_ship_pick_name);
+	page.dye = cwRangeDye();
+	return page;
+}
+
 static void cwOpenPicker(int f)
 {
 	if (!cwFieldActive(f))
@@ -1812,12 +1826,10 @@ static void cwOpenPicker(int f)
 		int inGame;
 		rangeCount = cwRangeShipOrder(rangeShips, &inGame);
 		spec.title = "Range Ship";
-		pages[spec.pageCount++] = spritePickerHullPage("In-Game", rangeShips, inGame,
-		                                               shop_ship_pick_draw, shop_ship_pick_name);
+		pages[spec.pageCount++] = cwRangePage("In-Game", rangeShips, inGame);
 		if (rangeCount > inGame)
-			pages[spec.pageCount++] = spritePickerHullPage("Custom", rangeShips + inGame,
-			                                               rangeCount - inGame, shop_ship_pick_draw,
-			                                               shop_ship_pick_name);
+			pages[spec.pageCount++] =
+			    cwRangePage("Custom", rangeShips + inGame, rangeCount - inGame);
 		value = cwRange.ship;
 		break;
 	}
@@ -3922,6 +3934,62 @@ static const char *cwSkinPreviewFault(void)
 	return NULL;
 }
 
+static bool cwRangeDrawsWith(int dye)
+{
+	SDL_Surface *const shot = SDL_CreateRGBSurface(0, 96, 48, 8, 0, 0, 0, 0);
+	SDL_Surface *const want = SDL_CreateRGBSurface(0, 96, 48, 8, 0, 0, 0, 0);
+	bool same = false;
+	if (shot != NULL && want != NULL)
+	{
+		SDL_FillRect(shot, NULL, 0);
+		SDL_FillRect(want, NULL, 0);
+		SDL_Surface *const saved = VGAScreen;
+		VGAScreen = shot;
+		cwDrawRangeShip(36, 10);
+		VGAScreen = want;
+		Sprite2_array *sheet;
+		const JE_word gr = cwRangeShipLook(&sheet);
+		shop_draw_hull_dyed(sheet, gr, 36, 10, dye);
+		VGAScreen = saved;
+		same = memcmp(shot->pixels, want->pixels, (size_t)shot->pitch * (size_t)shot->h) == 0;
+	}
+	SDL_FreeSurface(shot);
+	SDL_FreeSurface(want);
+	return same;
+}
+
+static const char *cwRangeDyeFault(void)
+{
+	const uint seat = netStyleLocalSeat();
+	const int colorWas = netStyleSeatColor(seat);
+	int ships[CW_RANGE_SHIPS_MAX], inGame;
+	cwRangeShipOrder(ships, &inGame);
+	netStyleSetSeatColor(seat, 6);
+	cwRange.ship = 1;
+
+	cwFromOutpost = true;
+	const SpritePickerPage outpost = cwRangePage("In-Game", ships, inGame);
+	const bool outpostDrawn = cwRangeDrawsWith(6) && !cwRangeDrawsWith(NET_SHIP_COLOR_NONE);
+	cwFromOutpost = false;
+	const SpritePickerPage setup = cwRangePage("In-Game", ships, inGame);
+	const bool setupDrawn = cwRangeDrawsWith(NET_SHIP_COLOR_NONE) && !cwRangeDrawsWith(6);
+	static char why[96];
+	char detail[64] = "";
+	const bool picked = spritePickerDyeSelfTest(&outpost, detail, sizeof(detail));
+	netStyleSetSeatColor(seat, colorWas);
+
+	if (outpost.dye != 6 || setup.dye != NET_SHIP_COLOR_NONE)
+		return "the Range Ship picker skips the Ship Color in the outpost, or wears it in Setup";
+	if (!outpostDrawn || !setupDrawn)
+		return "the range ship skips the Ship Color in the outpost, or wears it in Setup";
+	if (!picked)
+	{
+		snprintf(why, sizeof(why), "the Range Ship picker: %s", detail);
+		return why;
+	}
+	return NULL;
+}
+
 bool weaponEditorSkinPreviewSelfTest(char *detail, size_t detailSize)
 {
 	const bool savedOutpost = cwFromOutpost;
@@ -3933,7 +4001,12 @@ bool weaponEditorSkinPreviewSelfTest(char *detail, size_t detailSize)
 	const JE_byte savedShips[2] = { player[0].items.ship, player[1].items.ship };
 	const JE_byte savedSkins[2] = { shipSkinGet(0), shipSkinGet(1) };
 
+	isNetworkGame = false;
+	twoPlayerMode = false;
+	coopCampaignMode = false;
 	const char *fault = cwSkinPreviewFault();
+	if (fault == NULL)
+		fault = cwRangeDyeFault();
 	if (fault == NULL)
 	{
 		isNetworkGame = true;
@@ -3942,6 +4015,8 @@ bool weaponEditorSkinPreviewSelfTest(char *detail, size_t detailSize)
 		thisPlayerNum = 2;
 		fault = cwSkinPreviewFault();
 	}
+	if (fault == NULL)
+		fault = cwRangeDyeFault();
 
 	cwFromOutpost = savedOutpost;
 	cwEquippedShip = savedEquipped;

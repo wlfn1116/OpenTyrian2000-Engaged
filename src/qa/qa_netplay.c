@@ -756,7 +756,8 @@ void qa_test_online_ship_style(void)
 
 		netStyleSetSeatColor(0, (ENDLESS_TURBODRIVE_SHIP_FILTER >> 4) + 1);
 		thisPlayerNum = 1;
-		qa_check(netStyleForSeat(0).bank < 0, "a withheld dye is not worn in Endless either");
+		qa_check(netStyleForSeat(0).bank < 0 && netStyleLocalWornColor() == NET_SHIP_COLOR_NONE,
+		         "a withheld dye is not worn in Endless either, and the ship pickers drop it too");
 		netStyleSetSeatColor(0, 3);
 
 		endlessMode = false;

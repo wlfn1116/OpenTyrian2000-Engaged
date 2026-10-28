@@ -305,9 +305,9 @@ bool JE_shipEditorOutpostMusicSelfTest(void)
 	return outpostKeepsSong && setupShuffles;
 }
 
-static void sePickDraw(int graphic, int px, int py, int w, int h)
+static void sePickDraw(int graphic, int dye, int px, int py, int w, int h)
 {
-	spritePickerDrawGraphic(EXTRA_SHIPS_LOCAL_SEAT, graphic, px, py, w, h);
+	spritePickerDrawGraphic(EXTRA_SHIPS_LOCAL_SEAT, graphic, dye, px, py, w, h);
 }
 
 static bool sePickGraphic(int slot)
