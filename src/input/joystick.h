@@ -135,6 +135,17 @@ void poll_joysticks(void);
 void push_key(SDL_Scancode key);
 void push_joysticks_as_keyboard(void);
 
+#if defined(__SWITCH__)
+enum { JOYSTICK_CONSOLE_L = 6, JOYSTICK_CONSOLE_R = 7 };
+#elif defined(__vita__)
+enum { JOYSTICK_CONSOLE_L = 4, JOYSTICK_CONSOLE_R = 5 };
+#endif
+
+#if defined(__SWITCH__) || defined(__vita__)
+int joystick_shoulder_step(bool was[2]);
+#endif
+int joystick_page_step(bool was[2]);
+
 void init_joysticks(void);
 void deinit_joysticks(void);
 

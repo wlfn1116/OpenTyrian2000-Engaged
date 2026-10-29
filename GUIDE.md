@@ -418,8 +418,9 @@ or sidekick.
 
 Enter or a click on **Shop Icon**, **Sprite**, **Body Sprite**, or the Range
 page's **Ship** opens a picker grid. Tap or press Enter to choose, drag or use
-the mouse wheel to scroll, and type a number to jump to it. Tab switches between
-the tabs along the top; Esc or right-click cancels. The bullet sprite grid also
+the mouse wheel to scroll, and type a number to jump to it. Tab or a controller's
+sidekick buttons switch between the tabs along the top, as do L and R on Switch
+and Vita; Esc or right-click cancels. The bullet sprite grid also
 holds the miscellaneous interface sprites. The ship grid shows each distinct
 hull once and lists Ship Editor ships under **Custom**.
 

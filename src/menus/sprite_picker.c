@@ -635,11 +635,19 @@ static void spDraw(const SpState *s)
 	for (int i = 0; i < lineCount; ++i)
 		spDrawText(mid, iy1 + 5 + 10 * i, lines[i].text, lines[i].value);
 
+#if defined(__SWITCH__) || defined(__vita__)
+	const char *const hint = (spec->pageCount > 1)
+	                       ? "Tap or A picks, drag scrolls, L/R pages. B cancels."
+	                       : "Tap or A picks, drag scrolls. B cancels.";
+#else
 	const char *const hint = (p->listTag != NULL)
-	                       ? "Tap or Enter picks, drag scrolls. Esc cancels."
+	                       ? ((spec->pageCount > 1)
+	                          ? "Tap or Enter picks, drag scrolls, Tab pages. Esc cancels."
+	                          : "Tap or Enter picks, drag scrolls. Esc cancels.")
 	                       : (spec->pageCount > 1)
 	                       ? "Tap or Enter picks, drag scrolls, type a number, Tab pages."
 	                       : "Tap or Enter picks, drag scrolls, type a number. Esc cancels.";
+#endif
 	editorDrawHint(hint);
 }
 
@@ -959,6 +967,7 @@ bool spritePickerRun(const SpritePickerSpec *spec, int *value)
 	mouse_scroll = 0;
 	int prevX = mouse_x, prevY = mouse_y;
 	bool done = false, picked = false;
+	bool shoulderWas[2] = { false, false };
 	const double tick_ms = editorTickMs();
 	double nextTick_ms = SDL_GetTicks();
 	while (!done)
@@ -973,15 +982,17 @@ bool spritePickerRun(const SpritePickerSpec *spec, int *value)
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
 		setDelay(1);
+		int pageStep = 0;
 		for (;;)
 		{
 			push_joysticks_as_keyboard();
+			pageStep = joystick_page_step(shoulderWas);
 			JE_mouseStart();
 			JE_showVGA();
 			JE_mouseReplace();
-			if (newkey || newmouse || new_text || mouse_scroll != 0 || mouse_x != prevX ||
-			    mouse_y != prevY || (s.pressed && !mousedown) || s.fling != 0.0f ||
-			    getDelayTicks() == 0)
+			if (newkey || newmouse || new_text || pageStep != 0 || mouse_scroll != 0 ||
+			    mouse_x != prevX || mouse_y != prevY || (s.pressed && !mousedown) ||
+			    s.fling != 0.0f || getDelayTicks() == 0)
 				break;
 			if (!output_vsync)
 				limit_render_fps();
@@ -992,6 +1003,8 @@ bool spritePickerRun(const SpritePickerSpec *spec, int *value)
 			spHandleText(&s);
 		if (!done && newkey)
 			spHandleKey(&s, &done, &picked, value);
+		if (!done && pageStep != 0 && s.spec.pageCount > 1)
+			spSwitchPage(&s, s.page + pageStep);
 		newkey = newmouse = new_text = false;
 	}
 	return picked;

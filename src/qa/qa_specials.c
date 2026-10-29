@@ -10,9 +10,12 @@
 #include "endless.h"
 #include "episodes.h"
 #include "endless_internal.h"
+#include "game_menu.h"
 #include "game_state.h"
+#include "network.h"
 #include "player.h"
 #include "player_ship.h"
+#include "ship_skin.h"
 #include "specials.h"
 #include "video.h"
 
@@ -252,6 +255,42 @@ void qa_test_twiddle_ships(void)
 	player[0].items.ship = SHIP_DRAGONWING;
 	const JE_byte boughtWing = qa_perform_twiddle(1, (JE_byte)(shipCombos[0][0] - 1));
 	qa_check(boughtWing != 0, "a bought Dragonwing twiddles off the shared row");
+
+	const bool savedNet = isNetworkGame;
+	const JE_boolean savedTimed = timedBattleMode;
+	const JE_byte savedSuperArcade = superArcadeMode;
+	const JE_word savedGr = shipGr;
+	Sprite2_array *const savedGrPtr = shipGrPtr;
+	const JE_byte savedSkin = shipSkinGet(0);
+	isNetworkGame = false;
+	timedBattleMode = false;
+	superArcadeMode = SA_NONE;
+
+	const JE_word talon = 1;
+	player[0].items.ship = (Uint8)talon;
+	shipGr = shop_ship_hull(talon, &shipGrPtr);
+	const JE_byte plain[2] = {
+		qa_perform_twiddle(1, (JE_byte)(shipCombos[talon][0] - 1)),
+		qa_perform_twiddle(1, (JE_byte)(shipCombos[talon][1] - 1)),
+	};
+	int skins[SHIP_SKIN_ORDER_MAX];
+	const int skinCount = shipSkinOrder(0, shipGrPtr, shipGr, skins, COUNTOF(skins));
+	bool sameTwiddles = skinCount > 1 && plain[0] != 0 && plain[1] != 0;
+	for (int i = 1; i < skinCount; ++i)
+	{
+		shipSkinSet(0, (JE_byte)skins[i]);
+		sameTwiddles = sameTwiddles && shipSkinWorn(0, shipGrPtr, shipGr) == skins[i] &&
+		               qa_perform_twiddle(1, (JE_byte)(shipCombos[talon][0] - 1)) == plain[0] &&
+		               qa_perform_twiddle(1, (JE_byte)(shipCombos[talon][1] - 1)) == plain[1];
+	}
+	qa_check(sameTwiddles, "every skin a ship can wear keeps that ship's own twiddles");
+
+	shipSkinSet(0, savedSkin);
+	shipGrPtr = savedGrPtr;
+	shipGr = savedGr;
+	superArcadeMode = savedSuperArcade;
+	timedBattleMode = savedTimed;
+	isNetworkGame = savedNet;
 
 	/* Seat two. The linked pair's rear half has no ship of its own and twiddles off row 0; every
 	 * mode where it flies its own ship uses that ship's row. */

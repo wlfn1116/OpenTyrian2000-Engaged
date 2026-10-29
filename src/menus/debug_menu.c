@@ -102,21 +102,11 @@ void debug_panel_scrollbar(int px1, int items_top, int row_h, int visibleRows, i
 #if defined(__SWITCH__) || defined(__vita__)
 void debug_panel_shoulder_paging(bool was[2])
 {
-#if defined(__SWITCH__)
-	static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
-#else
-	static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
-#endif
-	for (int b = 0; b < 2; ++b)
+	const int step = joystick_shoulder_step(was);
+	if (step != 0 && !newkey)
 	{
-		const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-		                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
-		if (down && !was[b] && !newkey)
-		{
-			newkey = true;
-			lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
-		}
-		was[b] = down;
+		newkey = true;
+		lastkey_scan = (step < 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
 	}
 }
 #endif

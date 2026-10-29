@@ -356,6 +356,42 @@ void push_joysticks_as_keyboard(void)
 	}
 }
 
+#if defined(__SWITCH__) || defined(__vita__)
+int joystick_shoulder_step(bool was[2])
+{
+	static const int shoulder[2] = { JOYSTICK_CONSOLE_L, JOYSTICK_CONSOLE_R };
+
+	int edge = 0;
+	for (int side = 0; side < 2; ++side)
+	{
+		const bool down = joysticks > 0 && joystick[0].handle != NULL &&
+		                  SDL_JoystickGetButton(joystick[0].handle, shoulder[side]) != 0;
+		if (down && !was[side] && edge == 0)
+			edge = (side == 0) ? -1 : 1;
+		was[side] = down;
+	}
+	return edge;
+}
+#endif
+
+int joystick_page_step(bool was[2])
+{
+	bool back = false, forward = false;
+	for (int j = 0; j < joysticks; j++)
+	{
+		back = back || joystick[j].action_pressed[2];
+		forward = forward || joystick[j].action_pressed[3];
+	}
+#if defined(__SWITCH__) || defined(__vita__)
+	const int shoulder = joystick_shoulder_step(was);
+	back = back || shoulder < 0;
+	forward = forward || shoulder > 0;
+#else
+	(void)was;
+#endif
+	return (int)forward - (int)back;
+}
+
 // Open SDL device `index` into slot j with its saved bindings, or defaults for a new device.
 static void joystick_open(int j, int index)
 {

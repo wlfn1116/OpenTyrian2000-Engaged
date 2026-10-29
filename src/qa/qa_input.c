@@ -41,16 +41,31 @@ static void qa_pad_detach(SDL_Joystick *pad)
 			SDL_JoystickDetachVirtual(d);
 }
 
+static void qa_pad_hold(int slot, const SDL_GameControllerButton *buttons, size_t count, bool down)
+{
+	for (size_t i = 0; i < count; ++i)
+		SDL_JoystickSetVirtualButton(joystick[slot].handle, buttons[i],
+		                             down ? SDL_PRESSED : SDL_RELEASED);
+	poll_joystick(slot);
+}
+
 // Hold one virtual button for a poll. `action` is a Joystick action index, or ~direction.
 static bool qa_pad_button(int slot, SDL_GameControllerButton button, int action)
 {
-	SDL_JoystickSetVirtualButton(joystick[slot].handle, button, SDL_PRESSED);
-	poll_joystick(slot);
+	qa_pad_hold(slot, &button, 1, true);
 	const bool held = action >= 0 ? joystick[slot].action[action]
 	                              : joystick[slot].direction[~action];
-	SDL_JoystickSetVirtualButton(joystick[slot].handle, button, SDL_RELEASED);
-	poll_joystick(slot);
+	qa_pad_hold(slot, &button, 1, false);
 	return held;
+}
+
+static int qa_pad_page_step(int slot, const SDL_GameControllerButton *buttons, size_t count)
+{
+	qa_pad_hold(slot, buttons, count, true);
+	bool was[2] = { false, false };
+	const int step = joystick_page_step(was);
+	qa_pad_hold(slot, buttons, count, false);
+	return step;
 }
 #endif
 
@@ -108,6 +123,21 @@ void qa_test_controller_hotplug(void)
 		};
 		for (size_t i = 0; i < COUNTOF(presses); ++i)
 			qa_check(qa_pad_button(slot, presses[i].button, presses[i].action), presses[i].what);
+
+		const SDL_GameControllerButton left = SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
+		const SDL_GameControllerButton right = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
+		const SDL_GameControllerButton sidekick = SDL_CONTROLLER_BUTTON_X;
+		const SDL_GameControllerButton confirm = SDL_CONTROLLER_BUTTON_A;
+		const SDL_GameControllerButton shoulders[2] = { left, right };
+		qa_check(qa_pad_page_step(slot, &left, 1) == -1,
+		         "the left shoulder turns a picker back a tab");
+		qa_check(qa_pad_page_step(slot, &right, 1) == 1,
+		         "the right shoulder turns a picker forward a tab");
+		qa_check(qa_pad_page_step(slot, &sidekick, 1) == -1,
+		         "X, the other left sidekick button, turns a picker back a tab too");
+		qa_check(qa_pad_page_step(slot, &confirm, 1) == 0, "A picks without turning the tab");
+		qa_check(qa_pad_page_step(slot, shoulders, 2) == 0,
+		         "both shoulders at once leave the tab where it is");
 
 		SDL_Joystick *const pad = joystick[slot].handle;
 		SDL_JoystickSetVirtualAxis(pad, SDL_CONTROLLER_AXIS_LEFTY, -32768);

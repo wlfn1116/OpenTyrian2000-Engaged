@@ -124,11 +124,10 @@ static const struct
 	{ 3, SDL_SCANCODE_F },
 #if defined(__SWITCH__)
 	{ 2, SDL_SCANCODE_SLASH },
-	{ 6, SDL_SCANCODE_M },
 #else
 	{ 0, SDL_SCANCODE_SLASH },
-	{ 4, SDL_SCANCODE_M },
 #endif
+	{ JOYSTICK_CONSOLE_L, SDL_SCANCODE_M },
 };
 #endif
 
