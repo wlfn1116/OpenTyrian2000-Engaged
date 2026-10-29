@@ -79,6 +79,7 @@ static Position *positions = NULL;
 static Uint8 fmchip[0xff], jumping, fadeonoff, allvolume, hardfade, tempo_now, pattplay, tempo, regbd, chandelay[9], mode, pattlen;
 static Uint16 posplay, jumppos, speed;
 static Uint16 *patterns = NULL;
+static size_t numpatterns;
 static Uint16 numpatch, numposi, mainvolume;
 
 bool playing, songlooped;
@@ -172,7 +173,7 @@ bool lds_load(FILE *f, unsigned int music_offset, unsigned int music_size)
 	fseek(f, 2, SEEK_CUR); /* ignore # of digital sounds (dunno what this is for) */
 	
 	unsigned int remaining = music_size - (ftell(f) - music_offset);
-	size_t numpatterns = remaining / 2;
+	numpatterns = remaining / 2;
 
 	free(patterns);
 	patterns = malloc_die(sizeof(Uint16) * numpatterns);
@@ -188,12 +189,15 @@ void lds_free(void)
 {
 	free(soundbank);
 	soundbank = NULL;
+	numpatch = 0;
 	
 	free(positions);
 	positions = NULL;
+	numposi = 0;
 	
 	free(patterns);
 	patterns = NULL;
+	numpatterns = 0;
 }
 
 void lds_rewind(void)
@@ -314,7 +318,11 @@ int lds_update(void)
 	}
 
 	/* handle notes */
-	if(!tempo_now && positions)
+	if(!tempo_now && posplay >= numposi)
+	{
+		playing = false;
+	}
+	else if(!tempo_now)
 	{
 		vbreak = false;
 		for(chan = 0; chan < 9; chan++)
@@ -323,9 +331,10 @@ int lds_update(void)
 			if(!c->packwait) {
 				Uint16 patnum = positions[posplay * 9 + chan].patnum;
 				Uint8 transpose = positions[posplay * 9 + chan].transpose;
+				const size_t patpos = (size_t)patnum + c->packpos;
 				/*printf("> %p", positions);*/
 
-				comword = patterns[patnum + c->packpos];
+				comword = patpos < numpatterns ? patterns[patpos] : 0;
 				comhi = comword >> 8; comlo = comword & 0xff;
 				if(comword) {
 					if(comhi == 0x80)
@@ -447,7 +456,7 @@ int lds_update(void)
 								high = comhi << 4;
 							} else {
 								sound = comlo & maxsound;
-								high = (comhi + transp) << 4;
+								high = (Uint16)(comhi + transp) << 4;
 							}
 
 							  /*
@@ -655,6 +664,9 @@ int lds_update(void)
 
 static void lds_playsound(int inst_number, int channel_number, int tunehigh)
 {
+	if(inst_number >= numpatch)
+		return;
+
 	Channel		*c = &channel[channel_number];		/* current channel */
 	SoundBank		*i = &soundbank[inst_number];		/* current instrument */
 	Uint32		regnum = op_table[channel_number];	/* channel's OPL2 register */
@@ -716,8 +728,8 @@ static void lds_playsound(int inst_number, int channel_number, int tunehigh)
 	lds_setregs(0xc0 + channel_number, i->feedback);
 	lds_setregs_adv(0xb0 + channel_number, 0xdf, 0);		/* key off */
 	
-	freq = frequency[tunehigh % (12 * 16)];
-	octave = tunehigh / (12 * 16) - 1;
+	freq = frequency[(Uint16)tunehigh % (12 * 16)];
+	octave = (Uint16)tunehigh / (12 * 16) - 1;
 	if(!i->glide) {
 		if(!i->portamento || !c->lasttune) {
 			lds_setregs(0xa0 + channel_number, freq & 0xff);
@@ -761,7 +773,7 @@ static void lds_playsound(int inst_number, int channel_number, int tunehigh)
 		c->trccount = 0;
 	}
 	
-	c->arp_size = i->arpeggio & 15;
+	c->arp_size = MIN(i->arpeggio & 15, 12);
 	c->arp_speed = i->arpeggio >> 4;
 	memcpy(c->arp_tab, i->arp_tab, 12);
 	c->keycount = i->keyoff;
