@@ -204,7 +204,7 @@ const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr)
 static const struct { const char *stock, *endless; } endlessSpecialNames[] =
 {
 	{ "Pearl Wind",      "Pearl Shot" },
-	{ "8-Way Microbomb", "Microbomb" },
+	{ "8-Way Microbomb", "MicroBomb" },
 };
 
 const char *JE_specialName(JE_byte id)

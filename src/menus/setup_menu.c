@@ -1117,7 +1117,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_REWORK_BASE + REWORK_RAMMING, "Ramming:",
 				  "Ram kills pay as kills; you ram while invulnerable." },
 				{ MENU_ITEM_REWORK_BASE + REWORK_ITEM_NAMES, "Item Names:",
-				  "Endless names, such as Microbomb and Pearl Shot." },
+				  "Endless names, such as MicroBomb and Pearl Shot." },
 				MENU_DONE_ROW
 			},
 		},

@@ -1252,15 +1252,15 @@ void qa_test_endless_special_names(void)
 	                   JE_specialName((JE_byte)microbomb) == special[microbomb].name &&
 	                   JE_specialName((JE_byte)pearlShot) == special[pearlShot].name;
 	endlessMode = true;
-	qa_check(stock && strcmp(JE_specialName((JE_byte)microbomb), "Microbomb") == 0,
-	         "Endless calls the 8-Way Microbomb what it fires, a Microbomb");
+	qa_check(stock && strcmp(JE_specialName((JE_byte)microbomb), "MicroBomb") == 0,
+	         "Endless calls the 8-Way Microbomb what it fires, a MicroBomb");
 	qa_check(strcmp(JE_specialName((JE_byte)pearlShot), "Pearl Shot") == 0 &&
 	         (pearlField == 0 || JE_specialName((JE_byte)pearlField) == special[pearlField].name),
 	         "...still names the instant Pearl Wind a Pearl Shot, and leaves the field one alone");
 
 	endlessMode = false;
 	reworkEnabled[REWORK_ITEM_NAMES] = true;
-	qa_check(strcmp(JE_specialName((JE_byte)microbomb), "Microbomb") == 0
+	qa_check(strcmp(JE_specialName((JE_byte)microbomb), "MicroBomb") == 0
 	         && strcmp(JE_weaponPortName(2), "Front Multi-Cannon") == 0
 	         && strcmp(JE_shipName(11), "TX SilverCloud") == 0,
 	         "the Item Names rework gives the other modes the Endless names");

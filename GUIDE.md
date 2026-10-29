@@ -126,7 +126,7 @@ Endless always plays the item [reworks](#reworks). For specials:
   orbs that grant specials here stay put, and a pickup is let go if your ship
   goes down. **Opening Salvo** makes the pull start faster.
 - The **Orange Shield** ring circles your ship.
-- **8-Way Microbomb** is named **Microbomb** and **Pearl Wind** is named
+- **8-Way Microbomb** is named **MicroBomb** and **Pearl Wind** is named
   **Pearl Shot**.
 - The **Zica Laser** Lv11 also fires the Lv10 beam, and its Auto pattern is the
   Ep 4-5 spread.
@@ -487,7 +487,7 @@ the other modes:
 | Attractor | Hauls pickups onto your ship until it collects them |
 | Orange Shield | The shield ring circles your ship instead of the air above it |
 | Ramming | Ram kills pay and drop like kills; invulnerable ships ram every tenth tick |
-| Item Names | Endless names, such as Microbomb, Pearl Shot, and Front Multi-Cannon |
+| Item Names | Endless names, such as MicroBomb, Pearl Shot, and Front Multi-Cannon |
 
 Endless always plays every rework. Vanilla turns them all off, and Engaged turns
 them all on. Online sessions use the host's choices.
