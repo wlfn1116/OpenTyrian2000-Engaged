@@ -61,6 +61,12 @@
     <ClCompile Include="..\src\audio\opl.c">
       <Filter>audio</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\audio\custom_audio.c">
+      <Filter>audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\audio\custom_audio_codecs.c">
+      <Filter>audio</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\audio\sfx.c">
       <Filter>audio</Filter>
     </ClCompile>
@@ -480,6 +486,12 @@
       <Filter>audio</Filter>
     </ClInclude>
     <ClInclude Include="..\src\audio\opl.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\custom_audio.h">
+      <Filter>audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\audio\custom_audio_codecs.h">
       <Filter>audio</Filter>
     </ClInclude>
     <ClInclude Include="..\src\audio\sfx.h">

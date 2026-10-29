@@ -16,6 +16,7 @@
 #include "game_menu.h"
 #include "game_state.h"
 #include "helptext.h"
+#include "item_prices.h"
 #include "keyboard.h"
 #include "level_load.h"
 #include "lvlmast.h"
@@ -292,10 +293,14 @@ static void endlessFillShop(void)
 	if (endlessActiveMods & ENDLESS_MOD_CURSED)
 		return;
 
-	// Seed each category with the player's own item, never the stale
-	// last_items, so a reroll keeps whatever the player owns.
-	const PlayerItems *const standard = extraShipStandard(me());
-	const PlayerItems *it = (standard != NULL) ? standard : &shopper()->items;
+	// Seed each category with the player's live equipped item, never the stale
+	// last_items, so a reroll keeps whatever is on the ship.
+	PlayerItems worn = shopper()->items;
+	const JE_byte lent = extraShipLentParts(me());
+	for (uint part = 0; part < ITEM_PARTS; ++part)
+		if ((lent & (1u << part)) != 0)
+			*playeritem_map(&worn, part) = 0;
+	const PlayerItems *it = &worn;
 
 	// Front and rear share one id pool: fill front first (holding back the equipped rear), then
 	// rear excluding the front row, so no weapon id lands in both menus at once.
@@ -318,6 +323,26 @@ void endlessShopRedrawStock(void)
 	endlessFillShop();
 }
 
+static bool endlessFillMatches(Uint64 rng, const PlayerItems *plain, const PlayerItems *worn,
+                               JE_byte lent, const PlayerItems *standard)
+{
+	extraShipReturnReset();
+	shopper()->items = *plain;
+	endlessPlayerRngState[me()] = rng;
+	endlessFillShop();
+	JE_byte plainAvail[COUNTOF(itemAvail)][COUNTOF(itemAvail[0])];
+	JE_byte plainAvailMax[COUNTOF(itemAvailMax)];
+	memcpy(plainAvail, itemAvail, sizeof(plainAvail));
+	memcpy(plainAvailMax, itemAvailMax, sizeof(plainAvailMax));
+
+	extraShipSetStandard(me(), standard, lent);
+	shopper()->items = *worn;
+	endlessPlayerRngState[me()] = rng;
+	endlessFillShop();
+	return memcmp(plainAvail, itemAvail, sizeof(plainAvail)) == 0
+	    && memcmp(plainAvailMax, itemAvailMax, sizeof(plainAvailMax)) == 0;
+}
+
 bool endlessShopSeedSelfTest(void)
 {
 	const uint p = me();
@@ -331,39 +356,31 @@ bool endlessShopSeedSelfTest(void)
 	ExtraShipReturn savedReturn[2];
 	extraShipReturnSave(savedReturn);
 
-	PlayerItems own = savedItems;
+	PlayerItems bare = savedItems;
+	for (uint part = 0; part < ITEM_PARTS; ++part)
+		*playeritem_map(&bare, part) = 0;
+	PlayerItems own = bare;
 	own.ship = 1;
 	own.weapon[FRONT_WEAPON].id = 1;
-	own.weapon[REAR_WEAPON].id = 0;
 	own.generator = 1;
 	own.shield = 1;
-	own.sidekick[LEFT_SIDEKICK] = 0;
-	own.sidekick[RIGHT_SIDEKICK] = 0;
-	PlayerItems lent = own;
+	PlayerItems lent = bare;
 	lent.ship = EXTRA_SHIP_ID_BASE + 1;
 	lent.weapon[FRONT_WEAPON].id = 3;
-	lent.weapon[REAR_WEAPON].id = 5;
+	lent.weapon[REAR_WEAPON].id = 6;
 	lent.generator = 2;
 	lent.shield = 2;
 	lent.sidekick[LEFT_SIDEKICK] = 1;
 	lent.sidekick[RIGHT_SIDEKICK] = 1;
+	PlayerItems bought = bare;
+	bought.weapon[FRONT_WEAPON].id = 5;
 	endlessActiveMods &= ~(Uint64)ENDLESS_MOD_CURSED;
 
-	extraShipReturnReset();
-	shopper()->items = own;
-	endlessPlayerRngState[p] = savedRng;
-	endlessFillShop();
-	JE_byte plainAvail[COUNTOF(itemAvail)][COUNTOF(itemAvail[0])];
-	JE_byte plainAvailMax[COUNTOF(itemAvailMax)];
-	memcpy(plainAvail, itemAvail, sizeof(plainAvail));
-	memcpy(plainAvailMax, itemAvailMax, sizeof(plainAvailMax));
-
-	extraShipSetStandard(p, &own, EXTRA_SHIP_LENT_ALL);
-	shopper()->items = lent;
-	endlessPlayerRngState[p] = savedRng;
-	endlessFillShop();
-	const bool same = memcmp(plainAvail, itemAvail, sizeof(plainAvail)) == 0
-	               && memcmp(plainAvailMax, itemAvailMax, sizeof(plainAvailMax)) == 0;
+	const bool lentAlone = endlessFillMatches(savedRng, &bare, &lent, EXTRA_SHIP_LENT_ALL, &own);
+	lent.weapon[FRONT_WEAPON].id = 5;
+	const JE_byte lentButFront = (JE_byte)(EXTRA_SHIP_LENT_ALL & ~(1u << ITEM_PART_FRONT));
+	const bool boughtKept = endlessFillMatches(savedRng, &bought, &lent, lentButFront, &own);
+	const bool same = lentAlone && boughtKept;
 
 	extraShipReturnRestore(savedReturn);
 	memcpy(itemAvailMax, savedAvailMax, sizeof(itemAvailMax));

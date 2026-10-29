@@ -44,7 +44,8 @@ typedef enum
 	ICON_UP, ICON_DOWN, ICON_LEFT, ICON_RIGHT,
 	ICON_FIRE, ICON_CHANGE,
 	ICON_POD_L, ICON_POD_R, ICON_POD_BOTH,
-	ICON_EXPAND
+	ICON_EXPAND,
+	ICON_SOUND, ICON_MUTE
 } TouchIcon;
 
 typedef enum
@@ -139,13 +140,26 @@ static const TouchButtonDef LAYOUT_SKIP[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_NAV },
 };
 
-/* Jukebox adds a text-overlay toggle in the top-right slot. */
+/* Jukebox adds a text-overlay toggle in the top-right slot and a songs/sounds switch above the
+ * right arrow. */
 static const TouchButtonDef LAYOUT_JUKEBOX[] =
 {
-	{ TOUCH_BTN_ESC,        ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
-	{ TOUCH_BTN_FULLSCREEN, ICON_EXPAND,  1,  0, SDL_SCANCODE_F,      false, GATE_ALWAYS },
-	{ TOUCH_BTN_LEFT,       ICON_LEFT,   -1, -1, SDL_SCANCODE_LEFT,   false, GATE_ALWAYS },
-	{ TOUCH_BTN_RIGHT,      ICON_RIGHT,   1, -1, SDL_SCANCODE_RIGHT,  false, GATE_ALWAYS },
+	{ TOUCH_BTN_ESC,          ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_FULLSCREEN,   ICON_EXPAND,  1,  0, SDL_SCANCODE_F,      false, GATE_ALWAYS },
+	{ TOUCH_BTN_LEFT,         ICON_LEFT,   -1, -1, SDL_SCANCODE_LEFT,   false, GATE_ALWAYS },
+	{ TOUCH_BTN_RIGHT,        ICON_RIGHT,   1, -1, SDL_SCANCODE_RIGHT,  false, GATE_ALWAYS },
+	{ TOUCH_BTN_JUKEBOX_MODE, ICON_CYCLE,   1, -2, SDL_SCANCODE_SLASH,  false, GATE_ALWAYS },
+};
+
+static const TouchButtonDef LAYOUT_JUKEBOX_SOUNDS[] =
+{
+	{ TOUCH_BTN_ESC,          ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_FULLSCREEN,   ICON_EXPAND,  1,  0, SDL_SCANCODE_F,      false, GATE_ALWAYS },
+	{ TOUCH_BTN_LEFT,         ICON_LEFT,   -1, -1, SDL_SCANCODE_LEFT,   false, GATE_ALWAYS },
+	{ TOUCH_BTN_RIGHT,        ICON_RIGHT,   1, -1, SDL_SCANCODE_RIGHT,  false, GATE_ALWAYS },
+	{ TOUCH_BTN_JUKEBOX_MODE, ICON_CYCLE,   1, -2, SDL_SCANCODE_SLASH,  false, GATE_ALWAYS },
+	{ TOUCH_BTN_PLAY_SOUND,   ICON_SOUND,  -1, -2, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
+	{ TOUCH_BTN_MUTE_MUSIC,   ICON_MUTE,    1, -3, SDL_SCANCODE_M,      false, GATE_ALWAYS },
 };
 
 /* Destruct keeps held actions below the thumbs and one-shot actions along the top. */
@@ -372,6 +386,10 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 	case TOUCH_LAYOUT_CONFIRM:  defs = LAYOUT_CONFIRM;  count = (int)COUNTOF(LAYOUT_CONFIRM);  break;
 	case TOUCH_LAYOUT_SKIP:     defs = LAYOUT_SKIP;     count = (int)COUNTOF(LAYOUT_SKIP);     break;
 	case TOUCH_LAYOUT_JUKEBOX:  defs = LAYOUT_JUKEBOX;  count = (int)COUNTOF(LAYOUT_JUKEBOX);  break;
+	case TOUCH_LAYOUT_JUKEBOX_SOUNDS:
+		defs = LAYOUT_JUKEBOX_SOUNDS;
+		count = (int)COUNTOF(LAYOUT_JUKEBOX_SOUNDS);
+		break;
 	case TOUCH_LAYOUT_DESTRUCT: defs = LAYOUT_DESTRUCT; count = (int)COUNTOF(LAYOUT_DESTRUCT); break;
 	case TOUCH_LAYOUT_GAME:     defs = LAYOUT_GAME;     count = (int)COUNTOF(LAYOUT_GAME);     break;
 	case TOUCH_LAYOUT_MENU:
@@ -521,6 +539,37 @@ static void draw_pod(SDL_Renderer *renderer, float cx, float cy, float rad, floa
 		fill_bar(renderer, cx, cy - rad * 0.15f, cx, cy - rad, thick);
 }
 
+static void draw_arc(SDL_Renderer *renderer, float cx, float cy, float radius,
+                     float start, float sweep, float thick)
+{
+	const int steps = clampi((int)(sweep * radius / thick) * 2, 24, 512);
+	for (int i = 0; i <= steps; ++i)
+	{
+		const float a = start + sweep * (float)i / (float)steps;
+		const SDL_Rect dot = {
+			(int)(cx + radius * cosf(a)) - (int)thick / 2,
+			(int)(cy + radius * sinf(a)) - (int)thick / 2,
+			(int)thick, (int)thick
+		};
+		SDL_RenderFillRect(renderer, &dot);
+	}
+}
+
+static void draw_speaker(SDL_Renderer *renderer, float cx, float cy, float rad)
+{
+	const float left = cx - rad, neck = cx - rad * 0.45f, mouth = cx + rad * 0.15f;
+	const float half = rad * 0.3f;
+	const SDL_Rect body = { (int)left, (int)(cy - half), (int)(neck - left), (int)(half * 2.f) };
+	SDL_RenderFillRect(renderer, &body);
+
+	const float ax[3] = { neck, mouth, mouth };
+	const float ay[3] = { cy - half, cy - rad * 0.85f, cy + rad * 0.85f };
+	const float bx[3] = { neck, mouth, neck };
+	const float by[3] = { cy - half, cy + rad * 0.85f, cy + half };
+	fill_triangle(renderer, ax, ay);
+	fill_triangle(renderer, bx, by);
+}
+
 // A solid triangle pointing along (dx, dy), which covers all four arrow icons.
 static void draw_arrow(SDL_Renderer *renderer, float cx, float cy, float r, float dx, float dy)
 {
@@ -556,17 +605,7 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 	{
 		// Circular arrow for cycling modes.
 		const float start = 0.55f, sweep = 4.9f;  // radians; the gap holds the arrowhead
-		const int steps = clampi((int)(sweep * rad / thick) * 2, 24, 512);
-		for (int i = 0; i <= steps; ++i)
-		{
-			const float a = start + sweep * (float)i / (float)steps;
-			const SDL_Rect dot = {
-				(int)(cx + rad * cosf(a)) - (int)thick / 2,
-				(int)(cy + rad * sinf(a)) - (int)thick / 2,
-				(int)thick, (int)thick
-			};
-			SDL_RenderFillRect(renderer, &dot);
-		}
+		draw_arc(renderer, cx, cy, rad, start, sweep, thick);
 
 		const float a_end = start + sweep;
 		const float head = thick * 1.9f;
@@ -622,6 +661,22 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 			fill_bar(renderer, x, y, x - sx * arm, y, thick);
 			fill_bar(renderer, x, y, x, y - sy * arm, thick);
 		}
+		break;
+	}
+
+	case ICON_SOUND:
+		draw_speaker(renderer, cx, cy, rad);
+		draw_arc(renderer, cx + rad * 0.15f, cy, rad * 0.45f, -0.8f, 1.6f, thick * 0.7f);
+		draw_arc(renderer, cx + rad * 0.15f, cy, rad * 0.8f, -0.8f, 1.6f, thick * 0.7f);
+		break;
+
+	case ICON_MUTE:
+	{
+		const float inner = cx + rad * 0.4f, outer = cx + rad;
+		const float top = cy - rad * 0.35f, bottom = cy + rad * 0.35f;
+		draw_speaker(renderer, cx, cy, rad);
+		fill_bar(renderer, inner, top, outer, bottom, thick * 0.8f);
+		fill_bar(renderer, outer, top, inner, bottom, thick * 0.8f);
 		break;
 	}
 

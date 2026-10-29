@@ -223,6 +223,7 @@ NAME_PICKER(sparkMode, sparkModeNames)
 NAME_PICKER(customEndless, customEndlessNames)
 NAME_PICKER(sfxFilter, sfxFilterNames)
 NAME_PICKER(sfxCopyLimit, sfxCopyLimitNames)
+NAME_PICKER(customSounds, custom_sounds_names)
 NAME_PICKER(rumble, rumbleNames)
 NAME_PICKER(crtFilter, crtFilterNames)
 NAME_PICKER(crtStrength, crtStrengthNames)
@@ -318,6 +319,7 @@ typedef enum
 	MENU_ITEM_MUSIC_VOLUME,
 	MENU_ITEM_SOUND_VOLUME,
 	MENU_ITEM_MUSIC_DEVICE,         // music synthesizer: OPL3 / FluidSynth / Native MIDI
+	MENU_ITEM_CUSTOM_SOUNDS,
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SFX_FILTER,           // low-pass on the mixed sound effects
@@ -716,6 +718,10 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 		enforcePlainScalerForSupersample();  // turning on re-arms Auto; scaler rule applies
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_CUSTOM_SOUNDS:
+		set_custom_sounds((custom_sounds + CUSTOM_SOUNDS_COUNT + dir) % CUSTOM_SOUNDS_COUNT);
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_XMAS:
 		JE_playSampleNum(toggle_xmas_mode() ? S_CURSOR : S_SPRING);
 		break;
@@ -870,6 +876,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SOUND_VOLUME, "Sound Volume", "Change volume with the left/right arrow keys." },
 				{ MENU_ITEM_MUSIC_DEVICE, "Music Synth:", "Synthesizer for music (FluidSynth needs a .sf2).",
 				  .getPickerItemsCount = getMusicDeviceItemsCount, .getPickerItem = getMusicDeviceItem },
+				{ MENU_ITEM_CUSTOM_SOUNDS, "Custom Sounds:",
+				  "Use mus and sfx folder files (01.mp3, 2.ogg, 3.wav...).",
+				  .getPickerItemsCount = customSoundsCount, .getPickerItem = customSoundsItem },
 				{ MENU_ITEM_ARMOR_ALARM, "Armor Alarm:", "Siren while your armor is critically low." },
 				{ MENU_ITEM_LINK_SOUNDS, "Link Sounds:", "Sound cue when two ships fuse or unfuse." },
 				{ MENU_ITEM_SFX_FILTER, "Sound Filter:",
@@ -1455,6 +1464,10 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			case MENU_ITEM_MUSIC_DEVICE:
 				value = music_device_names[music_device];
+				break;
+
+			case MENU_ITEM_CUSTOM_SOUNDS:
+				value = custom_sounds_names[custom_sounds];
 				break;
 
 			case MENU_ITEM_NET_LOG:
@@ -2218,6 +2231,14 @@ static bool runOptionsMenu(MenuId startMenu)
 					JE_playSampleNum(S_SELECT);
 					break;
 				}
+				case MENU_ITEM_CUSTOM_SOUNDS:
+				{
+					JE_playSampleNum(S_CLICK);
+
+					currentPicker = selectedMenuItemId;
+					pickerSelectedIndex = (size_t)custom_sounds;
+					break;
+				}
 				case MENU_ITEM_XMAS:
 				{
 					JE_playSampleNum(toggle_xmas_mode() ? S_CLICK : S_SPRING);
@@ -2443,6 +2464,14 @@ static bool runOptionsMenu(MenuId startMenu)
 					}
 					music_device = (MusicDevice)pickerSelectedIndex;
 					restart_audio();
+					break;
+				}
+				case MENU_ITEM_CUSTOM_SOUNDS:
+				{
+					const int before = custom_sounds;
+					set_custom_sounds((int)pickerSelectedIndex);
+					if (((before ^ custom_sounds) & CUSTOM_SOUNDS_SFX) != 0)
+						JE_playSampleNum(S_CLICK);
 					break;
 				}
 				default:

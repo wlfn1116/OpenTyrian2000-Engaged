@@ -14,6 +14,7 @@ void fm_quit(void);   // stop playback and tear down synth + driver
 // on_finish may be NULL and runs on the sequencer thread.
 bool fm_play(const uint8_t *smf, size_t size, bool loop, void (*on_finish)(void));
 
+void fm_stop(void);
 void fm_pause(void);           // silence and freeze the playback clock
 void fm_resume(void);          // continue from where pause froze it
 void fm_fade_out(uint32_t ms); // ramp music down over ms, then finish like a one-shot

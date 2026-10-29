@@ -140,6 +140,8 @@
     <ClCompile Include="..\src\audio\midi_smf.c" />
     <ClCompile Include="..\src\audio\musmast.c" />
     <ClCompile Include="..\src\audio\opl.c" />
+    <ClCompile Include="..\src\audio\custom_audio.c" />
+    <ClCompile Include="..\src\audio\custom_audio_codecs.c" />
     <ClCompile Include="..\src\audio\sfx.c" />
     <ClCompile Include="..\src\audio\sndmast.c" />
     <ClCompile Include="..\src\audio\win_native_midi.c" />
@@ -377,6 +379,8 @@
     <ClInclude Include="..\src\audio\midi_smf.h" />
     <ClInclude Include="..\src\audio\musmast.h" />
     <ClInclude Include="..\src\audio\opl.h" />
+    <ClInclude Include="..\src\audio\custom_audio.h" />
+    <ClInclude Include="..\src\audio\custom_audio_codecs.h" />
     <ClInclude Include="..\src\audio\sfx.h" />
     <ClInclude Include="..\src\audio\sndmast.h" />
     <ClInclude Include="..\src\audio\win_native_midi.h" />

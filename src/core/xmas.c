@@ -58,13 +58,7 @@ bool xmas_set(bool on)
 	free_main_shape_tables();
 	JE_loadMainShapeTables(xmas ? "tyrianc.shp" : "tyrian.shp");
 
-	if (!audio_disabled)
-	{
-		// loadSndFile frees/reallocs the sample buffers the audio callback reads via
-		// the channel pointers, so silence the channels first (see stop_sample_channels).
-		stop_sample_channels();
-		loadSndFile(xmas);
-	}
+	reloadSndFile(xmas);
 
 	return true;
 }

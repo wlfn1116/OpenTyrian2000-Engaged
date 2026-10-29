@@ -287,7 +287,7 @@ bool fm_init(const char *soundfont, int sample_rate)
 }
 
 // stop and silence
-static void fm_stop(void)
+void fm_stop(void)
 {
 	if (g_thread != NULL)
 	{

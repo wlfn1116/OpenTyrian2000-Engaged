@@ -30,6 +30,9 @@ void lds_free(void);
 void lds_rewind(void);
 void lds_fade(Uint8 speed);
 
+#define LDS_ONCE_SCAN_UPDATES (30u * 60u * 70u)
+bool lds_plays_once(void);
+
 typedef struct {
 	unsigned char mod_misc, mod_vol, mod_ad, mod_sr, mod_wave,
 		car_misc, car_vol, car_ad, car_sr, car_wave, feedback, keyoff,

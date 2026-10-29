@@ -29,13 +29,6 @@
 #include <unistd.h>
 #endif
 
-#ifdef _WIN32
-// Keep windows.h from dragging in the old winsock.h behind SDL_net's winsock2.h.
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <dirent.h>
-#endif
 
 #define CLV_HEADER_SIZE 160
 #define CLV_MAX_BYTES   CUSTOM_EPISODE_BYTES_MAX
@@ -149,56 +142,37 @@ static bool has_clv_ext(const char *name)
 	return len >= 5 && SDL_strcasecmp(name + len - 4, ".clv") == 0;
 }
 
+typedef struct
+{
+	char (*names)[CUSTOM_EPISODE_FILE_LEN];
+	int count;
+	int max;
+} ClvList;
+
+static bool add_clv_name(const char *name, void *context)
+{
+	ClvList *const list = context;
+	if (!has_clv_ext(name))
+		return true;
+	if (strlen(name) >= CUSTOM_EPISODE_FILE_LEN)
+	{
+		fprintf(stderr, "custom episode: name too long, skipping '%s'\n", name);
+		return true;
+	}
+	if (list->count < list->max)
+		SDL_strlcpy(list->names[list->count++], name, CUSTOM_EPISODE_FILE_LEN);
+	return true;
+}
+
 /* Lists plain *.clv file names. */
 static int list_clv_files(const char *dir, char names[][CUSTOM_EPISODE_FILE_LEN], int maxNames)
 {
-	int n = 0;
 	if (dir == NULL || dir[0] == '\0')
 		return 0;
 
-#ifdef _WIN32
-	char pattern[600];
-	snprintf(pattern, sizeof(pattern), "%s/*.clv", dir);
-
-	WIN32_FIND_DATAA fd;
-	HANDLE h = FindFirstFileA(pattern, &fd);
-	if (h == INVALID_HANDLE_VALUE)
-		return 0;
-	do
-	{
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-			continue;
-		if (!has_clv_ext(fd.cFileName))  // "*.clv" also matches longer 8.3 short-name tails
-			continue;
-		if (strlen(fd.cFileName) >= CUSTOM_EPISODE_FILE_LEN)
-		{
-			fprintf(stderr, "custom episode: name too long, skipping '%s'\n", fd.cFileName);
-			continue;
-		}
-		if (n < maxNames)
-			SDL_strlcpy(names[n++], fd.cFileName, CUSTOM_EPISODE_FILE_LEN);
-	} while (FindNextFileA(h, &fd));
-	FindClose(h);
-#else
-	DIR *d = opendir(dir);
-	if (d == NULL)
-		return 0;
-	const struct dirent *e;
-	while ((e = readdir(d)) != NULL)
-	{
-		if (!has_clv_ext(e->d_name))
-			continue;
-		if (strlen(e->d_name) >= CUSTOM_EPISODE_FILE_LEN)
-		{
-			fprintf(stderr, "custom episode: name too long, skipping '%s'\n", e->d_name);
-			continue;
-		}
-		if (n < maxNames)
-			SDL_strlcpy(names[n++], e->d_name, CUSTOM_EPISODE_FILE_LEN);
-	}
-	closedir(d);
-#endif
-	return n;
+	ClvList list = { names, 0, maxNames };
+	dir_each_file(dir, add_clv_name, &list);
+	return list.count;
 }
 
 /* Moves a loose container, falling back to copy-and-delete across volumes. */

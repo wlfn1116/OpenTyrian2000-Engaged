@@ -31,6 +31,9 @@ typedef enum
 	TOUCH_BTN_SIDEKICK_BOTH,
 	TOUCH_BTN_REAR_MODE,      // shop preview: cycle the rear weapon mode, the / key
 	TOUCH_BTN_FULLSCREEN,     // jukebox: hide the text overlay, leaving only the starfield
+	TOUCH_BTN_JUKEBOX_MODE,
+	TOUCH_BTN_PLAY_SOUND,
+	TOUCH_BTN_MUTE_MUSIC,
 	TOUCH_BTN_COUNT
 } TouchButton;
 
@@ -44,6 +47,7 @@ typedef enum
 	TOUCH_LAYOUT_CONFIRM,   // a screen waiting for any key: confirm
 	TOUCH_LAYOUT_SKIP,      // a skippable logo: back, plus optional navigation and confirm
 	TOUCH_LAYOUT_JUKEBOX,
+	TOUCH_LAYOUT_JUKEBOX_SOUNDS,
 	TOUCH_LAYOUT_DESTRUCT
 } TouchLayout;
 

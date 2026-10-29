@@ -37,6 +37,9 @@ FILE *dir_fopen_die(const char *dir, const char *file, const char *mode);
 bool dir_file_exists(const char *dir, const char *file);
 bool dir_remove_file(const char *dir, const char *file);
 
+typedef bool (*DirFileVisit)(const char *name, void *context);
+void dir_each_file(const char *dir, DirFileVisit visit, void *context);
+
 long ftell_eof(FILE *f);
 
 // Allocate or terminate; zero-byte requests still return a usable pointer.

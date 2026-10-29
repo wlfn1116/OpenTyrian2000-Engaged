@@ -18,6 +18,7 @@
 #include "sfx.h"
 
 #include "audio.h"
+#include "custom_audio.h"
 #include "file.h"
 #include "opentyr.h"
 #include "sndmast.h"
@@ -34,6 +35,28 @@ size_t soundSampleCount[SOUND_COUNT] = { 0 }; /* [1..soundnum + 9] */  // FKA fx
 JE_word tyrMusicVolume, fxVolume;
 const JE_word fxPlayVol = 4;
 JE_word tempVolume;
+
+static void load_custom_sounds(void)
+{
+	const char *dirs[CUSTOM_AUDIO_DIR_COUNT];
+	const size_t dirCount = custom_audio_dirs(CUSTOM_AUDIO_SOUNDS, dirs);
+	char path[CUSTOM_AUDIO_PATH_MAX];
+	for (unsigned int i = 0; i < SOUND_COUNT; ++i)
+	{
+		if (!custom_audio_find(dirs, dirCount, i + 1, soundTitle[i], path, sizeof(path)))
+			continue;
+
+		size_t count = 0;
+		Sint16 *const samples = custom_sound_load(path, audioSampleRate, AUDIO_OUTPUT_CHANNELS,
+		                                          &count);
+		if (samples == NULL)
+			continue;
+
+		free(soundSamples[i]);
+		soundSamples[i] = samples;
+		soundSampleCount[i] = count;
+	}
+}
 
 void loadSndFile(bool xmas)
 {
@@ -118,7 +141,8 @@ void loadSndFile(bool xmas)
 	// Convert samples to output sample format and rate.
 
 	SDL_AudioCVT cvt;
-	if (SDL_BuildAudioCVT(&cvt, AUDIO_S8, 1, 11025, AUDIO_S16SYS, 1, audioSampleRate) < 0)
+	if (SDL_BuildAudioCVT(&cvt, AUDIO_S8, 1, 11025, AUDIO_S16SYS, AUDIO_OUTPUT_CHANNELS,
+	                      audioSampleRate) < 0)
 	{
 		fprintf(stderr, "error: Failed to build audio converter: %s\n", SDL_GetError());
 
@@ -157,12 +181,36 @@ void loadSndFile(bool xmas)
 
 	free(cvt.buf);
 
+	if ((custom_sounds & CUSTOM_SOUNDS_SFX) != 0)
+		load_custom_sounds();
+
 	return;
 
 die:
 	fclose(f);
 	fprintf(stderr, "error: Unexpected data was read from a file.\n");
 	JE_tyrianExitWithoutSaving(EXIT_FAILURE);
+}
+
+void freeSndFile(void)
+{
+	for (int i = 0; i < SOUND_COUNT; ++i)
+	{
+		free(soundSamples[i]);
+		soundSamples[i] = NULL;
+		soundSampleCount[i] = 0;
+	}
+}
+
+void reloadSndFile(bool xmas)
+{
+	if (audio_disabled)
+		return;
+
+	// loadSndFile frees/reallocs the sample buffers the audio callback reads via
+	// the channel pointers, so silence the channels first (see stop_sample_channels).
+	stop_sample_channels();
+	loadSndFile(xmas);
 }
 
 void JE_playSampleNum(JE_byte samplenum)

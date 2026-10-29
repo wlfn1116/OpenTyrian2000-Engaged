@@ -245,7 +245,7 @@ bool wnm_init(void)
 }
 
 // stop and silence (safe; never blocks on winmm)
-static void wnm_stop(void)
+void wnm_stop(void)
 {
 	if (g_thread != NULL)
 	{

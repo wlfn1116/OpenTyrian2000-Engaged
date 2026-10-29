@@ -34,6 +34,13 @@
 #define mkdir _mkdir
 #endif
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
+
 const char *custom_data_dir = NULL;
 
 #ifdef TARGET_MACOS
@@ -172,6 +179,47 @@ bool dir_remove_file(const char *dir, const char *file)
 	const bool removed = remove(path) == 0 || errno == ENOENT;
 	free(path);
 	return removed;
+}
+
+void dir_each_file(const char *dir, DirFileVisit visit, void *context)
+{
+	const size_t length = strlen(dir);
+	const bool separated = length > 0 && (dir[length - 1] == '/' || dir[length - 1] == '\\');
+	const char *const separator = separated ? "" : "/";
+
+#ifdef _WIN32
+	char pattern[4096];
+	snprintf(pattern, sizeof(pattern), "%s%s*", dir, separator);
+
+	WIN32_FIND_DATAA fd;
+	HANDLE h = FindFirstFileA(pattern, &fd);
+	if (h == INVALID_HANDLE_VALUE)
+		return;
+
+	do
+	{
+		if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && !visit(fd.cFileName, context))
+			break;
+	} while (FindNextFileA(h, &fd));
+	FindClose(h);
+#else
+	DIR *d = opendir(dir);
+	if (d == NULL)
+		return;
+
+	const struct dirent *e;
+	while ((e = readdir(d)) != NULL)
+	{
+		char path[4096];
+		struct stat st;
+		snprintf(path, sizeof(path), "%s%s%s", dir, separator, e->d_name);
+		if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+			continue;
+		if (!visit(e->d_name, context))
+			break;
+	}
+	closedir(d);
+#endif
 }
 
 // returns end-of-file position

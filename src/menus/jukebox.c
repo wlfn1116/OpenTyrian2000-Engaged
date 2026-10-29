@@ -102,6 +102,36 @@ static Palette vga_palette =
 	{  0,   0,   0}, {  0,   0,   0}, {  0,   0,   0}, {  0,   0,   0}
 };
 
+static void jukebox_music_volume(bool muted, int volume)
+{
+	set_volume(muted ? 0 : (Uint8)volume, fxVolume);
+}
+
+static int jukebox_pick_sound(int fx_num, int step)
+{
+	const int picked = (fx_num + SOUND_COUNT + step) % SOUND_COUNT;
+	JE_playSampleNum((JE_byte)(picked + 1));
+	return picked;
+}
+
+#if defined(__SWITCH__) || defined(__vita__)
+static const struct
+{
+	int button;
+	SDL_Scancode key;
+} jukeboxConsoleButtons[] =
+{
+	{ 3, SDL_SCANCODE_F },
+#if defined(__SWITCH__)
+	{ 2, SDL_SCANCODE_SLASH },
+	{ 6, SDL_SCANCODE_M },
+#else
+	{ 0, SDL_SCANCODE_SLASH },
+	{ 4, SDL_SCANCODE_M },
+#endif
+};
+#endif
+
 // Block-expand nonzero text pixels over the supersampled star buffer.
 static void juke_overlay_text(SDL_Surface *text1x, SDL_Surface *hi, int scale)
 {
@@ -136,6 +166,7 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 
 	bool fx = false;
 	int fx_num = 0;
+	bool music_muted = false;
 
 	int palette_fade_steps = 15;
 
@@ -164,7 +195,7 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 	for (; ; )
 	{
 		// Give touch users dedicated previous and next track buttons.
-		touch_ui_set_layout(TOUCH_LAYOUT_JUKEBOX);
+		touch_ui_set_layout(fx ? TOUCH_LAYOUT_JUKEBOX_SOUNDS : TOUCH_LAYOUT_JUKEBOX);
 
 		Uint64 now = SDL_GetPerformanceCounter();
 		float step = (float)((double)(now - last_frame) * 1000.0 / perf_freq) / get_delay_period();
@@ -197,7 +228,7 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 					}
 				}
 
-				set_volume(fade_volume, fxVolume);
+				jukebox_music_volume(fx && music_muted, fade_volume);
 			}
 
 			if (!playing || (songlooped && fade_looped_songs && !fading_song))
@@ -211,35 +242,44 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 		// starlib input needs to be rewritten
 		JE_starlib_main(step, scale > 1 ? juke_hi : VGAScreen, scale);
 
-		push_joysticks_as_keyboard();
-		service_SDL_events(true);
-
 #if defined(__SWITCH__) || defined(__vita__)
-		// Raw button 3 toggles text: Y on Switch, Square on Vita.
+		// Raw buttons: Y/Square hides the text, X/Triangle switches songs and sounds, L mutes.
 		{
-			static bool hide_btn_was;
-			const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-			                  SDL_JoystickGetButton(joystick[0].handle, 3) != 0;
-			if (down && !hide_btn_was)
-				hide_text = !hide_text;
-			hide_btn_was = down;
+			static bool was[COUNTOF(jukeboxConsoleButtons)];
+			for (size_t b = 0; b < COUNTOF(jukeboxConsoleButtons); ++b)
+			{
+				const int raw = jukeboxConsoleButtons[b].button;
+				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
+				                  SDL_JoystickGetButton(joystick[0].handle, raw) != 0;
+				if (down && !was[b])
+					push_key(jukeboxConsoleButtons[b].key);
+				was[b] = down;
+			}
 		}
 #endif
+
+		push_joysticks_as_keyboard();
+		service_SDL_events(true);
 
 		if (!hide_text)
 		{
 			char buffer[60];
 			
 			if (fx)
-				snprintf(buffer, sizeof(buffer), "%d %s", fx_num + 1, soundTitle[fx_num]);
+				snprintf(buffer, sizeof(buffer), "%d %s%s", fx_num + 1, soundTitle[fx_num],
+				         music_muted ? " - music muted" : "");
 			else
 				snprintf(buffer, sizeof(buffer), "%d %s", song_playing + 1, musicTitle[song_playing]);
 			
 			const int x = VGAScreen->w / 2;
+			const char *const help1 = fx ? "Arrow keys pick a sound, Enter plays it."
+			                            : "Press ESC to quit the jukebox.";
+			const char *const help2 = fx ? "M mutes the music. ESC quits the jukebox."
+			                            : "Arrow keys change the song being played.";
 			
-			draw_font_hv(VGAScreen, x, 170, "Press ESC to quit the jukebox.",           small_font, centered, 1, 0);
-			draw_font_hv(VGAScreen, x, 180, "Arrow keys change the song being played.", small_font, centered, 1, 0);
-			draw_font_hv(VGAScreen, x, 190, buffer,                                     small_font, centered, 1, 4);
+			draw_font_hv(VGAScreen, x, 170, help1,  small_font, centered, 1, 0);
+			draw_font_hv(VGAScreen, x, 180, help2,  small_font, centered, 1, 0);
+			draw_font_hv(VGAScreen, x, 190, buffer, small_font, centered, 1, 4);
 		}
 
 		for (int t = 0; t < whole_ticks && palette_fade_steps > 0; ++t)
@@ -288,28 +328,51 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 
 			case SDL_SCANCODE_SLASH: // switch to sfx mode
 				fx = !fx;
+				jukebox_music_volume(fx && music_muted, fade_volume);
 				break;
 			case SDL_SCANCODE_COMMA:
-				if (fx && --fx_num < 0)
-					fx_num = SOUND_COUNT - 1;
-				break;
 			case SDL_SCANCODE_PERIOD:
-				if (fx && ++fx_num >= SOUND_COUNT)
-					fx_num = 0;
+				if (fx)
+				{
+					const int direction = lastkey_scan == SDL_SCANCODE_PERIOD ? 1 : -1;
+					fx_num = jukebox_pick_sound(fx_num, direction);
+				}
 				break;
 			case SDL_SCANCODE_SEMICOLON:
 				if (fx)
 					JE_playSampleNum(fx_num + 1);
 				break;
+			case SDL_SCANCODE_M:
+				if (fx)
+				{
+					music_muted = !music_muted;
+					jukebox_music_volume(music_muted, fade_volume);
+				}
+				break;
 
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_UP:
+				if (fx)
+				{
+					fx_num = jukebox_pick_sound(fx_num, -1);
+					break;
+				}
 				play_song((song_playing > 0 ? song_playing : MUSIC_NUM) - 1);
 				stopped = false;
 				break;
 			case SDL_SCANCODE_RETURN:
 			case SDL_SCANCODE_RIGHT:
 			case SDL_SCANCODE_DOWN:
+				if (fx && lastkey_scan == SDL_SCANCODE_RETURN)
+				{
+					JE_playSampleNum(fx_num + 1);
+					break;
+				}
+				if (fx)
+				{
+					fx_num = jukebox_pick_sound(fx_num, 1);
+					break;
+				}
 				play_song((song_playing + 1) % MUSIC_NUM);
 				stopped = false;
 				break;

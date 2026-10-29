@@ -86,11 +86,7 @@ static void JE_tyrianShutdown(bool saveConfiguration)
 	free_sprite2s(&shopSpriteSheet);
 	free_sprite2s(&explosionSpriteSheet);
 
-	for (int i = 0; i < SOUND_COUNT; ++i)
-	{
-		free(soundSamples[i]);
-		soundSamples[i] = NULL;
-	}
+	freeSndFile();
 
 	close_demo_file();
 	close_episode_file();

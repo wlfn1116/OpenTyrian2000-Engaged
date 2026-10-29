@@ -235,6 +235,20 @@ void lds_fade(Uint8 speed)
 	fadeonoff = speed;
 }
 
+bool lds_plays_once(void)
+{
+	const Uint8 loadedTempo = tempo;
+
+	lds_rewind();
+	for (unsigned int i = 0; i < LDS_ONCE_SCAN_UPDATES && playing && !songlooped; ++i)
+		lds_update();
+	const bool once = !playing;
+
+	tempo = loadedTempo;
+	lds_rewind();
+	return once;
+}
+
 static void lds_setregs(Uint8 reg, Uint8 val)
 {
 	if(fmchip[reg] == val) return;

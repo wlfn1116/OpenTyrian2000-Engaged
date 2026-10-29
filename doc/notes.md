@@ -1277,8 +1277,38 @@ boundary never run on repeat.
 The Setup > Sound filter and same-sound limit act at playback, after the
 simulation has queued its sounds. Enemy fire picks its `soundQueue` slot with
 `mt_rand()`, so a limit applied at queue time would shift the RNG stream. The
-filter runs on the summed effects in the mixer's Q20.12 units, leaves the output
-bit-identical when Off, and is redesigned whenever the device rate changes.
+filter runs on each output channel's summed effects in the mixer's Q20.12 units,
+leaves the output bit-identical when Off, and is redesigned whenever the device
+rate changes.
+
+The device is stereo. Sound buffers in `soundSamples` interleave two channels,
+and `soundSampleCount` counts `Sint16` values; the loader duplicates the mono
+originals. OPL music renders mono and is copied to both channels.
+
+Setup > Sound > Custom Sounds is presentation only. No simulation or wire state
+reads it, and peers may hear different files. `custom_audio.c` finds and decodes
+the files; `audio.c` and `sfx.c` decide when they play.
+
+- Lookup scans each folder with `dir_each_file`, the one folder iterator in the
+  code. A two-digit number ranks first, then any number, then the song or sound
+  name compared without case or punctuation; extension order breaks ties.
+- The main thread reads a whole file before it hands the track to the callback,
+  so the audio thread never touches the file system. Tracks swap under the
+  device lock and close after it is released.
+- A replacement song loops or plays once as its LDS original does.
+  `lds_plays_once` runs the real player silently from the top, restores the
+  loaded tempo, and rewinds. Callers set `music_stopped` and stop any MIDI song
+  first. `fm_stop` and `wnm_stop` end a MIDI song without the finish hook that
+  a paused one could still fire.
+- Every facade call checks the custom track before its MIDI branch, so a MIDI
+  song never resumes under a custom one.
+- `fade_song` ramps 255 Loudness updates, the length of `lds_fade(1)`, then ends
+  the track as the MIDI fade does, with `playing` false.
+- The decoders in `stuff/` compile only through `custom_audio_codecs.c`, which
+  marks them as system headers.
+
+`audio_qa_begin` drives the real callback without a device for the unit suite.
+It refuses to start while a device is open, so the suite must keep `--no-sound`.
 
 Rumble is presentation. `JE_playerDamage` pulses only when `!rollback_resim`,
 keys hull hits off `cmHullHit` so the infinite-armor cheat still rumbles, and

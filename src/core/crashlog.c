@@ -7,6 +7,7 @@
 
 #ifdef _WIN32
 
+#include "file.h"
 #include "opentyr.h"
 
 #include <windows.h>
@@ -170,31 +171,35 @@ static FILE *open_net_log(void)
 	return open_log_file(name);
 }
 
+typedef struct
+{
+	const char *dir;
+	const char *prefix;
+	int deleted;
+} LogSweep;
+
+static bool delete_log(const char *name, void *context)
+{
+	LogSweep *const sweep = context;
+	const size_t prefixLength = strlen(sweep->prefix);
+	const size_t length = strlen(name);
+	if (length < prefixLength + 4 || _strnicmp(name, sweep->prefix, prefixLength) != 0
+	    || _stricmp(name + length - 4, ".log") != 0)
+		return true;
+
+	char path[MAX_PATH + LOG_NAME_MAX];
+	snprintf(path, sizeof(path), "%s%s", sweep->dir, name);
+	if (DeleteFileA(path))
+		++sweep->deleted;
+	return true;
+}
+
 // Delete <prefix>*.log in dir. The prefix protects unrelated files in shared roots.
 static int delete_logs_in(const char *dir, const char *prefix)
 {
-	char pattern[MAX_PATH + LOG_NAME_MAX];
-	snprintf(pattern, sizeof(pattern), "%s%s*.log", dir, prefix);
-
-	WIN32_FIND_DATAA fd;
-	HANDLE h = FindFirstFileA(pattern, &fd);
-	if (h == INVALID_HANDLE_VALUE)
-		return 0;
-
-	int deleted = 0;
-	do
-	{
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-			continue;
-
-		char path[MAX_PATH + LOG_NAME_MAX];
-		snprintf(path, sizeof(path), "%s%s", dir, fd.cFileName);
-		if (DeleteFileA(path))
-			++deleted;
-	} while (FindNextFileA(h, &fd));
-
-	FindClose(h);
-	return deleted;
+	LogSweep sweep = { dir, prefix, 0 };
+	dir_each_file(dir, delete_log, &sweep);
+	return sweep.deleted;
 }
 
 void crashlog_set_netlog_enabled(bool enabled)
@@ -825,7 +830,6 @@ void watchdog_init(void)
 #include "file.h"
 #include "opentyr.h"
 
-#include <dirent.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -922,33 +926,36 @@ void crashlog_netlog_line(const char *event, const char *detail)
 void crashlog_set_netlog_enabled(bool enabled) { s_netLogEnabled = enabled; }
 bool crashlog_get_netlog_enabled(void) { return s_netLogEnabled; }
 
+typedef struct
+{
+	const char *dir;
+	int deleted;
+} LogSweep;
+
+static bool delete_log(const char *name, void *context)
+{
+	LogSweep *const sweep = context;
+	const size_t len = strlen(name);
+	if (len < sizeof(LOG_PREFIX) - 1 + 4)
+		return true;
+	if (strncmp(name, LOG_PREFIX, sizeof(LOG_PREFIX) - 1) != 0)
+		return true;
+	if (strcmp(name + len - 4, ".log") != 0)
+		return true;
+
+	char path[600];
+	snprintf(path, sizeof(path), "%s/%s", sweep->dir, name);
+	if (remove(path) == 0)
+		++sweep->deleted;
+	return true;
+}
+
 // Delete opentyrian_*.log in dir, including timestamped and legacy names.
 static int delete_logs_in(const char *dir)
 {
-	DIR *d = opendir(dir);
-	if (d == NULL)
-		return 0;
-
-	int deleted = 0;
-	const struct dirent *e;
-	while ((e = readdir(d)) != NULL)
-	{
-		const size_t len = strlen(e->d_name);
-		if (len < sizeof(LOG_PREFIX) - 1 + 4)
-			continue;
-		if (strncmp(e->d_name, LOG_PREFIX, sizeof(LOG_PREFIX) - 1) != 0)
-			continue;
-		if (strcmp(e->d_name + len - 4, ".log") != 0)
-			continue;
-
-		char path[600];
-		snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
-		if (remove(path) == 0)
-			++deleted;
-	}
-	closedir(d);
-
-	return deleted;
+	LogSweep sweep = { dir, 0 };
+	dir_each_file(dir, delete_log, &sweep);
+	return sweep.deleted;
 }
 
 // Delete current and legacy logs. Consoles expose this through the Clear Logs menu row.

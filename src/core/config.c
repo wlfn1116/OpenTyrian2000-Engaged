@@ -874,6 +874,10 @@ static bool load_opentyrian_config(void)
 		if (config_get_string_option(section, "soundfont", &soundfont_name))
 			SDL_strlcpy(soundfont, soundfont_name, sizeof(soundfont));
 
+		config_get_int_option(section, "custom_sounds", &custom_sounds);
+		if (custom_sounds < CUSTOM_SOUNDS_OFF || custom_sounds >= CUSTOM_SOUNDS_COUNT)
+			custom_sounds = CUSTOM_SOUNDS_OFF;
+
 		// Store the join target and local listen port separately.
 		{
 			const char *name;
@@ -1193,6 +1197,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "touch_nav_buttons", touchNavButtons ? 1 : 0);
 	config_set_int_option(section, "touch_button_opacity", touchButtonOpacity);
 	config_set_string_option(section, "music_device", music_device_names[music_device]);
+	config_set_int_option(section, "custom_sounds", custom_sounds);
 
 	config_set_string_option(section, "net_player_name", network_player_name);
 	// Written as "host:port" so the joiner's target port is remembered with the address.

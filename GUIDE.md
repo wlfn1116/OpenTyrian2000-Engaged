@@ -16,6 +16,7 @@ online play, editors, restored content, and smoother rendering.
 | Design a weapon | Title screen > Extra > Weapon Editor, or Customize at an outpost |
 | Change graphics | Setup > Graphics |
 | Soften sound effects | Setup > Sound |
+| Play your own music or sound effects | Setup > Sound > Custom Sounds |
 | Turn on gamepad rumble | Setup > Rumble, with a rumble controller connected |
 | Choose restored content | Setup > Enhancements |
 | Use Endless item reworks elsewhere | Setup > Enhancements > Reworks |
@@ -631,6 +632,129 @@ never filtered or limited.
   1 to 3. In a busy fight the same enemy shot sound can otherwise stack several
   times over; copies past the limit are skipped.
 
+### Custom sounds
+
+**Setup > Sound > Custom Sounds** replaces the game's music (**OST**), its sound
+effects (**SFX**), or both with your own files. It is **Off** by default.
+
+Put songs in a `mus` folder and sound effects in an `sfx` folder, either beside
+the executable or in the settings folder from [Files and logs](#files-and-logs).
+Name each file after the song or sound it replaces, by its number or its name
+from the tables below: `01.mp3`, `1.mp3`, `Asteroid Dance Part 2.mp3`, or
+`EXPLSM.wav`. Names ignore case, spaces, and punctuation, so
+`Tyrian - The Song.ogg` matches **Tyrian: The Song**. MP3, Ogg Vorbis, and WAV
+files work, in mono or stereo and at any sample rate. Anything without a file
+keeps its original, and music then plays through the current **Music Synth**.
+
+- A replacement song loops back to its start where the original loops. Songs
+  marked **Once** below end instead, as the originals do.
+- A sound effect plays at most its first 60 seconds.
+- When several files fit, a two-digit number such as `01` wins, then other
+  numbers, then the name.
+
+**Title screen > Extra > Jukebox** shows each song's number and name. The key
+left of the right Shift key switches between songs and sound effects. With sound
+effects shown, the arrow keys or comma and period play the previous or next one,
+Enter plays it again, and M mutes the music while you listen.
+
+| Action | Keyboard | Switch | Vita | Touch |
+| --- | --- | --- | --- | --- |
+| Switch songs and sound effects | Key left of right Shift | X | Triangle | Circular arrow |
+| Previous or next sound | Arrows, comma, period | D-pad | D-pad | Arrow buttons |
+| Play the sound again | Enter | A | Cross | Speaker |
+| Mute the music | M | L | L | Crossed-out speaker |
+
+#### Songs
+
+| File | Name | Plays |
+| --- | --- | --- |
+| 01 | Asteroid Dance Part 2 | Loops |
+| 02 | Asteroid Dance Part 1 | Loops |
+| 03 | Buy/Sell Music | Loops |
+| 04 | CAMANIS | Loops |
+| 05 | CAMANISE | Loops |
+| 06 | Deli Shop Quartet | Loops |
+| 07 | Deli Shop Quartet No. 2 | Loops |
+| 08 | Ending Number 1 | Loops |
+| 09 | Ending Number 2 | Loops |
+| 10 | End of Level | Once |
+| 11 | Game Over Solo | Once |
+| 12 | Gryphons of the West | Loops |
+| 13 | Somebody pick up the Gryphone | Loops |
+| 14 | Gyges, Will You Please Help Me? | Loops |
+| 15 | I speak Gygese | Loops |
+| 16 | Halloween Ramble | Loops |
+| 17 | Tunneling Trolls | Loops |
+| 18 | Tyrian, The Level | Loops |
+| 19 | The MusicMan | Once |
+| 20 | The Navigator | Loops |
+| 21 | Come Back to Me, Savara | Loops |
+| 22 | Come Back again to Savara | Loops |
+| 23 | Space Journey 1 | Loops |
+| 24 | Space Journey 2 | Loops |
+| 25 | The final edge | Once |
+| 26 | START5 | Loops |
+| 27 | Parlance | Loops |
+| 28 | Torm - The Gathering | Loops |
+| 29 | TRANSON | Loops |
+| 30 | Tyrian: The Song | Loops |
+| 31 | ZANAC3 | Once |
+| 32 | ZANACS | Loops |
+| 33 | Return me to Savara | Loops |
+| 34 | High Score Table | Once |
+| 35 | One Mustn't Fall | Loops |
+| 36 | Sarah's Song | Loops |
+| 37 | A Field for Mag | Loops |
+| 38 | Rock Garden | Loops |
+| 39 | Quest for Peace | Loops |
+| 40 | Composition in Q | Loops |
+| 41 | BEER | Loops |
+
+#### Sound effects
+
+| File | Name |
+| --- | --- |
+| 01 | SCALEDN2 |
+| 02 | F2 |
+| 03 | TEMP10 |
+| 04 | EXPLSM |
+| 05 | PASS3 |
+| 06 | TEMP2 |
+| 07 | BYPASS1 |
+| 08 | EXP1RT |
+| 09 | EXPLLOW |
+| 10 | TEMP13 |
+| 11 | EXPRETAP |
+| 12 | MT2BOOM |
+| 13 | TEMP3 |
+| 14 | LAZB |
+| 15 | LAZGUN2 |
+| 16 | SPRING |
+| 17 | WARNING |
+| 18 | ITEM |
+| 19 | HIT2 |
+| 20 | MACHNGUN |
+| 21 | HYPERD2 |
+| 22 | EXPLHUG |
+| 23 | CLINK1 |
+| 24 | CLICK |
+| 25 | SCALEDN1 |
+| 26 | TEMP11 |
+| 27 | TEMP16 |
+| 28 | SMALL1 |
+| 29 | POWERUP |
+| 30 | MARS3 |
+| 31 | NEEDLE2 |
+| 32 | VOICE1 |
+| 33 | VOICE2 |
+| 34 | VOICE3 |
+| 35 | VOICE4 |
+| 36 | VOICE5 |
+| 37 | VOICE6 |
+| 38 | VOICE7 |
+| 39 | VOICE8 |
+| 40 | VOICE9 |
+
 ## Controllers
 
 On PC, Mac, Linux, Android, and iOS a controller can connect at any time, over
@@ -719,7 +843,8 @@ it through DirectInput may not see it.
 | Native MIDI | Windows x86-64 |
 
 Choose under **Setup > Sound > Music Synth**. Put a `.sf2`, `.sf3`, or `.sf`
-SoundFont beside the executable or in `data`.
+SoundFont beside the executable, in `data`, or in the `mus` or `sfx` folder. To
+play your own recordings in place of the songs, see [Custom sounds](#custom-sounds).
 
 ## Mobile and console builds
 
@@ -785,6 +910,8 @@ files in private storage that is deleted on uninstall.
 | `custom_ships.shp` | Compiled custom ships |
 | `custom-bank-<n>.png` | Sprite editor bank images |
 | `User.shp` | Optional DOS ShipEdit source |
+| `mus/<n>.mp3`, `.ogg`, or `.wav` | Custom Sounds songs |
+| `sfx/<n>.mp3`, `.ogg`, or `.wav` | Custom Sounds effects |
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |
 

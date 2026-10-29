@@ -79,6 +79,9 @@ void qa_test_item_data_settings(void);
 void qa_test_zica_lv11_pattern(void);
 void qa_test_firing_sound_levels(void);
 void qa_test_sfx_filter(void);
+void qa_test_custom_audio_files(void);
+void qa_test_custom_music(void);
+void qa_test_custom_sounds(void);
 void qa_test_controller_hotplug(void);
 #ifdef WITH_MIDI
 void qa_test_lds_midi_detune(void);

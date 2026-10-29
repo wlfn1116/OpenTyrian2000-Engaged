@@ -13,6 +13,7 @@ void wnm_quit(void);   // stop playback and close the device
 // runs on the player thread after a non-looping song ends.
 bool wnm_play(const uint8_t *smf, size_t size, bool loop, void (*on_finish)(void));
 
+void wnm_stop(void);
 void wnm_pause(void);          // silence and freeze the playback clock
 void wnm_resume(void);         // continue from where pause froze it
 void wnm_fade_out(uint32_t ms);// ramp music down over ms, then finish like a one-shot

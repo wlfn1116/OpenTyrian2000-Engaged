@@ -34,6 +34,8 @@ extern JE_word tempVolume;
 void JE_changeVolume(JE_word *music, int music_delta, JE_word *sample, int sample_delta);
 
 void loadSndFile(bool xmas);
+void reloadSndFile(bool xmas);
+void freeSndFile(void);
 void JE_playSampleNum(JE_byte samplenum);
 
 #endif /* SFX_H */

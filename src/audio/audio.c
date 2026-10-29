@@ -17,11 +17,13 @@
  */
 #include "audio.h"
 
+#include "custom_audio.h"
 #include "file.h"
 #include "lds_play.h"
 #include "musmast.h"
 #include "opentyr.h"
 #include "sfx.h"
+#include "xmas.h"
 
 // Optional MIDI music backends; FluidSynth or the OS synth (see audio.h and
 // OPL stays the default.
@@ -31,7 +33,7 @@
 #include "fluid_music.h"       // FLUIDSYNTH plays through our own libfluidsynth player
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>  // FindFirstFileA, for soundfont autodetect
+#include <windows.h>  // GetModuleFileNameA and GetFileAttributesExA, for soundfont autodetect
 #endif
 #endif
 
@@ -52,6 +54,14 @@ bool audio_disabled = false, music_disabled = false, samples_disabled = false;
 // MIDI devices require a WITH_MIDI build, and init_audio() forces OPL otherwise.
 MusicDevice music_device = OPL;
 char soundfont[4096] = { 0 };
+int custom_sounds = CUSTOM_SOUNDS_OFF;
+
+const char *const custom_sounds_names[CUSTOM_SOUNDS_COUNT] = {
+	"Off",
+	"OST",
+	"SFX",
+	"Both",
+};
 
 // True when FluidSynth is active with a readable SoundFont.
 bool midi_soundfont_loaded = false;
@@ -114,7 +124,26 @@ static FILE *music_file = NULL;
 static Uint32 *song_offset;
 static Uint16 song_count = 0;
 
+typedef enum
+{
+	SONG_ENDING_UNKNOWN = 0,
+	SONG_ENDING_LOOPS,
+	SONG_ENDING_ONCE,
+} SongEnding;
+
+static Uint8 *song_ending = NULL;
+
 #define NO_SONG_PLAYING 0xFFFFFFFF
+
+#define OST_FADE_LEVEL_FULL 255
+
+static CustomTrack *ostTrack = NULL;
+static bool ostLoops = false;
+static bool ostDone = false;
+static bool ostFading = false;
+static int ostFadeLevel = OST_FADE_LEVEL_FULL;
+static int ostFadeSamples = 0;
+static int ostFadeFrac = 0;
 
 #define CHANNEL_COUNT 9  // 8 soundQueue slots + SFX_CUE_CHANNEL (audio.h)
 static const Sint16 *channelSamples[CHANNEL_COUNT];
@@ -136,13 +165,14 @@ typedef struct
 static const float sfxFilterCutoffHz[SFX_FILTER_COUNT] = { 0.0f, 4000.0f, 2800.0f };
 
 // Owned by the audio callback, which redesigns the filter when sfx_filter changes.
-static SfxBiquad sfxBiquad;
+static SfxBiquad sfxBiquad[AUDIO_OUTPUT_CHANNELS];
 static int sfxBiquadFilter = -1;  // preset sfxBiquad was designed for; -1 forces a redesign
 static bool sfxBiquadActive = false;
 
 static void audioCallback(void *userdata, Uint8 *stream, int size);
 
 static void load_song(unsigned int song_num);
+static void close_ost_track(void);
 
 #ifdef WITH_MIDI
 
@@ -226,6 +256,11 @@ static void convert_midi_data(void)
 	}
 }
 
+static bool midi_song_loops(unsigned int song_num)
+{
+	return midi_data[song_num].loop_end <= midi_data[song_num].duration;
+}
+
 // Start a song on the active MIDI backend. A looping song (loop_end <= duration)
 // repeats forever from its loopStart marker; a one-shot plays once and trips midi_finished.
 static void play_midi_song(unsigned int song_num)
@@ -233,7 +268,7 @@ static void play_midi_song(unsigned int song_num)
 	if (midi_data[song_num].data == NULL || midi_data[song_num].size == 0)
 		return;
 
-	bool loops = (midi_data[song_num].loop_end <= midi_data[song_num].duration);
+	bool loops = midi_song_loops(song_num);
 
 	if (music_device == NATIVE_MIDI)
 	{
@@ -265,6 +300,14 @@ static bool is_soundfont_ext(const char *name)
 	    || SDL_strcasecmp(dot, ".sf") == 0;
 }
 
+static void stop_midi_song(void)
+{
+	if (music_device == NATIVE_MIDI)
+		wnm_stop();
+	else if (music_device == FLUIDSYNTH)
+		fm_stop();
+}
+
 #ifdef _WIN32
 // Executable directory without a trailing slash, or empty when unknown.
 static const char *exe_dir(void)
@@ -285,44 +328,68 @@ static const char *exe_dir(void)
 	return dir;
 }
 
+typedef struct
+{
+	const char *dir;
+	char *best;
+	size_t bestSize;
+	FILETIME bestTime;
+} SoundfontScan;
+
+static bool consider_soundfont(const char *name, void *context)
+{
+	SoundfontScan *const scan = context;
+	if (!is_soundfont_ext(name))
+		return true;
+
+	char path[4096];
+	WIN32_FILE_ATTRIBUTE_DATA info;
+	snprintf(path, sizeof(path), "%s/%s", scan->dir, name);
+	if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info))
+		return true;
+	if (scan->best[0] == '\0' || CompareFileTime(&info.ftLastWriteTime, &scan->bestTime) > 0)
+	{
+		SDL_strlcpy(scan->best, path, scan->bestSize);
+		scan->bestTime = info.ftLastWriteTime;
+	}
+	return true;
+}
+
 // Keep the newest loadable SoundFont found across all scanned directories.
-static void scan_dir_for_soundfont(const char *dir, char *best, size_t bestSize, FILETIME *bestTime)
+static void scan_dir_for_soundfont(SoundfontScan *scan, const char *dir)
 {
 	if (dir == NULL || dir[0] == '\0')
 		return;
 
-	char pattern[4096];
-	snprintf(pattern, sizeof(pattern), "%s/*.sf*", dir);
-
-	WIN32_FIND_DATAA fd;
-	HANDLE h = FindFirstFileA(pattern, &fd);
-	if (h == INVALID_HANDLE_VALUE)
-		return;
-
-	do
-	{
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-			continue;
-		if (!is_soundfont_ext(fd.cFileName))
-			continue;  // *.sf* also matches .sfz/.sfark etc.
-		if (best[0] == '\0' || CompareFileTime(&fd.ftLastWriteTime, bestTime) > 0)
-		{
-			snprintf(best, bestSize, "%s/%s", dir, fd.cFileName);
-			*bestTime = fd.ftLastWriteTime;
-		}
-	} while (FindNextFileA(h, &fd));
-	FindClose(h);
+	scan->dir = dir;
+	dir_each_file(dir, consider_soundfont, scan);
 }
 #endif
 
-// Find the newest SoundFont beside the executable or in the data directory.
+#define SOUNDFONT_DIR_COUNT (2 + CUSTOM_AUDIO_FOLDER_COUNT * CUSTOM_AUDIO_DIR_COUNT)
+
+static size_t soundfont_dirs(const char *dirs[SOUNDFONT_DIR_COUNT])
+{
+	size_t count = 0;
+	dirs[count++] = data_dir();
+#ifdef _WIN32
+	dirs[count++] = exe_dir();
+#endif
+	for (int folder = 0; folder < CUSTOM_AUDIO_FOLDER_COUNT; ++folder)
+		count += custom_audio_dirs((CustomAudioFolder)folder, &dirs[count]);
+	return count;
+}
+
+// Find the newest SoundFont beside the executable or in the data, mus or sfx folders.
 static bool find_soundfont(char *out, size_t outSize)
 {
 	out[0] = '\0';
 #ifdef _WIN32
-	FILETIME bestTime = { 0, 0 };
-	scan_dir_for_soundfont(exe_dir(), out, outSize, &bestTime);
-	scan_dir_for_soundfont(data_dir(), out, outSize, &bestTime);
+	SoundfontScan scan = { NULL, out, outSize, { 0, 0 } };
+	const char *dirs[SOUNDFONT_DIR_COUNT];
+	const size_t dirCount = soundfont_dirs(dirs);
+	for (size_t i = 0; i < dirCount; ++i)
+		scan_dir_for_soundfont(&scan, dirs[i]);
 #else
 	(void)outSize;  // no autodetect off Windows; those ports need an explicit config path
 #endif
@@ -332,8 +399,8 @@ static bool find_soundfont(char *out, size_t outSize)
 // Cached SoundFont availability: -1 unscanned, 0 absent, 1 found.
 static int soundfont_scan = -1;
 
-// If no SoundFont is configured, adopt the newest one found next to the .exe or in
-// the data dir so a dropped-in bank just works.
+// If no SoundFont is configured, adopt the newest one found next to the .exe, in
+// the data dir or in a mus or sfx folder so a dropped-in bank just works.
 static void autodetect_soundfont(void)
 {
 	if (soundfont[0] != '\0')
@@ -350,15 +417,11 @@ static void resolve_soundfont(void)
 	if (file_readable(soundfont))
 		return;  // resolves already (absolute path, or relative with a matching CWD)
 
-	// Same filename, re-anchored: the data folder first, then next to the .exe.
-	const char *const dirs[] = {
-		data_dir(),
-#ifdef _WIN32
-		exe_dir(),
-#endif
-	};
+	// Same filename, re-anchored: the data folder first, then next to the .exe, then mus and sfx.
+	const char *dirs[SOUNDFONT_DIR_COUNT];
+	const size_t dirCount = soundfont_dirs(dirs);
 	char candidate[4096];
-	for (uint i = 0; i < COUNTOF(dirs); ++i)
+	for (size_t i = 0; i < dirCount; ++i)
 	{
 		if (dirs[i] == NULL || dirs[i][0] == '\0')
 			continue;
@@ -392,6 +455,20 @@ bool soundfont_available(void) { return false; }
 
 #endif /* WITH_MIDI */
 
+static void set_output_rate(int rate)
+{
+	audioSampleRate = rate;
+
+	samplesPerLdsUpdate = 2 * (audioSampleRate / ldsUpdate2Rate);
+	samplesPerLdsUpdateFrac = 2 * (audioSampleRate % ldsUpdate2Rate);
+
+	volumeFactorTable[0] = 0;
+	for (size_t i = 1; i < 256; ++i)
+		volumeFactorTable[i] = TO_FIXED(powf(10, (255 - i) * (-volumeRange / (20.0f * 255))));
+
+	opl_init();
+}
+
 bool init_audio(void)
 {
 #ifndef WITH_MIDI
@@ -412,7 +489,7 @@ bool init_audio(void)
 
 	ask.freq = 11025 * OUTPUT_QUALITY;
 	ask.format = AUDIO_S16SYS;
-	ask.channels = 1;
+	ask.channels = AUDIO_OUTPUT_CHANNELS;
 	ask.samples = 256 * OUTPUT_QUALITY; // ~23 ms
 	ask.callback = audioCallback;
 
@@ -437,16 +514,7 @@ bool init_audio(void)
 		return false;
 	}
 
-	audioSampleRate = got.freq;
-
-	samplesPerLdsUpdate = 2 * (audioSampleRate / ldsUpdate2Rate);
-	samplesPerLdsUpdateFrac = 2 * (audioSampleRate % ldsUpdate2Rate);
-
-	volumeFactorTable[0] = 0;
-	for (size_t i = 1; i < 256; ++i)
-		volumeFactorTable[i] = TO_FIXED(powf(10, (255 - i) * (-volumeRange / (20.0f * 255))));
-
-	opl_init();
+	set_output_rate(got.freq);
 
 #ifdef WITH_MIDI
 	if (music_device == FLUIDSYNTH)
@@ -554,53 +622,124 @@ float sfx_filter_gain(int filter, int sample_rate, bool nyquist)
 	return fabsf(y) / amplitude;
 }
 
-// Renders OPL music (when OPL is selected) plus the sample channels. MIDI backends
-// play on their own thread, so music stays silent here and samples still mix.
+// Carry fractional samples between Loudness updates.
+static int ldsUpdateSamples(int *frac)
+{
+	int samples = samplesPerLdsUpdate;
+	*frac += samplesPerLdsUpdateFrac;
+	if (*frac >= ldsUpdate2Rate)
+	{
+		samples += 1;
+		*frac -= ldsUpdate2Rate;
+	}
+	return samples;
+}
+
+static void renderOpl(Sint16 *samples, int framesCount)
+{
+	Sint16 *remaining = samples;
+	int remainingCount = framesCount;
+	while (remainingCount > 0)
+	{
+		if (samplesUntilLdsUpdate == 0)
+		{
+			lds_update();
+			samplesUntilLdsUpdate += ldsUpdateSamples(&samplesUntilLdsUpdateFrac);
+		}
+
+		int count = MIN(samplesUntilLdsUpdate, remainingCount);
+
+		opl_update(remaining, count);
+
+		remaining += count;
+		remainingCount -= count;
+
+		samplesUntilLdsUpdate -= count;
+	}
+
+	for (int frame = framesCount - 1; frame >= 0; --frame)
+	{
+		const Sint16 sample = samples[frame];
+		for (int c = 0; c < AUDIO_OUTPUT_CHANNELS; ++c)
+			samples[frame * AUDIO_OUTPUT_CHANNELS + c] = sample;
+	}
+}
+
+static void finishOst(void)
+{
+	ostDone = true;
+	playing = false;
+	songlooped = false;
+}
+
+static int fadeOst(Sint16 *samples, int framesCount)
+{
+	for (int frame = 0; frame < framesCount; ++frame)
+	{
+		if (ostFadeSamples == 0)
+		{
+			if (ostFadeLevel == 0)
+				return frame;
+			--ostFadeLevel;
+			ostFadeSamples = ldsUpdateSamples(&ostFadeFrac);
+		}
+		--ostFadeSamples;
+
+		const Sint32 factor = volumeFactorTable[ostFadeLevel];
+		for (int c = 0; c < AUDIO_OUTPUT_CHANNELS; ++c)
+		{
+			Sint16 *const sample = &samples[frame * AUDIO_OUTPUT_CHANNELS + c];
+			*sample = (Sint16)FIXED_TO_INT(*sample * factor);
+		}
+	}
+	return framesCount;
+}
+
+static void renderOst(Sint16 *samples, int framesCount)
+{
+	int rendered = 0;
+	if (!ostDone)
+	{
+		bool looped = false;
+		rendered = custom_track_render(ostTrack, samples, framesCount, ostLoops, &looped);
+		if (looped)
+			songlooped = true;
+		if (ostFading)
+			rendered = fadeOst(samples, rendered);
+		if (rendered < framesCount)
+			finishOst();
+	}
+
+	memset(&samples[rendered * AUDIO_OUTPUT_CHANNELS], 0,
+	       (size_t)(framesCount - rendered) * AUDIO_OUTPUT_CHANNELS * sizeof(*samples));
+}
+
+// Renders a custom soundtrack track or OPL music (when OPL is selected) plus the sample channels.
+// MIDI backends play on their own thread, so music stays silent here and samples still mix.
 static void audioCallback(void *userdata, Uint8 *stream, int size)
 {
 	(void)userdata;
 
 	Sint16 *const samples = (Sint16 *)stream;
-	const int samplesCount = size / sizeof (Sint16);
+	const int framesCount = size / (int)(AUDIO_OUTPUT_CHANNELS * sizeof (Sint16));
+	const int samplesCount = framesCount * AUDIO_OUTPUT_CHANNELS;
 
-	if ((music_device == OPL) && !music_disabled && !music_stopped)
+	Sint32 musicVolumeFactor = volumeFactorTable[musicVolume];
+
+	if (ostTrack != NULL && !music_disabled && !music_stopped)
 	{
-		Sint16 *remaining = samples;
-		int remainingCount = samplesCount;
-		while (remainingCount > 0)
-		{
-			if (samplesUntilLdsUpdate == 0)
-			{
-				lds_update();
-
-				// Carry fractional samples between Loudness updates.
-				samplesUntilLdsUpdate += samplesPerLdsUpdate;
-				samplesUntilLdsUpdateFrac += samplesPerLdsUpdateFrac;
-				if (samplesUntilLdsUpdateFrac >= ldsUpdate2Rate)
-				{
-					samplesUntilLdsUpdate += 1;
-					samplesUntilLdsUpdateFrac -= ldsUpdate2Rate;
-				}
-			}
-
-			int count = MIN(samplesUntilLdsUpdate, remainingCount);
-
-			opl_update(remaining, count);
-
-			remaining += count;
-			remainingCount -= count;
-
-			samplesUntilLdsUpdate -= count;
-		}
+		renderOst(samples, framesCount);
+	}
+	else if ((music_device == OPL) && !music_disabled && !music_stopped)
+	{
+		renderOpl(samples, framesCount);
+		musicVolumeFactor *= 2;  // OPL emulator is too quiet
 	}
 	else
 	{
 		for (int i = 0; i < samplesCount; ++i)
 			samples[i] = 0;
 	}
-
-	Sint32 musicVolumeFactor = volumeFactorTable[musicVolume];
-	musicVolumeFactor *= 2;  // OPL emulator is too quiet
 
 	if (samples_disabled && !music_disabled)
 	{
@@ -629,34 +768,39 @@ static void audioCallback(void *userdata, Uint8 *stream, int size)
 		if (filter != sfxBiquadFilter)
 		{
 			sfxBiquadFilter = filter;
-			sfxBiquadActive = sfxBiquadDesign(&sfxBiquad, filter, audioSampleRate);
+			for (int c = 0; c < AUDIO_OUTPUT_CHANNELS; ++c)
+				sfxBiquadActive = sfxBiquadDesign(&sfxBiquad[c], filter, audioSampleRate);
 		}
 
 		// Mix music and channels
 		Sint16 *remaining = samples;
-		int remainingCount = samplesCount;
+		int remainingCount = framesCount;
 		while (remainingCount > 0)
 		{
-			Sint32 effects = 0;
+			Sint32 effects[AUDIO_OUTPUT_CHANNELS] = { 0 };
 
 			for (size_t i = 0; i < CHANNEL_COUNT; ++i)
 			{
 				if (channelSampleCount[i] > 0)
 				{
-					effects += *channelSamples[i] * sampleVolumeFactors[channelVolume[i]];
+					for (int c = 0; c < AUDIO_OUTPUT_CHANNELS; ++c)
+						effects[c] += channelSamples[i][c] * sampleVolumeFactors[channelVolume[i]];
 
-					channelSamples[i] += 1;
-					channelSampleCount[i] -= 1;
+					channelSamples[i] += AUDIO_OUTPUT_CHANNELS;
+					channelSampleCount[i] -= AUDIO_OUTPUT_CHANNELS;
 				}
 			}
 
-			if (sfxBiquadActive)
-				effects = (Sint32)lrintf(sfxBiquadStep(&sfxBiquad, (float)effects));
+			for (int c = 0; c < AUDIO_OUTPUT_CHANNELS; ++c)
+			{
+				if (sfxBiquadActive)
+					effects[c] = (Sint32)lrintf(sfxBiquadStep(&sfxBiquad[c], (float)effects[c]));
 
-			Sint32 sample = FIXED_TO_INT(*remaining * musicVolumeFactor + effects);
-			*remaining = MIN(MAX(INT16_MIN, sample), INT16_MAX);
+				Sint32 sample = FIXED_TO_INT(remaining[c] * musicVolumeFactor + effects[c]);
+				remaining[c] = MIN(MAX(INT16_MIN, sample), INT16_MAX);
+			}
 
-			remaining += 1;
+			remaining += AUDIO_OUTPUT_CHANNELS;
 			remainingCount -= 1;
 		}
 	}
@@ -677,6 +821,8 @@ void deinit_audio(void)
 		SDL_CloseAudioDevice(audioDevice);
 		audioDevice = 0;
 	}
+
+	close_ost_track();
 
 	SDL_QuitSubSystem(SDL_INIT_AUDIO);
 
@@ -702,6 +848,8 @@ void music_deinit(void)
 
 	free(song_offset);
 	song_offset = NULL;
+	free(song_ending);
+	song_ending = NULL;
 	song_count = 0;
 
 	if (music_file != NULL)
@@ -725,6 +873,9 @@ void load_music(void)  // FKA NortSong.loadSong
 
 		song_offset[song_count] = ftell_eof(music_file);
 
+		song_ending = malloc_die(song_count);
+		memset(song_ending, SONG_ENDING_UNKNOWN, song_count);
+
 #ifdef WITH_MIDI
 		convert_midi_data();
 #endif
@@ -744,6 +895,85 @@ static void load_song(unsigned int song_num)  // FKA NortSong.loadSong
 	}
 }
 
+static bool song_loops(unsigned int song_num)
+{
+	if (song_ending[song_num] == SONG_ENDING_UNKNOWN)
+	{
+		load_song(song_num);
+		song_ending[song_num] = lds_plays_once() ? SONG_ENDING_ONCE : SONG_ENDING_LOOPS;
+	}
+	return song_ending[song_num] == SONG_ENDING_LOOPS;
+}
+
+static CustomTrack *open_ost_track(unsigned int song_num)
+{
+	if ((custom_sounds & CUSTOM_SOUNDS_OST) == 0)
+		return NULL;
+
+	const char *dirs[CUSTOM_AUDIO_DIR_COUNT];
+	const size_t dirCount = custom_audio_dirs(CUSTOM_AUDIO_MUSIC, dirs);
+	char path[CUSTOM_AUDIO_PATH_MAX];
+	const char *const title = song_num < MUSIC_NUM ? musicTitle[song_num] : NULL;
+	if (!custom_audio_find(dirs, dirCount, song_num + 1, title, path, sizeof(path)))
+		return NULL;
+	return custom_track_open(path, audioSampleRate, AUDIO_OUTPUT_CHANNELS);
+}
+
+static void reset_ost_playback(void)
+{
+	ostDone = false;
+	ostFading = false;
+	ostFadeLevel = OST_FADE_LEVEL_FULL;
+	ostFadeSamples = 0;
+	ostFadeFrac = 0;
+	playing = true;
+	songlooped = false;
+	music_stopped = false;
+}
+
+static void start_ost_track(unsigned int song_num, CustomTrack *track)
+{
+	SDL_LockAudioDevice(audioDevice);
+
+	music_stopped = true;
+
+	SDL_UnlockAudioDevice(audioDevice);
+
+#ifdef WITH_MIDI
+	stop_midi_song();
+#endif
+	const bool loops = song_loops(song_num);
+
+	SDL_LockAudioDevice(audioDevice);
+
+	CustomTrack *const previous = ostTrack;
+	ostTrack = track;
+	ostLoops = loops;
+	reset_ost_playback();
+
+	SDL_UnlockAudioDevice(audioDevice);
+
+	custom_track_close(previous);
+	song_playing = song_num;
+}
+
+static void close_ost_track(void)
+{
+	if (ostTrack == NULL)
+		return;
+
+	SDL_LockAudioDevice(audioDevice);
+
+	CustomTrack *const previous = ostTrack;
+	ostTrack = NULL;
+	music_stopped = true;
+
+	SDL_UnlockAudioDevice(audioDevice);
+
+	custom_track_close(previous);
+	song_playing = NO_SONG_PLAYING;
+}
+
 void play_random_song(void)
 {
 	play_song((unsigned int)rand() % MUSIC_NUM);
@@ -758,8 +988,20 @@ void play_song(unsigned int song_num)  // FKA NortSong.playSong
 		fprintf(stderr, "warning: song %d does not exist\n", song_num + 1);
 		return;
 	}
+
+	if (song_num != song_playing)
+	{
+		CustomTrack *const track = open_ost_track(song_num);
+		if (track != NULL)
+		{
+			start_ost_track(song_num, track);
+			return;
+		}
+		close_ost_track();
+	}
+
 #ifdef WITH_MIDI
-	if (music_device & IS_MIDI_DEVICE)
+	if ((music_device & IS_MIDI_DEVICE) && ostTrack == NULL)
 	{
 		if (music_disabled)
 			return;
@@ -810,6 +1052,17 @@ void restart_song(void)  // FKA Player.selectSong(1)
 	if (audio_disabled)
 		return;
 
+	if (ostTrack != NULL)
+	{
+		SDL_LockAudioDevice(audioDevice);
+
+		custom_track_rewind(ostTrack);
+		reset_ost_playback();
+
+		SDL_UnlockAudioDevice(audioDevice);
+		return;
+	}
+
 #ifdef WITH_MIDI
 	if (music_device & IS_MIDI_DEVICE)
 	{
@@ -834,7 +1087,7 @@ void stop_song(void)  // FKA Player.selectSong(0)
 		return;
 
 #ifdef WITH_MIDI
-	if (music_device & IS_MIDI_DEVICE)
+	if ((music_device & IS_MIDI_DEVICE) && ostTrack == NULL)
 	{
 		if (music_device == NATIVE_MIDI) wnm_pause();
 		else                             fm_pause();
@@ -853,6 +1106,16 @@ void fade_song(void)  // FKA Player.selectSong($C001)
 {
 	if (audio_disabled)
 		return;
+
+	if (ostTrack != NULL)
+	{
+		SDL_LockAudioDevice(audioDevice);
+
+		ostFading = true;
+
+		SDL_UnlockAudioDevice(audioDevice);
+		return;
+	}
 
 #ifdef WITH_MIDI
 	if (music_device & IS_MIDI_DEVICE)
@@ -936,7 +1199,7 @@ void set_music_disabled(bool disabled)
 	music_disabled = disabled;
 
 #ifdef WITH_MIDI
-	if (!audio_disabled && (music_device & IS_MIDI_DEVICE))
+	if (!audio_disabled && (music_device & IS_MIDI_DEVICE) && ostTrack == NULL)
 	{
 		if (music_device == NATIVE_MIDI)
 		{
@@ -950,12 +1213,41 @@ void set_music_disabled(bool disabled)
 #endif
 }
 
+static void apply_custom_music(void)
+{
+	const unsigned int song = song_playing;
+	if (audio_disabled || song == NO_SONG_PLAYING)
+		return;
+
+	CustomTrack *const track = open_ost_track(song);
+	if (track != NULL)
+	{
+		start_ost_track(song, track);
+	}
+	else if (ostTrack != NULL)
+	{
+		close_ost_track();
+		play_song(song);
+	}
+}
+
+void set_custom_sounds(int mode)
+{
+	const int changed = custom_sounds ^ mode;
+	custom_sounds = mode;
+
+	if ((changed & CUSTOM_SOUNDS_SFX) != 0)
+		reloadSndFile(xmas);
+	if ((changed & CUSTOM_SOUNDS_OST) != 0)
+		apply_custom_music();
+}
+
 // Caller holds the audio device lock.
 static void startChannel(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol)
 {
 	channelSamples[chan] = samples;
 	channelSampleStart[chan] = samples;
-	channelSampleCount[chan] = sampleCount;
+	channelSampleCount[chan] = sampleCount - sampleCount % AUDIO_OUTPUT_CHANNELS;
 	channelVolume[chan] = vol;
 }
 
@@ -997,6 +1289,78 @@ bool multiSamplePlayLimited(const Sint16 *samples, size_t sampleCount, Uint8 cha
 	SDL_UnlockAudioDevice(audioDevice);
 
 	return play;
+}
+
+static struct
+{
+	MusicDevice musicDevice;
+	Uint8 musicVolume;
+	Uint8 sampleVolume;
+} qaSaved;
+
+bool audio_qa_begin(int rate)
+{
+	if (!audio_disabled || audioDevice != 0)
+		return false;
+
+	qaSaved.musicDevice = music_device;
+	qaSaved.musicVolume = musicVolume;
+	qaSaved.sampleVolume = sampleVolume;
+
+	audio_disabled = false;
+	music_device = OPL;
+	samplesUntilLdsUpdate = 0;
+	samplesUntilLdsUpdateFrac = 0;
+	set_output_rate(rate);
+	load_music();
+	return true;
+}
+
+void audio_qa_render(Sint16 *samples, int frames)
+{
+	audioCallback(NULL, (Uint8 *)samples, frames * AUDIO_OUTPUT_CHANNELS * (int)sizeof(*samples));
+}
+
+bool audio_qa_song_loops(unsigned int song_num)
+{
+	return song_loops(song_num);
+}
+
+#ifdef WITH_MIDI
+bool audio_qa_midi_loops(unsigned int song_num)
+{
+	return midi_song_loops(song_num);
+}
+
+bool audio_qa_soundfont_searches(const char *dir)
+{
+	const char *dirs[SOUNDFONT_DIR_COUNT];
+	const size_t dirCount = soundfont_dirs(dirs);
+	for (size_t i = 0; i < dirCount; ++i)
+	{
+		if (strcmp(dirs[i], dir) == 0)
+			return true;
+	}
+	return false;
+}
+#endif
+
+void audio_qa_end(void)
+{
+	close_ost_track();
+	stop_sample_channels();
+	lds_free();
+	music_deinit();
+
+	song_playing = NO_SONG_PLAYING;
+	music_stopped = true;
+	playing = false;
+	songlooped = false;
+	music_device = qaSaved.musicDevice;
+	musicVolume = qaSaved.musicVolume;
+	sampleVolume = qaSaved.sampleVolume;
+	audioSampleRate = 0;
+	audio_disabled = true;
 }
 
 // Stop channels before freeing or replacing sample buffers they may still reference.

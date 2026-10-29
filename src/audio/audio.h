@@ -38,7 +38,7 @@ extern bool midi_soundfont_loaded;
 const char *soundfont_basename(void);  // basename of `soundfont` for display, "" if unset
 
 // True when FLUIDSYNTH has something to load: either the configured `soundfont` is readable, or
-// a .sf/.sf2/.sf3 sits next to the .exe or in the data folder.
+// a .sf/.sf2/.sf3 sits next to the .exe, in the data folder or in a mus or sfx folder.
 bool soundfont_available(void);
 
 typedef enum {
@@ -50,6 +50,19 @@ typedef enum {
 
 extern MusicDevice music_device;
 extern const char *const music_device_names[MUSIC_DEVICE_MAX];
+
+typedef enum
+{
+	CUSTOM_SOUNDS_OFF = 0,
+	CUSTOM_SOUNDS_OST = 1,
+	CUSTOM_SOUNDS_SFX = 2,
+	CUSTOM_SOUNDS_BOTH = CUSTOM_SOUNDS_OST | CUSTOM_SOUNDS_SFX,
+	CUSTOM_SOUNDS_COUNT
+} CustomSounds;
+
+extern int custom_sounds;
+extern const char *const custom_sounds_names[CUSTOM_SOUNDS_COUNT];
+void set_custom_sounds(int mode);
 
 bool init_audio(void);
 bool restart_audio(void);  // tear down + re-init audio (after changing music_device/soundfont)
@@ -68,6 +81,8 @@ void clear_song_selection(void);
 
 void set_volume(Uint8 musicVolume, Uint8 sampleVolume);
 void set_music_disabled(bool disabled);  // toggle music on/off (pauses/resumes MIDI too)
+
+#define AUDIO_OUTPUT_CHANNELS 2
 
 // A short master-volume ramp to silence, for a screen that comes up over a playing track.
 #define MUSIC_FADE_OUT_MS 500
@@ -110,5 +125,12 @@ void stop_sample_channels(void);
 
 // Settled gain of a filter preset for a constant (nyquist false) or alternating input. QA only.
 float sfx_filter_gain(int filter, int sample_rate, bool nyquist);
+
+bool audio_qa_begin(int rate);
+void audio_qa_render(Sint16 *samples, int frames);
+bool audio_qa_song_loops(unsigned int song_num);
+bool audio_qa_midi_loops(unsigned int song_num);
+bool audio_qa_soundfont_searches(const char *dir);
+void audio_qa_end(void);
 
 #endif /* AUDIO_H */

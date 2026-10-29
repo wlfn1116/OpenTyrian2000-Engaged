@@ -523,6 +523,9 @@ int qa_run_unit_suite(void)
 	qa_test_zica_lv11_pattern();
 	qa_test_firing_sound_levels();
 	qa_test_sfx_filter();
+	qa_test_custom_audio_files();
+	qa_test_custom_music();
+	qa_test_custom_sounds();
 	qa_test_controller_hotplug();
 	qa_test_swar_pixel_loops();
 	qa_test_background_bands();

@@ -577,8 +577,9 @@ static bool shopStockOpen;
 
 static void stock_own_items(const PlayerItems *owned)
 {
-	const PlayerItems *const standard = extraShipStandard(shopPlayerIndex);
-	PlayerItems own = (standard != NULL) ? *standard : *owned;
+	if (extraShipStandard(shopPlayerIndex) != NULL)
+		return;
+	PlayerItems own = *owned;
 	stock_owned_items(&own);
 }
 
@@ -8302,6 +8303,7 @@ static const char *shop_custom_stock_fault(uint seat)
 	const bool worn = shop_shelf_has(ITEM_PART_FRONT, customGun)
 	               && shop_shelf_has(ITEM_PART_HULL, customHull)
 	               && shop_shelf_has(ITEM_PART_SHIELD, customShield);
+	const bool roomy = !shop_shelf_has(ITEM_PART_FRONT, ownGun);
 	curSel[MENU_UPGRADES] = 2 + ITEM_PART_FRONT;
 	const bool keptFree = shop_part_cost(customGun) == 0;
 
@@ -8316,7 +8318,7 @@ static const char *shop_custom_stock_fault(uint seat)
 	                     && !shop_stock_has(avail, availMax, ITEM_PART_SHIELD, customShield);
 	const bool reshown = shop_shelf_has(ITEM_PART_FRONT, customGun)
 	                  && shop_shelf_has(ITEM_PART_HULL, customHull)
-	                  && shop_shelf_has(ITEM_PART_FRONT, ownGun);
+	                  && !shop_shelf_has(ITEM_PART_FRONT, ownGun);
 	const bool recorded = endlessMode || endlessSavedStockSelfTest();
 
 	extraShipRestoreStandard(seat);
@@ -8342,7 +8344,7 @@ static const char *shop_custom_stock_fault(uint seat)
 		shop_upgrade_commit();
 		traded = !shop_shelf_has(ITEM_PART_FRONT, customGun)
 		      && shop_shelf_has(ITEM_PART_FRONT, stockGun)
-		      && shop_shelf_has(ITEM_PART_FRONT, ownGun);
+		      && !shop_shelf_has(ITEM_PART_FRONT, ownGun);
 		extraShipRestoreStandard(seat);
 		shop_commit_loadout();
 	}
@@ -8350,6 +8352,8 @@ static const char *shop_custom_stock_fault(uint seat)
 
 	if (!worn)
 		return "the worn custom ship's parts are not on show";
+	if (!roomy)
+		return "the stock ship's gear takes shelf room while a custom ship is worn";
 	if (!keptFree)
 		return "the worn custom ship's gun does not keep for free";
 	if (!leftClean || !savedClean)
@@ -8458,7 +8462,8 @@ void qa_test_endless_shop_stock(void)
 		qa_check(fault == NULL, label);
 	}
 	qa_check(endlessShopSeedSelfTest(),
-	         "an Endless reroll stocks the ship's own parts, never a custom ship's lent ones");
+	         "an Endless reroll keeps only worn parts the ship owns, never a custom ship's lent "
+	         "ones or the stock ship waiting for it");
 
 	extraShipReturnRestore(savedReturn);
 	memcpy(extraShips, savedTable, sizeof(savedTable));

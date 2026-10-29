@@ -40,6 +40,9 @@ It covers:
 - PNG reading and writing, including truncated and corrupted files, and sprite
   editor image round trips for every palette colour
 - SSE2, NEON, and SWAR pixel loops against frozen scalar copies
+- custom music and sound files: folder lookup, MP3, Ogg Vorbis, and WAV
+  decoding, loop and play-once endings, fades, fallback to the synth, and the
+  stereo mixer
 - threaded frame rows, Render Threads tuning, band replay, and scalers whose
   texture lock fails
 
@@ -144,3 +147,31 @@ Tyrian 2000 data, in the layout OpenTyrian, OpenTyrian2000, and DOS Tyrian
 write. The suite imports it and checks known slot and high-score values, so
 keep its bytes stable. Its name keeps it clear of the repository's `tyrian.sav`
 ignore rule.
+
+## Audio fixtures
+
+`fixtures/custom_audio/` stands in for the Custom Sounds folders, with `mus/` and
+`sfx/` side by side.
+
+| File | Contents |
+| --- | --- |
+| `mus/02.wav`, `mus/10.wav`, `sfx/1.wav` | 16-bit stereo at 44.1 kHz: 1500, 2000, and 1000 frames |
+| `mus/1.ogg` | Ogg Vorbis, 44.1 kHz stereo: half a second of 440 Hz on the left only |
+| `mus/03.mp3` | MP3, 22.05 kHz mono: half a second of 330 Hz |
+| `mus/05.wav`, `mus/5.wav` | Name precedence; the zero-padded file wins |
+| `sfx/02.wav`, `sfx/07.WAV` | 8-bit mono at 22.05 kHz; `07.WAV` checks an upper-case extension |
+| `mus/beer.wav`, `mus/tyrian - the song.wav`, `sfx/Explsm.wav` | Named after songs 41 and 30 and sound 4, in other cases and punctuation |
+| `mus/Asteroid Dance Part 1.mp3` | A copy of `03.mp3` named after song 2; `mus/02.wav` must still win although MP3 ranks above WAV |
+| `sfx/0008.wav` | A number with extra leading zeros |
+| `long_100hz.wav` | 61 seconds of 8-bit mono at 100 Hz, past the 60-second sound limit |
+
+In the 16-bit WAV files the left channel is
+`(frame * step) % 16384 - 8192 + offset`, with step and offset 11 and 0, 7 and
+100, and 13 and 50, and the right channel is its negative. The tests compare
+them sample for sample, so keep their bytes stable. The Ogg and MP3 checks allow
+for decoder rounding.
+
+`fixtures/lds_tempo_change.lds` is a two-position LDS song. It loads with tempo
+5, sets tempo 1 in its second position, and then jumps back to the first. The
+dry-run test expects 18 player updates to the loop both from a fresh load and
+after a dry run.
