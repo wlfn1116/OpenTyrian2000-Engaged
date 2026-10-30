@@ -1325,7 +1325,7 @@ void endlessConcussionHit(void)
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_CONCUSSION))
 		return;
 	int *const left = &endlessConcussion[endlessFxPlayer()];
-	if (*left > 0 || mt_rand() % 100 >= ENDLESS_CONCUSSION_CHANCE_PCT)
+	if (*left > 0)
 		return;
 	*left = ENDLESS_CONCUSSION_TICKS + ENDLESS_CONCUSSION_GUARD_TICKS;
 }

@@ -1925,12 +1925,10 @@ void qa_test_concussion_mod(void)
 		endlessConcussionReset();
 		stunned += qa_concussed_by_hits(0, 1) ? 1 : 0;
 	}
-	qa_check(stunned * 100 > trials * (ENDLESS_CONCUSSION_CHANCE_PCT - 6) &&
-	         stunned * 100 < trials * (ENDLESS_CONCUSSION_CHANCE_PCT + 6),
-	         "about one hit in eight concusses a ready ship");
+	qa_check(stunned == trials, "every hit concusses a ready ship");
 
 	endlessConcussionReset();
-	const bool landed = qa_concussed_by_hits(0, 200);
+	const bool landed = qa_concussed_by_hits(0, 1);
 	const float surfaceSlow = endlessConcussionSlowdown(0);
 	const float surfaceScale = endlessShipMoveScale(0);
 	int stunTicks = 0;
@@ -1949,13 +1947,13 @@ void qa_test_concussion_mod(void)
 		guarded = guarded && !qa_concussed_by_hits(0, 8);
 		endlessConcussionTick();
 	}
-	qa_check(guarded && qa_concussed_by_hits(0, 200),
+	qa_check(guarded && qa_concussed_by_hits(0, 1),
 	         "...and no hit concusses it again until the guard after the stun runs out");
 
 	endlessRunDepth = 400;
 	difficultyLevel = DIFFICULTY_IMPOSSIBLE;
 	endlessConcussionReset();
-	const bool deepLanded = qa_concussed_by_hits(0, 200);
+	const bool deepLanded = qa_concussed_by_hits(0, 1);
 	const float deepSlow = endlessConcussionSlowdown(0);
 	int deepTicks = 0;
 	while (qa_concussed_by_hits(0, 1) && deepTicks < 1000)
@@ -1969,7 +1967,7 @@ void qa_test_concussion_mod(void)
 	         "a concussion is as strong and as long at any depth or difficulty");
 
 	endlessConcussionReset();
-	qa_concussed_by_hits(0, 200);
+	qa_concussed_by_hits(0, 1);
 	bool rising;
 	const float top = qa_afterburner_ladder_top(0, surfaceScale, &rising);
 	const float resisted = (1.0f - surfaceSlow * (1.0f - qa_afterburner_full_resist()))
@@ -1987,17 +1985,17 @@ void qa_test_concussion_mod(void)
 	endlessActiveMods = ENDLESS_MOD_CONCUSSION;
 	coopEndlessMode = true;
 	endlessConcussionReset();
-	const bool partnerHit = qa_concussed_by_hits(1, 200);
+	const bool partnerHit = qa_concussed_by_hits(1, 1);
 	qa_check(partnerHit && endlessConcussionSlowdown(0) == 0.0f && endlessShipMoveScale(0) == 1.0f,
 	         "a concussion slows only the ship that took the hit");
 	endlessResetZoneEffects();
-	qa_check(endlessConcussionSlowdown(1) == 0.0f && qa_concussed_by_hits(1, 200),
+	qa_check(endlessConcussionSlowdown(1) == 0.0f && qa_concussed_by_hits(1, 1),
 	         "a zone start clears every ship's concussion and its guard");
 	coopEndlessMode = false;
 
 	endlessConcussionReset();
-	qa_check(qa_concussed_by_damage(200),
-	         "a real hit through the damage path can concuss the ship it lands on");
+	qa_check(qa_concussed_by_damage(1),
+	         "a real hit through the damage path concusses the ship it lands on");
 	qa_check(endlessStripWorstMod(ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SWIFT) == ENDLESS_MOD_SWIFT,
 	         "Sector Sabotage strips Concussion before Swift Death");
 	qa_check(endlessModWord(ENDLESS_MOD_CONCUSSION)[0] != '\0' &&

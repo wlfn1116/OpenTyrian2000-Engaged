@@ -45,7 +45,7 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_KILLSHOT,  38, "shots snap on twice" },
 	{ ENDLESS_MOD_STATIC,    11, "hits drain power" },
 	{ ENDLESS_MOD_RETALIATION, 15, "kills quicken fire" },
-	{ ENDLESS_MOD_CONCUSSION, 10, "hits can slow you" },
+	{ ENDLESS_MOD_CONCUSSION, 10, "hits slow you" },
 	// The finale marker has no monitor row. Its weight controls reward and slate ordering.
 	{ ENDLESS_MOD_THEEND,   150, NULL },
 	// Boons generally reduce or omit clear cash.

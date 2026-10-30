@@ -128,7 +128,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       118          /* Concussion lands on 12% of hits. */
+#define NET_VERSION       119          /* Every hit concusses a ready ship. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

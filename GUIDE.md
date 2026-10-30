@@ -140,8 +140,8 @@ modifiers are boons. The card text describes each effect.
 Common modifier families include:
 
 - enemy health, fire rate, shot speed, damage, and homing;
-- scroll speed, gravity, flipped controls, slower ship movement, and the rare
-  hit that briefly slows the ship (Concussion);
+- scroll speed, gravity, flipped controls, slower ship movement, and hits that
+  briefly slow the ship (Concussion);
 - elite and champion population;
 - shield, generator, superbomb, and hitbox rules;
 - kill-triggered bonuses and penalties;
