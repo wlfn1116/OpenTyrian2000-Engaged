@@ -5401,6 +5401,61 @@ static Uint16 arcadeRandomizeBall(Uint16 eDatI)
 	return ballPool[cls][mt_rand() % ballPoolLen[cls]];
 }
 
+JE_integer enemy_scaled_value(JE_integer value)
+{
+	if (value <= 1 || value >= 10000)
+		return value;
+
+	int tempValue = 0;
+	switch (difficultyLevel)
+	{
+	case -1:
+	case DIFFICULTY_WIMP:
+		tempValue = value * 0.75f;
+		break;
+	case DIFFICULTY_EASY:
+	case DIFFICULTY_NORMAL:
+		tempValue = value;
+		break;
+	case DIFFICULTY_HARD:
+		tempValue = value * 1.125f;
+		break;
+	case DIFFICULTY_IMPOSSIBLE:
+		tempValue = value * 1.5f;
+		break;
+	case DIFFICULTY_INSANITY:
+		tempValue = value * 2;
+		break;
+	case DIFFICULTY_SUICIDE:
+		tempValue = value * 2.5f;
+		break;
+	case DIFFICULTY_MANIACAL:
+	case DIFFICULTY_LORD_OF_GAME:
+		tempValue = value * 4;
+		break;
+	case DIFFICULTY_NORTANEOUS:
+	case DIFFICULTY_10:
+		tempValue = value * 8;
+		break;
+	}
+	if (expertMode)  // expert-mode cash bonus to offset the harsher economy
+		tempValue = tempValue * expertScorePct / 100;
+	if (tempValue > 10000)
+		tempValue = 10000;
+	return (JE_integer)tempValue;
+}
+
+void enemy_set_explosion(struct JE_SingleEnemyType *enemy, JE_byte type)
+{
+	enemy->enemyground = (type & 1) == 0;
+	enemy->explonum = type >> 1;
+}
+
+JE_byte enemy_explosion_type(const struct JE_SingleEnemyType *enemy)
+{
+	return (JE_byte)((enemy->explonum << 1) | (enemy->enemyground ? 0 : 1));
+}
+
 static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueShapeTableI)
 {
 	uint avail;
@@ -5464,8 +5519,7 @@ static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 
 		enemy->eshotextracredit[i] = 0;
 	}
 
-	enemy->enemyground = (enemyDat[eDatI].explosiontype & 1) == 0;
-	enemy->explonum = enemyDat[eDatI].explosiontype >> 1;
+	enemy_set_explosion(enemy, enemyDat[eDatI].explosiontype);
 
 	enemy->launchfreq = enemyDat[eDatI].elaunchfreq;
 	enemy->launchwait = enemyDat[eDatI].elaunchfreq;
@@ -5618,50 +5672,7 @@ static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 
 
 	enemy->filter = 0x00;
 
-	int tempValue = 0;
-	if (enemyDat[eDatI].value > 1 && enemyDat[eDatI].value < 10000)
-	{
-		switch (difficultyLevel)
-		{
-		case -1:
-		case DIFFICULTY_WIMP:
-			tempValue = enemyDat[eDatI].value * 0.75f;
-			break;
-		case DIFFICULTY_EASY:
-		case DIFFICULTY_NORMAL:
-			tempValue = enemyDat[eDatI].value;
-			break;
-		case DIFFICULTY_HARD:
-			tempValue = enemyDat[eDatI].value * 1.125f;
-			break;
-		case DIFFICULTY_IMPOSSIBLE:
-			tempValue = enemyDat[eDatI].value * 1.5f;
-			break;
-		case DIFFICULTY_INSANITY:
-			tempValue = enemyDat[eDatI].value * 2;
-			break;
-		case DIFFICULTY_SUICIDE:
-			tempValue = enemyDat[eDatI].value * 2.5f;
-			break;
-		case DIFFICULTY_MANIACAL:
-		case DIFFICULTY_LORD_OF_GAME:
-			tempValue = enemyDat[eDatI].value * 4;
-			break;
-		case DIFFICULTY_NORTANEOUS:
-		case DIFFICULTY_10:
-			tempValue = enemyDat[eDatI].value * 8;
-			break;
-		}
-		if (expertMode)  // expert-mode cash bonus to offset the harsher economy
-			tempValue = tempValue * expertScorePct / 100;
-		if (tempValue > 10000)
-			tempValue = 10000;
-		enemy->evalue = tempValue;
-	}
-	else
-	{
-		enemy->evalue = enemyDat[eDatI].value;
-	}
+	enemy->evalue = enemy_scaled_value(enemyDat[eDatI].value);
 
 	int tempArmor = 1;
 	if (enemyDat[eDatI].armor > 0)

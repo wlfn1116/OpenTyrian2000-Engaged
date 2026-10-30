@@ -205,7 +205,7 @@ Breakthrough, the E-Shop, and gambles can add picks.
 | Shield Matrix | Faster shield recharge |
 | High-Velocity Shots | Faster player shots |
 | Radar | Reveals levels and grants a chart reroll |
-| Surveyor | Adds a course choice; kills can drop superbombs, orbs, and specials |
+| Surveyor | Adds a course choice; kills can drop superbombs, orbs, specials, and score pickups |
 | Executioner | More damage to badly wounded enemies |
 | Opening Salvo | Charges a strong, free opening volley |
 | Kinetic Converter | Damage refunds power, recharge, and sidekick charge |

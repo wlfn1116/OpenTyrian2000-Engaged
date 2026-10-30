@@ -692,11 +692,20 @@ the ship whose effect is being calculated.
   fire spends the charge.
 - Kinetic Converter uses actual shield or hull loss and applies only to
   affordable twiddle charges.
-- Surveyor draws three kill drops, the AST. CITY superbomb (enemy 800) and the
-  ASTEROID1 orbiting orb (enemy 535) at 1-in-(100/stacks) of the killing ship,
-  and the random-special datacube (enemy 513) at 1-in-(300/stacks), once per
-  linked hull with the loot centered on the hull. An unclaimed kill uses the
-  deeper seat; either ship may collect.
+- Surveyor draws four kill drops, once per linked hull with the loot centered
+  on the hull. The AST. CITY superbomb (enemy 800) and the ASTEROID1 orbiting
+  orb (enemy 535) roll 1-in-(100/stacks) of the killing ship, the
+  random-special datacube (enemy 513) 1-in-(300/stacks), and a score pickup
+  1-in-(80/stacks). A landed score roll spends one more draw on
+  `endlessSurveyorScoreFinds`: every score pickup worth 100 or more in any
+  episode's enemy table. Weights follow the gem ladder's 35/25/18/12/7/3 split
+  from 100 to 5,000 credits, interpolated between gems, so a cheaper pickup is
+  always likelier. The purple star always drops as the 2,000-credit star of
+  episodes 1-3. The episode tables disagree at enemies 507 and 509, so enemy
+  509 carries finds another episode defines and the spawn takes the find's
+  sprite, value and popup; collection reads the popup from the enemy, not the
+  table. A find whose carrier is not a cash pickup in the loaded table never
+  drops. An unclaimed kill uses the deeper seat; either ship may collect.
 - Afterburners act through `endlessShipMoveScale` and
   `endlessShipGravityDriftX`/`Y`: 10% speed per stack, and each stack resists
   16% of the Sluggish slowdown and of gravity drift, capped at 80%. The sector

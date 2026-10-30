@@ -919,6 +919,67 @@ void endlessAttractorTick(void)
 #define ENEMY_ORBIT_ORB     535
 #define ENEMY_DATA_CUBE     513
 
+const EndlessScoreFind endlessSurveyorScoreFinds[] = {
+	{ 394,  32,  100, 39 }, { 502,  37,  150, 47 }, { 395,  14,  250, 40 },
+	{ 509,  95,  250, 39 }, { 503,  75,  300, 48 }, { 474, 241,  375, 45 },
+	{ 396,  51,  500, 41 }, { 475, 243,  500, 49 }, { 504, 113,  500, 49 },
+	{ 510, 114,  500, 41 }, { 505,  19,  750, 50 }, { 476, 245,  800, 46 },
+	{ 397,  39, 1000, 42 }, { 506,  38, 1000, 42 }, { 509,  57, 2000, 43 },
+	{ 398,  77, 2500, 43 }, { 399, 115, 5000, 44 },
+};
+const unsigned endlessSurveyorScoreFindCount = COUNTOF(endlessSurveyorScoreFinds);
+
+static const struct
+{
+	int value;
+	int weight;
+}
+endlessSurveyorScoreCurve[] = {
+	{ 100, 350 }, { 250, 250 }, { 500, 180 }, { 1000, 120 }, { 2500, 70 }, { 5000, 30 },
+};
+
+int endlessSurveyorScoreWeight(const EndlessScoreFind *find)
+{
+	const JE_word carrier = find->carrier;
+	if (carrier == 0 || carrier > ENEMY_NUM || enemyDat[carrier].armor != 0 ||
+	    enemyDat[carrier].shapebank != 21 || enemyDat[carrier].value <= 1 ||
+	    enemyDat[carrier].value >= 10000)
+		return 0;
+
+	const int value = find->value;
+	if (value < endlessSurveyorScoreCurve[0].value || value >= 10000)
+		return 0;
+
+	for (unsigned i = 1; i < COUNTOF(endlessSurveyorScoreCurve); ++i)
+	{
+		const int v0 = endlessSurveyorScoreCurve[i - 1].value;
+		const int w0 = endlessSurveyorScoreCurve[i - 1].weight;
+		const int v1 = endlessSurveyorScoreCurve[i].value;
+		if (value <= v1)
+			return w0 - (w0 - endlessSurveyorScoreCurve[i].weight) * (value - v0) / (v1 - v0);
+	}
+	return endlessSurveyorScoreCurve[COUNTOF(endlessSurveyorScoreCurve) - 1].weight;
+}
+
+const EndlessScoreFind *endlessSurveyorScorePick(Uint32 draw)
+{
+	Uint32 total = 0;
+	for (unsigned i = 0; i < endlessSurveyorScoreFindCount; ++i)
+		total += (Uint32)endlessSurveyorScoreWeight(&endlessSurveyorScoreFinds[i]);
+	if (total == 0)
+		return NULL;
+
+	Uint32 roll = draw % total;
+	for (unsigned i = 0; i < endlessSurveyorScoreFindCount; ++i)
+	{
+		const Uint32 weight = (Uint32)endlessSurveyorScoreWeight(&endlessSurveyorScoreFinds[i]);
+		if (roll < weight)
+			return &endlessSurveyorScoreFinds[i];
+		roll -= weight;
+	}
+	return NULL;
+}
+
 static bool endlessPortCanPowerUp(uint port)
 {
 	// Either ship having room keeps the pickup on the field for whoever can still take it.
@@ -951,14 +1012,27 @@ JE_word endlessResolvePowerupDrop(JE_word eDatI)
 }
 
 // Spawn one loot enemy in the dead enemy's bank.
-static void endlessSpawnLootXY(int slot, JE_word eDatI, JE_integer x, JE_integer y)
+static Sint16 endlessSpawnLootXY(int slot, JE_word eDatI, JE_integer x, JE_integer y)
 {
 	const Sint16 g = JE_newEnemy(slot - (slot % 25), eDatI, 0);
 	if (g == 0)
-		return;
+		return 0;
 
 	enemy[g-1].ex = x;
 	enemy[g-1].ey = y;
+	return g;
+}
+
+static void endlessSpawnScoreFind(int slot, const EndlessScoreFind *find,
+                                  JE_integer x, JE_integer y)
+{
+	const Sint16 g = endlessSpawnLootXY(slot, find->carrier, x, y);
+	if (g == 0)
+		return;
+
+	enemy[g-1].egr[0] = find->graphic;
+	enemy[g-1].evalue = enemy_scaled_value(find->value);
+	enemy_set_explosion(&enemy[g-1], find->explosion);
 }
 
 // Embedded cubes become visible gems. Campaign-effect mode keeps the normal archive.
@@ -997,7 +1071,10 @@ void endlessPerkSurveyorDrops(unsigned int slot, int linknum, int killer)
 	const bool orb  = (mt_rand() % odds) == 0;
 	const int cubeOdds = ENDLESS_PERK_SURVEYOR_CUBE_BASE / stacks;
 	const bool cube = (mt_rand() % cubeOdds) == 0;
-	if (!bomb && !orb && !cube)
+	const int scoreOdds = ENDLESS_PERK_SURVEYOR_SCORE_BASE / stacks;
+	const bool score = (mt_rand() % scoreOdds) == 0;
+	const EndlessScoreFind *const find = score ? endlessSurveyorScorePick(mt_rand()) : NULL;
+	if (!bomb && !orb && !cube && find == NULL)
 		return;
 
 	JE_integer ax, ay;
@@ -1013,6 +1090,8 @@ void endlessPerkSurveyorDrops(unsigned int slot, int linknum, int killer)
 		endlessSpawnLootXY((int)slot, ENEMY_ORBIT_ORB, ax, ay);
 	if (cube)
 		endlessSpawnLootXY((int)slot, ENEMY_DATA_CUBE, ax, ay);
+	if (find != NULL)
+		endlessSpawnScoreFind((int)slot, find, ax, ay);
 	enemyAvail[slot] = avail;
 }
 

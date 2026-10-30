@@ -393,8 +393,21 @@ void qa_test_guidance_perk(void)
 	guidedShotScreenAim = savedGuidedAim;
 }
 
+static const EndlessScoreFind *qa_surveyor_find_at(uint i)
+{
+	for (unsigned f = 0; f < endlessSurveyorScoreFindCount; ++f)
+	{
+		const EndlessScoreFind *const find = &endlessSurveyorScoreFinds[f];
+		if (enemy[i].enemytype == find->carrier && enemy[i].egr[0] == find->graphic &&
+		    enemy[i].evalue == enemy_scaled_value(find->value) &&
+		    enemy_explosion_type(&enemy[i]) == find->explosion)
+			return find;
+	}
+	return NULL;
+}
+
 // Survey drop fixtures include JE_setupEnemy's scatter RNG draw for each pickup.
-static int qa_surveyor_count_loot(int *bombs, int *orbs, int *cubes, int *misplaced,
+static int qa_surveyor_count_loot(int *bombs, int *orbs, int *cubes, int *finds, int *misplaced,
                                   JE_integer wantX, JE_integer wantY)
 {
 	int loot = 0;
@@ -411,17 +424,91 @@ static int qa_surveyor_count_loot(int *bombs, int *orbs, int *cubes, int *mispla
 			++*orbs;
 		else if (enemy[i].evalue == 1)
 			++*cubes;
+		else if (qa_surveyor_find_at(i) != NULL)
+			++*finds;
 		else
 			++*misplaced;
 	}
 	return loot;
 }
 
+static const EndlessScoreFind *qa_surveyor_find(void)
+{
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		if (enemyAvail[i] == 2 && qa_surveyor_find_at(i) != NULL)
+			return qa_surveyor_find_at(i);
+	return NULL;
+}
+
+static JE_word qa_surveyor_collect(int slot, Sint64 *paid)
+{
+	memset(explosions, 0, sizeof(explosions));
+	enemy[slot].ex = player[0].x;
+	enemy[slot].ey = player[0].y;
+	enemy[slot].mapoffset = 0;
+	const Sint64 before = player[0].cash;
+	JE_playerCollide(&player[0], 1);
+	*paid = player[0].cash - before;
+	return enemyAvail[slot] == 1 ? explosions[0].sprite : 0;
+}
+
+static int qa_surveyor_draws(void)
+{
+	int bombs = 0, orbs = 0, cubes = 0, finds = 0, misplaced = 0;
+	const int loot = qa_surveyor_count_loot(&bombs, &orbs, &cubes, &finds, &misplaced, 0, 0);
+	return 4 + finds + loot;
+}
+
+static const EndlessScoreFind *qa_surveyor_catalog(JE_word graphic, JE_integer value)
+{
+	for (unsigned f = 0; f < endlessSurveyorScoreFindCount; ++f)
+	{
+		const EndlessScoreFind *const find = &endlessSurveyorScoreFinds[f];
+		if (find->graphic == graphic && find->value == value)
+			return find;
+	}
+	return NULL;
+}
+
+static bool qa_surveyor_catalog_sound(void)
+{
+	bool native = true;
+	for (JE_word id = 1; id <= ENEMY_NUM; ++id)
+	{
+		if (enemyDat[id].armor != 0 || enemyDat[id].value < 100 || enemyDat[id].value >= 10000)
+			continue;
+		const bool star = enemyDat[id].egraphic[0] == 57;
+		const EndlessScoreFind *const find = qa_surveyor_catalog(enemyDat[id].egraphic[0],
+		                                                         star ? 2000 : enemyDat[id].value);
+		native = native && find != NULL && (star || find->explosion == enemyDat[id].explosiontype);
+	}
+
+	bool falling = true;
+	for (unsigned a = 0; a < endlessSurveyorScoreFindCount; ++a)
+	{
+		const EndlessScoreFind *const fa = &endlessSurveyorScoreFinds[a];
+		const int wa = endlessSurveyorScoreWeight(fa);
+		falling = falling && wa > 0 && fa->value >= 100;
+		for (unsigned b = 0; b < endlessSurveyorScoreFindCount; ++b)
+		{
+			const EndlessScoreFind *const fb = &endlessSurveyorScoreFinds[b];
+			const int wb = endlessSurveyorScoreWeight(fb);
+			if (fa->value < fb->value)
+				falling = falling && wa > wb;
+			else if (fa->value == fb->value)
+				falling = falling && wa == wb;
+		}
+	}
+	return native && falling;
+}
+
 /* Surveyor rolls each linked hull once and places all drops at that hull's kill anchor. */
 void qa_test_surveyor_drop_perk(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
-	const JE_boolean savedCoop = coopEndlessMode;
+	const JE_boolean savedCoop = coopEndlessMode, savedExpert = expertMode;
+	const JE_shortint savedDifficulty = difficultyLevel;
+	const Player savedShip = player[0];
 	const Uint64 savedActive = endlessActiveMods;
 	Uint64 savedPlayerMods[2];
 	memcpy(savedPlayerMods, endlessPlayerMods, sizeof(savedPlayerMods));
@@ -431,6 +518,7 @@ void qa_test_surveyor_drop_perk(void)
 	endlessMode = true;
 	endlessCampaignMods = false;
 	coopEndlessMode = false;
+	expertMode = false;
 	endlessActiveMods = 0;
 	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
@@ -441,6 +529,65 @@ void qa_test_surveyor_drop_perk(void)
 	         "the survey drop test's pickups are the two the collector special-cases");
 	qa_check(enemyDat[513].value == 1,
 	         "the survey drop test's cube is the datacube the special grant answers");
+
+	difficultyLevel = DIFFICULTY_WIMP;
+	const bool wimpPays = enemy_scaled_value(100) == 75;
+	difficultyLevel = DIFFICULTY_HARD;
+	const bool hardPays = enemy_scaled_value(100) == 112;
+	difficultyLevel = DIFFICULTY_NORTANEOUS;
+	const bool capped = enemy_scaled_value(5000) == 10000;
+	difficultyLevel = DIFFICULTY_NORMAL;
+	qa_check(wimpPays && hardPays && capped && enemy_scaled_value(250) == 250 &&
+	         enemy_scaled_value(1) == 1 && enemy_scaled_value(-4) == -4 &&
+	         enemy_scaled_value(10000) == 10000 && enemy_scaled_value(30001) == 30001,
+	         "pickup cash scales with difficulty and leaves special values alone");
+
+	qa_check(qa_surveyor_catalog_sound(),
+	         "every pickup worth 100 or more here is a find; cheaper finds are always likelier");
+
+	static const struct
+	{
+		JE_word    graphic;
+		JE_integer value;
+		int        share;
+	}
+	ladder[] = {
+		{ 32, 100, 35 }, { 14, 250, 25 }, { 51, 500, 18 }, { 39, 1000, 12 }, { 77, 2500, 7 },
+		{ 115, 5000, 3 },
+	};
+	const EndlessScoreFind *const gem100 = qa_surveyor_catalog(32, 100);
+	bool anchored = gem100 != NULL;
+	for (unsigned i = 0; i < COUNTOF(ladder) && anchored; ++i)
+	{
+		const EndlessScoreFind *const gem = qa_surveyor_catalog(ladder[i].graphic, ladder[i].value);
+		anchored = gem != NULL && endlessSurveyorScoreWeight(gem) * 35 ==
+		                          endlessSurveyorScoreWeight(gem100) * ladder[i].share;
+	}
+	qa_check(anchored, "the gem ladder keeps its 35/25/18/12/7/3 split from 100 to 5000");
+
+	qa_check(qa_surveyor_catalog(57, 2000) != NULL && qa_surveyor_catalog(57, 100) == NULL &&
+	         qa_surveyor_catalog(95, 250) != NULL && qa_surveyor_catalog(245, 800) != NULL &&
+	         qa_surveyor_catalog(37, 150) != NULL && qa_surveyor_catalog(241, 375) != NULL,
+	         "the purple star only ever drops as the 2K star; candy, orange and ale are finds");
+
+	Uint32 total = 0;
+	for (unsigned f = 0; f < endlessSurveyorScoreFindCount; ++f)
+		total += (Uint32)endlessSurveyorScoreWeight(&endlessSurveyorScoreFinds[f]);
+	static int picked[64];
+	memset(picked, 0, sizeof(picked));
+	bool periodic = endlessSurveyorScoreFindCount <= COUNTOF(picked) &&
+	                endlessSurveyorScorePick(0xFFFFFFFFu) != NULL;
+	for (Uint32 draw = 0; draw < total && periodic; ++draw)
+	{
+		const EndlessScoreFind *const pick = endlessSurveyorScorePick(draw);
+		periodic = pick != NULL && endlessSurveyorScorePick(draw + total) == pick;
+		if (pick != NULL)
+			++picked[pick - endlessSurveyorScoreFinds];
+	}
+	bool weighted = periodic;
+	for (unsigned f = 0; f < endlessSurveyorScoreFindCount && weighted; ++f)
+		weighted = picked[f] == endlessSurveyorScoreWeight(&endlessSurveyorScoreFinds[f]);
+	qa_check(weighted, "the find roll lands on each pickup exactly as often as its weight");
 
 	for (uint i = 0; i < COUNTOF(enemy); ++i)
 	{
@@ -487,7 +634,7 @@ void qa_test_surveyor_drop_perk(void)
 	endlessPerkTakenBy[0][PERK_SURVEYOR] = 2;
 	endlessPerkRederive();
 	mt_srand(0x5EED51);
-	int bombs = 0, orbs = 0, cubes = 0, misplaced = 0;
+	int bombs = 0, orbs = 0, cubes = 0, finds = 0, misplaced = 0;
 	for (int k = 0; k < 3000; ++k)
 	{
 		for (uint i = 0; i < COUNTOF(enemy); ++i)
@@ -497,9 +644,10 @@ void qa_test_surveyor_drop_perk(void)
 		enemy[0].ey = 90;
 		enemy[0].linknum = 0;
 		enemy_logical_death(0, 0);
-		qa_surveyor_count_loot(&bombs, &orbs, &cubes, &misplaced, enemy[0].ex, enemy[0].ey);
+		qa_surveyor_count_loot(&bombs, &orbs, &cubes, &finds, &misplaced, enemy[0].ex, enemy[0].ey);
 	}
-	qa_check(bombs > 0 && orbs > 0 && cubes > 0, "with Surveyor all three survey pickups drop");
+	qa_check(bombs > 0 && orbs > 0 && cubes > 0 && finds > 0,
+	         "with Surveyor all four survey pickups drop");
 	qa_check(cubes < bombs + orbs, "the cube drops at longer odds than the survey pair");
 	qa_check(misplaced == 0,
 	         "every drop is a score item at the kill anchor, outside the freed kill slot");
@@ -508,7 +656,7 @@ void qa_test_surveyor_drop_perk(void)
 	endlessPerkTakenBy[0][PERK_SURVEYOR] = 1;
 	endlessPerkRederive();
 	mt_srand(0x5EED54);
-	int bombs1 = 0, orbs1 = 0, cubes1 = 0, misplaced1 = 0;
+	int bombs1 = 0, orbs1 = 0, cubes1 = 0, finds1 = 0, misplaced1 = 0;
 	for (int k = 0; k < 3000; ++k)
 	{
 		for (uint i = 0; i < COUNTOF(enemy); ++i)
@@ -516,17 +664,106 @@ void qa_test_surveyor_drop_perk(void)
 		enemyAvail[0] = 0;
 		enemy[0].linknum = 0;
 		enemy_logical_death(0, 0);
-		qa_surveyor_count_loot(&bombs1, &orbs1, &cubes1, &misplaced1, enemy[0].ex, enemy[0].ey);
+		qa_surveyor_count_loot(&bombs1, &orbs1, &cubes1, &finds1, &misplaced1, enemy[0].ex,
+		                       enemy[0].ey);
 	}
-	qa_check(bombs1 + orbs1 + cubes1 > 0 && bombs1 + orbs1 + cubes1 < bombs + orbs + cubes &&
-	         misplaced1 == 0,
+	qa_check(bombs1 + orbs1 + cubes1 + finds1 > 0 &&
+	         bombs1 + orbs1 + cubes1 + finds1 < bombs + orbs + cubes + finds && misplaced1 == 0,
 	         "one stack still drops, at longer odds than two");
+
+	bool oneIn = true;
+	int reskinned = 0;
+	for (JE_byte stacks = 1; stacks <= 2; ++stacks)
+	{
+		endlessPerkTakenBy[0][PERK_SURVEYOR] = stacks;
+		endlessPerkRederive();
+		const Uint32 odds = stacks == 1 ? 80 : 40;
+		for (Uint32 k = 0; k < 4000; ++k)
+		{
+			for (uint i = 0; i < COUNTOF(enemy); ++i)
+				enemyAvail[i] = 1;
+			enemyAvail[0] = 0;
+			enemy[0].linknum = 0;
+			const Uint32 seed = 0x5C0E0000u + stacks * 0x10000u + k;
+			mt_srand(seed);
+			enemy_logical_death(0, 0);
+			const EndlessScoreFind *const got = qa_surveyor_find();
+
+			mt_srand(seed);
+			for (int d = 0; d < 3; ++d)
+				mt_rand();
+			const bool scored = mt_rand() % odds == 0;
+			const EndlessScoreFind *const want = scored ? endlessSurveyorScorePick(mt_rand())
+			                                            : NULL;
+			oneIn = oneIn && got == want;
+			reskinned += got != NULL && enemyDat[got->carrier].egraphic[0] != got->graphic;
+		}
+	}
+	qa_check(oneIn, "a kill's score roll lands 1 in 80 with one stack and 1 in 40 with two, "
+	                "and drops exactly the pickup its pick draw names");
+	qa_check(reskinned > 0,
+	         "...including other episodes' pickups, in their own sprite, value and popup");
+
+	const EndlessScoreFind *const star = qa_surveyor_catalog(57, 2000);
+	endlessPerkTakenBy[0][PERK_SURVEYOR] = 2;
+	endlessPerkRederive();
+	int starSlot = -1;
+	for (Uint32 k = 0; k < 40000 && star != NULL && starSlot < 0; ++k)
+	{
+		for (uint i = 0; i < COUNTOF(enemy); ++i)
+			enemyAvail[i] = 1;
+		enemyAvail[0] = 0;
+		enemy[0].linknum = 0;
+		mt_srand(0x57A20000u + k);
+		enemy_logical_death(0, 0);
+		for (uint i = 0; i < COUNTOF(enemy) && starSlot < 0; ++i)
+			if (enemyAvail[i] == 2 && qa_surveyor_find_at(i) == star)
+				starSlot = (int)i;
+	}
+	JE_word starPop = 0, gemPop = 0, carrierPop = 0;
+	Sint64 starPaid = 0, gemPaid = 0, carrierPaid = 0;
+	if (starSlot >= 0)
+	{
+		for (uint i = 0; i < COUNTOF(enemy); ++i)
+			if ((int)i != starSlot)
+				enemyAvail[i] = 1;
+		player[0].is_alive = true;
+		player[0].x = 100;
+		player[0].y = 150;
+		starPop = qa_surveyor_collect(starSlot, &starPaid);
+		const Sint16 gem = JE_newEnemy(0, 398, 0);
+		if (gem > 0)
+			gemPop = qa_surveyor_collect(gem - 1, &gemPaid);
+		const Sint16 carrier = JE_newEnemy(0, star->carrier, 0);
+		if (carrier > 0)
+			carrierPop = qa_surveyor_collect(carrier - 1, &carrierPaid);
+	}
+	qa_check(starSlot >= 0 && starPaid == 2000 && starPop != 0 && starPop == gemPop &&
+	         starPop != carrierPop && carrierPaid != starPaid,
+	         "a carried pickup pays and pops as itself: the 2K star, not the pickup carrying it");
+
+	bool shunned = star != NULL;
+	if (star != NULL)
+	{
+		const JE_byte savedCarrierArmor = enemyDat[star->carrier].armor;
+		enemyDat[star->carrier].armor = 10;
+		for (unsigned f = 0; f < endlessSurveyorScoreFindCount; ++f)
+			if (endlessSurveyorScoreFinds[f].carrier == star->carrier)
+				shunned = shunned && endlessSurveyorScoreWeight(&endlessSurveyorScoreFinds[f]) == 0;
+		for (Uint32 draw = 0; draw < 4000 && shunned; ++draw)
+		{
+			const EndlessScoreFind *const pick = endlessSurveyorScorePick(draw);
+			shunned = pick != NULL && pick->carrier != star->carrier;
+		}
+		enemyDat[star->carrier].armor = savedCarrierArmor;
+	}
+	qa_check(shunned, "a find whose carrier is no pickup in the loaded episode never drops");
 
 	/* A linked hull spends one triple of draws however many parts go down with it, plus the one
 	 * scatter draw each spawned pickup costs, and its loot sits at the hull's middle. */
 	endlessPerkTakenBy[0][PERK_SURVEYOR] = 2;
 	endlessPerkRederive();
-	int hullDrops = 0, hullMisplaced = 0, hullBombs = 0, hullOrbs = 0, hullCubes = 0;
+	int hullDrops = 0, hullMisplaced = 0, hullBombs = 0, hullOrbs = 0, hullCubes = 0, hullFinds = 0;
 	mt_srand(0x5EED52);
 	for (int k = 0; k < 2000 && hullDrops == 0; ++k)
 	{
@@ -544,14 +781,15 @@ void qa_test_surveyor_drop_perk(void)
 		mt_srand(markBefore);   // reseed on a drawn value: a fresh, reproducible stream point
 		for (uint part = 10; part < 14; ++part)
 			enemy_logical_death(part, 0);
-		hullDrops += qa_surveyor_count_loot(&hullBombs, &hullOrbs, &hullCubes, &hullMisplaced,
-		                                    106, 67);
+		hullDrops += qa_surveyor_count_loot(&hullBombs, &hullOrbs, &hullCubes, &hullFinds,
+		                                    &hullMisplaced, 106, 67);
 		const Uint32 got = mt_rand();
 		mt_srand(markBefore);
-		for (int d = 0; d < 3 + hullDrops; ++d)
+		for (int d = 0; d < 4 + hullFinds + hullDrops; ++d)
 			mt_rand();
 		qa_check(mt_rand() == got,
-		         "a linked hull spends one triple of draws plus its spawns' scatter, not one per part");
+		         "a linked hull spends one set of survey draws plus its spawns' scatter, "
+		         "not one per part");
 		if (hullDrops == 0)
 			mt_srand(got);   // walk the stream forward for the next attempt
 	}
@@ -579,12 +817,10 @@ void qa_test_surveyor_drop_perk(void)
 	enemyAvail[5] = 0;
 	enemy[5].linknum = 0;
 	enemy_logical_death(5, 1);   // killed by the holder
-	int coopLoot = 0;
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-		coopLoot += enemyAvail[i] == 2;
+	const int coopDraws = qa_surveyor_draws();
 	const Uint32 gotCoop = mt_rand();
 	mt_srand(0x5EED55);
-	for (int d = 0; d < 3 + coopLoot; ++d)
+	for (int d = 0; d < coopDraws; ++d)
 		mt_rand();
 	qa_check(mt_rand() == gotCoop, "...the holder's kills roll");
 
@@ -594,14 +830,59 @@ void qa_test_surveyor_drop_perk(void)
 	enemyAvail[5] = 0;
 	enemy[5].linknum = 0;
 	enemy_logical_death(5, ENDLESS_KILLER_NONE);
-	int noneLoot = 0;
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-		noneLoot += enemyAvail[i] == 2;
+	const int noneDraws = qa_surveyor_draws();
 	const Uint32 gotNone = mt_rand();
 	mt_srand(0x5EED56);
-	for (int d = 0; d < 3 + noneLoot; ++d)
+	for (int d = 0; d < noneDraws; ++d)
 		mt_rand();
 	qa_check(mt_rand() == gotNone, "...and an unclaimed kill rolls with the deeper seat");
+
+	const JE_boolean savedNet = isNetworkGame, savedTwo = twoPlayerMode;
+	const bool savedHost = network_is_host;
+	const uint savedThis = thisPlayerNum;
+	enum { TALLY = 3 + 64 };
+	static int tally[4][TALLY];
+	Uint32 streamEnd[4];
+	memset(tally, 0, sizeof(tally));
+	for (uint m = 0; m < 4; ++m)
+	{
+		isNetworkGame = m != 0;
+		thisPlayerNum = m == 2 ? 2 : 1;
+		network_is_host = m == 1;
+		twoPlayerMode = true;
+		coopEndlessMode = true;
+		memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+		endlessPerkTakenBy[0][PERK_SURVEYOR] = 1;
+		endlessPerkTakenBy[1][PERK_SURVEYOR] = 2;
+		endlessPerkRederive();
+		endlessSetFxPlayer(m % 2);
+		mt_srand(0x5A11A1u);
+		for (int k = 0; k < 6000; ++k)
+		{
+			for (uint i = 0; i < COUNTOF(enemy); ++i)
+				enemyAvail[i] = 1;
+			enemyAvail[0] = 0;
+			enemy[0].linknum = 0;
+			enemy_logical_death(0, k % 3 == 2 ? ENDLESS_KILLER_NONE : k % 3);
+			qa_surveyor_count_loot(&tally[m][0], &tally[m][1], &tally[m][2], &tally[m][3],
+			                       &tally[m][4], enemy[0].ex, enemy[0].ey);
+			const EndlessScoreFind *const find = qa_surveyor_find();
+			if (find != NULL && endlessSurveyorScoreFindCount <= TALLY - 5)
+				++tally[m][5 + (find - endlessSurveyorScoreFinds)];
+		}
+		streamEnd[m] = mt_rand();
+	}
+	bool sameEverywhere = tally[0][3] > 0;
+	for (uint m = 1; m < 4; ++m)
+		sameEverywhere = sameEverywhere && streamEnd[m] == streamEnd[0] &&
+		                 memcmp(tally[m], tally[0], sizeof(tally[0])) == 0;
+	qa_check(sameEverywhere,
+	         "both machines, online or local, drop the same finds from either seat's kills");
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	network_is_host = savedHost;
+	thisPlayerNum = savedThis;
+	endlessSetFxPlayer(0);
 
 	for (uint i = 0; i < COUNTOF(enemy); ++i)
 	{
@@ -615,6 +896,10 @@ void qa_test_surveyor_drop_perk(void)
 	endlessMode = savedEndless;
 	endlessCampaignMods = savedCampaign;
 	coopEndlessMode = savedCoop;
+	expertMode = savedExpert;
+	difficultyLevel = savedDifficulty;
+	player[0] = savedShip;
+	memset(explosions, 0, sizeof(explosions));
 }
 
 /* Twin Pods: where the two volleys land around each pod, that the perk stays personal in co-op, and

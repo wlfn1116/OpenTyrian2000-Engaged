@@ -3311,7 +3311,8 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					// The authored graphic names the original item; a data cube's spells out "DATA".
 					if (!specialPickup)
-						JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemyDat[enemy[z].enemytype].explosiontype, true, false);
+						JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0,
+						                  enemy_explosion_type(&enemy[z]), true, false);
 				}
 				// Low Profile shrinks damaging collisions, never pickup range.
 				else if ((this_player->invulnerable_ticks == 0

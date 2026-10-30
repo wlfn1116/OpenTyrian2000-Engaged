@@ -169,6 +169,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_SURVEYOR_ROUTES 1
 #define ENDLESS_PERK_SURVEYOR_DROP_BASE 100  // kill drops: 1-in-(N/stacks), rolled per pickup kind
 #define ENDLESS_PERK_SURVEYOR_CUBE_BASE 300
+#define ENDLESS_PERK_SURVEYOR_SCORE_BASE 80
 #define ENDLESS_PERK_EXEC_DMG_PCT   15
 #define ENDLESS_PERK_EXEC_HP_PCT    25
 #define ENDLESS_PERK_EXEC_BOSS_PCT  15
@@ -301,6 +302,18 @@ int endlessPerkCashPercent(void);             // Scavenger cash multiplier (100 
 int endlessPerkInterestPercent(void);         // bank-interest rate, % of unspent cash (10 = stock)
 int endlessPerkTotalOwned(void);              // perk stacks held, summed across every perk
 bool endlessAdrenalineActive(void);           // Adrenaline owned and armor below its hurt threshold
+typedef struct
+{
+	JE_word    carrier;
+	JE_word    graphic;
+	JE_integer value;
+	JE_byte    explosion;
+} EndlessScoreFind;
+
+extern const EndlessScoreFind endlessSurveyorScoreFinds[];
+extern const unsigned endlessSurveyorScoreFindCount;
+int endlessSurveyorScoreWeight(const EndlessScoreFind *find);
+const EndlessScoreFind *endlessSurveyorScorePick(Uint32 draw);
 
 /* Outpost state. Everything indexed [2] is one player's own; solo runs use slot 0 alone. Each
  * machine owns its local player's slot and mirrors the peer's from the shop packet. */
