@@ -1453,6 +1453,14 @@ static int qa_exec_returned(JE_byte owner, int *damage)
 	return shots;
 }
 
+static int qa_exec_damage_at(int x, int y)
+{
+	for (int i = 0; i < MAX_PWEAPON; ++i)
+		if (shotAvail[i] != 0 && playerShotData[i].shotX == x && playerShotData[i].shotY == y)
+			return playerShotData[i].shotDmg;
+	return -1;
+}
+
 static void qa_exec_stacks(uint seat, JE_byte stacks)
 {
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
@@ -1495,21 +1503,21 @@ void qa_test_executioner_perk(void)
 	qa_check(bonus,
 	         "Executioner adds 17% per stack below 25% health, and against bosses below 20%");
 
-	int radius = 0, count = 0, budget = 0;
+	int radius = 0, count = 0, cap = 0;
 	qa_exec_stacks(0, 0);
-	qa_check(!endlessPerkExecutionReflect(&radius, &count, &budget),
+	qa_check(!endlessPerkExecutionReflect(&radius, &count, &cap),
 	         "without the perk an execution reflects nothing");
-	static const int reach[3][3] = { { 64, 6, 40 }, { 88, 15, 80 }, { 112, 24, 120 } };
+	static const int reach[3][3] = { { 64, 6, 33 }, { 88, 15, 66 }, { 112, 24, 100 } };
 	bool scaled = true;
 	for (JE_byte stacks = 1; stacks <= 3; ++stacks)
 	{
 		qa_exec_stacks(0, stacks);
-		scaled = scaled && endlessPerkExecutionReflect(&radius, &count, &budget) &&
+		scaled = scaled && endlessPerkExecutionReflect(&radius, &count, &cap) &&
 		         radius == reach[stacks - 1][0] && count == reach[stacks - 1][1] &&
-		         budget == reach[stacks - 1][2];
+		         cap == reach[stacks - 1][2];
 	}
 	qa_check(scaled, "1, 2 and 3 stacks reflect 6, 15 and 24 bullets within 64, 88 and 112 px, "
-	                 "returning at most 40, 80 and 120 damage");
+	                 "each returning at most 33, 66 and 100 damage");
 
 	qa_check(endlessReturnedShotDamage(300, 249) == 249 &&
 	         endlessReturnedShotDamage(99, 249) == 100 && endlessReturnedShotDamage(99, 99) == 98 &&
@@ -1546,13 +1554,43 @@ void qa_test_executioner_perk(void)
 
 	qa_exec_clear();
 	qa_exec_bullet(0, 110, 100, 30, 12);
-	qa_exec_bullet(1, 120, 100, 30, 12);
-	qa_exec_bullet(2, 130, 100, 30, 12);
+	qa_exec_bullet(1, 120, 100, 255, 12);
+	qa_exec_bullet(2, 130, 100, 40, 12);
 	execution_reflect_capture(slot, 1);
-	const bool spent = enemyShotAvail[0] && enemyShotAvail[1] && !enemyShotAvail[2];
+	const bool turned = enemyShotAvail[0] && enemyShotAvail[1] && enemyShotAvail[2];
 	execution_reflect_process();
-	qa_check(spent && qa_exec_returned(1, &returned) == 2 && returned == 40,
-	         "...sending back at most 40 damage however hard the bullets hit");
+	qa_check(turned && qa_exec_damage_at(110, 100) == 30 && qa_exec_damage_at(120, 100) == 33 &&
+	         qa_exec_damage_at(130, 100) == 33 && qa_exec_returned(1, &returned) == 3,
+	         "...each keeping its own damage up to 33, so a 255-damage bullet comes back at 33");
+
+	static const int capByStacks[3] = { 33, 66, 100 };
+	bool capped = true;
+	for (JE_byte stacks = 1; stacks <= 3; ++stacks)
+	{
+		qa_exec_stacks(0, stacks);
+		qa_exec_clear();
+		qa_exec_bullet(0, 105, 100, 255, 12);
+		qa_exec_bullet(1, 112, 100, 5, 12);
+		execution_reflect_capture(slot, 1);
+		execution_reflect_process();
+		capped = capped && qa_exec_damage_at(105, 100) == capByStacks[stacks - 1] &&
+		         qa_exec_damage_at(112, 100) == 5;
+	}
+	qa_check(capped, "a bullet's returned damage is capped at 33, 66 and 100 by stacks, alone");
+
+	qa_exec_stacks(0, 3);
+	qa_exec_clear();
+	qa_exec_bullet(0, 105, 100, 120, 12);
+	for (int i = 1; i <= 23; ++i)
+		qa_exec_bullet(i, 100 + 4 * (i + 2), 100, 5, 12);
+	execution_reflect_capture(slot, 1);
+	bool allTurned = true;
+	for (int i = 0; i <= 23; ++i)
+		allTurned = allTurned && enemyShotAvail[i];
+	execution_reflect_process();
+	qa_check(allTurned && qa_exec_returned(1, &returned) == 24 && returned == 100 + 23 * 5 &&
+	         qa_exec_damage_at(105, 100) == 100 && qa_exec_damage_at(112, 100) == 5,
+	         "a 120-damage bullet turns at the 100 cap beside 23 others, each at its own");
 
 	qa_exec_stacks(0, 3);
 	qa_exec_clear();

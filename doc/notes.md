@@ -692,9 +692,9 @@ the ship whose effect is being calculated.
   for bosses. A kill whose finishing hit carried that bonus captures the
   nearest live enemy bullets before `enemy_kill_group` runs, so Shockwave
   cannot clear them first: within 64, 88 or 112 px, at most 6, 15 or 24
-  bullets, returning at most 40, 80 or 120 damage by stacks. The earlier pool
-  slot wins a tie.
-  Stacks are the killer's own. Captures become the killer's shots through
+  bullets by stacks. Every captured bullet turns with its own damage, capped
+  at 33, 66 or 100 per bullet. The earlier pool slot wins a tie. Stacks are
+  the killer's own. Captures become the killer's shots through
   `player_shot_create_deflected` after the player-shot pass, so they first
   move next tick. Deflector and Executioner share `endlessReturnedShotDamage`,
   which keeps returned damage at 249 or below and off the 99 ice marker.

@@ -335,13 +335,13 @@ static const struct
 {
 	int radius;
 	int count;
-	int budget;
+	int cap;
 }
 endlessExecutionReflect[] = {
-	{ 64, 6, 40 }, { 88, 15, 80 }, { 112, 24, 120 },
+	{ 64, 6, 33 }, { 88, 15, 66 }, { 112, 24, 100 },
 };
 
-bool endlessPerkExecutionReflect(int *radius, int *count, int *budget)
+bool endlessPerkExecutionReflect(int *radius, int *count, int *cap)
 {
 	const int stacks = endlessFxActive() ? perkFx(PERK_EXECUTIONER) : 0;
 	if (stacks <= 0)
@@ -349,7 +349,7 @@ bool endlessPerkExecutionReflect(int *radius, int *count, int *budget)
 	const unsigned row = MIN((unsigned)stacks, COUNTOF(endlessExecutionReflect)) - 1;
 	*radius = endlessExecutionReflect[row].radius;
 	*count = endlessExecutionReflect[row].count;
-	*budget = endlessExecutionReflect[row].budget;
+	*cap = endlessExecutionReflect[row].cap;
 	return true;
 }
 

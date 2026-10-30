@@ -280,16 +280,17 @@ static int executionN = 0;
 
 void execution_reflect_capture(unsigned int slot, JE_byte playerNum)
 {
-	int radius, count, budget;
+	int radius, count, cap;
 	const uint fxSaved = chain_fx_enter(playerNum >= 1 ? playerNum - 1 : 0);
-	const bool reflects = endlessPerkExecutionReflect(&radius, &count, &budget);
+	const bool reflects = endlessPerkExecutionReflect(&radius, &count, &cap);
 	endlessSetFxPlayer(fxSaved);
 	if (!reflects)
 		return;
 
 	const int ax = enemy[slot].ex + enemy[slot].mapoffset;
 	const int ay = enemy[slot].ey;
-	for (int taken = 0; taken < count && budget > 0 && executionN < EXECUTION_REFLECT_MAX; ++taken)
+	const int first = executionN;
+	while (executionN - first < count && executionN < EXECUTION_REFLECT_MAX)
 	{
 		int nearest = -1, nearestDist2 = 0;
 		for (int b = 0; b < ENEMY_SHOT_MAX; ++b)
@@ -308,12 +309,10 @@ void execution_reflect_capture(unsigned int slot, JE_byte playerNum)
 		if (nearest < 0)
 			break;
 
-		const int damage = endlessReturnedShotDamage(enemyShot[nearest].sdmg, budget);
 		executionShot[executionN] = enemyShot[nearest];
-		executionDamage[executionN] = damage;
+		executionDamage[executionN] = endlessReturnedShotDamage(enemyShot[nearest].sdmg, cap);
 		executionOwner[executionN] = playerNum;
 		++executionN;
-		budget -= damage;
 		enemyShotAvail[nearest] = true;
 	}
 }
