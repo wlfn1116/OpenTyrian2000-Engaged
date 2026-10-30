@@ -923,6 +923,33 @@ static int ship_axis_velocity(int velocity, bool frictionDue, int accel)
 	return MIN(MAX(-4, velocity), 4);
 }
 
+static float shipMoveCarry[2][2];
+static float mouseMoveCarry[2][2];
+
+void player_ship_reset_move_carry(void)
+{
+	memset(shipMoveCarry, 0, sizeof(shipMoveCarry));
+	memset(mouseMoveCarry, 0, sizeof(mouseMoveCarry));
+}
+
+bool player_ship_move_carry_reset_self_test(void)
+{
+	for (unsigned seat = 0; seat < 2; ++seat)
+		for (unsigned axis = 0; axis < 2; ++axis)
+		{
+			shipMoveCarry[seat][axis] = 0.25f + (float)(seat + axis);
+			mouseMoveCarry[seat][axis] = -0.5f - (float)(seat + axis);
+		}
+	player_ship_reset_move_carry();
+
+	bool cleared = true;
+	for (unsigned seat = 0; seat < 2; ++seat)
+		for (unsigned axis = 0; axis < 2; ++axis)
+			cleared = cleared && shipMoveCarry[seat][axis] == 0.0f &&
+			          mouseMoveCarry[seat][axis] == 0.0f;
+	return cleared;
+}
+
 static int ship_scaled_axis(int start, int pos, int momentum, float scale, float *carry)
 {
 	const float want = (float)(pos - start + momentum) * scale + *carry;
@@ -1314,18 +1341,17 @@ redo:
 						{
 							// Match VT mouse scaling and retain sub-pixel motion. The old
 							// integer path lost slow movement and clipped fast flicks.
-							static float carryX[2], carryY[2];
-							const int pi = playerNum_ - 1;
+							float *const carry = mouseMoveCarry[playerNum_ >= 2 ? 1 : 0];
 							float mxr, myr;
 							mouseGetRelativeMotionF(&mxr, &myr);
 							if (smoothies[9-1])
 								myr = -myr;  // inverted-control levels, same as the VT path
-							carryX[pi] += mxr * VT_MOUSE_SENS;
-							carryY[pi] += myr * VT_MOUSE_SENS;
-							mouseDirectDX = (int)carryX[pi];
-							mouseDirectDY = (int)carryY[pi];
-							carryX[pi] -= (float)mouseDirectDX;
-							carryY[pi] -= (float)mouseDirectDY;
+							carry[0] += mxr * VT_MOUSE_SENS;
+							carry[1] += myr * VT_MOUSE_SENS;
+							mouseDirectDX = (int)carry[0];
+							mouseDirectDY = (int)carry[1];
+							carry[0] -= (float)mouseDirectDX;
+							carry[1] -= (float)mouseDirectDY;
 						}
 						else
 						{
@@ -1438,7 +1464,6 @@ redo:
 					const float ms = vt_input ? 1.0f : endlessShipMoveScale(moveIdx);
 					if (ms != 1.0f)
 					{
-						static float carryXs[2] = { 0.0f, 0.0f }, carryYs[2] = { 0.0f, 0.0f };
 						const bool xDue = this_player->x_friction_ticks == 0;
 						const bool yDue = this_player->y_friction_ticks == 0;
 						const int momentumX = vt ? 0 : ship_axis_velocity(this_player->x_velocity,
@@ -1446,9 +1471,9 @@ redo:
 						const int momentumY = vt ? 0 : ship_axis_velocity(this_player->y_velocity,
 						                                                  yDue, accelYC);
 						this_player->x = ship_scaled_axis(moveStartX, this_player->x, momentumX, ms,
-						                                  &carryXs[moveIdx]);
+						                                  &shipMoveCarry[moveIdx][0]);
 						this_player->y = ship_scaled_axis(moveStartY, this_player->y, momentumY, ms,
-						                                  &carryYs[moveIdx]);
+						                                  &shipMoveCarry[moveIdx][1]);
 					}
 				}
 

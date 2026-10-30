@@ -3241,6 +3241,7 @@ start_level_first:
 	rollback_level_start();
 	// Reset per-tick ship motion at each level boundary.
 	vt_ship_pred_reset();
+	player_ship_reset_move_carry();
 	rl_feedback_reset();
 	rl_forget_previous();
 	if (isNetworkGame && nrb_active())

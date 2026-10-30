@@ -68,6 +68,8 @@ int endlessCountermeasureBurst(Player *);
 // Firing patterns this ship's rear bay offers; clamp its weapon_mode against its own, not another's.
 JE_word JE_portConfigs(const Player *this_player);
 bool player_ship_move_scale_self_test(void);
+void player_ship_reset_move_carry(void);
+bool player_ship_move_carry_reset_self_test(void);
 int player_ship_banking(bool vt, bool velocity_synced, int x_velocity, int moved_x, int pull_x);
 
 #endif /* PLAYER_SHIP_H */

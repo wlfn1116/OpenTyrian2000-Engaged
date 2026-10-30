@@ -1822,6 +1822,8 @@ void qa_test_afterburner_perk(void)
 
 	qa_check(player_ship_move_scale_self_test(),
 	         "Smooth-Motion-off movement scales the whole step, momentum included");
+	qa_check(player_ship_move_carry_reset_self_test(),
+	         "a level start clears both seats' Smooth-Motion-off movement and mouse carries");
 
 	endlessActiveMods = 0;
 	endlessRollGravityDir();
