@@ -656,14 +656,21 @@ keeps its original, and music then plays through the current **Music Synth**.
 **Title screen > Extra > Jukebox** shows each song's number and name. The key
 left of the right Shift key switches between songs and sound effects. With sound
 effects shown, the arrow keys or comma and period play the previous or next one,
-Enter plays it again, and M mutes the music while you listen.
+Enter plays it again, and M mutes the music while you listen. F or Space hides
+the text.
 
-| Action | Keyboard | Switch | Vita | Touch |
-| --- | --- | --- | --- | --- |
-| Switch songs and sound effects | Key left of right Shift | X | Triangle | Circular arrow |
-| Previous or next sound | Arrows, comma, period | D-pad | D-pad | Arrow buttons |
-| Play the sound again | Enter | A | Cross | Speaker |
-| Mute the music | M | L | L | Crossed-out speaker |
+Controllers use the same buttons by position on every system: the top face
+button switches songs and sound effects whether it reads X, Y or Triangle. While
+the jukebox is open those buttons do only their jukebox job.
+
+| Action | Keyboard | Controller | Switch | Vita | Touch |
+| --- | --- | --- | --- | --- | --- |
+| Switch songs and sound effects | Key left of right Shift | Top face button | X | Triangle | Circular arrow |
+| Hide the text | F or Space | Left face button | Y | Square | Expand arrows |
+| Previous or next sound | Arrows, comma, period | D-pad | D-pad | D-pad | Arrow buttons |
+| Play the sound again | Enter | A | A | Cross | Speaker |
+| Mute the music | M | Left shoulder | L | L | Crossed-out speaker |
+| Leave the jukebox | Esc | B, Start or Back | B, Plus or Minus | Circle, Start or Select | Close button |
 
 #### Songs
 

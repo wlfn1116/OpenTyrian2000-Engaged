@@ -532,9 +532,10 @@ static int shop_big_ship_graphic(JE_word ship)
 
 static JE_byte shop_owned_skin(JE_word ship, Sprite2_array **sheet, JE_word *gr)
 {
+	const uint seat = shop_draw_seat();
 	*gr = shop_ship_hull(ship, sheet);
-	return (ship == old_items[shopPlayerIndex].ship) ? shipSkinApply(shop_draw_seat(), sheet, gr)
-	                                                  : SHIP_SKIN_NONE;
+	const bool owned = seat != shopPlayerIndex || ship == old_items[seat].ship;
+	return owned ? shipSkinApply(seat, sheet, gr) : SHIP_SKIN_NONE;
 }
 
 static int shop_illustration_graphic(void)
@@ -601,6 +602,12 @@ static void shop_stock_open(void)
 	memcpy(shopStockAvailMax, itemAvailMax, sizeof(shopStockAvailMax));
 	shopStockOpen = true;
 	shop_stock_show();
+}
+
+static void shop_snapshot_owned_items(void)
+{
+	for (uint p = 0; p < COUNTOF(old_items); ++p)
+		old_items[p] = player[p].items;
 }
 
 static void shop_stock_close(bool shelvesReplaced)
@@ -3316,6 +3323,7 @@ void JE_itemScreen(void)
 
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
 	shop_stock_open();
+	shop_snapshot_owned_items();
 
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
@@ -4342,27 +4350,17 @@ void JE_itemScreen(void)
 				// Shoulder-button edges cycle the preview's rear-fire mode, matching
 				// the [ and ] keys below.
 				{
-#if defined(__SWITCH__)
-					static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
-#else
-					static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
-#endif
 					static bool shoulder_was[2];
-					for (int s = 0; s < 2; ++s)
+					const int shoulder = joystick_shoulder_step(shoulder_was);
+					if (shoulder != 0 && curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4)
 					{
-						const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-						                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[s]) != 0;
-
-						if (down && !shoulder_was[s] &&
-						    curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4)
-						{
-							const uint opnum = weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum;
-							if (s == 0)
-								shopPlayer()->weapon_mode = (shopPlayer()->weapon_mode > 1) ? shopPlayer()->weapon_mode - 1 : opnum;
-							else if (++shopPlayer()->weapon_mode > opnum)
-								shopPlayer()->weapon_mode = 1;
-						}
-						shoulder_was[s] = down;
+						const uint opnum =
+							weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum;
+						if (shoulder < 0)
+							shopPlayer()->weapon_mode = (shopPlayer()->weapon_mode > 1)
+							                          ? shopPlayer()->weapon_mode - 1 : opnum;
+						else if (++shopPlayer()->weapon_mode > opnum)
+							shopPlayer()->weapon_mode = 1;
 					}
 				}
 #endif
@@ -5535,7 +5533,8 @@ static const char *shop_skin_row_fault(void)
 	if (curSel[MENU_UPGRADE_SUB] != menuChoices[MENU_UPGRADE_SUB] || shipSkinGet(seat) != first)
 		return "Enter on the owned ship's row changes the skin instead of going to Done";
 
-	bool restyled = false;
+	JE_byte restyler = SHIP_SKIN_NONE;
+	int restyledWant = 0;
 	for (int i = 1; i < count; ++i)
 	{
 		shipSkinSet(seat, (JE_byte)order[i]);
@@ -5545,10 +5544,43 @@ static const char *shop_skin_row_fault(void)
 		const int want = (owner != 0) ? ships[owner].bigshipgraphic : SHOP_CUSTOM_BIG_SHIP;
 		if (shop_illustration_graphic() != want)
 			return "the big ship illustration does not follow the skin";
-		restyled = restyled || want != ships[1].bigshipgraphic;
+		if (restyler == SHIP_SKIN_NONE && want != ships[1].bigshipgraphic)
+		{
+			restyler = (JE_byte)order[i];
+			restyledWant = want;
+		}
 	}
-	if (!restyled)
+	if (restyler == SHIP_SKIN_NONE)
 		return "no skin changes the big ship illustration";
+
+	shipSkinSet(seat, restyler);
+	old_items[shopPlayerIndex].ship = 2;
+	shop_snapshot_owned_items();
+	if (shop_illustration_graphic() != restyledWant)
+		return "after a load the big ship shows its skin only once something is selected";
+
+	if (isNetworkGame)
+	{
+		const JE_integer menuBefore = curMenu;
+		const uint playerNumBefore = thisPlayerNum;
+		thisPlayerNum = shopPlayerIndex + 1;
+		curMenu = MENU_ONLINE_OPACITY;
+		const uint partner = shop_draw_seat();
+		const Uint8 partnerShip = player[partner].items.ship;
+		const JE_byte partnerSkin = shipSkinGet(partner);
+		player[partner].items.ship = 1;
+		shipSkinSet(partner, restyler);
+		old_items[shopPlayerIndex].ship = 2;
+		const bool partnerShown = partner != shopPlayerIndex &&
+		                          shop_illustration_graphic() == restyledWant;
+		player[partner].items.ship = partnerShip;
+		shipSkinSet(partner, partnerSkin);
+		old_items[shopPlayerIndex].ship = 1;
+		curMenu = menuBefore;
+		thisPlayerNum = playerNumBefore;
+		if (!partnerShown)
+			return "the partner's page draws the partner's ship without the skin it wears";
+	}
 
 	const int firstOwner = extraShipGraphicOwner(first);
 	old_items[shopPlayerIndex].ship = (Uint8)firstOwner;

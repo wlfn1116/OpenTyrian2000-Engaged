@@ -4,10 +4,12 @@
 #include "qa_internal.h"
 
 #include "joystick.h"
+#include "jukebox.h"
 
 #include "SDL.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #if !defined(__SWITCH__) && !defined(__vita__) && SDL_VERSION_ATLEAST(2, 24, 0)
 static Uint16 qaPadRumbleLow, qaPadRumbleHigh;
@@ -138,6 +140,45 @@ void qa_test_controller_hotplug(void)
 		qa_check(qa_pad_page_step(slot, &confirm, 1) == 0, "A picks without turning the tab");
 		qa_check(qa_pad_page_step(slot, shoulders, 2) == 0,
 		         "both shoulders at once leave the tab where it is");
+
+		const int *const menu = joystick[slot].menu_button;
+		qa_check(menu[JOYSTICK_FACE_NORTH] == SDL_CONTROLLER_BUTTON_Y &&
+		         menu[JOYSTICK_FACE_WEST] == SDL_CONTROLLER_BUTTON_X &&
+		         menu[JOYSTICK_SHOULDER_LEFT] == SDL_CONTROLLER_BUTTON_LEFTSHOULDER &&
+		         menu[JOYSTICK_SHOULDER_RIGHT] == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+		         "a known controller's face and shoulder buttons are found by position");
+
+		const SDL_GameControllerButton north = SDL_CONTROLLER_BUTTON_Y;
+		const SDL_GameControllerButton west = SDL_CONTROLLER_BUTTON_X;
+		const SDL_GameControllerButton cancel = SDL_CONTROLLER_BUTTON_B;
+		joystick_claim_menu_buttons(jukebox_claimed_buttons());
+		qa_pad_hold(slot, &north, 1, true);
+		const bool northSeen = joystick_menu_button_down(JOYSTICK_FACE_NORTH);
+		const bool northFree = !joystick[slot].action[3];
+		qa_pad_hold(slot, &north, 1, false);
+		qa_check(northSeen && northFree && !qa_pad_button(slot, west, 2) &&
+		         !qa_pad_button(slot, left, 2) && qa_pad_button(slot, confirm, 0),
+		         "jukebox buttons skip their bindings while it is open, and A still confirms");
+
+		Joystick_assignment savedPause[2];
+		memcpy(savedPause, joystick[slot].assignment[9], sizeof(savedPause));
+		joystick[slot].assignment[9][0] = (Joystick_assignment){ .type = BUTTON, .num = north };
+		joystick[slot].assignment[9][1].type = NONE;
+		qa_pad_hold(slot, &north, 1, true);
+		const bool claimedQuits = joystick[slot].cancel;
+		qa_pad_hold(slot, &north, 1, false);
+		qa_pad_hold(slot, &cancel, 1, true);
+		const bool cancelQuits = joystick[slot].cancel;
+		qa_pad_hold(slot, &cancel, 1, false);
+		qa_check(!claimedQuits && cancelQuits,
+		         "a jukebox button bound to pause does not quit it, and B still does");
+
+		joystick_claim_menu_buttons(0);
+		qa_pad_hold(slot, &north, 1, true);
+		const bool releasedQuits = joystick[slot].cancel;
+		qa_pad_hold(slot, &north, 1, false);
+		memcpy(joystick[slot].assignment[9], savedPause, sizeof(savedPause));
+		qa_check(releasedQuits, "outside the jukebox the same button pauses again");
 
 		SDL_Joystick *const pad = joystick[slot].handle;
 		SDL_JoystickSetVirtualAxis(pad, SDL_CONTROLLER_AXIS_LEFTY, -32768);

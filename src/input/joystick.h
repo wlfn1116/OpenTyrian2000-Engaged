@@ -53,10 +53,21 @@ typedef struct
 }
 RumbleVoice;
 
+typedef enum
+{
+	JOYSTICK_FACE_NORTH,
+	JOYSTICK_FACE_WEST,
+	JOYSTICK_SHOULDER_LEFT,
+	JOYSTICK_SHOULDER_RIGHT,
+	JOYSTICK_MENU_BUTTON_COUNT
+}
+JoystickMenuButton;
+
 typedef struct
 {
 	SDL_Joystick *handle;  // NULL while the device is disconnected; the slot keeps its index
 	SDL_JoystickGUID guid; // the device this slot belongs to, so a reconnect finds it again
+	int menu_button[JOYSTICK_MENU_BUTTON_COUNT];
 
 	Joystick_assignment assignment[10][2]; // 0-3: directions, 4-9: actions
 	
@@ -135,15 +146,9 @@ void poll_joysticks(void);
 void push_key(SDL_Scancode key);
 void push_joysticks_as_keyboard(void);
 
-#if defined(__SWITCH__)
-enum { JOYSTICK_CONSOLE_L = 6, JOYSTICK_CONSOLE_R = 7 };
-#elif defined(__vita__)
-enum { JOYSTICK_CONSOLE_L = 4, JOYSTICK_CONSOLE_R = 5 };
-#endif
-
-#if defined(__SWITCH__) || defined(__vita__)
+bool joystick_menu_button_down(JoystickMenuButton which);
+void joystick_claim_menu_buttons(unsigned mask);
 int joystick_shoulder_step(bool was[2]);
-#endif
 int joystick_page_step(bool was[2]);
 
 void init_joysticks(void);

@@ -114,22 +114,44 @@ static int jukebox_pick_sound(int fx_num, int step)
 	return picked;
 }
 
-#if defined(__SWITCH__) || defined(__vita__)
 static const struct
 {
-	int button;
+	JoystickMenuButton button;
 	SDL_Scancode key;
-} jukeboxConsoleButtons[] =
+} jukeboxPadButtons[] =
 {
-	{ 3, SDL_SCANCODE_F },
+	{ JOYSTICK_FACE_WEST,     SDL_SCANCODE_F },
+	{ JOYSTICK_FACE_NORTH,    SDL_SCANCODE_SLASH },
+	{ JOYSTICK_SHOULDER_LEFT, SDL_SCANCODE_M },
+};
+
 #if defined(__SWITCH__)
-	{ 2, SDL_SCANCODE_SLASH },
+static const char *const jukeboxHelp[2][2] =
+{
+	{ "Press B to quit the jukebox.", "The D-pad changes the song being played." },
+	{ "The D-pad picks a sound, A plays it.", "L mutes the music. B quits the jukebox." },
+};
+#elif defined(__vita__)
+static const char *const jukeboxHelp[2][2] =
+{
+	{ "Press Circle to quit the jukebox.", "The D-pad changes the song being played." },
+	{ "The D-pad picks a sound, Cross plays it.", "L mutes the music. Circle quits the jukebox." },
+};
 #else
-	{ 0, SDL_SCANCODE_SLASH },
-#endif
-	{ JOYSTICK_CONSOLE_L, SDL_SCANCODE_M },
+static const char *const jukeboxHelp[2][2] =
+{
+	{ "Press ESC to quit the jukebox.", "Arrow keys change the song being played." },
+	{ "Arrow keys pick a sound, Enter plays it.", "M mutes the music. ESC quits the jukebox." },
 };
 #endif
+
+unsigned jukebox_claimed_buttons(void)
+{
+	unsigned mask = 0;
+	for (size_t b = 0; b < COUNTOF(jukeboxPadButtons); ++b)
+		mask |= 1u << jukeboxPadButtons[b].button;
+	return mask;
+}
 
 // Block-expand nonzero text pixels over the supersampled star buffer.
 static void juke_overlay_text(SDL_Surface *text1x, SDL_Surface *hi, int scale)
@@ -191,6 +213,11 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 	}
 	const int scale = juke_hi != NULL ? juke_hi->w / vga_width : 1;
 
+	bool padWas[COUNTOF(jukeboxPadButtons)];
+	for (size_t b = 0; b < COUNTOF(jukeboxPadButtons); ++b)
+		padWas[b] = joystick_menu_button_down(jukeboxPadButtons[b].button);
+	joystick_claim_menu_buttons(jukebox_claimed_buttons());
+
 	for (; ; )
 	{
 		// Give touch users dedicated previous and next track buttons.
@@ -241,21 +268,14 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 		// starlib input needs to be rewritten
 		JE_starlib_main(step, scale > 1 ? juke_hi : VGAScreen, scale);
 
-#if defined(__SWITCH__) || defined(__vita__)
-		// Raw buttons: Y/Square hides the text, X/Triangle switches songs and sounds, L mutes.
+		// Face buttons by position: west hides the text, north switches songs and sounds, L mutes.
+		for (size_t b = 0; b < COUNTOF(jukeboxPadButtons); ++b)
 		{
-			static bool was[COUNTOF(jukeboxConsoleButtons)];
-			for (size_t b = 0; b < COUNTOF(jukeboxConsoleButtons); ++b)
-			{
-				const int raw = jukeboxConsoleButtons[b].button;
-				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-				                  SDL_JoystickGetButton(joystick[0].handle, raw) != 0;
-				if (down && !was[b])
-					push_key(jukeboxConsoleButtons[b].key);
-				was[b] = down;
-			}
+			const bool down = joystick_menu_button_down(jukeboxPadButtons[b].button);
+			if (down && !padWas[b])
+				push_key(jukeboxPadButtons[b].key);
+			padWas[b] = down;
 		}
-#endif
 
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
@@ -271,13 +291,9 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 				snprintf(buffer, sizeof(buffer), "%d %s", song_playing + 1, musicTitle[song_playing]);
 			
 			const int x = VGAScreen->w / 2;
-			const char *const help1 = fx ? "Arrow keys pick a sound, Enter plays it."
-			                            : "Press ESC to quit the jukebox.";
-			const char *const help2 = fx ? "M mutes the music. ESC quits the jukebox."
-			                            : "Arrow keys change the song being played.";
-			
-			draw_font_hv(VGAScreen, x, 170, help1,  small_font, centered, 1, 0);
-			draw_font_hv(VGAScreen, x, 180, help2,  small_font, centered, 1, 0);
+
+			draw_font_hv(VGAScreen, x, 170, jukeboxHelp[fx][0], small_font, centered, 1, 0);
+			draw_font_hv(VGAScreen, x, 180, jukeboxHelp[fx][1], small_font, centered, 1, 0);
 			draw_font_hv(VGAScreen, x, 190, buffer, small_font, centered, 1, 4);
 		}
 
@@ -405,6 +421,7 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 			break;
 	}
 
+	joystick_claim_menu_buttons(0);
 	set_volume(tyrMusicVolume, fxVolume);
 
 	if (juke_hi != NULL)

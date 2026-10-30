@@ -148,24 +148,33 @@ static bool joystick_2p_joycon_layout(int j)
 }
 #endif
 
+static unsigned menu_buttons_claimed;
+
+static bool joystick_raw_held(int j, int num)
+{
+	for (int which = 0; which < JOYSTICK_MENU_BUTTON_COUNT; ++which)
+		if ((menu_buttons_claimed & (1u << which)) != 0 && joystick[j].menu_button[which] == num)
+			return false;
+	return SDL_JoystickGetButton(joystick[j].handle, num) == 1;
+}
+
 static bool joystick_button_held(int j, int num)
 {
-	SDL_Joystick *const handle = joystick[j].handle;
 #ifdef __SWITCH__
 	if (joystick_2p_joycon_layout(j))
 	{
 		// switch-sdl2's 8 and 9 are SL and SR on a single Joy-Con but ZL and ZR here.
 		if (num == 8 || num == 9)
-			return SDL_JoystickGetButton(handle, num == 8 ? 6 : 7) == 1;  // L, R
+			return joystick_raw_held(j, num == 8 ? 6 : 7);  // L, R
 		if (num == SWITCH_JOYCON_ZLZR_BUTTON)
-			return SDL_JoystickGetButton(handle, 8) == 1 || SDL_JoystickGetButton(handle, 9) == 1;
+			return joystick_raw_held(j, 8) || joystick_raw_held(j, 9);
 	}
 	if (num == SWITCH_JOYCON_LR_BUTTON)
 		return (switch_slot_joycon_extra(j) & SWITCH_JOYCON_LR) != 0;
 	if (num == SWITCH_JOYCON_ZLZR_BUTTON)
 		return (switch_slot_joycon_extra(j) & SWITCH_JOYCON_ZLZR) != 0;
 #endif
-	return SDL_JoystickGetButton(handle, num) == 1;
+	return joystick_raw_held(j, num);
 }
 
 /* gives back value 0..joystick_analog_max indicating that one of the assigned
@@ -356,23 +365,38 @@ void push_joysticks_as_keyboard(void)
 	}
 }
 
-#if defined(__SWITCH__) || defined(__vita__)
+bool joystick_menu_button_down(JoystickMenuButton which)
+{
+	for (int j = 0; j < joysticks; j++)
+	{
+		const int num = joystick[j].menu_button[which];
+		if (joystick[j].handle != NULL && num >= 0 &&
+		    SDL_JoystickGetButton(joystick[j].handle, num) != 0)
+			return true;
+	}
+	return false;
+}
+
+void joystick_claim_menu_buttons(unsigned mask)
+{
+	menu_buttons_claimed = mask;
+}
+
 int joystick_shoulder_step(bool was[2])
 {
-	static const int shoulder[2] = { JOYSTICK_CONSOLE_L, JOYSTICK_CONSOLE_R };
+	static const JoystickMenuButton shoulder[2] = { JOYSTICK_SHOULDER_LEFT,
+	                                                JOYSTICK_SHOULDER_RIGHT };
 
 	int edge = 0;
 	for (int side = 0; side < 2; ++side)
 	{
-		const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-		                  SDL_JoystickGetButton(joystick[0].handle, shoulder[side]) != 0;
+		const bool down = joystick_menu_button_down(shoulder[side]);
 		if (down && !was[side] && edge == 0)
 			edge = (side == 0) ? -1 : 1;
 		was[side] = down;
 	}
 	return edge;
 }
-#endif
 
 int joystick_page_step(bool was[2])
 {
@@ -382,14 +406,78 @@ int joystick_page_step(bool was[2])
 		back = back || joystick[j].action_pressed[2];
 		forward = forward || joystick[j].action_pressed[3];
 	}
-#if defined(__SWITCH__) || defined(__vita__)
 	const int shoulder = joystick_shoulder_step(was);
 	back = back || shoulder < 0;
 	forward = forward || shoulder > 0;
-#else
-	(void)was;
-#endif
 	return (int)forward - (int)back;
+}
+
+#ifdef JOYSTICK_HOTPLUG
+static SDL_GameController *pad_open(int j)
+{
+	if (!pad_database)
+		return NULL;
+
+	int index = -1;
+	const SDL_JoystickID id = SDL_JoystickInstanceID(joystick[j].handle);
+	for (int d = 0; d < SDL_NumJoysticks() && index < 0; d++)
+		if (SDL_JoystickGetDeviceInstanceID(d) == id)
+			index = d;
+	if (index < 0 || !SDL_IsGameController(index))
+		return NULL;
+
+	return SDL_GameControllerOpen(index);
+}
+
+static bool pad_names_by_label(SDL_GameController *pad)
+{
+	switch (SDL_GameControllerGetType(pad))
+	{
+	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+#endif
+		return SDL_GetHintBoolean(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, SDL_TRUE);
+	default:
+		return false;
+	}
+}
+#endif
+
+static void joystick_find_menu_buttons(int j)
+{
+#if defined(__SWITCH__)
+	static const int switchButtons[JOYSTICK_MENU_BUTTON_COUNT] = { 2, 3, 6, 7 };
+	memcpy(joystick[j].menu_button, switchButtons, sizeof(switchButtons));
+#elif defined(__vita__)
+	static const int vitaButtons[JOYSTICK_MENU_BUTTON_COUNT] = { 0, 3, 4, 5 };
+	memcpy(joystick[j].menu_button, vitaButtons, sizeof(vitaButtons));
+#else
+	for (int which = 0; which < JOYSTICK_MENU_BUTTON_COUNT; ++which)
+		joystick[j].menu_button[which] = -1;
+
+	SDL_GameController *const pad = pad_open(j);
+	if (pad == NULL)
+		return;
+
+	const bool labels = pad_names_by_label(pad);
+	const SDL_GameControllerButton positions[JOYSTICK_MENU_BUTTON_COUNT] = {
+		labels ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y,
+		labels ? SDL_CONTROLLER_BUTTON_Y : SDL_CONTROLLER_BUTTON_X,
+		SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
+		SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+	};
+	for (int which = 0; which < JOYSTICK_MENU_BUTTON_COUNT; ++which)
+	{
+		const SDL_GameControllerButtonBind bind =
+			SDL_GameControllerGetBindForButton(pad, positions[which]);
+		if (bind.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON)
+			joystick[j].menu_button[which] = bind.value.button;
+	}
+	SDL_GameControllerClose(pad);
+#endif
 }
 
 // Open SDL device `index` into slot j with its saved bindings, or defaults for a new device.
@@ -407,6 +495,8 @@ static void joystick_open(int j, int index)
 	       SDL_JoystickNumAxes(joystick[j].handle),
 	       SDL_JoystickNumButtons(joystick[j].handle),
 	       SDL_JoystickNumHats(joystick[j].handle));
+
+	joystick_find_menu_buttons(j);
 
 #if defined(__SWITCH__) || defined(__vita__)
 	// There is no visible stdout on the consoles; mirror the controller capabilities
@@ -706,18 +796,7 @@ static bool pad_default_assignments(int j)
 		{ SDL_CONTROLLER_BUTTON_BACK,  SDL_CONTROLLER_BUTTON_INVALID },        // pause
 	};
 
-	if (!pad_database)
-		return false;
-
-	int index = -1;
-	const SDL_JoystickID id = SDL_JoystickInstanceID(joystick[j].handle);
-	for (int d = 0; d < SDL_NumJoysticks() && index < 0; d++)
-		if (SDL_JoystickGetDeviceInstanceID(d) == id)
-			index = d;
-	if (index < 0 || !SDL_IsGameController(index))
-		return false;
-
-	SDL_GameController *const pad = SDL_GameControllerOpen(index);
+	SDL_GameController *const pad = pad_open(j);
 	if (pad == NULL)
 		return false;
 
@@ -769,6 +848,23 @@ static int switch_second_button(size_t a)
 // Vita SDL button order: 6=Down, 7=Left, 8=Up, 9=Right.
 static const int console_dpad_btn[4] = { 8, 9, 6, 7 };      // up, right, down, left
 #endif
+
+static int default_action_button(size_t a)
+{
+#if defined(__vita__)
+	// Vita defaults: Cross fire, Circle change/cancel, shoulders sidekicks, Start menu.
+	static const int vita_action_btn[6] = { 2, 1, 4, 5, 11, 10 };
+	return vita_action_btn[a - 4];
+#else
+#if defined(__SWITCH__)
+	// Buttons 4/5 are analog-stick clicks in switch-sdl2 and are unsuitable for
+	// "menu" and "pause". Use Plus (10) and Minus (11), the natural system buttons.
+	if (a == 8 || a == 9)  // assignment_names[8] = "menu", [9] = "pause"
+		return (a == 8) ? 10 : 11;
+#endif
+	return (int)(a - 4);
+#endif
+}
 
 void reset_joystick_assignments(int j)
 {
@@ -823,17 +919,7 @@ void reset_joystick_assignments(int j)
 		}
 		else
 		{
-			int btn = (int)(a - 4);
-#if defined(__SWITCH__)
-			// Buttons 4/5 are analog-stick clicks in switch-sdl2 and are unsuitable for
-			// "menu" and "pause". Use Plus (10) and Minus (11), the natural system buttons.
-			if (a == 8) btn = 10;       // assignment_names[8] = "menu"
-			else if (a == 9) btn = 11;  // assignment_names[9] = "pause"
-#elif defined(__vita__)
-			// Vita defaults: Cross fire, Circle change/cancel, shoulders sidekicks, Start menu.
-			static const int vita_action_btn[6] = { 2, 1, 4, 5, 11, 10 };
-			btn = vita_action_btn[a - 4];
-#endif
+			const int btn = default_action_button(a);
 			if (btn < (int)SDL_JoystickNumButtons(joystick[j].handle))
 			{
 				joystick[j].assignment[a][0].type = BUTTON;
@@ -905,10 +991,11 @@ static bool load_joystick_assignments(Config *config, int j)
 			if (joystick[j].assignment[a][i].type != NONE)
 				bound = true;
 
-		if (!bound && (a - 4) < (unsigned)SDL_JoystickNumButtons(joystick[j].handle))
+		const int btn = default_action_button(a);
+		if (!bound && btn < SDL_JoystickNumButtons(joystick[j].handle))
 		{
 			joystick[j].assignment[a][0].type = BUTTON;
-			joystick[j].assignment[a][0].num = (int)(a - 4);
+			joystick[j].assignment[a][0].num = btn;
 		}
 	}
 

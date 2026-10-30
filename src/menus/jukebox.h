@@ -21,5 +21,6 @@
 #include "opentyr.h"
 
 void jukebox(void);
+unsigned jukebox_claimed_buttons(void);
 
 #endif /* JUKEBOX_H */
