@@ -206,7 +206,7 @@ Breakthrough, the E-Shop, and gambles can add picks.
 | High-Velocity Shots | Faster player shots |
 | Radar | Reveals levels and grants a chart reroll |
 | Surveyor | Adds a course choice; kills can drop superbombs, orbs, specials, and score pickups |
-| Executioner | More damage to badly wounded enemies |
+| Executioner | More damage to badly wounded enemies; finishing one turns nearby enemy bullets into yours |
 | Opening Salvo | Charges a strong, free opening volley |
 | Kinetic Converter | Damage refunds power, recharge, and sidekick charge |
 | Countermeasures | Hull hits clear nearby enemy shots |

@@ -36,7 +36,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "High-Velocity Shots", "Your shots travel faster.",        3 },
 	{ "Radar",            "Reveals sector levels; one reroll a visit.", 1 },
 	{ "Surveyor",         "An extra route; kills can drop pickups.",   2 },
-	{ "Executioner",      "Hits deal more to badly wounded enemies.",  3 },
+	{ "Executioner",      "Badly hurt foes take more; kills reflect fire.",  3 },
 	{ "Opening Salvo",    "A pause supercharges a second of fire.", 1 },
 	{ "Kinetic Converter","Hits refuel gear; twiddles cost less.", 3 },
 	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
@@ -329,6 +329,39 @@ int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss
 		return 0;
 	// Round to nearest so low-damage and piercing shots can receive the bonus.
 	return (damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT + 50) / 100;
+}
+
+static const struct
+{
+	int radius;
+	int count;
+	int budget;
+}
+endlessExecutionReflect[] = {
+	{ 64, 6, 40 }, { 88, 15, 80 }, { 112, 24, 120 },
+};
+
+bool endlessPerkExecutionReflect(int *radius, int *count, int *budget)
+{
+	const int stacks = endlessFxActive() ? perkFx(PERK_EXECUTIONER) : 0;
+	if (stacks <= 0)
+		return false;
+	const unsigned row = MIN((unsigned)stacks, COUNTOF(endlessExecutionReflect)) - 1;
+	*radius = endlessExecutionReflect[row].radius;
+	*count = endlessExecutionReflect[row].count;
+	*budget = endlessExecutionReflect[row].budget;
+	return true;
+}
+
+int endlessReturnedShotDamage(int damage, int cap)
+{
+	if (cap > 249)
+		cap = 249;
+	if (damage > cap)
+		damage = cap;
+	if (damage == 99)
+		damage = (cap >= 100) ? 100 : 98;
+	return damage;
 }
 
 // Salvo charge and its active window are per ship. The gun that waits earns
@@ -663,12 +696,8 @@ int endlessPerkDeflectDamage(int absorbed)
 	const int stacks = endlessFxActive() ? perkFx(PERK_DEFLECTOR) : 0;
 	if (stacks == 0 || absorbed <= 0)
 		return 0;
-	int damage = (stacks >= 2) ? absorbed * ENDLESS_PERK_DEFLECT_MULT2 / 100 : absorbed;
-	if (damage > 249)
-		damage = 249;
-	else if (damage == 99)
-		damage = 100;
-	return damage;
+	return endlessReturnedShotDamage((stacks >= 2) ? absorbed * ENDLESS_PERK_DEFLECT_MULT2 / 100
+	                                               : absorbed, 249);
 }
 
 // Shield points refunded after damage resolution. Too-small discounts round to zero.

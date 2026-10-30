@@ -53,6 +53,7 @@ void qa_test_reinforced_prow_perk(void);
 void qa_test_ramming_rework(void);
 void qa_test_knife_fight_perk(void);
 void qa_test_deflector_perk(void);
+void qa_test_executioner_perk(void);
 void qa_test_afterburner_perk(void);
 void qa_test_gravity_pull_banking(void);
 void qa_test_countermeasure_burst(void);

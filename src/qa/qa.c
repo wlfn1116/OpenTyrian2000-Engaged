@@ -157,6 +157,12 @@ void qa_net_grant_perk_offer(uint p, int offer)
 	endlessPerkGrant(p, endlessPerkChoice[offer], 1);
 }
 
+void qa_net_grant_wire_perks(uint p)
+{
+	endlessPerkGrant(p, PERK_SURVEYOR, endlessPerkMaxStack(PERK_SURVEYOR));
+	endlessPerkGrant(p, PERK_EXECUTIONER, endlessPerkMaxStack(PERK_EXECUTIONER));
+}
+
 void qa_net_force_course_mods(int course)
 {
 	endlessCourseMod[course] = qa_net_zone_mods(endlessRunDepth);
@@ -469,6 +475,7 @@ int qa_run_unit_suite(void)
 	qa_test_ramming_rework();
 	qa_test_knife_fight_perk();
 	qa_test_deflector_perk();
+	qa_test_executioner_perk();
 	qa_test_afterburner_perk();
 	qa_test_gravity_pull_banking();
 	qa_test_countermeasure_burst();

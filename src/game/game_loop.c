@@ -4006,11 +4006,11 @@ level_loop:
 						const int knifePct = endlessFxActive()
 							? endlessPerkKnifeFightPercent((unsigned)b) : 0;
 						const int knifeRaw = endlessPerkKnifeFightBonus(damage, knifePct);
-						const int perkRaw = endlessFxActive()
+						const int execRaw = endlessFxActive()
 							? endlessPerkExecutionerBonus(damage, enemy[b].armorleft,
 							      enemy[b].healthbar_seen ? enemy[b].healthbar_max : 0, has_boss_bar)
-							  + knifeRaw
 							: 0;
+						const int perkRaw = endlessFxActive() ? execRaw + knifeRaw : 0;
 						if (knifeRaw > 0)
 							endlessPerkKnifeFightBlood((unsigned)b, knifePct);
 
@@ -4160,6 +4160,8 @@ level_loop:
 						}
 						else
 						{
+							if (execRaw > 0)
+								execution_reflect_capture(b, playerNum);
 							// in galaga mode player 2 is sidekick, so give cash to player 1
 							enemy_kill_group(b, galagaMode ? 0 : (int)playerNum - 1,
 							                 playerNum >= 1 ? (int)playerNum - 1 : ENDLESS_KILLER_NONE);
@@ -4200,6 +4202,7 @@ draw_player_shot_loop_end:
 	// Chain Reaction perk: drain the queued death-pulses now that the player-shot loop is done, so a
 	// chain kill can neither recurse nor disturb the loop's per-linkgroup kill bookkeeping.
 	chain_reaction_process();
+	execution_reflect_process();
 	endlessAttractorTick();
 
 	/* Player movement indicators for shots that track your ship */

@@ -475,7 +475,8 @@ static bool qa_surveyor_catalog_sound(void)
 	bool native = true;
 	for (JE_word id = 1; id <= ENEMY_NUM; ++id)
 	{
-		if (enemyDat[id].armor != 0 || enemyDat[id].value < 100 || enemyDat[id].value >= 10000)
+		if (enemyDat[id].armor != 0 || enemyDat[id].value < 100 || enemyDat[id].value >= 10000 ||
+		    !endlessScoreItemMoves(id))
 			continue;
 		const bool star = enemyDat[id].egraphic[0] == 57;
 		const EndlessScoreFind *const find = qa_surveyor_catalog(enemyDat[id].egraphic[0],
@@ -488,7 +489,7 @@ static bool qa_surveyor_catalog_sound(void)
 	{
 		const EndlessScoreFind *const fa = &endlessSurveyorScoreFinds[a];
 		const int wa = endlessSurveyorScoreWeight(fa);
-		falling = falling && wa > 0 && fa->value >= 100;
+		falling = falling && wa > 0 && fa->value >= 100 && endlessScoreItemMoves(fa->carrier);
 		for (unsigned b = 0; b < endlessSurveyorScoreFindCount; ++b)
 		{
 			const EndlessScoreFind *const fb = &endlessSurveyorScoreFinds[b];
@@ -569,6 +570,8 @@ void qa_test_surveyor_drop_perk(void)
 	         qa_surveyor_catalog(95, 250) != NULL && qa_surveyor_catalog(245, 800) != NULL &&
 	         qa_surveyor_catalog(37, 150) != NULL && qa_surveyor_catalog(241, 375) != NULL,
 	         "the purple star only ever drops as the 2K star; candy, orange and ale are finds");
+	qa_check(qa_surveyor_catalog(243, 500) == NULL && !endlessScoreItemMoves(475),
+	         "the Soh Jin artifact, which never moves, is no find");
 
 	Uint32 total = 0;
 	for (unsigned f = 0; f < endlessSurveyorScoreFindCount; ++f)
@@ -743,10 +746,14 @@ void qa_test_surveyor_drop_perk(void)
 	         "a carried pickup pays and pops as itself: the 2K star, not the pickup carrying it");
 
 	bool shunned = star != NULL;
-	if (star != NULL)
+	for (int variant = 0; variant < 2 && star != NULL; ++variant)
 	{
 		const JE_byte savedCarrierArmor = enemyDat[star->carrier].armor;
-		enemyDat[star->carrier].armor = 10;
+		const JE_shortint savedCarrierFall = enemyDat[star->carrier].ymove;
+		if (variant == 0)
+			enemyDat[star->carrier].armor = 10;
+		else
+			enemyDat[star->carrier].ymove = 0;
 		for (unsigned f = 0; f < endlessSurveyorScoreFindCount; ++f)
 			if (endlessSurveyorScoreFinds[f].carrier == star->carrier)
 				shunned = shunned && endlessSurveyorScoreWeight(&endlessSurveyorScoreFinds[f]) == 0;
@@ -756,8 +763,10 @@ void qa_test_surveyor_drop_perk(void)
 			shunned = pick != NULL && pick->carrier != star->carrier;
 		}
 		enemyDat[star->carrier].armor = savedCarrierArmor;
+		enemyDat[star->carrier].ymove = savedCarrierFall;
 	}
-	qa_check(shunned, "a find whose carrier is no pickup in the loaded episode never drops");
+	qa_check(shunned,
+	         "a find whose carrier is no pickup in the loaded episode, or sits still, never drops");
 
 	/* A linked hull spends one triple of draws however many parts go down with it, plus the one
 	 * scatter draw each spawned pickup costs, and its loot sits at the hull's middle. */
@@ -1406,6 +1415,239 @@ void qa_test_deflector_perk(void)
 
 	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
 	memcpy(endlessSalvoWindow, savedSalvo, sizeof(savedSalvo));
+	endlessPerkRederive();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
+static void qa_exec_bullet(int slot, int x, int y, JE_byte damage, JE_word graphic)
+{
+	memset(&enemyShot[slot], 0, sizeof(enemyShot[slot]));
+	enemyShotAvail[slot] = false;
+	enemyShot[slot].sx = (JE_integer)x;
+	enemyShot[slot].sy = (JE_integer)y;
+	enemyShot[slot].sxm = 1;
+	enemyShot[slot].sym = 2;
+	enemyShot[slot].sdmg = damage;
+	enemyShot[slot].sgr = graphic;
+}
+
+static void qa_exec_clear(void)
+{
+	memset(enemyShotAvail, 1, sizeof(enemyShotAvail));
+	memset(shotAvail, 0, sizeof(shotAvail));
+}
+
+static int qa_exec_returned(JE_byte owner, int *damage)
+{
+	int shots = 0;
+	*damage = 0;
+	for (int i = 0; i < MAX_PWEAPON; ++i)
+	{
+		if (shotAvail[i] == 0 || playerShotData[i].playerNumber != owner)
+			continue;
+		++shots;
+		*damage += playerShotData[i].shotDmg;
+	}
+	return shots;
+}
+
+static void qa_exec_stacks(uint seat, JE_byte stacks)
+{
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkTakenBy[seat][PERK_EXECUTIONER] = stacks;
+	endlessPerkRederive();
+}
+
+void qa_test_executioner_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode, savedNet = isNetworkGame;
+	const bool savedHost = network_is_host;
+	const uint savedThis = thisPlayerNum;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	static EnemyShotType savedShots[ENEMY_SHOT_MAX];
+	static JE_boolean savedShotAvail[ENEMY_SHOT_MAX];
+	memcpy(savedShots, enemyShot, sizeof(savedShots));
+	memcpy(savedShotAvail, enemyShotAvail, sizeof(savedShotAvail));
+	const uint slot = 40;
+	const struct JE_SingleEnemyType savedEnemy = enemy[slot];
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	qa_exec_stacks(0, 0);
+	endlessSetFxPlayer(0);
+
+	qa_check(endlessPerkExecutionerBonus(100, 10, 100, false) == 0,
+	         "without Executioner a finishing hit gains nothing");
+	bool bonus = true;
+	for (JE_byte stacks = 1; stacks <= 3; ++stacks)
+	{
+		qa_exec_stacks(0, stacks);
+		bonus = bonus && endlessPerkExecutionerBonus(100, 24, 100, false) == 17 * stacks &&
+		        endlessPerkExecutionerBonus(100, 25, 100, false) == 0 &&
+		        endlessPerkExecutionerBonus(100, 19, 100, true) == 17 * stacks &&
+		        endlessPerkExecutionerBonus(100, 20, 100, true) == 0;
+	}
+	qa_check(bonus,
+	         "Executioner adds 17% per stack below 25% health, and against bosses below 20%");
+
+	int radius = 0, count = 0, budget = 0;
+	qa_exec_stacks(0, 0);
+	qa_check(!endlessPerkExecutionReflect(&radius, &count, &budget),
+	         "without the perk an execution reflects nothing");
+	static const int reach[3][3] = { { 64, 6, 40 }, { 88, 15, 80 }, { 112, 24, 120 } };
+	bool scaled = true;
+	for (JE_byte stacks = 1; stacks <= 3; ++stacks)
+	{
+		qa_exec_stacks(0, stacks);
+		scaled = scaled && endlessPerkExecutionReflect(&radius, &count, &budget) &&
+		         radius == reach[stacks - 1][0] && count == reach[stacks - 1][1] &&
+		         budget == reach[stacks - 1][2];
+	}
+	qa_check(scaled, "1, 2 and 3 stacks reflect 6, 15 and 24 bullets within 64, 88 and 112 px, "
+	                 "returning at most 40, 80 and 120 damage");
+
+	qa_check(endlessReturnedShotDamage(300, 249) == 249 &&
+	         endlessReturnedShotDamage(99, 249) == 100 && endlessReturnedShotDamage(99, 99) == 98 &&
+	         endlessReturnedShotDamage(50, 30) == 30 && endlessReturnedShotDamage(7, 40) == 7,
+	         "returned damage keeps clear of the ice and piercing markers and inside its cap");
+
+	enemy[slot].ex = 100;
+	enemy[slot].ey = 100;
+	enemy[slot].mapoffset = 0;
+
+	qa_exec_stacks(0, 1);
+	qa_exec_clear();
+	for (int i = 0; i < 7; ++i)
+		qa_exec_bullet(i, 100 + 9 * (i + 1), 100, 5, 12);
+	qa_exec_bullet(7, 165, 100, 5, 12);
+	qa_exec_bullet(8, 104, 103, 5, 65535);
+	qa_exec_bullet(9, 103, 104, 0, 12);
+	execution_reflect_capture(slot, 1);
+	bool took = true;
+	for (int i = 0; i < 6; ++i)
+		took = took && enemyShotAvail[i];
+	const bool left = !enemyShotAvail[6] && !enemyShotAvail[7] && !enemyShotAvail[8] &&
+	                  !enemyShotAvail[9];
+	execution_reflect_process();
+	int returned = 0;
+	const int shots = qa_exec_returned(1, &returned);
+	bool reversed = false;
+	for (int i = 0; i < MAX_PWEAPON; ++i)
+		reversed |= shotAvail[i] != 0 && playerShotData[i].shotX == 109 &&
+		            playerShotData[i].shotY == 100 && playerShotData[i].shotXM == -1 &&
+		            playerShotData[i].shotYM == -2;
+	qa_check(took && left && shots == 6 && returned == 30 && reversed,
+	         "one stack turns the six nearest bullets within 64 px into the killer's shots");
+
+	qa_exec_clear();
+	qa_exec_bullet(0, 110, 100, 30, 12);
+	qa_exec_bullet(1, 120, 100, 30, 12);
+	qa_exec_bullet(2, 130, 100, 30, 12);
+	execution_reflect_capture(slot, 1);
+	const bool spent = enemyShotAvail[0] && enemyShotAvail[1] && !enemyShotAvail[2];
+	execution_reflect_process();
+	qa_check(spent && qa_exec_returned(1, &returned) == 2 && returned == 40,
+	         "...sending back at most 40 damage however hard the bullets hit");
+
+	qa_exec_stacks(0, 3);
+	qa_exec_clear();
+	for (int i = 0; i < 26; ++i)
+		qa_exec_bullet(i, 100 + 4 * (i + 1), 100, 1, 12);
+	qa_exec_bullet(26, 100, 213, 1, 12);
+	execution_reflect_capture(slot, 1);
+	bool most = !enemyShotAvail[24] && !enemyShotAvail[25] && !enemyShotAvail[26];
+	for (int i = 0; i < 24; ++i)
+		most = most && enemyShotAvail[i];
+	execution_reflect_process();
+	qa_check(most && qa_exec_returned(1, &returned) == 24,
+	         "three stacks take the 24 nearest of a wider volley, out to 112 px");
+
+	qa_exec_stacks(0, 2);
+	qa_exec_clear();
+	qa_exec_bullet(0, 100, 188, 1, 12);
+	qa_exec_bullet(1, 100, 189, 1, 12);
+	qa_exec_bullet(3, 90, 100, 1, 12);
+	qa_exec_bullet(4, 100, 90, 1, 12);
+	qa_exec_bullet(5, 100, 107, 1, 12);
+	qa_exec_bullet(7, 110, 100, 1, 12);
+	qa_exec_bullet(8, 107, 100, 1, 12);
+	execution_reflect_capture(slot, 1);
+	const bool reach88 = enemyShotAvail[0] && !enemyShotAvail[1] && enemyShotAvail[3] &&
+	                     enemyShotAvail[4] && enemyShotAvail[5] && enemyShotAvail[7] &&
+	                     enemyShotAvail[8];
+	execution_reflect_process();
+	qa_check(reach88, "two stacks reach a bullet 88 px out but not one at 89");
+
+	qa_exec_stacks(0, 1);
+	qa_exec_clear();
+	static const int ring[8][3] = {
+		{ 7, 110, 100 }, { 3, 90, 100 }, { 9, 100, 110 }, { 4, 100, 90 },
+		{ 12, 106, 108 }, { 1, 94, 108 }, { 15, 106, 92 }, { 6, 94, 92 },
+	};
+	for (unsigned i = 0; i < COUNTOF(ring); ++i)
+		qa_exec_bullet(ring[i][0], ring[i][1], ring[i][2], 1, 12);
+	execution_reflect_capture(slot, 1);
+	const bool ties = enemyShotAvail[1] && enemyShotAvail[3] && enemyShotAvail[4] &&
+	                  enemyShotAvail[6] && enemyShotAvail[7] && enemyShotAvail[9] &&
+	                  !enemyShotAvail[12] && !enemyShotAvail[15];
+	execution_reflect_process();
+	qa_check(ties, "among equally near bullets the earlier pool slots go first");
+
+	coopEndlessMode = true;
+	qa_exec_stacks(1, 2);
+	endlessSetFxPlayer(0);
+	qa_exec_clear();
+	qa_exec_bullet(0, 110, 100, 5, 12);
+	execution_reflect_capture(slot, 1);
+	const bool bareSeat = !enemyShotAvail[0];
+	execution_reflect_capture(slot, 2);
+	const bool holder = enemyShotAvail[0] && endlessFxPlayer() == 0;
+	execution_reflect_process();
+	qa_check(bareSeat && holder && qa_exec_returned(2, &returned) == 1 && returned == 5 &&
+	         qa_exec_returned(1, &returned) == 0 && endlessFxPlayer() == 0,
+	         "in co-op the killer's own stacks decide, the reflections are theirs, and the "
+	         "ambient effect player is left alone");
+
+	Uint32 parity[4];
+	for (uint m = 0; m < 4; ++m)
+	{
+		isNetworkGame = m != 0;
+		thisPlayerNum = m == 2 ? 2 : 1;
+		network_is_host = m == 1;
+		endlessSetFxPlayer(m % 2);
+		qa_exec_stacks(m % 2 == 0 ? 1 : 0, 3);
+		qa_exec_clear();
+		for (int i = 0; i < 16; ++i)
+			qa_exec_bullet(i * 3, 60 + (i * 37) % 90, 50 + (i * 53) % 110,
+			               (JE_byte)(1 + (i * 7) % 23), 12);
+		execution_reflect_capture(slot, m % 2 == 0 ? 2 : 1);
+		execution_reflect_process();
+		Uint32 h = 0;
+		for (int i = 0; i < 48; ++i)
+			h = h * 31 + (enemyShotAvail[i] ? 1u : 0u);
+		for (int i = 0; i < MAX_PWEAPON; ++i)
+			if (shotAvail[i] != 0)
+				h = h * 31 + (Uint32)(playerShotData[i].shotX * 1000 + playerShotData[i].shotY) +
+				    playerShotData[i].shotDmg;
+		parity[m] = h;
+	}
+	qa_check(parity[1] == parity[0] && parity[2] == parity[0] && parity[3] == parity[0],
+	         "both machines, online or local, reflect the same bullets for either seat");
+
+	isNetworkGame = savedNet;
+	network_is_host = savedHost;
+	thisPlayerNum = savedThis;
+	endlessSetFxPlayer(0);
+	enemy[slot] = savedEnemy;
+	memcpy(enemyShot, savedShots, sizeof(savedShots));
+	memcpy(enemyShotAvail, savedShotAvail, sizeof(savedShotAvail));
+	memset(shotAvail, 0, sizeof(shotAvail));
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
 	endlessPerkRederive();
 	endlessMode = savedEndless;
 	endlessCampaignMods = savedCampaign;

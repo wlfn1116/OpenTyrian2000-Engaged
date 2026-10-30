@@ -47,6 +47,8 @@ int enemy_hp_divisor100(unsigned int slot);
 int enemy_spend_damage(unsigned int slot, int damage);
 
 void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius);
+void execution_reflect_capture(unsigned int slot, JE_byte playerNum);
+void execution_reflect_process(void);
 
 void chain_reset_queue(void);
 void chain_reaction_process(void);

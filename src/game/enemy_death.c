@@ -31,6 +31,7 @@
 #include "qa.h"
 #include "rollback.h"
 #include "sim_math.h"
+#include "shots.h"
 #include "sndmast.h"
 #include "sparks.h"
 #include "video.h"
@@ -269,6 +270,64 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 		return;
 	chainPulseLastLink = linknum;
 	chain_queue_at(screenX, y, owner, salvo, inDrain ? chainDrainWave : enemyKilled);
+}
+
+#define EXECUTION_REFLECT_MAX 72
+static EnemyShotType executionShot[EXECUTION_REFLECT_MAX];
+static int executionDamage[EXECUTION_REFLECT_MAX];
+static JE_byte executionOwner[EXECUTION_REFLECT_MAX];
+static int executionN = 0;
+
+void execution_reflect_capture(unsigned int slot, JE_byte playerNum)
+{
+	int radius, count, budget;
+	const uint fxSaved = chain_fx_enter(playerNum >= 1 ? playerNum - 1 : 0);
+	const bool reflects = endlessPerkExecutionReflect(&radius, &count, &budget);
+	endlessSetFxPlayer(fxSaved);
+	if (!reflects)
+		return;
+
+	const int ax = enemy[slot].ex + enemy[slot].mapoffset;
+	const int ay = enemy[slot].ey;
+	for (int taken = 0; taken < count && budget > 0 && executionN < EXECUTION_REFLECT_MAX; ++taken)
+	{
+		int nearest = -1, nearestDist2 = 0;
+		for (int b = 0; b < ENEMY_SHOT_MAX; ++b)
+		{
+			if (enemyShotAvail[b] || enemyShot[b].sdmg == 0 || enemyShot[b].sgr >= 60000)
+				continue;
+			const int dx = enemyShot[b].sx - ax;
+			const int dy = enemyShot[b].sy - ay;
+			const int dist2 = dx * dx + dy * dy;
+			if (dist2 <= radius * radius && (nearest < 0 || dist2 < nearestDist2))
+			{
+				nearest = b;
+				nearestDist2 = dist2;
+			}
+		}
+		if (nearest < 0)
+			break;
+
+		const int damage = endlessReturnedShotDamage(enemyShot[nearest].sdmg, budget);
+		executionShot[executionN] = enemyShot[nearest];
+		executionDamage[executionN] = damage;
+		executionOwner[executionN] = playerNum;
+		++executionN;
+		budget -= damage;
+		enemyShotAvail[nearest] = true;
+	}
+}
+
+void execution_reflect_process(void)
+{
+	if (executionN == 0)
+		return;
+
+	const uint fxSaved = endlessFxPlayer();
+	for (int i = 0; i < executionN; ++i)
+		player_shot_create_deflected(&executionShot[i], executionDamage[i], executionOwner[i]);
+	endlessSetFxPlayer(fxSaved);
+	executionN = 0;
 }
 
 // The tier multiplier this hull's damage is divided by, in ENEMY_DAMAGE_ACCUM_SCALE units: Nx

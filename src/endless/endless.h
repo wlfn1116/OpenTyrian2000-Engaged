@@ -878,6 +878,8 @@ int  endlessPerkSurveyorRoutes(void);
 // Surveyor's per-kill pickup rolls: the killer's stacks decide, once per linked hull.
 void endlessPerkSurveyorDrops(unsigned int slot, int linknum, int killer);
 int  endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss);
+bool endlessPerkExecutionReflect(int *radius, int *count, int *budget);
+int  endlessReturnedShotDamage(int damage, int cap);
 
 // Opening Salvo.
 void endlessOpeningSalvoTick(void);

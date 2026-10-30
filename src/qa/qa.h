@@ -86,6 +86,7 @@ static inline bool qa_net_lobby_run(void)
 	return qa_net_gameplay_ticks > 0 && qa_net_lobby_settings;
 }
 void qa_net_grant_perk_offer(uint p, int offer);
+void qa_net_grant_wire_perks(uint p);
 void qa_net_force_course_mods(int course);
 // Zones target reached: print the session verdict (net_rollback.c) and exit the peer.
 void qa_net_zone_verdict(void);

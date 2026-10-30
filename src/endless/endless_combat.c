@@ -922,10 +922,10 @@ void endlessAttractorTick(void)
 const EndlessScoreFind endlessSurveyorScoreFinds[] = {
 	{ 394,  32,  100, 39 }, { 502,  37,  150, 47 }, { 395,  14,  250, 40 },
 	{ 509,  95,  250, 39 }, { 503,  75,  300, 48 }, { 474, 241,  375, 45 },
-	{ 396,  51,  500, 41 }, { 475, 243,  500, 49 }, { 504, 113,  500, 49 },
-	{ 510, 114,  500, 41 }, { 505,  19,  750, 50 }, { 476, 245,  800, 46 },
-	{ 397,  39, 1000, 42 }, { 506,  38, 1000, 42 }, { 509,  57, 2000, 43 },
-	{ 398,  77, 2500, 43 }, { 399, 115, 5000, 44 },
+	{ 396,  51,  500, 41 }, { 504, 113,  500, 49 }, { 510, 114,  500, 41 },
+	{ 505,  19,  750, 50 }, { 476, 245,  800, 46 }, { 397,  39, 1000, 42 },
+	{ 506,  38, 1000, 42 }, { 509,  57, 2000, 43 }, { 398,  77, 2500, 43 },
+	{ 399, 115, 5000, 44 },
 };
 const unsigned endlessSurveyorScoreFindCount = COUNTOF(endlessSurveyorScoreFinds);
 
@@ -938,12 +938,20 @@ endlessSurveyorScoreCurve[] = {
 	{ 100, 350 }, { 250, 250 }, { 500, 180 }, { 1000, 120 }, { 2500, 70 }, { 5000, 30 },
 };
 
+bool endlessScoreItemMoves(JE_word eDatI)
+{
+	return eDatI != 0 && eDatI <= ENEMY_NUM &&
+	       (enemyDat[eDatI].xmove != 0 || enemyDat[eDatI].ymove != 0 ||
+	        enemyDat[eDatI].xaccel != 0 || enemyDat[eDatI].yaccel != 0 ||
+	        enemyDat[eDatI].xcaccel != 0 || enemyDat[eDatI].ycaccel != 0);
+}
+
 int endlessSurveyorScoreWeight(const EndlessScoreFind *find)
 {
 	const JE_word carrier = find->carrier;
 	if (carrier == 0 || carrier > ENEMY_NUM || enemyDat[carrier].armor != 0 ||
 	    enemyDat[carrier].shapebank != 21 || enemyDat[carrier].value <= 1 ||
-	    enemyDat[carrier].value >= 10000)
+	    enemyDat[carrier].value >= 10000 || !endlessScoreItemMoves(carrier))
 		return 0;
 
 	const int value = find->value;

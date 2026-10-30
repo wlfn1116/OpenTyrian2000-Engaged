@@ -3179,6 +3179,8 @@ static void qa_shop_auto_visit(void)
 			qa_net_grant_perk_offer(me, 0);
 		endlessPerkPending = false;
 	}
+	if (endlessMode && qa_net_scenario == 12)
+		qa_net_grant_wire_perks(me);
 
 	if (coopCampaignMode)
 	{

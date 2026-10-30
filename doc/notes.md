@@ -688,6 +688,16 @@ the ship whose effect is being calculated.
 - Knife Fight measures hull clearance before HP scaling.
 - Deflector fires only when shield falls and armour does not. Apply its refund
   after damage resolution so overflow remains unchanged.
+- Executioner adds 17% per stack to hits on enemies below 25% health, or 20%
+  for bosses. A kill whose finishing hit carried that bonus captures the
+  nearest live enemy bullets before `enemy_kill_group` runs, so Shockwave
+  cannot clear them first: within 64, 88 or 112 px, at most 6, 15 or 24
+  bullets, returning at most 40, 80 or 120 damage by stacks. The earlier pool
+  slot wins a tie.
+  Stacks are the killer's own. Captures become the killer's shots through
+  `player_shot_create_deflected` after the player-shot pass, so they first
+  move next tick. Deflector and Executioner share `endlessReturnedShotDamage`,
+  which keeps returned damage at 249 or below and off the 99 ice marker.
 - Opening Salvo tags emitted shots and Chain Reaction pulses. Only front-gun
   fire spends the charge.
 - Kinetic Converter uses actual shield or hull loss and applies only to
@@ -698,14 +708,16 @@ the ship whose effect is being calculated.
   random-special datacube (enemy 513) 1-in-(300/stacks), and a score pickup
   1-in-(80/stacks). A landed score roll spends one more draw on
   `endlessSurveyorScoreFinds`: every score pickup worth 100 or more in any
-  episode's enemy table. Weights follow the gem ladder's 35/25/18/12/7/3 split
-  from 100 to 5,000 credits, interpolated between gems, so a cheaper pickup is
-  always likelier. The purple star always drops as the 2,000-credit star of
-  episodes 1-3. The episode tables disagree at enemies 507 and 509, so enemy
-  509 carries finds another episode defines and the spawn takes the find's
-  sprite, value and popup; collection reads the popup from the enemy, not the
-  table. A find whose carrier is not a cash pickup in the loaded table never
-  drops. An unclaimed kill uses the deeper seat; either ship may collect.
+  episode's enemy table that moves on its own, so the stationary Soh Jin
+  artifact (enemy 475) is left out. Weights follow the gem ladder's
+  35/25/18/12/7/3 split from 100 to 5,000 credits, interpolated between gems,
+  so a cheaper pickup is always likelier. The purple star always drops as the
+  2,000-credit star of episodes 1-3. The episode tables disagree at enemies
+  507 and 509, so enemy 509 carries finds another episode defines and the
+  spawn takes the find's sprite, value and popup; collection reads the popup
+  from the enemy, not the table. A find whose carrier is not a moving cash
+  pickup in the loaded table never drops. An unclaimed kill uses the deeper
+  seat; either ship may collect.
 - Afterburners act through `endlessShipMoveScale` and
   `endlessShipGravityDriftX`/`Y`: 10% speed per stack, and each stack resists
   16% of the Sluggish slowdown and of gravity drift, capped at 80%. The sector

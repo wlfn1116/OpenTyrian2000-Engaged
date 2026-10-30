@@ -170,9 +170,9 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_SURVEYOR_DROP_BASE 100  // kill drops: 1-in-(N/stacks), rolled per pickup kind
 #define ENDLESS_PERK_SURVEYOR_CUBE_BASE 300
 #define ENDLESS_PERK_SURVEYOR_SCORE_BASE 80
-#define ENDLESS_PERK_EXEC_DMG_PCT   15
+#define ENDLESS_PERK_EXEC_DMG_PCT   17
 #define ENDLESS_PERK_EXEC_HP_PCT    25
-#define ENDLESS_PERK_EXEC_BOSS_PCT  15
+#define ENDLESS_PERK_EXEC_BOSS_PCT  20
 
 // Opening Salvo, in simulation ticks.
 #define ENDLESS_PERK_SALVO_IDLE     70
@@ -312,6 +312,7 @@ typedef struct
 
 extern const EndlessScoreFind endlessSurveyorScoreFinds[];
 extern const unsigned endlessSurveyorScoreFindCount;
+bool endlessScoreItemMoves(JE_word eDatI);
 int endlessSurveyorScoreWeight(const EndlessScoreFind *find);
 const EndlessScoreFind *endlessSurveyorScorePick(Uint32 draw);
 
