@@ -13,6 +13,7 @@
 #include "explosions.h"
 #include "game_loop.h"
 #include "game_state.h"
+#include "health_bars.h"
 #include "hud.h"
 #include "joystick.h"
 #include "keyboard.h"
@@ -57,6 +58,18 @@ static Sprite2_array qa_cell_sheet(QaCellFrame *frame)
 	frame->bytes[1] = 0;
 	memcpy(frame->bytes + 2, qa_cell_body, sizeof(qa_cell_body));
 	return (Sprite2_array){ sizeof(frame->bytes), frame->bytes };
+}
+
+void qa_enemy_dress_visible(unsigned int slot)
+{
+	static QaCellFrame frame;
+	static Sprite2_array sheet;
+	if (sheet.data == NULL)
+		sheet = qa_cell_sheet(&frame);
+
+	enemy[slot].sprite2s = &sheet;
+	enemy[slot].enemycycle = 1;
+	enemy[slot].egr[0] = 1;
 }
 
 /* Where a projectile is collided from. The geometry comes from sprite data alone, so a synthetic
@@ -1697,6 +1710,19 @@ static bool qa_afterburner_close(float got, float want)
 	return got > want - 0.01f && got < want + 0.01f;
 }
 
+static float qa_afterburner_full_boost(void)
+{
+	const int stacks = endlessPerkMaxStack(PERK_AFTERBURNER);
+	return 1.0f + (float)(stacks * ENDLESS_PERK_AFTERBURNER_SPEED_PCT) / 100.0f;
+}
+
+static float qa_afterburner_full_resist(void)
+{
+	const int stacks = endlessPerkMaxStack(PERK_AFTERBURNER);
+	return (float)endlessClamp(stacks * ENDLESS_PERK_AFTERBURNER_RESIST_PCT, 0,
+	                           ENDLESS_PERK_AFTERBURNER_RESIST_MAX) / 100.0f;
+}
+
 static float qa_afterburner_ladder_top(uint p, float floor, bool *rising)
 {
 	float previous = floor;
@@ -1761,9 +1787,8 @@ void qa_test_afterburner_perk(void)
 	         "without Afterburners or Molasses both ships move at stock speed");
 
 	const int maxStacks = endlessPerkMaxStack(PERK_AFTERBURNER);
-	const float fullBoost = 1.0f + (float)(maxStacks * ENDLESS_PERK_AFTERBURNER_SPEED_PCT) / 100.0f;
-	const float fullResist = (float)endlessClamp(maxStacks * ENDLESS_PERK_AFTERBURNER_RESIST_PCT, 0,
-	                                             ENDLESS_PERK_AFTERBURNER_RESIST_MAX) / 100.0f;
+	const float fullBoost = qa_afterburner_full_boost();
+	const float fullResist = qa_afterburner_full_resist();
 	bool rising;
 	float top = qa_afterburner_ladder_top(0, 1.0f, &rising);
 	qa_check(maxStacks == 5 && rising && qa_afterburner_close(top, fullBoost),
@@ -1835,6 +1860,195 @@ void qa_test_afterburner_perk(void)
 	coopEndlessMode = savedCoop;
 	endlessActiveMods = savedMods;
 	endlessRunDepth = savedDepth;
+}
+
+static bool qa_concussed_by_hits(uint p, int hits)
+{
+	endlessSetFxPlayer(p);
+	for (int hit = 0; hit < hits; ++hit)
+		endlessConcussionHit();
+	return endlessConcussionSlowdown(p) > 0.0f;
+}
+
+static bool qa_concussed_by_damage(int hits)
+{
+	const int savedShieldFlash[2] = { shieldGaugeFlash[0], shieldGaugeFlash[1] };
+	const int savedArmorFlash[2] = { armorGaugeFlash[0], armorGaugeFlash[1] };
+	const Player saved = player[0];
+	bool concussed = false;
+	for (int hit = 0; hit < hits && !concussed; ++hit)
+	{
+		player[0].shield = 50;
+		player[0].shield_max = 50;
+		player[0].armor = 50;
+		player[0].is_alive = true;
+		JE_playerDamage(1, &player[0]);
+		concussed = endlessConcussionSlowdown(0) > 0.0f;
+	}
+	player[0] = saved;
+	memset(explosions, 0, sizeof(explosions));
+	shieldGaugeFlash[0] = savedShieldFlash[0]; shieldGaugeFlash[1] = savedShieldFlash[1];
+	armorGaugeFlash[0] = savedArmorFlash[0];   armorGaugeFlash[1] = savedArmorFlash[1];
+	return concussed;
+}
+
+void qa_test_concussion_mod(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const Uint64 savedMods = endlessActiveMods;
+	const int savedDepth = endlessRunDepth;
+	const JE_shortint savedDifficulty = difficultyLevel;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	qa_rng_save();
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	difficultyLevel = DIFFICULTY_NORMAL;
+	endlessRunDepth = 0;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	mt_srand(0xC0C0551u);
+
+	endlessActiveMods = 0;
+	endlessConcussionReset();
+	qa_check(!qa_concussed_by_hits(0, 200) && endlessShipMoveScale(0) == 1.0f,
+	         "without Concussion no hit slows the ship");
+
+	endlessActiveMods = ENDLESS_MOD_CONCUSSION;
+	const int trials = 1000;
+	int stunned = 0;
+	for (int trial = 0; trial < trials; ++trial)
+	{
+		endlessConcussionReset();
+		stunned += qa_concussed_by_hits(0, 1) ? 1 : 0;
+	}
+	qa_check(stunned * 100 > trials * (ENDLESS_CONCUSSION_CHANCE_PCT - 6) &&
+	         stunned * 100 < trials * (ENDLESS_CONCUSSION_CHANCE_PCT + 6),
+	         "about one hit in five concusses a ready ship");
+
+	endlessConcussionReset();
+	const bool landed = qa_concussed_by_hits(0, 200);
+	const float surfaceSlow = endlessConcussionSlowdown(0);
+	const float surfaceScale = endlessShipMoveScale(0);
+	int stunTicks = 0;
+	while (qa_concussed_by_hits(0, 1) && stunTicks < 1000)
+	{
+		endlessConcussionTick();
+		++stunTicks;
+	}
+	qa_check(landed && qa_afterburner_close(surfaceSlow, 0.50f) &&
+	         qa_afterburner_close(surfaceScale, 0.50f) && stunTicks == ENDLESS_CONCUSSION_TICKS,
+	         "a concussion halves the ship's speed for its whole stun");
+
+	bool guarded = true;
+	for (int tick = 0; tick < ENDLESS_CONCUSSION_GUARD_TICKS; ++tick)
+	{
+		guarded = guarded && !qa_concussed_by_hits(0, 8);
+		endlessConcussionTick();
+	}
+	qa_check(guarded && qa_concussed_by_hits(0, 200),
+	         "...and no hit concusses it again until the guard after the stun runs out");
+
+	endlessRunDepth = 400;
+	difficultyLevel = DIFFICULTY_IMPOSSIBLE;
+	endlessConcussionReset();
+	const bool deepLanded = qa_concussed_by_hits(0, 200);
+	const float deepSlow = endlessConcussionSlowdown(0);
+	int deepTicks = 0;
+	while (qa_concussed_by_hits(0, 1) && deepTicks < 1000)
+	{
+		endlessConcussionTick();
+		++deepTicks;
+	}
+	endlessRunDepth = 0;
+	difficultyLevel = DIFFICULTY_NORMAL;
+	qa_check(deepLanded && deepSlow == surfaceSlow && deepTicks == stunTicks,
+	         "a concussion is as strong and as long at any depth or difficulty");
+
+	endlessConcussionReset();
+	qa_concussed_by_hits(0, 200);
+	bool rising;
+	const float top = qa_afterburner_ladder_top(0, surfaceScale, &rising);
+	const float resisted = (1.0f - surfaceSlow * (1.0f - qa_afterburner_full_resist()))
+	                     * qa_afterburner_full_boost();
+	qa_check(rising && qa_afterburner_close(top, resisted),
+	         "Afterburners shave a concussion a stack at a time, as they do Molasses");
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, 0);
+
+	endlessActiveMods = ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SLUGGISH;
+	const float molasses = endlessMoveScale();
+	const float stacked = endlessShipMoveScale(0);
+	qa_check(molasses < 1.0f && qa_afterburner_close(stacked, molasses * surfaceScale),
+	         "a concussion under Molasses multiplies the two slowdowns");
+
+	endlessActiveMods = ENDLESS_MOD_CONCUSSION;
+	coopEndlessMode = true;
+	endlessConcussionReset();
+	const bool partnerHit = qa_concussed_by_hits(1, 200);
+	qa_check(partnerHit && endlessConcussionSlowdown(0) == 0.0f && endlessShipMoveScale(0) == 1.0f,
+	         "a concussion slows only the ship that took the hit");
+	endlessResetZoneEffects();
+	qa_check(endlessConcussionSlowdown(1) == 0.0f && qa_concussed_by_hits(1, 200),
+	         "a zone start clears every ship's concussion and its guard");
+	coopEndlessMode = false;
+
+	endlessConcussionReset();
+	qa_check(qa_concussed_by_damage(200),
+	         "a real hit through the damage path can concuss the ship it lands on");
+	qa_check(endlessStripWorstMod(ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SWIFT) == ENDLESS_MOD_SWIFT,
+	         "Sector Sabotage strips Concussion before Swift Death");
+	qa_check(endlessModWord(ENDLESS_MOD_CONCUSSION)[0] != '\0' &&
+	         endlessDangerScore(ENDLESS_MOD_CONCUSSION) > 0,
+	         "Concussion lists a monitor row and counts as a danger");
+
+	endlessConcussionReset();
+	endlessMode = false;
+	qa_check(!qa_concussed_by_hits(0, 200) && endlessShipMoveScale(0) == 1.0f,
+	         "Concussion does nothing outside Endless effects");
+
+	endlessConcussionReset();
+	endlessSetFxPlayer(0);
+	qa_rng_restore();
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+	endlessActiveMods = savedMods;
+	endlessRunDepth = savedDepth;
+	difficultyLevel = savedDifficulty;
+}
+
+void qa_test_boss_scroll_hold(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const Uint64 savedMods = endlessActiveMods;
+	const boss_bar_t savedBars[2] = { boss_bar[0], boss_bar[1] };
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	endlessActiveMods = ENDLESS_MOD_WARP;
+	boss_bar[0].link_num = 0;
+	boss_bar[1].link_num = 0;
+	const int openPace = endlessScrollBoostPercent();
+	boss_bar[1].link_num = 62;
+	const int heldPace = endlessScrollBoostPercent();
+	const bool debtKept = enemy_approach_debt_hold_self_test();
+	boss_bar[1].link_num = 0;
+	const int resumedPace = endlessScrollBoostPercent();
+
+	boss_bar[0] = savedBars[0];
+	boss_bar[1] = savedBars[1];
+	endlessActiveMods = savedMods;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedEndless;
+
+	qa_check(openPace == 220 && heldPace == 0 && resumedPace == 220,
+	         "a boss bar holds a boosted scroll at the authored pace until no bar is up");
+	qa_check(debtKept, "...and the hold keeps every enemy's banked approach debt for its settle");
 }
 
 static void qa_pull_place(int x, int y)

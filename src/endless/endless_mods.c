@@ -45,6 +45,7 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_KILLSHOT,  38, "shots snap on twice" },
 	{ ENDLESS_MOD_STATIC,    11, "hits drain power" },
 	{ ENDLESS_MOD_RETALIATION, 15, "kills quicken fire" },
+	{ ENDLESS_MOD_CONCUSSION, 10, "hits can slow you" },
 	// The finale marker has no monitor row. Its weight controls reward and slate ordering.
 	{ ENDLESS_MOD_THEEND,   150, NULL },
 	// Boons generally reduce or omit clear cash.
@@ -270,6 +271,22 @@ const EndlessTheme endlessHostileThemes[] = {
 	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_DEVASTATING,  "Riposte" },
 	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,       "Bad Blood" },   // the +5 Retaliation+Enrage synergy sector
 	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_FORTIFIED,    "Grudge" },
+
+	{ ENDLESS_MOD_CONCUSSION,                             "Concussion" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_FRENZY,        "Shell Shock" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_DEVASTATING,   "Knockout" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SWIFT,         "Rattled" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_FORTIFIED,     "Brick Wall" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_ELITEPACK,     "Heavy Hitters" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SLUGGISH,      "Dead Stop" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_GRAVITY,       "Pinned Down" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_STATIC,        "Stun Gun" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_ENRAGE,        "Seeing Stars" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_TOPSY,         "Dizzy Spell" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SHIELDLESS,    "Glass Jaw" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_RETALIATION,   "Counterpunch" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_OVERCLOCK,     "Punch Drunk" },
+	{ ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SEEKER,        "Easy Prey" },
 
 	// Remaining signature pairs omit redundant Overclock+Slipstream and rare Tar Pit.
 	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_FRENZY,         "Dying Breath" },
@@ -632,6 +649,7 @@ const EndlessTheme endlessRareThemes[] = {
 // Keep separate draws for Static and Topsy Turvy so later RNG positions stay stable.
 #define ENDLESS_THEEND_STATIC_ODDS 22
 #define ENDLESS_THEEND_TOPSY_ODDS  17
+#define ENDLESS_THEEND_CONCUSSION_ODDS 20
 
 Uint64 endlessMakeTheEndMods(void)
 {
@@ -676,6 +694,9 @@ Uint64 endlessMakeTheEndMods(void)
 		m |= ENDLESS_MOD_KAMIKAZE;
 	else if (homing < 35)
 		m |= ENDLESS_MOD_HOMING;
+
+	if (endlessRand() % ENDLESS_THEEND_CONCUSSION_ODDS == 0)
+		m |= ENDLESS_MOD_CONCUSSION;
 
 	return m;
 }
@@ -880,6 +901,9 @@ static const EndlessTheme endlessMixedThemes[] = {
 	{ ENDLESS_MOD_AUXREACTOR | ENDLESS_MOD_DEVASTATING,  "Reserve Power" },
 	{ ENDLESS_MOD_STARCHARTS | ENDLESS_MOD_FORTIFIED,    "Survey Run" },
 	{ ENDLESS_MOD_STARCHARTS | ENDLESS_MOD_ENRAGE,       "Scout's Toll" },
+	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_CONCUSSION,        "Crash Helmet" },
+	{ ENDLESS_MOD_DILATION | ENDLESS_MOD_CONCUSSION,     "Time to Recover" },
+	{ ENDLESS_MOD_LOWPROFILE | ENDLESS_MOD_CONCUSSION,   "Duck and Cover" },
 
 	// Triples.
 	{ ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_SWIFT,       "Armor Piercer" },
@@ -1470,6 +1494,8 @@ static const struct { Uint64 combo; int bonus; } endlessSynergies[] = {
 	{ ENDLESS_MOD_TRUEAIM     | ENDLESS_MOD_SLUGGISH,    6 },
 	{ ENDLESS_MOD_KILLSHOT    | ENDLESS_MOD_SLUGGISH,    8 },
 	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,      5 },
+	{ ENDLESS_MOD_CONCUSSION  | ENDLESS_MOD_SLUGGISH,    4 },
+	{ ENDLESS_MOD_CONCUSSION  | ENDLESS_MOD_KAMIKAZE,    4 },
 };
 
 // Total synergy bonus for a modifier set: every combo whose bits are all present, summed (they stack).

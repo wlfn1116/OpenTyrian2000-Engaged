@@ -333,7 +333,7 @@ void execution_reflect_process(void)
 // boss HP (expert mode and/or endless depth) combined with the endless elite/champion tier.
 static int enemy_hp_multiplier100(unsigned int slot)
 {
-	const bool has_boss_bar = enemy_has_boss_bar(enemy[slot].linknum);
+	const bool boss_hp = enemy_has_boss_hp(enemy[slot].linknum);
 
 	int bossHpMult100 = ENEMY_DAMAGE_ACCUM_SCALE;
 	if (expertMode)
@@ -342,8 +342,8 @@ static int enemy_hp_multiplier100(unsigned int slot)
 		bossHpMult100 = bossHpMult100 * endlessBossHpMult100() / ENEMY_DAMAGE_ACCUM_SCALE;
 
 	if (!endlessFxActive())
-		return has_boss_bar ? bossHpMult100 : ENEMY_DAMAGE_ACCUM_SCALE;
-	return endlessEnemyHpMult100(has_boss_bar, bossHpMult100, enemy[slot].eliteState);
+		return boss_hp ? bossHpMult100 : ENEMY_DAMAGE_ACCUM_SCALE;
+	return endlessEnemyHpMult100(boss_hp, bossHpMult100, enemy[slot].eliteState);
 }
 
 // The whole-x reading of the same figure, which is what the pierce delay is calibrated against.
@@ -624,10 +624,12 @@ static void chain_bolt_sparks(int x0, int y0, int x1, int y1, int victim)
 }
 
 // A wave may damage each eligible hull once.
-static bool chain_target_eligible(int slot, JE_word wave)
+static bool chain_target_eligible(int slot, JE_word wave, const bool *visible)
 {
 	if (enemyAvail[slot] != 0)
 		return false;                                  // live enemies only
+	if (!visible[slot])
+		return false;
 	if (enemy[slot].scoreitem || enemy[slot].special)
 		return false;                                  // pickups / flag-setters: never
 	if (enemy[slot].armorleft == 0 || enemy[slot].armorleft >= 255)
@@ -640,7 +642,7 @@ static bool chain_target_eligible(int slot, JE_word wave)
 // Treat a linked hull as one target. A reached hull takes one hit at its live center and marks all
 // parts with `wave`; return false when the hull is out of range or already hit.
 static bool chain_group_target(JE_byte linknum, int px, int py, int radius, JE_word wave,
-                               int *out_x, int *out_y, int *out_victim)
+                               const bool *visible, int *out_x, int *out_y, int *out_victim)
 {
 	int minX = INT_MAX;
 	int maxX = INT_MIN;
@@ -650,7 +652,7 @@ static bool chain_group_target(JE_byte linknum, int px, int py, int radius, JE_w
 
 	for (int g = 0; g < 100; ++g)
 	{
-		if (enemy[g].linknum != linknum || !chain_target_eligible(g, wave))
+		if (enemy[g].linknum != linknum || !chain_target_eligible(g, wave, visible))
 			continue;
 
 		const int gx = enemy[g].ex + enemy[g].mapoffset;
@@ -677,7 +679,7 @@ static bool chain_group_target(JE_byte linknum, int px, int py, int radius, JE_w
 	int bestDist = INT_MAX;
 	for (int g = 0; g < 100; ++g)
 	{
-		if (enemy[g].linknum != linknum || !chain_target_eligible(g, wave))
+		if (enemy[g].linknum != linknum || !chain_target_eligible(g, wave, visible))
 			continue;
 		enemy[g].chainWave = wave;
 
@@ -715,6 +717,8 @@ void chain_reaction_process(void)
 		chainPulseLastLink = 0;
 		return;
 	}
+	bool visible[COUNTOF(enemy)];
+	enemy_visible_snapshot(visible);
 	// Show one impact effect per victim per drain, even when several waves hit.
 	bool flashed[COUNTOF(enemy)] = { false };
 	int rings = 0;
@@ -741,7 +745,7 @@ void chain_reaction_process(void)
 
 		for (int e = 0; e < 100; ++e)
 		{
-			if (!chain_target_eligible(e, wave))
+			if (!chain_target_eligible(e, wave, visible))
 				continue;
 
 			const JE_byte linknum = enemy[e].linknum;
@@ -759,7 +763,7 @@ void chain_reaction_process(void)
 					continue;
 				enemy[e].chainWave = wave;
 			}
-			else if (!chain_group_target(linknum, px, py, radius, wave, &ex, &ey, &victim))
+			else if (!chain_group_target(linknum, px, py, radius, wave, visible, &ex, &ey, &victim))
 			{
 				continue;   // out of range, or this wave has hit it; every tile answers the same
 			}
@@ -835,6 +839,16 @@ void chain_reaction_process(void)
 	chainDrainSalvo = CHAIN_DRAIN_IDLE;   // the next fresh kill reads its own window and wave again
 }
 
+static void qa_chain_stage(unsigned int i, int x, int y, JE_byte armor)
+{
+	enemyAvail[i] = 0;
+	enemy[i].ex = (JE_integer)x;
+	enemy[i].ey = (JE_integer)y;
+	enemy[i].armorleft = armor;
+	enemy[i].enemytype = 1;
+	qa_enemy_dress_visible(i);
+}
+
 /* Contract in qa.h. The driver lives here because the queue and the drain do; the assertions live
  * with the state they read. */
 void qa_chain_kill_row(int owner, int evalue, int count,
@@ -855,11 +869,7 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 
 	for (int i = 0; i < count; ++i)
 	{
-		enemyAvail[i] = 0;
-		enemy[i].ex = (JE_integer)(100 + i * step);
-		enemy[i].ey = 100;
-		enemy[i].armorleft = 1;   // one pulse finishes it
-		enemy[i].enemytype = 1;
+		qa_chain_stage((unsigned int)i, 100 + i * step, 100, 1);   // one pulse finishes it
 		enemy[i].evalue = (Sint16)evalue;
 		enemy[i].enemydie = dieType;
 		enemy[i].linknum = linknum;   // 0 lays out lone fodder, anything else one linked hull
@@ -895,7 +905,7 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 
 /* Armor one pulse belonging to `owner` takes off a lone enemy left tough enough to survive it, which
  * is the drain's own answer rather than the accessor's. Contract in qa.h. */
-int qa_chain_pulse_damage(int owner, bool salvo)
+int qa_chain_pulse_damage(int owner, bool salvo, int targetY, int pulseY)
 {
 	const JE_byte tough = 250;   // under the invulnerable sentinel, over anything a pulse deals
 
@@ -905,14 +915,10 @@ int qa_chain_pulse_damage(int owner, bool salvo)
 		enemyAvail[i] = 1;
 	}
 
-	enemyAvail[0] = 0;
-	enemy[0].ex = 100;
-	enemy[0].ey = 100;
-	enemy[0].armorleft = tough;
-	enemy[0].enemytype = 1;
+	qa_chain_stage(0, 100, targetY, tough);
 
 	chain_reset_queue();
-	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, salvo, 1);
+	chain_queue_at(enemy[0].ex, pulseY, owner, salvo, 1);
 	chain_reaction_process();
 
 	return tough - enemy[0].armorleft;
@@ -933,13 +939,7 @@ bool qa_chain_salvo_latch_holds(int owner)
 
 	const int row = 6;
 	for (int i = 0; i < row; ++i)
-	{
-		enemyAvail[i] = 0;
-		enemy[i].ex = (JE_integer)(60 + i * step);
-		enemy[i].ey = 100;
-		enemy[i].armorleft = 1;
-		enemy[i].enemytype = 1;
-	}
+		qa_chain_stage((unsigned int)i, 40 + i * step, 100, 1);
 
 	chain_reset_queue();
 	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, true, 1);   // the volley's own pulse
@@ -985,11 +985,8 @@ void qa_test_chain_cascade(void)
 		for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
 		{
 			memset(&enemy[i], 0, sizeof(enemy[i]));
-			enemyAvail[i] = 0;
-			enemy[i].ex = (JE_integer)(20 + (int)i * step);
-			enemy[i].ey = 100;
-			enemy[i].armorleft = (JE_byte)(dmg > 1 ? dmg - 1 : 1);   // one pulse finishes it
-			enemy[i].enemytype = 1;
+			qa_chain_stage(i, 40 + (int)i * step, 100,
+			               (JE_byte)(dmg > 1 ? dmg - 1 : 1));   // one pulse finishes it
 		}
 
 		chain_reset_queue();
@@ -1042,12 +1039,8 @@ void qa_test_chain_cascade(void)
 			enemyAvail[i] = 1;
 		}
 
-		enemyAvail[0] = 0;
-		enemy[0].ex = 60;
-		enemy[0].ey = 100;
+		qa_chain_stage(0, 60, 100, hulls[h].armor);
 		enemy[0].linknum = bossLink;
-		enemy[0].armorleft = hulls[h].armor;
-		enemy[0].enemytype = 1;
 
 		/* Use separate waves to cross the boss's fractional damage threshold. */
 		const int divisor100 = enemy_hp_divisor100(0);
@@ -1079,12 +1072,8 @@ void qa_test_chain_cascade(void)
 	const int bossWorth = 500;
 	for (int i = 0; i < bossTiles; ++i)
 	{
-		enemyAvail[i] = 0;
-		enemy[i].ex = (JE_integer)(60 + i * 8);
-		enemy[i].ey = 100;
+		qa_chain_stage((unsigned int)i, 60 + i * 8, 100, 10);
 		enemy[i].linknum = bossLink;
-		enemy[i].armorleft = 10;
-		enemy[i].enemytype = 1;
 		enemy[i].evalue = (Sint16)bossWorth;
 	}
 
@@ -1123,12 +1112,8 @@ void qa_test_chain_cascade(void)
 	const int nearX = 100;
 	for (uint i = 0; i < 3; ++i)
 	{
-		enemyAvail[i] = 0;
-		enemy[i].ex = (JE_integer)(nearX + (int)i * (radius / 2));
-		enemy[i].ey = 100;
+		qa_chain_stage(i, nearX + (int)i * (radius / 2), 100, tileArmor);
 		enemy[i].linknum = tileLink;
-		enemy[i].armorleft = tileArmor;
-		enemy[i].enemytype = 1;
 	}
 
 	chain_reset_queue();
@@ -1162,11 +1147,7 @@ static int qa_chain_pulses_wear(int x, int tiles, const JE_word *waves, int coun
 	}
 	for (int i = 0; i < tiles; ++i)
 	{
-		enemyAvail[i] = 0;
-		enemy[i].ex = (JE_integer)(x + i * 8);
-		enemy[i].ey = 100;
-		enemy[i].armorleft = tough;
-		enemy[i].enemytype = 1;
+		qa_chain_stage((unsigned int)i, x + i * 8, 100, tough);
 		enemy[i].linknum = (tiles > 1) ? 7 : 0;
 	}
 
@@ -1228,16 +1209,8 @@ void qa_test_chain_wave_latch(void)
 		enemyAvail[i] = 1;
 	}
 	const JE_byte tough = 250;
-	enemyAvail[0] = 0;                       // the fodder the seed kills
-	enemy[0].ex = 100;
-	enemy[0].ey = 100;
-	enemy[0].armorleft = 1;
-	enemy[0].enemytype = 1;
-	enemyAvail[1] = 0;                       // the hull both pulses reach
-	enemy[1].ex = (JE_integer)(100 + radius / 2);
-	enemy[1].ey = 100;
-	enemy[1].armorleft = tough;
-	enemy[1].enemytype = 1;
+	qa_chain_stage(0, 100, 100, 1);                    // the fodder the seed kills
+	qa_chain_stage(1, 100 + radius / 2, 100, tough);   // the hull both pulses reach
 
 	chain_reset_queue();
 	chain_queue_at(100, 100, 0, false, 1);

@@ -104,6 +104,11 @@
 # - The last special each ship was handed (endless.lastSpecial, 62 bytes) joined the registry.
 #   Verified the same way: with both changes undone all three hashes match the previous line.
 #   The hashes below come back identically from a working directory with no opentyrian.cfg.
-1 180 a9b0280a
-2 180 572d6d3b
-3 180 5a5b08de
+# Regenerated 2026-10-30, for two snapshot-shape changes with no simulation change behind them:
+# Concussion's per-ship stun timer (endless.concussion, 8 bytes) and GRYPHON's bar-less boss body
+# link (boss_body_link, 1 byte) joined the registry. Verified by building with only those two
+# registrations removed, every other edit in the change kept: all three hashes came back at the
+# previous line's values.
+1 180 d11d8034
+2 180 1905d96d
+3 180 1d1f4d22

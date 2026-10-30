@@ -947,6 +947,7 @@ void endlessGameplayTick(void)
 
 	// STATIC DISCHARGE: drain the generator-regen lockout opened by the last hit taken.
 	endlessStaticLockoutTick();
+	endlessConcussionTick();
 
 	// AEGIS GATE: recharge the shield gate after a block.
 	endlessAegisTick();

@@ -1292,6 +1292,7 @@ typedef struct
 	int shockElite, shockChamp, martyrElite, martyrChamp;
 	int champFire, champDmg;
 	unsigned staticDrain;
+	Uint32 stunSelf, stunPartner;
 	Uint8 regenOff, regenFree, seeker, seekTier, seekPasses, scrollActive;
 } QaModParity;
 
@@ -1335,6 +1336,11 @@ static void qa_mod_parity_sample(int zone, Uint64 mods, uint fx, QaModParity *ou
 	out->champFire = endlessChampionFireDelayPercent();
 	out->champDmg = endlessChampionShotDamagePercent();
 	out->staticDrain = endlessStaticDischargeDrain(10);
+	mt_srand(0xC0C0551u);
+	for (int hit = 0; hit < 64; ++hit)
+		endlessConcussionHit();
+	out->stunSelf = qa_float_bits(endlessConcussionSlowdown(endlessFxPlayer()));
+	out->stunPartner = qa_float_bits(endlessConcussionSlowdown(endlessFxPlayer() ^ 1u));
 	out->regenOff = endlessShieldRegenOff() ? 1 : 0;
 	out->regenFree = endlessShieldRegenFree() ? 1 : 0;
 	out->seeker = endlessSeekerActive() ? 1 : 0;
@@ -1356,6 +1362,7 @@ void qa_test_modifier_online_parity(void)
 	const int savedDepth = endlessRunDepth;
 	const JE_shortint savedDifficulty = difficultyLevel;
 	memcpy(savedPlayerMods, endlessPlayerMods, sizeof(savedPlayerMods));
+	qa_rng_save();
 
 	endlessMode = true;
 	unsigned rows = 0;
@@ -1411,6 +1418,8 @@ void qa_test_modifier_online_parity(void)
 	qa_check(rows > 0, "modifier online-parity matrix covered the registry");
 	printf("# modifier online parity: %u modifier/zone/ship rows\n", rows);
 
+	endlessConcussionReset();
+	qa_rng_restore();
 	memcpy(endlessPlayerMods, savedPlayerMods, sizeof(savedPlayerMods));
 	endlessActiveMods = savedActive;
 	endlessRunDepth = savedDepth;

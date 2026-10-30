@@ -35,9 +35,12 @@ typedef struct
 boss_bar_t;
 
 extern boss_bar_t boss_bar[2];
+extern JE_byte boss_body_link;
 
 // A boss must match an active, nonzero health-bar link.
 bool enemy_has_boss_bar(JE_byte linknum);
+bool enemy_has_boss_hp(JE_byte linknum);
+unsigned int boss_bar_count(void);
 // Light this group's boss bar for the duration of the hit flash; a group without one is untouched.
 void boss_bar_note_hit(JE_byte linknum);
 

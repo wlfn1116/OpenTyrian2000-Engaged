@@ -1061,6 +1061,18 @@ static bool skyGlueThisEnemy = false;
 // crosses multiple event coordinates in one tick.
 static bool eventScrollCatchupValid = false;
 static int eventScrollFrom = 0, eventScrollTo = 0;
+
+void event_scroll_span_set(int from, int to)
+{
+	eventScrollFrom = from;
+	eventScrollTo = to;
+}
+
+bool event_time_crossed_by_scroll(int eventTime)
+{
+	return (int)curLoc == eventScrollTo && eventScrollTo > eventScrollFrom &&
+	       eventTime > eventScrollFrom && eventTime <= eventScrollTo;
+}
 static int eventScrollLayerDelta[4] = { 0, 0, 0, 0 };
 static int eventScrollBaseStep[4] = { 0, 0, 0, 0 };
 static int eventScrollDelayMax[4] = { 1, 1, 1, 1 };
@@ -1147,13 +1159,7 @@ static void enemy_approach_debt_accrue(unsigned int i)
 	struct JE_SingleEnemyType *const e = &enemy[i];
 	const int boost = endlessScrollBoostPercent();
 
-	if (boost == 0)
-	{
-		e->approach_debt_y100 = 0;
-		return;
-	}
-
-	if (eventScrollBaseStep[1] <= 0 || skyGlueThisEnemy)
+	if (boost == 0 || eventScrollBaseStep[1] <= 0 || skyGlueThisEnemy)
 		return;
 
 	int owed = e->approach_debt_y100 + enemy_unscaled_own_y(e) * boost;
@@ -1163,6 +1169,16 @@ static void enemy_approach_debt_accrue(unsigned int i)
 		owed = -ENEMY_APPROACH_DEBT_MAX_PX100;
 
 	e->approach_debt_y100 = (JE_integer)owed;
+}
+
+bool enemy_approach_debt_hold_self_test(void)
+{
+	const struct JE_SingleEnemyType saved = enemy[0];
+	enemy[0].approach_debt_y100 = 640;
+	enemy_approach_debt_accrue(0);
+	const bool kept = enemy[0].approach_debt_y100 == 640;
+	enemy[0] = saved;
+	return kept;
 }
 
 // Presentation-only enemy velocity fallback for blinking sprites. Recycled slots discard it.
@@ -1461,6 +1477,12 @@ static bool enemy_has_visible_pixel(unsigned int i)
 		return sprite2_is_blank(*enemy[i].sprite2s, index) &&
 		       sprite_cell_in_window(baseX, baseY, wx0, wx1, wy0, wy1);
 	}
+}
+
+void enemy_visible_snapshot(bool visible[COUNTOF(enemy)])
+{
+	for (unsigned int i = 0; i < COUNTOF(enemy); i++)
+		visible[i] = (enemyAvail[i] == 0) && enemy_has_visible_pixel(i);
 }
 
 static bool enemy_approach_in_group(unsigned int g, unsigned int i, JE_byte link)
@@ -3010,6 +3032,7 @@ start_level_first:
 
 	for (unsigned int i = 0; i < COUNTOF(boss_bar); i++)
 		boss_bar[i].link_num = 0;
+	boss_body_link = 0;
 
 	memset(enemyArmedFlashAt, 0, sizeof(enemyArmedFlashAt));
 
@@ -3628,8 +3651,7 @@ level_loop:
 	// Layer 1 (+ the event pointer, which must ride the identical delta so scripted stops stay
 	// aligned to the terrain). One combined advance; the wrap can cross more than one tile.
 	curLoc += endlessScrollExtraPx1;
-	eventScrollFrom = eventScrollStartThisTick;
-	eventScrollTo = (int)curLoc;
+	event_scroll_span_set(eventScrollStartThisTick, (int)curLoc);
 	eventScrollLayerDelta[1] = eventScrollTo - eventScrollFrom;
 	eventScrollLayerDelta[3] = (int)backMove3 + endlessScrollExtraPx3;
 	eventScrollBoost = endlessScrollBoostPercent();
@@ -3805,8 +3827,7 @@ level_loop:
 	// Cache whether each enemy has an opaque pixel in the visible playfield. This
 	// uses collision state, not draw state, so the kill gate stays deterministic.
 	bool enemyVisible[COUNTOF(enemy)];
-	for (unsigned int ev = 0; ev < COUNTOF(enemy); ev++)
-		enemyVisible[ev] = (enemyAvail[ev] == 0) && enemy_has_visible_pixel(ev);
+	enemy_visible_snapshot(enemyVisible);
 
 	/* Player Shot Images */
 	for (int z = 0; z < MAX_PWEAPON; z++)
@@ -3977,7 +3998,7 @@ level_loop:
 
 						int armorleft = enemy[b].armorleft;
 
-						const bool has_boss_bar = enemy_has_boss_bar(enemy[b].linknum);
+						const bool boss_hp = enemy_has_boss_hp(enemy[b].linknum);
 						const int hpMult = enemy_hp_multiplier(b);
 						const int divisor100 = enemy_hp_divisor100(b);
 
@@ -3986,7 +4007,8 @@ level_loop:
 						if (endlessFxActive() && infiniteShot)
 						{
 							// Compute this hull's tier before applying the tier-only repeat lock.
-							const int lock100 = endlessPierceLock100(has_boss_bar, hpMult, enemy[b].eliteState);
+							const int lock100 = endlessPierceLock100(boss_hp, hpMult,
+							                                         enemy[b].eliteState);
 							if (lock100 > 0)
 							{
 								PlayerShotDataType *pshot = &playerShotData[z];
@@ -4009,7 +4031,7 @@ level_loop:
 						const int knifeRaw = endlessPerkKnifeFightBonus(damage, knifePct);
 						const int execRaw = endlessFxActive()
 							? endlessPerkExecutionerBonus(damage, enemy[b].armorleft,
-							      enemy[b].healthbar_seen ? enemy[b].healthbar_max : 0, has_boss_bar)
+							      enemy[b].healthbar_seen ? enemy[b].healthbar_max : 0, boss_hp)
 							: 0;
 						const int perkRaw = endlessFxActive() ? execRaw + knifeRaw : 0;
 						if (knifeRaw > 0)
@@ -5798,8 +5820,7 @@ int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_SingleEnemyT
 
 	const int eventTime = (int)eventRec[eventLoc - 1].eventtime;
 	const int span = eventScrollTo - eventScrollFrom;
-	if (!eventScrollCatchupValid || (int)curLoc != eventScrollTo || span <= 0 ||
-	    eventTime <= eventScrollFrom || eventTime > eventScrollTo)
+	if (!eventScrollCatchupValid || !event_time_crossed_by_scroll(eventTime))
 		return 0;  // exact-time event, level/event jump, or a non-scroll forceEvents interval
 
 	const int late = eventScrollTo - eventTime;
@@ -5839,6 +5860,21 @@ int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_SingleEnemyT
 	return event_scroll_round_div(fullMove * late, span);
 }
 
+static int event_spawn_reclaim_cash(int enemyOffset)
+{
+	int best = -1;
+	for (int i = enemyOffset; i < enemyOffset + 25; ++i)
+	{
+		if (enemyAvail[i] == 1 || !enemy[i].scoreitem || enemy[i].evalue <= 0 ||
+		    enemy[i].evalue >= 10000 || endlessSpecialPickup(i))
+			continue;
+		if (best < 0 || enemy[i].evalue < enemy[best].evalue ||
+		    (enemy[i].evalue == enemy[best].evalue && enemy[i].ey > enemy[best].ey))
+			best = i;
+	}
+	return best + 1;
+}
+
 void JE_createNewEventEnemy(JE_byte enemyTypeOfs, JE_word enemyOffset, Sint16 uniqueShapeTableI)
 {
 	int i;
@@ -5854,6 +5890,8 @@ void JE_createNewEventEnemy(JE_byte enemyTypeOfs, JE_word enemyOffset, Sint16 un
 		}
 	}
 
+	if (b == 0 && endlessFxActive())
+		b = event_spawn_reclaim_cash(enemyOffset);
 	if (b == 0)
 		return;
 

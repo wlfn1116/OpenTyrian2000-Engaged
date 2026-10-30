@@ -19,6 +19,7 @@
 #include "game_state.h"
 #include "keyboard.h"
 #include "level_load.h"
+#include "mtrand.h"
 #include "net_savexfer.h"
 #include "network.h"
 #include "player.h"
@@ -133,7 +134,7 @@ static Uint64 qa_net_zone_mods(int depth)
 		ENDLESS_MOD_ELITEPACK | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT
 			| ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_OVERCHARGE,
 		ENDLESS_MOD_NOELITE | ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI
-			| ENDLESS_MOD_STATIC | ENDLESS_MOD_SHIELDLESS,
+			| ENDLESS_MOD_STATIC | ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_CONCUSSION,
 		ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_CLEANSIGNALS | ENDLESS_MOD_DILATION
 			| ENDLESS_MOD_KAMIKAZE | ENDLESS_MOD_ENRAGE,
 		ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_SLIPSTREAM
@@ -312,6 +313,21 @@ Uint32 qa_prng(Uint32 *state)
 	return x;
 }
 
+static Uint8 qaRngStash[4096];
+
+void qa_rng_save(void)
+{
+	qa_check(mt_state_size() <= sizeof(qaRngStash), "the gameplay RNG state fits its QA stash");
+	if (mt_state_size() <= sizeof(qaRngStash))
+		mt_state_save(qaRngStash);
+}
+
+void qa_rng_restore(void)
+{
+	if (mt_state_size() <= sizeof(qaRngStash))
+		mt_state_restore(qaRngStash);
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -477,6 +493,8 @@ int qa_run_unit_suite(void)
 	qa_test_deflector_perk();
 	qa_test_executioner_perk();
 	qa_test_afterburner_perk();
+	qa_test_concussion_mod();
+	qa_test_boss_scroll_hold();
 	qa_test_gravity_pull_banking();
 	qa_test_countermeasure_burst();
 	qa_test_guided_screen_aim();
@@ -528,6 +546,7 @@ int qa_run_unit_suite(void)
 	qa_test_course_seat_parity();
 	qa_test_course_reroll_dodge();
 	qa_test_level_event_scripts();
+	qa_test_boosted_boss_pacing();
 	qa_test_item_data_settings();
 	qa_test_zica_lv11_pattern();
 	qa_test_firing_sound_levels();

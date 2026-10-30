@@ -246,7 +246,7 @@ void qa_test_courses(void)
 {
 	static const int depths[] = { 0, 1, 24, 25, 49, 50, 99, 100, 249, 250, 500 };
 	char seed[ENDLESS_SEED_MAXLEN];
-	unsigned routes = 0;
+	unsigned routes = 0, concussed = 0;
 
 	for (unsigned sample = 0; sample < 768; ++sample)
 	{
@@ -294,6 +294,8 @@ void qa_test_courses(void)
 					         "courses with equal danger are sorted by payout");
 			}
 			++routes;
+			if (mods & ENDLESS_MOD_CONCUSSION)
+				++concussed;
 		}
 
 		const int milestone = endlessMilestoneKindOfZone(depth + 1);
@@ -334,7 +336,10 @@ void qa_test_courses(void)
 		         "seeded course generation is deterministic");
 	}
 
-	printf("# course properties: 768 seeds, %u launchable routes\n", routes);
+	qa_check(concussed > 0 && concussed * 6 < routes,
+	         "Concussion reaches charted routes, but rarely");
+	printf("# course properties: 768 seeds, %u launchable routes, %u with Concussion\n", routes,
+	       concussed);
 }
 
 // Check The End's exclusions and probability bands across seeded runs.
@@ -343,7 +348,7 @@ void qa_test_finale_mods(void)
 	static const int depths[] = { 99, 199, 299, 399 };   // the depth a zone-100 finale is charted at
 	const unsigned samples = 2048;
 	char seed[ENDLESS_SEED_MAXLEN];
-	unsigned statics = 0, topsy = 0, homing = 0, kamikaze = 0;
+	unsigned statics = 0, topsy = 0, homing = 0, kamikaze = 0, concussion = 0;
 	bool deadgen = false, built = true, bothTiers = false;
 
 	for (unsigned sample = 0; sample < samples; ++sample)
@@ -365,6 +370,8 @@ void qa_test_finale_mods(void)
 			++homing;
 		if (mods & ENDLESS_MOD_KAMIKAZE)
 			++kamikaze;
+		if (mods & ENDLESS_MOD_CONCUSSION)
+			++concussion;
 		if ((mods & ENDLESS_MOD_HOMING) && (mods & ENDLESS_MOD_KAMIKAZE))
 			bothTiers = true;
 	}
@@ -381,9 +388,11 @@ void qa_test_finale_mods(void)
 	         "Light Homing lands on about one finale in two");
 	qa_check(kamikaze * 66 > samples && kamikaze * 16 < samples,
 	         "Kamikaze lands on about one finale in thirty-three");
+	qa_check(concussion * 10 < samples && concussion * 40 > samples,
+	         "Concussion lands on about one finale in twenty");
 
-	printf("# finale modifiers: %u seeds, Static %u, Topsy %u, Homing %u, Kamikaze %u\n",
-	       samples, statics, topsy, homing, kamikaze);
+	printf("# finale modifiers: %u seeds, Static %u, Topsy %u, Homing %u, Kamikaze %u, "
+	       "Concussion %u\n", samples, statics, topsy, homing, kamikaze, concussion);
 }
 
 /* The Base Level rule. Same puts every route of a slate onto one level, leaving the modifiers as

@@ -378,6 +378,107 @@ static void event_reattach_surface_arch_nubs(void)
 	}
 }
 
+#define LEVEL_BOSS_LEADINS    8
+#define LEVEL_BOSS_LEADIN_GAP 300
+#define LEVEL_BOSS_LEADIN_RUNUP 8
+
+typedef struct
+{
+	JE_word from, until;
+	Uint32 links[8];
+} LevelBossLeadIn;
+
+static LevelBossLeadIn levelBossLeadIn[LEVEL_BOSS_LEADINS];
+static unsigned int levelBossLeadIns = 0;
+
+static bool event_spawns_linked_enemy(JE_byte type)
+{
+	switch (type)
+	{
+	case 6: case 7: case 10: case 12: case 15: case 17: case 18: case 23: case 32:
+	case 49: case 50: case 51: case 52: case 56:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool leadin_has_link(const LevelBossLeadIn *w, int link)
+{
+	return link > 0 && link < 256 && (w->links[link / 32] & (1u << (link % 32))) != 0;
+}
+
+static void leadin_add_link(LevelBossLeadIn *w, int link)
+{
+	if (link > 0 && link < 256)
+		w->links[link / 32] |= 1u << (link % 32);
+}
+
+static bool leadin_spawn(const LevelBossLeadIn *w, const struct JE_EventRecType *e)
+{
+	return event_spawns_linked_enemy(e->eventtype) && leadin_has_link(w, e->eventdat4);
+}
+
+void level_scan_boss_leadins(void)
+{
+	levelBossLeadIns = 0;
+	for (JE_word b = 0; b < maxEvent && levelBossLeadIns < LEVEL_BOSS_LEADINS; ++b)
+	{
+		const struct JE_EventRecType *const bar = &eventRec[b];
+		if (bar->eventtype != 79)
+			continue;
+
+		LevelBossLeadIn *const w = &levelBossLeadIn[levelBossLeadIns];
+		memset(w, 0, sizeof(*w));
+		w->until = bar->eventtime;
+		leadin_add_link(w, bar->eventdat);
+		leadin_add_link(w, bar->eventdat2);
+		leadin_add_link(w, bar->eventdat3);
+		for (JE_word i = 0; i < maxEvent; ++i)
+			if (eventRec[i].eventtype == 39 && eventRec[i].eventtime <= w->until &&
+			    leadin_has_link(w, eventRec[i].eventdat2))
+				leadin_add_link(w, eventRec[i].eventdat);
+
+		int start = -1;
+		for (JE_word i = 0; i < maxEvent; ++i)
+			if (leadin_spawn(w, &eventRec[i]) && eventRec[i].eventtime <= w->until &&
+			    (int)eventRec[i].eventtime > start)
+				start = eventRec[i].eventtime;
+		if (start < 0)
+			continue;
+
+		for (bool extended = true; extended; )
+		{
+			extended = false;
+			for (JE_word i = 0; i < maxEvent; ++i)
+				if (leadin_spawn(w, &eventRec[i]) && (int)eventRec[i].eventtime < start &&
+				    start - (int)eventRec[i].eventtime <= LEVEL_BOSS_LEADIN_GAP)
+				{
+					start = eventRec[i].eventtime;
+					extended = true;
+				}
+		}
+		w->from = (JE_word)start;
+		++levelBossLeadIns;
+	}
+}
+
+bool level_boss_leadin_active(void)
+{
+	for (unsigned int n = 0; n < levelBossLeadIns; ++n)
+	{
+		const LevelBossLeadIn *const w = &levelBossLeadIn[n];
+		if (curLoc <= w->from && w->from - curLoc <= LEVEL_BOSS_LEADIN_RUNUP)
+			return true;
+		if (curLoc < w->from || curLoc > w->until)
+			continue;
+		for (unsigned int i = 0; i < COUNTOF(enemy); ++i)
+			if (enemyAvail[i] == 0 && leadin_has_link(w, enemy[i].linknum))
+				return true;
+	}
+	return false;
+}
+
 /* Read the event script that follows a level's random-enemy list, then apply the shipped-data
  * corrections. Fails when the script would overflow eventRec. */
 bool level_read_event_script(FILE *f)
@@ -401,6 +502,7 @@ bool level_read_event_script(FILE *f)
 
 	event_backdate_savara_cannons();
 	event_reattach_surface_arch_nubs();
+	level_scan_boss_leadins();
 	return true;
 }
 

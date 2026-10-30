@@ -190,6 +190,7 @@ void rollback_state_register_globals(void)
 	REG(levelSong);
 	REG(allPlayersGone);
 	REG(boss_bar);
+	REG(boss_body_link);
 	REG(youAreCheating);
 	REG(difficultyLevel);
 	REG(oldDifficultyLevel);

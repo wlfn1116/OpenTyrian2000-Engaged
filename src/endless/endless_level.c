@@ -406,6 +406,7 @@ void endlessResetZoneEffects(void)
 	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));  // kill-fire windows
 	endlessRetaliationTimer = 0;   // RETALIATION window
 	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in
+	endlessConcussionReset();
 	endlessReviveGraceReset();     // ...and no leftover revive stun: the next zone opens shooting
 	endlessResetZonePerkTimers();  // Opening Salvo: no half-spent charge crosses the outpost
 	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));

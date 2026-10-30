@@ -3843,6 +3843,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		{
 			const int drain = (int)endlessStaticDischargeDrain((unsigned)lost);
 			endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) - drain);
+			endlessConcussionHit();
 		}
 	}
 

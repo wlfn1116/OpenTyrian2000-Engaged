@@ -8,6 +8,8 @@
 #include "opentyr.h"
 
 Uint32 qa_prng(Uint32 *state);
+void qa_rng_save(void);
+void qa_rng_restore(void);
 
 void qa_test_course_tables(void);
 void qa_test_canonical_mods(void);
@@ -55,6 +57,8 @@ void qa_test_knife_fight_perk(void);
 void qa_test_deflector_perk(void);
 void qa_test_executioner_perk(void);
 void qa_test_afterburner_perk(void);
+void qa_test_concussion_mod(void);
+void qa_test_boss_scroll_hold(void);
 void qa_test_gravity_pull_banking(void);
 void qa_test_countermeasure_burst(void);
 void qa_test_guided_screen_aim(void);

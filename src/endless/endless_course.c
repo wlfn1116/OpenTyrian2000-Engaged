@@ -341,6 +341,7 @@ static const struct { Uint64 bit; int group; } endlessMilestonePool[] = {
 	{ ENDLESS_MOD_KILLSHOT,    5 },
 	{ ENDLESS_MOD_STATIC,      0 },  // safe here: DEADGEN is out of the pool, so the incompatibility can't arise
 	{ ENDLESS_MOD_RETALIATION, 0 },
+	{ ENDLESS_MOD_CONCUSSION,  0 },
 	{ ENDLESS_MOD_SLIPSTREAM,  1 },  // scroll pace
 	{ ENDLESS_MOD_OVERCLOCK,   1 },
 	{ ENDLESS_MOD_OVERLOAD,    1 },
@@ -357,6 +358,7 @@ static const struct { Uint64 bit; int group; } endlessMilestonePool[] = {
 static const struct { Uint64 bit; int oneInN; } endlessScarceMods[] = {
 	{ ENDLESS_MOD_TOPSY,   3 },
 	{ ENDLESS_MOD_GRAVITY, 3 },
+	{ ENDLESS_MOD_CONCUSSION, 2 },
 };
 
 // Read a bit's danger weight from the same table used by the rank bands.
@@ -465,6 +467,7 @@ static const EndlessModWeight endlessCombinableMods[] = {
 	// Scarce movement-wide hazards.
 	{ ENDLESS_MOD_TOPSY,       3 },
 	{ ENDLESS_MOD_GRAVITY,     3 },
+	{ ENDLESS_MOD_CONCUSSION,  2 },
 };
 
 // Mask of dangers eligible for ordinary combinations.

@@ -661,6 +661,20 @@ Course-correction modifiers are exclusive. Canonicalization keeps the strongest:
 | True Aim | 1 | Direct |
 | Kill Shot | 2 | Direct |
 
+Concussion slows the ship a hit lands on. `JE_playerDamage` calls
+`endlessConcussionHit()` whenever shield or armor drops, and a ready ship rolls
+`mt_rand()` against a 20% chance. A landed roll slows that ship by 50% for 26
+ticks, then holds a 140-tick guard in which no hit can concuss it again. Depth
+and difficulty change none of these numbers.
+
+- `endlessShipMoveScale` stacks the slowdown with Sluggish as `a + b - ab`, so
+  either alone stays bit-exact and Afterburners resist both.
+- The timer is per ship (`endless.concussion`), ticks with the other reactive
+  timers, and clears at zone start. Only ready ships draw `mt_rand()`, so a
+  sector without Concussion keeps its RNG stream.
+- It is a scarce movement hazard in the milestone pool, weight 2 in the
+  combinable pool, and a 1-in-20 draw appended to The End.
+
 Milestones use the upcoming zone. Multiples of 100 exclude scroll-speed
 modifiers; The End also excludes Dead Generator.
 
@@ -720,8 +734,9 @@ the ship whose effect is being calculated.
   seat; either ship may collect.
 - Afterburners act through `endlessShipMoveScale` and
   `endlessShipGravityDriftX`/`Y`: 10% speed per stack, and each stack resists
-  16% of the Sluggish slowdown and of gravity drift, capped at 80%. The sector
-  values (`endlessMoveScale`, `endlessGravityDrift*`) stay perk-free.
+  16% of the Sluggish and Concussion slowdowns and of gravity drift, capped at
+  80%. The sector values (`endlessMoveScale`, `endlessGravityDrift*`) stay
+  perk-free.
 
 Adding a perk grows `endless.perkOwned` and both rows of `endless.perkTakenBy`,
 which moves every replay fixture hash. Prove the move is shape-only by

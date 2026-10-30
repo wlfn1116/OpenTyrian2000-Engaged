@@ -20,7 +20,10 @@
 
 #include "opentyr.h"
 
+#include "game_state.h"
+
 void JE_eventJump(JE_word jump);
 void JE_eventSystem(void);
+void level_boss_bar_event(const struct JE_EventRecType *bar);
 
 #endif /* LEVEL_EVENTS_H */

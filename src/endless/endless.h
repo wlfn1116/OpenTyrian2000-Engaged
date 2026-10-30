@@ -158,6 +158,7 @@ enum {
 #define ENDLESS_MOD_HUNTER       ((Uint64)1 << 55)
 #define ENDLESS_MOD_TRUEAIM      ((Uint64)1 << 56)
 #define ENDLESS_MOD_KILLSHOT     ((Uint64)1 << 57)
+#define ENDLESS_MOD_CONCUSSION   ((Uint64)1 << 58)
 
 #define ENDLESS_MOD_SEEKER_ANY (ENDLESS_MOD_SEEKER | ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_HUNTER | \
                                 ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_KILLSHOT)
@@ -760,6 +761,7 @@ unsigned endlessGeneratorPowerAdd(unsigned normalAdd);
 // per tick, using channels 0 through 2.
 int  endlessScrollBoostPercent(void);
 bool endlessScrollBoostActive(void);
+bool endlessScrollModActive(void);
 int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick, float *rateOut, float *fracOut);
 int  endlessShipTintFilter(void);
 
@@ -789,6 +791,7 @@ void endlessRegenHitTaken(void);
 
 // The caller caps this drain at the generator's current reserve.
 unsigned endlessStaticDischargeDrain(unsigned actualDamage);
+void endlessConcussionHit(void);
 
 // Boons queried at collision or death sites.
 int  endlessHitboxScale(int area);

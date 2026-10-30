@@ -122,6 +122,14 @@ extern char endlessLastSpecialName[2][31]; // name of the last special weapon ea
 void endlessStaticLockoutTick(void);
 void endlessStaticLockoutReset(void);
 
+#define ENDLESS_CONCUSSION_CHANCE_PCT   20
+#define ENDLESS_CONCUSSION_TICKS        26
+#define ENDLESS_CONCUSSION_GUARD_TICKS 140
+#define ENDLESS_CONCUSSION_SLOW         0.50f
+void endlessConcussionTick(void);
+void endlessConcussionReset(void);
+float endlessConcussionSlowdown(uint p);
+
 int  endlessDifficultyZone(void);
 int  endlessNaturalEliteChancePercent(void);
 
@@ -365,8 +373,8 @@ typedef struct {
 typedef struct { Uint64 mods; const char *name; } EndlessTheme;
 
 // Counts are part of the cross-file array type and must match each definition.
-extern const EndlessMod   endlessModTable[54];
-extern const EndlessTheme endlessHostileThemes[256];
+extern const EndlessMod   endlessModTable[55];
+extern const EndlessTheme endlessHostileThemes[271];
 extern const EndlessTheme endlessKamikazeThemes[12];
 extern const EndlessTheme endlessHomingThemes[8];
 extern const EndlessTheme endlessBoonThemes[122];
@@ -392,7 +400,7 @@ extern const EndlessTheme endlessBreakthroughThemes[5];
 	ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN | ENDLESS_MOD_SLIPSTREAM | ENDLESS_MOD_WARP | \
 	ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_SEEKER | ENDLESS_MOD_STATIC | ENDLESS_MOD_RETALIATION | \
 	ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_HUNTER | ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_KILLSHOT | \
-	ENDLESS_MOD_THEEND )
+	ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_THEEND )
 
 // Every bit that quickens the level scroll. Overclock and Overload quicken enemy fire as well, so
 // the whole group is excluded where faster scrolling is unwanted.

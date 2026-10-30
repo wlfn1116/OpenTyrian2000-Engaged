@@ -10,8 +10,10 @@
 #include "episodes.h"
 #include "game_loop.h"
 #include "game_state.h"
+#include "health_bars.h"
 #include "helptext.h"
 #include "hud.h"
+#include "level_load.h"
 #include "lvlmast.h"
 #include "mtrand.h"
 #include "network.h"
@@ -48,6 +50,13 @@ static int endlessDifficultyRampPercent(void)
 	case DIFFICULTY_IMPOSSIBLE: return 134;
 	default:                    return 160;
 	}
+}
+
+static float endlessDepthRamped(float base, float perZone, float max)
+{
+	const float v = (base + perZone * (float)endlessRunDepth)
+	              * (float)endlessDifficultyRampPercent() / 100.0f;
+	return (v > max) ? max : v;
 }
 
 // Combat depth is real depth x1.25 with the difficulty tilt applied.
@@ -1243,10 +1252,8 @@ float endlessGravityDrift(void)
 	// A bare OMNI bit can be set by the debug editor.
 	if (!endlessFxActive() || !(endlessActiveMods & (ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI)))
 		return 0.0f;
-	float g = (ENDLESS_GRAVITY_BASE + ENDLESS_GRAVITY_PER_ZONE * (float)endlessRunDepth)
-	        * (float)endlessDifficultyRampPercent() / 100.0f;
-	if (g > ENDLESS_GRAVITY_MAX)
-		g = ENDLESS_GRAVITY_MAX;
+	const float g = endlessDepthRamped(ENDLESS_GRAVITY_BASE, ENDLESS_GRAVITY_PER_ZONE,
+	                                   ENDLESS_GRAVITY_MAX);
 	// Scale gravity with Sluggish so the combination remains flyable.
 	return g * endlessMoveScale();
 }
@@ -1302,11 +1309,35 @@ static float endlessSluggishSlowdown(void)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_SLUGGISH))
 		return 0.0f;
-	float slow = (ENDLESS_SLUGGISH_BASE + ENDLESS_SLUGGISH_PER_ZONE * (float)endlessRunDepth)
-	           * (float)endlessDifficultyRampPercent() / 100.0f;
-	if (slow > ENDLESS_SLUGGISH_MAX)
-		slow = ENDLESS_SLUGGISH_MAX;
-	return slow;
+	return endlessDepthRamped(ENDLESS_SLUGGISH_BASE, ENDLESS_SLUGGISH_PER_ZONE,
+	                          ENDLESS_SLUGGISH_MAX);
+}
+
+static int endlessConcussion[2] = { 0, 0 };
+
+void endlessConcussionReset(void)
+{
+	memset(endlessConcussion, 0, sizeof(endlessConcussion));
+}
+
+void endlessConcussionHit(void)
+{
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_CONCUSSION))
+		return;
+	int *const left = &endlessConcussion[endlessFxPlayer()];
+	if (*left > 0 || mt_rand() % 100 >= ENDLESS_CONCUSSION_CHANCE_PCT)
+		return;
+	*left = ENDLESS_CONCUSSION_TICKS + ENDLESS_CONCUSSION_GUARD_TICKS;
+}
+
+float endlessConcussionSlowdown(uint p)
+{
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_CONCUSSION)
+	    || p >= COUNTOF(endlessConcussion))
+		return 0.0f;
+	if (endlessConcussion[p] <= ENDLESS_CONCUSSION_GUARD_TICKS)
+		return 0.0f;
+	return ENDLESS_CONCUSSION_SLOW;
 }
 
 float endlessMoveScale(void)
@@ -1318,7 +1349,9 @@ float endlessShipMoveScale(uint p)
 {
 	if (!endlessFxActive())
 		return 1.0f;
-	return endlessPerkMoveScale(p, endlessSluggishSlowdown());
+	const float sluggish = endlessSluggishSlowdown();
+	const float stunned = endlessConcussionSlowdown(p);
+	return endlessPerkMoveScale(p, sluggish + stunned - sluggish * stunned);
 }
 
 bool endlessShieldRegenOff(void)
@@ -1361,11 +1394,21 @@ int endlessHitboxScale(int area)
 // One gate per ship: a block on one hull must not spend the partner's.
 static int endlessAegisCooldown[2] = { 0, 0 };
 
+static void endlessTickDown(int *timers, unsigned count)
+{
+	for (unsigned p = 0; p < count; ++p)
+		if (timers[p] > 0)
+			--timers[p];
+}
+
 void endlessAegisTick(void)
 {
-	for (unsigned p = 0; p < COUNTOF(endlessAegisCooldown); ++p)
-		if (endlessAegisCooldown[p] > 0)
-			--endlessAegisCooldown[p];
+	endlessTickDown(endlessAegisCooldown, COUNTOF(endlessAegisCooldown));
+}
+
+void endlessConcussionTick(void)
+{
+	endlessTickDown(endlessConcussion, COUNTOF(endlessConcussion));
 }
 
 void endlessAegisReset(void)
@@ -1559,9 +1602,7 @@ static bool endlessStaticLockoutActive(void)
 
 void endlessStaticLockoutTick(void)
 {
-	for (unsigned p = 0; p < COUNTOF(endlessStaticLockout); ++p)
-		if (endlessStaticLockout[p] > 0)
-			--endlessStaticLockout[p];
+	endlessTickDown(endlessStaticLockout, COUNTOF(endlessStaticLockout));
 }
 
 void endlessStaticLockoutReset(void)
@@ -1635,7 +1676,7 @@ int endlessPlayerDamageReduce(void)
 }
 
 // Shared scroll multiplier for layers and layer-bound fixed motion.
-int endlessScrollBoostPercent(void)
+static int endlessScrollModPercent(void)
 {
 	if (!endlessFxActive())
 		return 0;
@@ -1644,6 +1685,19 @@ int endlessScrollBoostPercent(void)
 	if (endlessActiveMods & (ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_SLIPSTREAM))
 		return 70;
 	return 0;
+}
+
+bool endlessScrollModActive(void)
+{
+	return endlessScrollModPercent() != 0;
+}
+
+int endlessScrollBoostPercent(void)
+{
+	const int boost = endlessScrollModPercent();
+	if (boost == 0 || boss_bar_count() > 0 || level_boss_leadin_active())
+		return 0;
+	return boost;
 }
 
 // Stable modifier predicate; the fractional step count is not stable.
@@ -1858,6 +1912,7 @@ void endless_combat_register_rollback(void)
 	rollback_register("endless.aegisCd", endlessAegisCooldown, sizeof(endlessAegisCooldown));
 	rollback_register("endless.reviveGrace", &endlessReviveGrace, sizeof(endlessReviveGrace));
 	rollback_register("endless.staticLock", endlessStaticLockout, sizeof(endlessStaticLockout));
+	rollback_register("endless.concussion", endlessConcussion, sizeof(endlessConcussion));
 	rollback_register("endless.gravityDir", &endlessGravityDirX, sizeof(endlessGravityDirX));
 	rollback_register("endless.gravityDirY", &endlessGravityDirY, sizeof(endlessGravityDirY));
 	rollback_register("endless.gravityCarryX", endlessGravityCarryX, sizeof(endlessGravityCarryX));

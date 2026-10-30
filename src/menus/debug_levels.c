@@ -212,6 +212,7 @@ static const struct { Uint64 bit; Uint8 grp; const char *name; const char *hint;
 	{ ENDLESS_MOD_KILLSHOT,    EMG_DANGER, "Kill Shot",       NULL },
 	{ ENDLESS_MOD_STATIC,      EMG_DANGER, "Static Discharge",NULL },
 	{ ENDLESS_MOD_RETALIATION, EMG_DANGER, "Retaliation",     NULL },
+	{ ENDLESS_MOD_CONCUSSION,  EMG_DANGER, "Concussion",      NULL },
 	{ ENDLESS_MOD_FRAGILE,     EMG_BOON,   "Fragile",         NULL },
 	{ ENDLESS_MOD_BOUNTY,      EMG_BOON,   "Bounty",          NULL },
 	{ ENDLESS_MOD_OVERCHARGE,  EMG_BOON,   "Overcharged",     NULL },

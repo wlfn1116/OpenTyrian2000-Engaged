@@ -41,6 +41,7 @@ void enemy_note_full_armor(struct JE_SingleEnemyType *enemy)
 }
 
 boss_bar_t boss_bar[2];
+JE_byte boss_body_link;
 
 // Link group 0 means both "unlinked enemy" and "unused bar slot". Never treat it as a match.
 bool enemy_has_boss_bar(JE_byte linknum)
@@ -51,6 +52,11 @@ bool enemy_has_boss_bar(JE_byte linknum)
 		if (linknum == boss_bar[i].link_num)
 			return true;
 	return false;
+}
+
+bool enemy_has_boss_hp(JE_byte linknum)
+{
+	return enemy_has_boss_bar(linknum) || (linknum != 0 && linknum == boss_body_link);
 }
 
 // Light this group's health bar for the frames the flash lasts. A hull with no bar has none to light.
@@ -554,7 +560,7 @@ void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *ou
 	*out_full = full;
 }
 
-static unsigned int boss_bar_count(void)
+unsigned int boss_bar_count(void)
 {
 	return (boss_bar[0].link_num != 0 ? 1 : 0) + (boss_bar[1].link_num != 0 ? 1 : 0);
 }
@@ -590,6 +596,8 @@ void boss_bar_tick(void)
 		memcpy(&boss_bar[0], &boss_bar[1], sizeof(boss_bar_t));
 		boss_bar[1].link_num = 0;
 	}
+	if (boss_bar_count() == 0)
+		boss_body_link = 0;
 }
 
 void boss_bar_fade_flash(void)

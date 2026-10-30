@@ -112,6 +112,7 @@ void qa_test_save_transfer_preinit(void);
 void qa_test_custom_episode(void);
 // Every shipped event script through the loader: its corrections and spawn spread (qa_levels.c).
 void qa_test_level_event_scripts(void);
+void qa_test_boosted_boss_pacing(void);
 
 void qa_test_load_screen_help(void);
 void qa_test_endless_shop_stock(void);
@@ -126,12 +127,13 @@ void qa_test_chain_cascade(void);
 // A wave lands on a hull once, across its overlapping pulses and its hops; the next kill's wave
 // lands again (enemy_death.c).
 void qa_test_chain_wave_latch(void);
+void qa_enemy_dress_visible(unsigned int slot);
 /* Run a Chain Reaction wave through the production queue. `linknum` 0 creates separate enemies;
  * other values create one linked hull. Returns payout, kills, and drop state, and clears enemy[]. */
 void qa_chain_kill_row(int owner, int evalue, int count, JE_byte linknum, int eliteState,
                        long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped);
 /* Return one tagged pulse's armor damage for owner, then clear the enemy table. */
-int qa_chain_pulse_damage(int owner, bool salvo);
+int qa_chain_pulse_damage(int owner, bool salvo, int targetY, int pulseY);
 /* Verify a first-pulse Salvo tag survives every hop, then clear the enemy table. */
 bool qa_chain_salvo_latch_holds(int owner);
 

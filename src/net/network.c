@@ -128,7 +128,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       111          /* Executioner caps each turned bullet's damage. */
+#define NET_VERSION       117          /* Endless spawns reclaim a full bank's cheapest coin. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

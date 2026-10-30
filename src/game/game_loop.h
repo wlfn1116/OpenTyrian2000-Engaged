@@ -68,12 +68,16 @@ extern JE_word armorShipDelay;
 
 void JE_createNewEventEnemy(JE_byte enemytypeofs, JE_word enemyoffset, Sint16 uniqueShapeTableI);
 int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_SingleEnemyType *e);
+void event_scroll_span_set(int from, int to);
+bool event_time_crossed_by_scroll(int eventTime);
 void enemy_approach_debt_settle(unsigned int i);
+bool enemy_approach_debt_hold_self_test(void);
 
 Sint16 JE_newEnemy(int enemyOffset, Uint16 eDatI, Sint16 uniqueShapeTableI);
 JE_integer enemy_scaled_value(JE_integer value);
 void enemy_set_explosion(struct JE_SingleEnemyType *enemy, JE_byte type);
 JE_byte enemy_explosion_type(const struct JE_SingleEnemyType *enemy);
+void enemy_visible_snapshot(bool visible[COUNTOF(enemy)]);
 
 void JE_main(void);
 JE_byte backup_save_slot(void);

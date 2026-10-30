@@ -20,6 +20,8 @@
 #include "audio.h"
 #include "background.h"
 #include "config.h"
+#include "custom_episode.h"
+#include "debug_flags.h"
 #include "endless.h"
 #include "episodes.h"
 #include "game_loop.h"
@@ -107,6 +109,28 @@ static bool JE_searchFor/*enemy*/(JE_byte PLType, JE_byte* out_index)
 	}
 }
 
+static void event_hold_map_stop(void)
+{
+	const JE_word stop = eventRec[eventLoc - 1].eventtime;
+	if (backMove == 0 && !forceEvents && endlessScrollModActive() && curLoc > stop &&
+	    event_time_crossed_by_scroll(stop))
+		curLoc = stop;
+}
+
+static bool level_boss_bar_follows_head(const struct JE_EventRecType *bar)
+{
+	return episodeNum == 2 && lvlFileNum == 6 && !customEpisodeActive()
+	    && (endlessFxActive() || expertMode) && bar->eventdat2 == 0 && bar->eventdat3 > 0;
+}
+
+void level_boss_bar_event(const struct JE_EventRecType *bar)
+{
+	const bool head = level_boss_bar_follows_head(bar);
+	boss_bar[0].link_num = head ? (JE_byte)bar->eventdat3 : (JE_byte)bar->eventdat;
+	boss_bar[1].link_num = (JE_byte)bar->eventdat2;
+	boss_body_link = head ? (JE_byte)bar->eventdat : 0;
+}
+
 void JE_eventSystem(void)
 {
 	switch (eventRec[eventLoc-1].eventtype)
@@ -133,6 +157,7 @@ void JE_eventSystem(void)
 
 		if (backMove > 0)
 			stopBackgroundNum = 0;
+		event_hold_map_stop();
 		break;
 
 	case 3:
@@ -519,6 +544,7 @@ void JE_eventSystem(void)
 		backMove2 = eventRec[eventLoc-1].eventdat2;
 		explodeMove = backMove2;
 		backMove3 = eventRec[eventLoc-1].eventdat3;
+		event_hold_map_stop();
 		break;
 
 	case 31: /* Enemy Fire Override */
@@ -994,8 +1020,7 @@ void JE_eventSystem(void)
 		break;
 
 	case 79:
-		boss_bar[0].link_num = eventRec[eventLoc - 1].eventdat;
-		boss_bar[1].link_num = eventRec[eventLoc - 1].eventdat2;
+		level_boss_bar_event(&eventRec[eventLoc - 1]);
 		break;
 
 	case 80:  // skip events if in 2-player mode

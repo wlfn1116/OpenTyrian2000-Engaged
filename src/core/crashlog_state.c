@@ -192,6 +192,7 @@ static void write_endless_mods(FILE *f, Uint64 mods)
 		{ ENDLESS_MOD_SOFTLANDING, "SoftLanding" }, { ENDLESS_MOD_CLEANSIGNALS,"CleanSignals"},
 		{ ENDLESS_MOD_TWINSEEK,    "TwinSeek"    }, { ENDLESS_MOD_HUNTER,     "Hunter"     },
 		{ ENDLESS_MOD_TRUEAIM,     "TrueAim"     }, { ENDLESS_MOD_KILLSHOT,   "KillShot"   },
+		{ ENDLESS_MOD_CONCUSSION,  "Concussion"  },
 	};
 
 	fprintf(f, "  Active mods:  0x%016llX", (unsigned long long)mods);

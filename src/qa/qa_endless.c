@@ -706,17 +706,22 @@ static void qa_reactive_state_matrix(void)
 
 	/* End to end through the real drain, which is where the owner's scale actually has to be read:
 	 * the same two ships, the same pulse, against a hull tough enough to survive and report it. */
-	const int dealtArmed = qa_chain_pulse_damage(0, false);
-	const int dealtPartner = qa_chain_pulse_damage(1, false);
+	const int dealtArmed = qa_chain_pulse_damage(0, false, 100, 100);
+	const int dealtPartner = qa_chain_pulse_damage(1, false, 100, 100);
 	snprintf(scaleLabel, sizeof(scaleLabel),
 	         "a pulse P1 owns lands its own %d, P2's lands %d", dealtArmed, dealtPartner);
 	qa_check(dealtArmed == chainArmed && dealtPartner == chainPartner, scaleLabel);
 
-	const int dealtSalvo = qa_chain_pulse_damage(0, true);
-	const int dealtSalvoP2 = qa_chain_pulse_damage(1, true);
+	const int dealtSalvo = qa_chain_pulse_damage(0, true, 100, 100);
+	const int dealtSalvoP2 = qa_chain_pulse_damage(1, true, 100, 100);
 	snprintf(scaleLabel, sizeof(scaleLabel),
 	         "the tag reaches the drain: P1's salvo pulse lands %d, P2's %d", dealtSalvo, dealtSalvoP2);
 	qa_check(dealtSalvo == chainSalvo && dealtSalvoP2 > dealtPartner, scaleLabel);
+
+	const int dealtAbove = qa_chain_pulse_damage(0, false, -3, 10);
+	const int dealtEdge = qa_chain_pulse_damage(0, false, -2, 10);
+	qa_check(dealtAbove == 0 && dealtEdge == dealtArmed,
+	         "a pulse spares a hull wholly above the screen and lands once a row of it shows");
 
 	for (int owner = 0; owner <= 1; ++owner)
 	{
