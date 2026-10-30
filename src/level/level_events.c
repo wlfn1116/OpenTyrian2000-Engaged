@@ -131,6 +131,24 @@ void level_boss_bar_event(const struct JE_EventRecType *bar)
 	boss_body_link = head ? (JE_byte)bar->eventdat : 0;
 }
 
+void level_armor_event(JE_byte link, JE_byte armor)
+{
+	for (temp = 0; temp < 100; temp++)
+	{
+		struct JE_SingleEnemyType *const part = &enemy[temp];
+		if (link != 0 && part->linknum != link)
+			continue;
+		if (endlessFxActive() && armor < 255 && armor > part->armorleft &&
+		    armor <= part->healthbar_max && enemy_has_boss_hp(part->linknum))
+			continue;
+
+		const JE_byte wasArmor = part->armorleft;
+		part->armorleft = armor;
+		enemy_note_full_armor(part);
+		enemy_note_armed(temp, wasArmor);
+	}
+}
+
 void JE_eventSystem(void)
 {
 	switch (eventRec[eventLoc-1].eventtype)
@@ -489,19 +507,11 @@ void JE_eventSystem(void)
 		break;
 
 	case 25: /* Enemy Global Damage change */
-		for (temp = 0; temp < 100; temp++)
-		{
-			if (eventRec[eventLoc-1].eventdat4 == 0 || enemy[temp].linknum == eventRec[eventLoc-1].eventdat4)
-			{
-				const JE_byte wasArmor = enemy[temp].armorleft;
-				if (galagaMode)
-					enemy[temp].armorleft = roundf(eventRec[eventLoc-1].eventdat * (difficultyLevel / 2));
-				else
-					enemy[temp].armorleft = eventRec[eventLoc-1].eventdat;
-				enemy_note_full_armor(&enemy[temp]);
-				enemy_note_armed(temp, wasArmor);
-			}
-		}
+		if (galagaMode)
+			level_armor_event(eventRec[eventLoc-1].eventdat4,
+			                  roundf(eventRec[eventLoc-1].eventdat * (difficultyLevel / 2)));
+		else
+			level_armor_event(eventRec[eventLoc-1].eventdat4, eventRec[eventLoc-1].eventdat);
 		break;
 
 	case 26:
@@ -728,16 +738,7 @@ void JE_eventSystem(void)
 		break;
 
 	case 47: /* Enemy Global AccelRev */
-		for (temp = 0; temp < 100; temp++)
-		{
-			if (eventRec[eventLoc-1].eventdat4 == 0 || enemy[temp].linknum == eventRec[eventLoc-1].eventdat4)
-			{
-				const JE_byte wasArmor = enemy[temp].armorleft;
-				enemy[temp].armorleft = eventRec[eventLoc-1].eventdat;
-				enemy_note_full_armor(&enemy[temp]);
-				enemy_note_armed(temp, wasArmor);
-			}
-		}
+		level_armor_event(eventRec[eventLoc-1].eventdat4, eventRec[eventLoc-1].eventdat);
 		break;
 
 	case 48: /* Background 2 Cannot be Transparent */

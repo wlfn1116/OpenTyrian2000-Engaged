@@ -25,5 +25,6 @@
 void JE_eventJump(JE_word jump);
 void JE_eventSystem(void);
 void level_boss_bar_event(const struct JE_EventRecType *bar);
+void level_armor_event(JE_byte link, JE_byte armor);
 
 #endif /* LEVEL_EVENTS_H */

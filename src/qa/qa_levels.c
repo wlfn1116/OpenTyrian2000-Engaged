@@ -1,6 +1,7 @@
 #include "qa.h"
 
 #include "background.h"
+#include "config.h"
 #include "debug_flags.h"
 #include "endless.h"
 #include "enemy_death.h"
@@ -349,6 +350,117 @@ static bool qa_gryphon_bar_follows_head(void)
 	return stock && head && bodyScaled;
 }
 
+static JE_MultiEnemyType qaArmorEnemies;
+static JE_EnemyAvailType qaArmorAvail;
+static boss_bar_t qaArmorBars[2];
+static JE_byte qaArmorBody;
+static JE_boolean qaArmorEndless, qaArmorCampaign;
+static int qaArmorCue;
+
+static void qa_armor_scene_enter(bool endless)
+{
+	memcpy(qaArmorEnemies, enemy, sizeof(enemy));
+	memcpy(qaArmorAvail, enemyAvail, sizeof(enemyAvail));
+	qaArmorBars[0] = boss_bar[0];
+	qaArmorBars[1] = boss_bar[1];
+	qaArmorBody = boss_body_link;
+	qaArmorEndless = endlessMode;
+	qaArmorCampaign = endlessCampaignMods;
+	qaArmorCue = vulnerableCue;
+
+	endlessMode = endless;
+	endlessCampaignMods = false;
+	vulnerableCue = VULN_CUE_OFF;
+	boss_bar[0].link_num = 0;
+	boss_bar[1].link_num = 0;
+	boss_body_link = 0;
+	qa_enemy_clear_all();
+}
+
+static void qa_armor_scene_leave(void)
+{
+	vulnerableCue = qaArmorCue;
+	endlessCampaignMods = qaArmorCampaign;
+	endlessMode = qaArmorEndless;
+	boss_body_link = qaArmorBody;
+	boss_bar[0] = qaArmorBars[0];
+	boss_bar[1] = qaArmorBars[1];
+	memcpy(enemyAvail, qaArmorAvail, sizeof(enemyAvail));
+	memcpy(enemy, qaArmorEnemies, sizeof(enemy));
+}
+
+static int qa_boss_armor_heals(JE_byte link, bool endless, int *wounds)
+{
+	qa_armor_scene_enter(endless);
+	qa_enemy_stage(0, 100, 50, 60);
+	enemy[0].linknum = link;
+	enemy_note_full_armor(&enemy[0]);
+
+	int heals = 0;
+	*wounds = 0;
+	for (JE_word i = 0; i < maxEvent; ++i)
+	{
+		const struct JE_EventRecType *const ev = &eventRec[i];
+		if (ev->eventtype == 79)
+			level_boss_bar_event(ev);
+		if ((ev->eventtype != 25 && ev->eventtype != 47) ||
+		    (ev->eventdat4 != 0 && ev->eventdat4 != link))
+			continue;
+
+		const JE_byte before = enemy[0].armorleft;
+		const bool boss = enemy_has_boss_hp(link);
+		level_armor_event(ev->eventdat4, (JE_byte)ev->eventdat);
+		if (boss && before < 255 && enemy[0].armorleft < 255 && enemy[0].armorleft > before)
+			++heals;
+		if (enemy[0].armorleft < 255 && enemy[0].armorleft > 30)
+		{
+			enemy[0].armorleft -= 30;
+			enemy[0].healthbar_seen = true;
+			++*wounds;
+		}
+	}
+
+	qa_armor_scene_leave();
+	return heals;
+}
+
+static bool qa_boss_keeps_wounds(JE_byte link, int stockHeals)
+{
+	int stockWounds = 0, endlessWounds = 0;
+	const int stock = qa_boss_armor_heals(link, false, &stockWounds);
+	const int endless = qa_boss_armor_heals(link, true, &endlessWounds);
+	return stock == stockHeals && endless == 0 && endlessWounds == stockWounds;
+}
+
+static bool qa_rearm_rules(void)
+{
+	qa_armor_scene_enter(true);
+	boss_bar[0].link_num = 7;
+	qa_enemy_stage(0, 60, 50, 100);
+	qa_enemy_stage(1, 120, 50, 100);
+	enemy[0].linknum = 7;
+	enemy[1].linknum = 9;
+	for (unsigned int i = 0; i < 2; ++i)
+	{
+		enemy_note_full_armor(&enemy[i]);
+		enemy[i].armorleft = 40;
+		enemy[i].healthbar_seen = true;
+	}
+
+	level_armor_event(0, 100);
+	const bool kept = enemy[0].armorleft == 40 && enemy[1].armorleft == 100;
+	level_armor_event(7, 200);
+	const bool bigger = enemy[0].armorleft == 200;
+	enemy[0].armorleft = 150;
+	level_armor_event(7, 255);
+	const bool sealed = enemy[0].armorleft == 255;
+	level_armor_event(7, 120);
+	const bool opened = enemy[0].armorleft == 120;
+
+	qa_armor_scene_leave();
+	return kept && bigger && sealed && opened;
+}
+
 void qa_test_level_event_scripts(void)
 {
 	struct JE_EventRecType *const saved = malloc(sizeof(eventRec));
@@ -363,6 +475,7 @@ void qa_test_level_event_scripts(void)
 
 	unsigned int levels = 0, nubs = 0, attached = 0, scattered = 0;
 	bool read_all = true, gryphon = false, harvest = false, underdeli = false;
+	bool fleet = false, core = false;
 	for (int ep = 1; ep <= EPISODE_MAX; ++ep)
 	{
 		if (!episodeAvail[ep - 1])
@@ -414,6 +527,10 @@ void qa_test_level_event_scripts(void)
 			if (ep == 4 && lvlFileNum == 7)
 				underdeli = qa_leadin_holds(4700, 18) && qa_leadin_holds(5500, 17) &&
 				            !qa_leadin_holds(4500, 17);
+			if (ep == 3 && lvlFileNum == 6)
+				fleet = qa_boss_keeps_wounds(254, 5);
+			if (ep == 4 && lvlFileNum == 5)
+				core = qa_boss_keeps_wounds(199, 2);
 		}
 		fclose(f);
 	}
@@ -435,6 +552,14 @@ void qa_test_level_event_scripts(void)
 	qa_check(!episodeAvail[2 - 1] || gryphon,
 	         "GRYPHON keeps one bar: the body's in the campaign, the head's under scaled boss "
 	         "HP, with the body still on boss HP");
+	qa_check(!episodeAvail[3 - 1] || fleet,
+	         "FLEET's boss keeps its wounds through its five re-arms in Endless; the campaign "
+	         "heals them");
+	qa_check(!episodeAvail[4 - 1] || core,
+	         "CORE's boss keeps its wounds through its two mid-fight re-arms in Endless");
+	qa_check(qa_rearm_rules(),
+	         "an Endless re-arm spares a wounded boss part but still re-arms ordinary enemies, "
+	         "seals at 255, opens from it and sets a larger pool");
 	printf("# level events: %u levels, %u SURFACE arch nubs, %u scattered spawns\n",
 	       levels, nubs, scattered);
 }
