@@ -63,7 +63,7 @@ Keys and controllers can be rebound in Setup.
 
 On Android and iOS a drag anywhere steers the ship and also fires; pause and
 rear weapon mode get on-screen buttons in the pillarbox beside the playfield
-(and other stuff also gets it's own buttons when it's relevant, such as jukebox controls).
+(and other stuff also gets it's own buttons when needed, such as jukebox controls).
 See [Touch controls](GUIDE.md#touch-controls).
 
 ## Online play
