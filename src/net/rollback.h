@@ -83,6 +83,7 @@ typedef struct
 	Sint16 mouseX, mouseY;  /* tick aim/anchor pair (self-test replay only)    */
 	Sint16 sfTx, sfTy;      /* Street-Fighter-code target (self-test only)     */
 	Sint16 accelX, accelY;  /* banking/aim acceleration the tick derived       */
+	Sint16 pullX;
 	Uint8  difficulty;      /* host's difficultyLevel (host-authoritative)     */
 	Uint16 buttons;         /* see RB_BTN_* / RB_REQ_* / RB_EV_* bits          */
 	Uint16 linkAngle;       /* linked Dragonwing gun angle, 0..65535 = 0..2pi  */

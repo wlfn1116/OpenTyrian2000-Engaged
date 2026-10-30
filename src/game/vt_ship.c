@@ -45,12 +45,15 @@
 static int ship_tick_x[2], ship_tick_y[2];   // ship position captured at the last tick
 static int ship_vel_x[2], ship_vel_y[2];       // per-tick movement (cur - prev tick)
 static bool ship_pred_have_tick = false;
+static float vt_pull_x[2], vt_pull_y[2];
 
 void vt_ship_pred_reset(void)
 {
 	ship_pred_have_tick = false;
 	memset(ship_vel_x, 0, sizeof(ship_vel_x));
 	memset(ship_vel_y, 0, sizeof(ship_vel_y));
+	memset(vt_pull_x, 0, sizeof(vt_pull_x));
+	memset(vt_pull_y, 0, sizeof(vt_pull_y));
 	for (int p = 0; p < 2; ++p)
 	{
 		ship_tick_x[p] = player[p].x;
@@ -202,6 +205,8 @@ static void vt_seed_player(int p)
 	vt_vy[p] = (float)player[p].y_velocity;
 	vt_wrote_vx[p] = player[p].x_velocity;
 	vt_wrote_vy[p] = player[p].y_velocity;
+	vt_pull_x[p] = 0.0f;
+	vt_pull_y[p] = 0.0f;
 	vt_seeded[p] = true;
 }
 
@@ -210,6 +215,15 @@ static float vt_friction(float v, float f)
 	if (v > 0.0f) { v -= f; if (v < 0.0f) v = 0.0f; }
 	else if (v < 0.0f) { v += f; if (v > 0.0f) v = 0.0f; }
 	return v;
+}
+
+static float vt_pull_kept(float pull, float clipped)
+{
+	if (pull > 0.0f && clipped > 0.0f)
+		return pull - fminf(pull, clipped);
+	if (pull < 0.0f && clipped < 0.0f)
+		return pull - fmaxf(pull, clipped);
+	return pull;
 }
 
 static void vt_ship_step_player(int p, float dt)
@@ -341,8 +355,11 @@ static void vt_ship_step_player(int p, float dt)
 
 	// Apply render-rate-independent Endless gravity; the bounds below handle every heading. Online,
 	// folding it into VT motion lets vt_ship_commit_net deliver it exactly once.
-	vt_x[p] += endlessShipGravityDriftX((uint)p) * dt;
-	vt_y[p] += endlessShipGravityDriftY((uint)p) * dt;
+	const float pull_x = endlessShipGravityDriftX((uint)p) * dt;
+	const float pull_y = endlessShipGravityDriftY((uint)p) * dt;
+	vt_x[p] += pull_x;
+	vt_y[p] += pull_y;
+	const float unclamped_x = vt_x[p], unclamped_y = vt_y[p];
 
 	// Same playfield bounds the sim enforces (player_ship.c). Stop velocity at walls
 	// so we don't accumulate phantom momentum while held against an edge.
@@ -350,6 +367,9 @@ static void vt_ship_step_player(int p, float dt)
 	if (vt_x[p] < SHIP_LEFT_MARGIN)                    { vt_x[p] = SHIP_LEFT_MARGIN;                    if (vt_vx[p] < 0) vt_vx[p] = 0; }
 	if (vt_y[p] > SHIP_BOTTOM_MARGIN)                  { vt_y[p] = SHIP_BOTTOM_MARGIN;                  if (vt_vy[p] > 0) vt_vy[p] = 0; }
 	if (vt_y[p] < SHIP_TOP_MARGIN)                     { vt_y[p] = SHIP_TOP_MARGIN;                     if (vt_vy[p] < 0) vt_vy[p] = 0; }
+
+	vt_pull_x[p] += vt_pull_kept(pull_x, unclamped_x - vt_x[p]);
+	vt_pull_y[p] += vt_pull_kept(pull_y, unclamped_y - vt_y[p]);
 
 	if (isNetworkGame)
 	{
@@ -515,6 +535,15 @@ void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy)
 	}
 	*out_dx = player[p].x - ship_tick_x[p];
 	*out_dy = player[p].y - ship_tick_y[p];
+}
+
+void vt_ship_take_pull(int player_index, int *out_dx, int *out_dy)
+{
+	const int p = (player_index <= 0) ? 0 : 1;
+	*out_dx = (int)lrintf(vt_x[p]) - (int)lrintf(vt_x[p] - vt_pull_x[p]);
+	*out_dy = (int)lrintf(vt_y[p]) - (int)lrintf(vt_y[p] - vt_pull_y[p]);
+	vt_pull_x[p] = 0.0f;
+	vt_pull_y[p] = 0.0f;
 }
 
 // Hand the twiddle-code detector the mouse direction since the last call as a -1/0/+1 per axis

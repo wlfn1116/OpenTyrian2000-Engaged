@@ -310,23 +310,25 @@ void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y)
 /* Index local lockstep history by packet sequence. */
 #define NET_OWN_RING 16  // >= NET_PACKET_QUEUE, so an entry outlives the queue that names it
 
-static Sint16 net_own_x[NET_OWN_RING], net_own_y[NET_OWN_RING];
+static Sint16 net_own_x[NET_OWN_RING], net_own_y[NET_OWN_RING], net_own_pull[NET_OWN_RING];
 static Uint16 net_own_buttons[NET_OWN_RING];
 
-static void net_own_state_store(Uint16 sync, int x, int y, Uint16 buttons)
+static void net_own_state_store(Uint16 sync, int x, int y, Uint16 buttons, int pull)
 {
 	const unsigned slot = (unsigned)sync % NET_OWN_RING;
 	net_own_x[slot] = (Sint16)x;
 	net_own_y[slot] = (Sint16)y;
 	net_own_buttons[slot] = buttons;
+	net_own_pull[slot] = (Sint16)pull;
 }
 
-static void net_own_state_load(Uint16 sync, int *x, int *y, Uint16 *buttons)
+static void net_own_state_load(Uint16 sync, int *x, int *y, Uint16 *buttons, int *pull)
 {
 	const unsigned slot = (unsigned)sync % NET_OWN_RING;
 	*x = net_own_x[slot];
 	*y = net_own_y[slot];
 	*buttons = net_own_buttons[slot];
+	*pull = net_own_pull[slot];
 }
 
 void JE_mainKeyboardInput(void)
@@ -768,6 +770,7 @@ void rb_move_dir(Uint16 bits, int *out_dx, int *out_dy)
 static void rb_fill_tuple(RbInput *in, const Player *this_player,
                           JE_word mx, JE_word my,
                           JE_integer accelXC, JE_integer accelYC,
+                          int pullX, int pullY,
                           bool link_analog, float link_angle)
 {
 	memset(in, 0, sizeof(*in));
@@ -782,6 +785,7 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 	/* The wire carries one signed byte per axis; the sim never produces more. */
 	in->accelX = (Sint16)(accelXC > 127 ? 127 : (accelXC < -127 ? -127 : accelXC));
 	in->accelY = (Sint16)(accelYC > 127 ? 127 : (accelYC < -127 ? -127 : accelYC));
+	in->pullX = (Sint16)(pullX > 127 ? 127 : (pullX < -127 ? -127 : pullX));
 
 	Uint16 buttons = 0;
 	for (int i = 4 - 1; i >= 0; i--)
@@ -793,7 +797,8 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 
 	// Movement intent for the docked-link tests and the twiddle detector: this tick's real input
 	// displacement, captured before the dock pin rewrites x/y.
-	in->buttons |= rb_move_bits((int)in->x - (int)in->mouseX, (int)in->y - (int)in->mouseY);
+	in->buttons |= rb_move_bits((int)in->x - (int)in->mouseX - pullX,
+	                            (int)in->y - (int)in->mouseY - pullY);
 
 	if (link_analog)
 	{
@@ -803,7 +808,7 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 }
 
 static void rb_apply_tuple(const RbInput *in, Player *this_player,
-                           JE_integer *accelXC_, JE_integer *accelYC_,
+                           JE_integer *accelXC_, JE_integer *accelYC_, int *pullX_,
                            bool *link_analog, float *link_angle)
 {
 	Uint16 buttons = in->buttons;
@@ -818,6 +823,7 @@ static void rb_apply_tuple(const RbInput *in, Player *this_player,
 	this_player->y_velocity = (int)in->velY;
 	*accelXC_ = (JE_integer)in->accelX;
 	*accelYC_ = (JE_integer)in->accelY;
+	*pullX_ = (int)in->pullX;
 	*link_analog = (in->buttons & RB_LINK_ANALOG) != 0;
 	*link_angle = link_gun_angle_from_wire(in->linkAngle);
 }
@@ -925,6 +931,26 @@ static int ship_scaled_axis(int start, int pos, int momentum, float scale, float
 	return start + moved - momentum;
 }
 
+int player_ship_banking(bool vt, bool velocity_synced, int x_velocity, int moved_x, int pull_x)
+{
+	int banking;
+	if (vt)
+	{
+		// Bank from momentum like the classic path: a tick's displacement varies with how many
+		// display frames it spans. Mouse and touch steering add no momentum and bank from the
+		// displacement, as does Delay-Based netplay, whose wire carries no velocity.
+		if (velocity_synced && x_velocity != 0)
+			banking = x_velocity / 2;
+		else
+			banking = (moved_x - pull_x) / 2;
+	}
+	else
+	{
+		banking = x_velocity / 2 + (moved_x - pull_x) / 6;
+	}
+	return MAX(-2, MIN(banking, 2));
+}
+
 bool player_ship_move_scale_self_test(void)
 {
 	static const float scales[] = { 1.0f, 0.45f, 1.5f };
@@ -966,6 +992,7 @@ static void JE_playerMovement(Player *this_player,
 {
 	JE_integer mouseXC, mouseYC;
 	JE_integer accelXC, accelYC;
+	int pullX, pullY;
 
 	// Everything from here to the ship blit is this ship's: its own drives, tint and cadence.
 	endlessSetFxPlayer((uint)(this_player - &player[0]));
@@ -1017,6 +1044,8 @@ redo:
 	mouseYC = 0;
 	accelXC = 0;
 	accelYC = 0;
+	pullX = 0;
+	pullY = 0;
 
 	// Select the ship-physics path. Online peers use the host's choice; a docked Dragonwing still
 	// follows the fixed-tick path that pins it to player 1.
@@ -1194,6 +1223,9 @@ redo:
 		// a replayed tick takes its input from the recorded tuples instead.
 		if ((!isNetworkGame || playerNum_ == thisPlayerNum) && !rollback_resim)
 		{
+			if (vt_input)
+				vt_ship_take_pull(playerNum_ - 1, &pullX, &pullY);
+
 			if (endLevel)
 			{
 				this_player->y -= 2;
@@ -1422,7 +1454,6 @@ redo:
 
 				if (isNetworkGame && !vt_input && endless_ship_effects_apply(this_player))
 				{
-					int pullX, pullY;
 					endlessGravityInputPull((uint)(this_player - player), &pullX, &pullY);
 					this_player->x += pullX;
 					this_player->y += pullY;
@@ -1453,7 +1484,7 @@ redo:
 
 				RbInput in;
 				rb_fill_tuple(&in, this_player, *mouseX_, *mouseY_,
-				              accelXC, accelYC, link_gun_analog, link_gun_angle);
+				              accelXC, accelYC, pullX, pullY, link_gun_analog, link_gun_angle);
 				if (thisPlayerNum == networkHostPlayerNum)
 					in.difficulty = (Uint8)difficultyLevel;  // host dictates
 				nrb_record_local(&in);
@@ -1474,7 +1505,8 @@ redo:
 				}
 				/* Linked Dragonwing control depends on movement intent. Deriving it from the
 				 * final position and a private mouse anchor can produce different results. */
-				buttons |= rb_move_bits(this_player->x - *mouseX_, this_player->y - *mouseY_);
+				buttons |= rb_move_bits(this_player->x - *mouseX_ - pullX,
+				                        this_player->y - *mouseY_ - pullY);
 
 				// Absolute positions are idempotent when a lost packet is reconstructed.
 				SDLNet_Write16(this_player->x, &packet_state_out[0]->data[4]);
@@ -1488,11 +1520,12 @@ redo:
 				                               ? link_gun_angle_to_wire(link_gun_angle) : 0;
 				SDLNet_Write16(link_angle_wire,
 				               &packet_state_out[0]->data[NET_STATE_LINK_ANGLE]);
+				SDLNet_Write16((Uint16)pullX, &packet_state_out[0]->data[NET_STATE_PULL]);
 
 				// Key this history by the tick named in the remote packet. The inbound and
 				// outbound queues can shift independently after loss recovery.
 				net_own_state_store(SDLNet_Read16(&packet_state_out[0]->data[2]),
-				                    this_player->x, this_player->y, buttons);
+				                    this_player->x, this_player->y, buttons, pullX);
 
 				this_player->x = moveStartX;
 				this_player->y = moveStartY;
@@ -1504,13 +1537,14 @@ redo:
 
 				accelXC = 0;
 				accelYC = 0;
+				pullX = 0;
 				link_gun_analog = false;
 				link_gun_angle = 0.0f;
 			}
 
 			RbInput scripted;
 			if (qa_replay_coop_input(playerNum_ - 1, this_player->x, this_player->y, &scripted))
-				rb_apply_tuple(&scripted, this_player, &accelXC, &accelYC,
+				rb_apply_tuple(&scripted, this_player, &accelXC, &accelYC, &pullX,
 				               &link_gun_analog, &link_gun_angle);
 
 			// Self-test: capture the effective tuple for BOTH players so a replay
@@ -1519,7 +1553,7 @@ redo:
 			{
 				RbInput in;
 				rb_fill_tuple(&in, this_player, *mouseX_, *mouseY_,
-				              accelXC, accelYC, link_gun_analog, link_gun_angle);
+				              accelXC, accelYC, pullX, pullY, link_gun_analog, link_gun_angle);
 				rollback_st_record(playerNum_ - 1, &in);
 			}
 
@@ -1535,7 +1569,7 @@ redo:
 		if (rollback_selftest_active() && rollback_resim)
 		{
 			const RbInput *st = rollback_st_get(playerNum_ - 1);
-			rb_apply_tuple(st, this_player, &accelXC, &accelYC,
+			rb_apply_tuple(st, this_player, &accelXC, &accelYC, &pullX,
 			               &link_gun_analog, &link_gun_angle);
 			*mouseX_ = (JE_word)st->mouseX;
 			*mouseY_ = (JE_word)st->mouseY;
@@ -1560,7 +1594,7 @@ redo:
 					difficultyLevel = (d >= DIFFICULTY_WIMP && d <= DIFFICULTY_10)
 					                ? d : DIFFICULTY_NORMAL;
 				}
-				rb_apply_tuple(&in, this_player, &accelXC, &accelYC,
+				rb_apply_tuple(&in, this_player, &accelXC, &accelYC, &pullX,
 				               &link_gun_analog, &link_gun_angle);
 				linkIntent = in.buttons;
 				haveLinkIntent = true;
@@ -1570,7 +1604,7 @@ redo:
 				// Replaying our own past frame: consume the recorded tuple.
 				RbInput in;
 				nrb_get_local(nrb_frame(), &in);
-				rb_apply_tuple(&in, this_player, &accelXC, &accelYC,
+				rb_apply_tuple(&in, this_player, &accelXC, &accelYC, &pullX,
 				               &link_gun_analog, &link_gun_angle);
 				linkIntent = in.buttons;
 				haveLinkIntent = true;
@@ -1598,6 +1632,7 @@ redo:
 				this_player->y = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[6]);
 				accelXC = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[8]);
 				accelYC = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[10]);
+				pullX = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[NET_STATE_PULL]);
 				link_gun_analog = (SDLNet_Read16(
 					&packet_state_in[0]->data[NET_STATE_LINK_FLAGS]) & 1) != 0;
 				link_gun_angle = link_gun_angle_from_wire(SDLNet_Read16(
@@ -1610,7 +1645,7 @@ redo:
 
 				int own_x, own_y;
 				Uint16 buttons;
-				net_own_state_load(tick, &own_x, &own_y, &buttons);
+				net_own_state_load(tick, &own_x, &own_y, &buttons, &pullX);
 				linkIntent = buttons;
 				haveLinkIntent = true;
 
@@ -1973,25 +2008,14 @@ redo:
 			this_player->y = SHIP_TOP_MARGIN;
 
 		// Determines the ship banking sprite to display, depending on horizontal velocity and acceleration
-		int ship_banking;
+		int moved_x = this_player->x - *mouseX_;
 		if (vt)
 		{
-			// Bank from momentum like the classic path: a tick's displacement varies with how many
-			// display frames it spans. Mouse and touch steering add no momentum and bank from the
-			// displacement, as does Delay-Based netplay, whose wire carries no velocity.
-			int dvx, dvy;
-			vt_ship_shot_delta(playerNum_ - 1, &dvx, &dvy);
-			const bool velocity_synced = !isNetworkGame || nrb_active();
-			if (velocity_synced && this_player->x_velocity != 0)
-				ship_banking = this_player->x_velocity / 2;
-			else
-				ship_banking = dvx / 2;
+			int moved_y;
+			vt_ship_shot_delta(playerNum_ - 1, &moved_x, &moved_y);
 		}
-		else
-		{
-			ship_banking = this_player->x_velocity / 2 + (this_player->x - *mouseX_) / 6;
-		}
-		ship_banking = MAX(-2, MIN(ship_banking, 2));
+		const int ship_banking = player_ship_banking(vt, !isNetworkGame || nrb_active(),
+		                                             this_player->x_velocity, moved_x, pullX);
 
 		int ship_sprite = ship_banking * 2 + shipGr_;
 		const int look_sprite = ship_banking * 2 + look_gr;

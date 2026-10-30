@@ -14,6 +14,9 @@
 #include "game_loop.h"
 #include "game_state.h"
 #include "hud.h"
+#include "joystick.h"
+#include "keyboard.h"
+#include "mouse.h"
 #include "mtrand.h"
 #include "net_style.h"
 #include "network.h"
@@ -24,6 +27,7 @@
 #include "sparks.h"
 #include "sprite.h"
 #include "video.h"
+#include "vt_ship.h"
 
 #include "SDL.h"
 
@@ -1160,6 +1164,17 @@ static bool qa_afterburner_pulled(int plain, int resisted, float resist)
 	       abs(resisted) <= want + 1;
 }
 
+static Uint64 qa_sideways_gravity_seed(void)
+{
+	Uint64 heading = 0;
+	do
+	{
+		endlessReseed(heading);
+		endlessRollGravityDir();
+	} while (fabsf(endlessGravityDriftX()) < 0.5f * endlessGravityDrift() && ++heading < 64);
+	return heading;
+}
+
 void qa_test_afterburner_perk(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -1214,12 +1229,7 @@ void qa_test_afterburner_perk(void)
 	         "Smooth-Motion-off gravity pulls a resisting ship the matching fraction of the way");
 
 	endlessActiveMods |= ENDLESS_MOD_GRAVITY_OMNI;
-	Uint64 heading = 0;
-	do
-	{
-		endlessReseed(heading);
-		endlessRollGravityDir();
-	} while (fabsf(endlessGravityDriftX()) < 0.5f * endlessGravityDrift() && ++heading < 64);
+	const Uint64 heading = qa_sideways_gravity_seed();
 	endlessReseed(heading);
 	const int plainSideways = qa_afterburner_pull(0, true);
 	endlessReseed(heading);
@@ -1258,6 +1268,152 @@ void qa_test_afterburner_perk(void)
 	coopEndlessMode = savedCoop;
 	endlessActiveMods = savedMods;
 	endlessRunDepth = savedDepth;
+}
+
+static void qa_pull_place(int x, int y)
+{
+	player[0].x = x;
+	player[0].y = y;
+	player[0].x_velocity = 0;
+	player[0].y_velocity = 0;
+	player[0].is_alive = false;
+	vt_ship_step(1.0f);
+	player[0].is_alive = true;
+}
+
+static void qa_pull_ticks(int ticks, float frame, float hitch, bool *still, unsigned *seen,
+                          int *moved, int *pulled)
+{
+	float acc = 0.0f;
+	int prevX = player[0].x, prevY = player[0].y;
+	for (int t = 0, f = 0; t < ticks; ++f)
+	{
+		const float dt = (hitch > 0.0f && f % 3 == 1) ? hitch : frame;
+		vt_ship_step(dt);
+		acc += dt;
+		if (acc < 1.0f)
+			continue;
+		acc = MIN(acc - 1.0f, 1.0f);
+
+		int pullX, pullY;
+		vt_ship_take_pull(0, &pullX, &pullY);
+		const int dvx = player[0].x - prevX, dvy = player[0].y - prevY;
+		prevX = player[0].x;
+		prevY = player[0].y;
+		*still = *still && abs(dvx - pullX) <= 1 && abs(dvy - pullY) <= 1 &&
+		         player_ship_banking(true, true, player[0].x_velocity, dvx, pullX) == 0;
+		*seen |= 1u << (player_ship_banking(true, true, player[0].x_velocity, dvx, 0) + 2);
+		*moved += dvx;
+		*pulled += pullX;
+		++t;
+	}
+}
+
+void qa_test_gravity_pull_banking(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode, savedTwo = twoPlayerMode;
+	const Uint64 savedMods = endlessActiveMods;
+	const int savedDepth = endlessRunDepth, savedJoysticks = joysticks;
+	const JE_shortint savedDifficulty = difficultyLevel;
+	const bool savedMouse = has_mouse;
+	const Player savedPlayer = player[0];
+	static Uint8 savedKeys[SDL_NUM_SCANCODES];
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedKeys, keysactive, sizeof(savedKeys));
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	twoPlayerMode = false;
+	endlessRunDepth = 40;
+	difficultyLevel = DIFFICULTY_NORMAL;
+	joysticks = 0;
+	has_mouse = false;
+	memset(keysactive, 0, sizeof(keysactive));
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+
+	const int midX = 150, midY = (SHIP_TOP_MARGIN + SHIP_BOTTOM_MARGIN) / 2;
+	static const float pacing[][2] = {
+		{ 35.0f / 60.0f, 0.0f }, { 35.0f / 144.0f, 0.0f }, { 0.35f, 1.6f },
+	};
+
+	endlessActiveMods = ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI;
+	endlessReseed(qa_sideways_gravity_seed());
+	endlessRollGravityDir();
+	const float driftX = endlessShipGravityDriftX(0);
+
+	bool still = true;
+	unsigned seen = 0;
+	bool accounted = true;
+	for (unsigned i = 0; i < COUNTOF(pacing); ++i)
+	{
+		qa_pull_place(midX, midY);
+		int moved = 0, pulled = 0;
+		qa_pull_ticks(20, pacing[i][0], pacing[i][1], &still, &seen, &moved, &pulled);
+		accounted = accounted && moved != 0 && abs(moved - pulled) <= 1;
+	}
+	qa_check(fabsf(driftX) >= 1.5f && (seen & (seen - 1)) != 0,
+	         "a Rogue Well's sideways pull moves the ship a frame-paced distance each tick");
+	qa_check(still && accounted,
+	         "...yet a ship the player leaves alone never banks from it, at any frame pacing");
+
+	qa_pull_place(midX, midY);
+	bool approach = true;
+	unsigned approachSeen = 0;
+	int approachMoved = 0, approachPulled = 0;
+	qa_pull_ticks(120, pacing[0][0], 0.0f, &approach, &approachSeen,
+	              &approachMoved, &approachPulled);
+	const int wall = driftX > 0.0f ? PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN : SHIP_LEFT_MARGIN;
+	bool pinned = player[0].x == wall;
+	int pinnedMoved = 0, pinnedPulled = 0;
+	qa_pull_ticks(30, pacing[0][0], 0.0f, &pinned, &approachSeen, &pinnedMoved, &pinnedPulled);
+	qa_check(approach && pinned && pinnedMoved == 0 && pinnedPulled == 0,
+	         "...and once it pins the ship to a wall, the ship neither moves nor banks against it");
+
+	static const Uint64 inert[] = { ENDLESS_MOD_GRAVITY, 0 };
+	bool level = true;
+	for (unsigned i = 0; i < COUNTOF(inert); ++i)
+	{
+		endlessActiveMods = inert[i];
+		endlessRollGravityDir();
+		qa_pull_place(midX, midY);
+		bool flat = true;
+		unsigned flatSeen = 0;
+		int moved = 0, pulled = 0;
+		qa_pull_ticks(120, pacing[2][0], pacing[2][1], &flat, &flatSeen, &moved, &pulled);
+		const int restY = inert[i] != 0 ? SHIP_BOTTOM_MARGIN : midY;
+		level = level && flat && moved == 0 && pulled == 0 && player[0].y == restY;
+	}
+	qa_check(level,
+	         "a downward or absent pull never banks the ship; the floor absorbs a downward one");
+
+	qa_check(player_ship_banking(false, true, 0, 6, 6) == 0 &&
+	         player_ship_banking(false, true, 0, 9, 3) == 1 &&
+	         player_ship_banking(true, false, 4, 3, 3) == 0 &&
+	         player_ship_banking(true, true, 4, 3, 3) == 2,
+	         "every banking path drops the pull's share of the movement; momentum still banks");
+
+	player[0].is_alive = false;
+	vt_ship_step(1.0f);
+	player[0] = savedPlayer;
+	endlessActiveMods = 0;
+	endlessRollGravityDir();
+
+	memcpy(keysactive, savedKeys, sizeof(savedKeys));
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	has_mouse = savedMouse;
+	joysticks = savedJoysticks;
+	difficultyLevel = savedDifficulty;
+	endlessRunDepth = savedDepth;
+	endlessActiveMods = savedMods;
+	twoPlayerMode = savedTwo;
+	coopEndlessMode = savedCoop;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedEndless;
 }
 
 /* Countermeasures clears shots within hull-relative reach and has no cooldown. */

@@ -486,11 +486,12 @@ void nrb_get_remote(Uint32 frame, RbInput *out)
 }
 
 /* Compare only fields that can affect remote simulation. */
-static bool nrb_wire_differs(const RbInput *a, const RbInput *b)
+bool nrb_wire_differs(const RbInput *a, const RbInput *b)
 {
 	return a->x != b->x || a->y != b->y ||
 	       a->velX != b->velX || a->velY != b->velY ||
 	       a->accelX != b->accelX || a->accelY != b->accelY ||
+	       a->pullX != b->pullX ||
 	       ((a->buttons ^ b->buttons) & NRB_SIM_BUTTONS) != 0 ||
 	       (((a->buttons | b->buttons) & RB_BTN_FIRE) && a->linkAngle != b->linkAngle) ||
 	       a->difficulty != b->difficulty;
@@ -559,6 +560,35 @@ static Uint32 nrb_scan_mispredict(void)
 
 /* Wire protocol. */
 
+void nrb_input_write(const RbInput *in, Uint8 *rec)
+{
+	SDLNet_Write16((Uint16)in->x, &rec[0]);
+	SDLNet_Write16((Uint16)in->y, &rec[2]);
+	rec[4] = (Uint8)(Sint8)in->accelX;
+	rec[5] = (Uint8)(Sint8)in->accelY;
+	SDLNet_Write16(in->buttons & NRB_WIRE_BUTTONS, &rec[6]);
+	SDLNet_Write16(in->linkAngle, &rec[8]);
+	rec[10] = in->difficulty;
+	rec[11] = (Uint8)(Sint8)in->pullX;
+	rec[12] = (Uint8)(Sint8)in->velX;
+	rec[13] = (Uint8)(Sint8)in->velY;
+}
+
+void nrb_input_read(const Uint8 *rec, RbInput *in)
+{
+	memset(in, 0, sizeof(*in));
+	in->x = (Sint16)SDLNet_Read16(&rec[0]);
+	in->y = (Sint16)SDLNet_Read16(&rec[2]);
+	in->accelX = (Sint8)rec[4];
+	in->accelY = (Sint8)rec[5];
+	in->buttons = SDLNet_Read16(&rec[6]) & NRB_WIRE_BUTTONS;
+	in->linkAngle = SDLNet_Read16(&rec[8]);
+	in->difficulty = rec[10];
+	in->pullX = (Sint8)rec[11];
+	in->velX = (Sint8)rec[12];
+	in->velY = (Sint8)rec[13];
+}
+
 /* Build PACKET_INPUT from its header and unacknowledged records. */
 static int nrb_build_input(Uint8 *data)
 {
@@ -605,19 +635,7 @@ static int nrb_build_input(Uint8 *data)
 
 	int off = NRB_HDR_BYTES;
 	for (Uint32 f = from; f <= F; ++f, off += NRB_REC_BYTES)
-	{
-		const RbInput *in = &local_hist[f % NRB_HIST].in;
-		SDLNet_Write16((Uint16)in->x, &data[off]);
-		SDLNet_Write16((Uint16)in->y, &data[off + 2]);
-		data[off + 4] = (Uint8)(Sint8)in->accelX;
-		data[off + 5] = (Uint8)(Sint8)in->accelY;
-		SDLNet_Write16(in->buttons & NRB_WIRE_BUTTONS, &data[off + 6]);
-		SDLNet_Write16(in->linkAngle, &data[off + 8]);
-		data[off + 10] = in->difficulty;
-		data[off + 11] = 0;
-		data[off + 12] = (Uint8)(Sint8)in->velX;
-		data[off + 13] = (Uint8)(Sint8)in->velY;
-	}
+		nrb_input_write(&local_hist[f % NRB_HIST].in, &data[off]);
 
 	return off;
 }
@@ -746,16 +764,7 @@ void nrb_handle_packet(const Uint8 *data, int len)
 		if (s->tag == f)
 			continue;  /* already have the truth for this frame */
 
-		memset(&s->in, 0, sizeof(s->in));
-		s->in.x = (Sint16)SDLNet_Read16(&data[off]);
-		s->in.y = (Sint16)SDLNet_Read16(&data[off + 2]);
-		s->in.accelX = (Sint8)data[off + 4];
-		s->in.accelY = (Sint8)data[off + 5];
-		s->in.buttons = SDLNet_Read16(&data[off + 6]) & NRB_WIRE_BUTTONS;
-		s->in.linkAngle = SDLNet_Read16(&data[off + 8]);
-		s->in.difficulty = data[off + 10];
-		s->in.velX = (Sint8)data[off + 12];
-		s->in.velY = (Sint8)data[off + 13];
+		nrb_input_read(&data[off], &s->in);
 		s->tag = f;
 	}
 
@@ -799,9 +808,9 @@ static int nrb_apf_tuple(char *buf, int cap, int off, const NrbSlot *s, Uint32 f
 {
 	if (s->tag != f)
 		return nrb_apf(buf, cap, off, " (gone) |");
-	return nrb_apf(buf, cap, off, " %4d,%-4d %04x v%d,%d a%d,%d L%u d%u |",
+	return nrb_apf(buf, cap, off, " %4d,%-4d %04x v%d,%d a%d,%d p%d L%u d%u |",
 	               s->in.x, s->in.y, (unsigned)s->in.buttons,
-	               s->in.velX, s->in.velY, s->in.accelX, s->in.accelY,
+	               s->in.velX, s->in.velY, s->in.accelX, s->in.accelY, s->in.pullX,
 	               (unsigned)s->in.linkAngle, (unsigned)s->in.difficulty);
 }
 
@@ -963,12 +972,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 						if (R->tag == f)
 						{
 							if (U->kind == NRB_USED_FULL)
-								bad = U->in.x != R->in.x || U->in.y != R->in.y ||
-								      U->in.velX != R->in.velX || U->in.velY != R->in.velY ||
-								      U->in.accelX != R->in.accelX || U->in.accelY != R->in.accelY ||
-								      U->in.linkAngle != R->in.linkAngle ||
-								      U->in.difficulty != R->in.difficulty ||
-								      ((U->in.buttons ^ R->in.buttons) & NRB_SIM_BUTTONS) != 0;
+								bad = nrb_wire_differs(&U->in, &R->in);
 							else if (U->kind == NRB_USED_REQS)
 								bad = ((U->in.buttons ^ R->in.buttons) & NRB_SIM_REQS) != 0;
 						}

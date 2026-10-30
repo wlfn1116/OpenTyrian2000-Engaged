@@ -527,7 +527,8 @@ extern bool networkDesyncHalt;
 #define NET_STATE_RAND       32  // Uint32: mt_rand draws since the level's fixed reseed
 #define NET_STATE_PHASH      36  // Uint32: player state
 #define NET_STATE_EHASH      40  // Uint32: live enemy state
-#define NET_STATE_SIZE       44
+#define NET_STATE_PULL       44
+#define NET_STATE_SIZE       46
 
 void JE_clearSpecialRequests(void);
 

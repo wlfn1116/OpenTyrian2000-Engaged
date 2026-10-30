@@ -54,6 +54,7 @@ void qa_test_ramming_rework(void);
 void qa_test_knife_fight_perk(void);
 void qa_test_deflector_perk(void);
 void qa_test_afterburner_perk(void);
+void qa_test_gravity_pull_banking(void);
 void qa_test_countermeasure_burst(void);
 void qa_test_guided_screen_aim(void);
 void qa_test_elite_tier_eligibility(void);
@@ -101,6 +102,7 @@ void qa_test_peer_left_level(void);
 void qa_test_peer_idle_rule(void);
 void qa_test_menu_claim(void);
 void qa_test_resync_serialization(void);
+void qa_test_input_record_pull(void);
 
 void qa_test_arcade_matrices(void);
 void qa_test_gauge_flash_lifetime(void);

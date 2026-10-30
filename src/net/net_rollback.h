@@ -106,5 +106,8 @@ void nrb_write_diagnostics(FILE *f);
 /* Resync serialization primitives, exported for fuzz/property tests. */
 size_t nrb_resync_compress(const Uint8 *src, size_t n, Uint8 *dst, size_t cap);
 size_t nrb_resync_expand(const Uint8 *src, size_t n, Uint8 *dst, size_t cap);
+void nrb_input_write(const RbInput *in, Uint8 *rec);
+void nrb_input_read(const Uint8 *rec, RbInput *in);
+bool nrb_wire_differs(const RbInput *a, const RbInput *b);
 
 #endif /* NET_ROLLBACK_H */

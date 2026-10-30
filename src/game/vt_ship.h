@@ -30,6 +30,7 @@ void vt_ship_tick(void);   // per-35Hz-tick reconcile (external forces / reposit
 // netcode transmits it as its per-tick delta. No-op outside a network game.
 void vt_ship_commit_net(int player_index);
 void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy);  // inter-tick ship move for tracking shots
+void vt_ship_take_pull(int player_index, int *out_dx, int *out_dy);
 void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy);  // mouse steering dir for twiddle codes
 
 void vt_ship_pred_reset(void);

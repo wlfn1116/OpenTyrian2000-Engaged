@@ -1241,6 +1241,47 @@ void qa_test_resync_serialization(void)
 	qa_check(true, "malformed rollback input packets are safely consumed");
 }
 
+void qa_test_input_record_pull(void)
+{
+	enum { RECORD_BYTES = 14 };
+	RbInput sent;
+	memset(&sent, 0, sizeof(sent));
+	sent.x = 123;
+	sent.y = -45;
+	sent.velX = -3;
+	sent.velY = 4;
+	sent.accelX = 2;
+	sent.accelY = -1;
+	sent.buttons = RB_BTN_FIRE | RB_MOVE_LEFT;
+	sent.linkAngle = 0x4200;
+	sent.difficulty = 3;
+
+	bool carried = true, contained = true;
+	for (int pull = -127; pull <= 127; ++pull)
+	{
+		Uint8 rec[RECORD_BYTES + 8];
+		memset(rec, 0xa5, sizeof(rec));
+		sent.pullX = (Sint16)pull;
+		nrb_input_write(&sent, rec);
+		for (size_t i = RECORD_BYTES; i < sizeof(rec); ++i)
+			contained = contained && rec[i] == 0xa5;
+
+		RbInput got;
+		nrb_input_read(rec, &got);
+		carried = carried && got.pullX == sent.pullX && !nrb_wire_differs(&sent, &got);
+	}
+	qa_check(carried && contained,
+	         "a rollback input record carries every gravity pull value inside its 14 bytes");
+
+	RbInput other = sent;
+	other.pullX = (Sint16)(sent.pullX - 1);
+	qa_check(nrb_wire_differs(&sent, &other), "...and a mispredicted pull forces a rollback");
+
+	qa_check(NET_STATE_PULL >= NET_STATE_EHASH + 4 && NET_STATE_PULL + 2 <= NET_STATE_SIZE &&
+	         NET_STATE_SIZE <= NET_PACKET_SIZE,
+	         "the Delay-Based state packet keeps the pull clear of its other fields");
+}
+
 /* One sample of every modifier-derived combat parameter, memcmp-comparable (zeroed first, so
  * padding cannot differ). Floats are compared by bit pattern: parity means bit-identical. */
 typedef struct

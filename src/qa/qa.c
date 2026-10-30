@@ -470,6 +470,7 @@ int qa_run_unit_suite(void)
 	qa_test_knife_fight_perk();
 	qa_test_deflector_perk();
 	qa_test_afterburner_perk();
+	qa_test_gravity_pull_banking();
 	qa_test_countermeasure_burst();
 	qa_test_guided_screen_aim();
 	qa_test_health_bar_scale();
@@ -511,6 +512,7 @@ int qa_run_unit_suite(void)
 	qa_test_scaled_sprite_blocks();
 	qa_test_scaled_table_sprites();
 	qa_test_resync_serialization();
+	qa_test_input_record_pull();
 	qa_test_courses();
 	qa_test_finale_mods();
 	qa_test_course_base_rule();
