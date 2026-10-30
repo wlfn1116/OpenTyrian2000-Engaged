@@ -539,7 +539,7 @@ timing must not change later levels, shops, courses, or perks.
 `endlessRunBaseRule` values are save, record, and wire order. Use
 `endlessBaseRuleAtMenuIndex` to change menu order.
 
-Shuffle rules consume deterministic bags:
+The Deck rules (Varied Deck, Same Deck) consume deterministic bags:
 
 - Count each distinguishable level section once.
 - Advance the cursor for every hand, including discarded Radar hands.
@@ -872,6 +872,9 @@ The Endless run transfer in `network.c` uses the same chunk header.
 `NET_VERSION` in `network.c` is the compatibility gate. Bump it for any change to
 a packet, deterministic rule, field meaning, offset, or registered simulation
 layout. Readers validate lengths and clamp received enums before indexing.
+Since version 106 `PACKET_CONNECT` also carries an FNV-1a fingerprint of
+`OPENTYRIAN_VERSION`, so two releases never connect even when a release forgets
+the bump.
 
 Version 87 introduced a 72-byte custom-episode identity in `PACKET_CONNECT`.
 Version 88 extended it to 76 bytes: a 64-byte file name, 32-bit byte length,

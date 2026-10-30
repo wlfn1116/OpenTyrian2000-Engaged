@@ -450,7 +450,7 @@ void qa_test_course_base_rule(void)
 	printf("# base level rule: 160 seeds, %u multi-route Varied slates\n", multiRouteSlates);
 }
 
-/* ---- the Shuffle rules' bag ---------------------------------------------------------------- */
+/* ---- the Deck rules' bag ------------------------------------------------------------------- */
 
 #define QA_POOL_MAX (EPISODE_MAX * 64)
 
@@ -568,8 +568,8 @@ static void qa_test_shuffle_permutation(const QaPoolEntry *pool, int npool)
 	qa_check(seamClean, "a refill opens clear of the pieces the previous bag closed with");
 }
 
-// What one chart spends, and what it deals. Same Shuffle spends one piece however many routes it
-// shows; Varied Shuffle spends one per route.
+// What one chart spends, and what it deals. Same Deck spends one piece however many routes it
+// shows; Varied Deck spends one per route.
 static void qa_test_shuffle_spend(int npool)
 {
 	char seed[ENDLESS_SEED_MAXLEN];
@@ -592,7 +592,7 @@ static void qa_test_shuffle_spend(int npool)
 			for (int k = 0; k < i; ++k)
 				distinct &= endlessCourseEp[i] != endlessCourseEp[k]
 				         || endlessCourseSec[i] != endlessCourseSec[k];
-		qa_check(distinct, "no level appears twice on one Varied Shuffle chart");
+		qa_check(distinct, "no level appears twice on one Varied Deck chart");
 
 		// An Ambush collapses the chart it was dealt, so only an ordinary visit still shows
 		// everything the bag paid for.

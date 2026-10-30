@@ -323,7 +323,7 @@ int             endlessBaseRuleMenuIndex(EndlessBaseRule rule);
  * lobby) and fixed from there: nothing can move a run between the four sets of records. */
 extern EndlessBaseRule endlessRunBaseRule;
 
-// Both Same rules fill every route from one draw; both Shuffle rules take their draws in bag order.
+// Both Same rules fill every route from one draw; both Deck rules take their draws in bag order.
 static inline bool endlessBaseRuleShared(EndlessBaseRule rule)
 {
 	return rule == ENDLESS_BASE_SAME || rule == ENDLESS_BASE_SAME_SHUFFLE;

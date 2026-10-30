@@ -580,8 +580,8 @@ void endlessShuffleSyncHand(uint p, int handStart)
 	endlessChartRedeal();
 }
 
-/* Base Level = Varied Shuffle / Same Shuffle: the chart's levels are taken off the bag in order
- * rather than sampled. Same Shuffle spends one piece per chart, Varied Shuffle one per route. */
+/* Base Level = Varied Deck / Same Deck: the chart's levels are taken off the bag in order
+ * rather than sampled. Same Deck spends one piece per chart, Varied Deck one per route. */
 static void endlessGatherShuffledCourseLevels(int wantCourses)
 {
 	const bool shared = endlessBaseRuleShared(endlessRunBaseRule);
@@ -619,7 +619,7 @@ static void endlessGatherShuffledCourseLevels(int wantCourses)
 	}
 	endlessShuffleSetNext(pos);
 
-	// Same Shuffle repeats its one draw across the rest of the chart.
+	// Same Deck repeats its one draw across the rest of the chart.
 	if (shared && endlessCourseCnt == 1)
 	{
 		for (int i = 1; i < wantCourses; ++i)

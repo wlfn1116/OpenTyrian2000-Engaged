@@ -10,6 +10,7 @@
 #include "debug_flags.h"
 #include "endless.h"
 #include "endless_internal.h"
+#include "fnv1a.h"
 #include "font.h"
 #include "game_loop.h"
 #include "game_state.h"
@@ -21,6 +22,7 @@
 #include "net_rollback.h"
 #include "net_style.h"
 #include "network.h"
+#include "opentyrian_version.h"
 #include "params.h"
 #include "player.h"
 #include "player_ship.h"
@@ -1464,6 +1466,12 @@ void qa_test_discover_reply(void)
 	qa_check(network_discover_reply_read(other, (int)sizeof(other), &info)
 	         && strlen(info.name) == sizeof(info.name) - 1,
 	         "an overlong discovery reply name is cut to fit");
+
+	const char *const otherRelease = "Engaged v0.0.0";
+	qa_check(network_release_fingerprint() ==
+	             fnv1a32(OPENTYRIAN_VERSION, strlen(OPENTYRIAN_VERSION)) &&
+	         network_release_fingerprint() != fnv1a32(otherRelease, strlen(otherRelease)),
+	         "the connect packet's release fingerprint names this release and no other");
 
 	network_set_player_name(savedName);
 }

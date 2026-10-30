@@ -51,7 +51,7 @@
 #define PACKET_KEEP_ALIVE    0x01    // send stamp (echoed back as PACKET_PING_REPLY)
 #define PACKET_PING_REPLY    0x02    // the keep-alive's stamp, verbatim  (not acknowledged)
 
-#define PACKET_CONNECT       0x10    // version, delay, episodes, player, game type/settings, name
+#define PACKET_CONNECT       0x10    // version, delay, episodes, player, game type/settings, release, name
 #define PACKET_DETAILS       0x11    // game type, episode, difficulty, optional save record
 
 #define PACKET_QUIT          0x20    // 
@@ -230,6 +230,7 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*po
 int network_discover_reply_write(Uint8 *data, int cap, Uint16 port);
 // Fill out's port and name from a reply body. False for another type or NET_VERSION.
 bool network_discover_reply_read(const Uint8 *data, int len, NetworkHostInfo *out);
+Uint32 network_release_fingerprint(void);
 
 extern UDPpacket *packet_out_temp;
 extern UDPpacket *packet_in[],

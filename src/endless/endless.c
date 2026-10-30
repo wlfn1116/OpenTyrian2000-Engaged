@@ -458,18 +458,18 @@ const char *endlessRecordTableName(int players)
 EndlessBaseRule endlessRunBaseRule = ENDLESS_BASE_VARIED;
 
 static const char *const endlessBaseRuleName[ENDLESS_BASE_RULE_COUNT] = {
-	"Varied", "Same", "Varied Shuffle", "Same Shuffle",
+	"Varied", "Same", "Varied Deck", "Same Deck",
 };
 
 // One line per rule, shared by the seed screen and the Endless lobby.
 static const char *const endlessBaseRuleHelp[ENDLESS_BASE_RULE_COUNT] = {
-	"Varied: every charted route is its own level.",
-	"Same: one base level per chart, modifiers differ.",
-	"Varied Shuffle: routes come off a shuffled pool.",
-	"Same Shuffle: one level, off that shuffled pool.",
+	"Varied: each route is a different random level.",
+	"Same: every route is one random level; modifiers differ.",
+	"Varied Deck: like Varied; each level once before any repeat.",
+	"Same Deck: like Same; each level once before any repeat.",
 };
 
-/* Menu and record-page order, pairing each rule with its Shuffle twin. The enum values are the
+/* Menu and record-page order, pairing each rule with its Deck twin. The enum values are the
  * record, save and wire order, so this is a separate list rather than a reordering of them. */
 static const EndlessBaseRule endlessBaseRuleMenuOrder[ENDLESS_BASE_RULE_COUNT] = {
 	ENDLESS_BASE_VARIED, ENDLESS_BASE_VARIED_SHUFFLE, ENDLESS_BASE_SAME, ENDLESS_BASE_SAME_SHUFFLE,

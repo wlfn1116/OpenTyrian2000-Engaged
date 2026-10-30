@@ -72,13 +72,14 @@ The setup screen asks for a seed, run mode, and Base Level rule.
 
 | Base Level rule | Course levels |
 | --- | --- |
-| Varied | Each route draws its own level |
-| Varied Shuffle | Each route comes from a shuffled bag of all levels |
-| Same | Every route uses one random level |
-| Same Shuffle | Every route uses one level from the shuffled bag |
+| Varied | Each route is a different random level |
+| Varied Deck | Like Varied, but routes are dealt from a deck of every level |
+| Same | Every route uses one random level; only the modifiers differ |
+| Same Deck | Like Same, but each chart's level is dealt from that deck |
 
-Shuffle rules exhaust the level pool before refilling it. A Radar reroll
-spends the discarded hand and deals the next one.
+Deck rules deal every level once before any level repeats. A level offered as a
+route is used up whether or not you fly it. A Radar reroll spends the discarded
+hand and deals the next one.
 
 | Run mode | Saving | On death |
 | --- | --- | --- |

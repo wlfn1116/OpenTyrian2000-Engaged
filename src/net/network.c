@@ -47,6 +47,7 @@
 #include "endless.h"
 #include "explosions.h"
 #include "fnv1a.h"
+#include "opentyrian_version.h"
 #include "game_loop.h"
 #include "game_menu.h"
 #include "episodes.h"
@@ -127,7 +128,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       105          /* Shot culls ignore the local shadow setting. */
+#define NET_VERSION       106          /* PACKET_CONNECT carries the release fingerprint. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.
@@ -145,7 +146,8 @@ bool network_interface_carries_lan(unsigned int flags)
 // Name[64], u32 size, u32 hash, mode byte, and three reserved bytes.
 #define NET_CONNECT_CUSTOM_SIZE (CUSTOM_EPISODE_FILE_LEN + 12)
 #define NET_CONNECT_DEBUG     (NET_CONNECT_CUSTOM + NET_CONNECT_CUSTOM_SIZE)
-#define NET_CONNECT_NAME      (NET_CONNECT_DEBUG + ENDLESS_DEBUG_BLOCK_SIZE)
+#define NET_CONNECT_RELEASE   (NET_CONNECT_DEBUG + ENDLESS_DEBUG_BLOCK_SIZE)
+#define NET_CONNECT_NAME      (NET_CONNECT_RELEASE + 4)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
@@ -1228,6 +1230,11 @@ void network_state_reset(void)
 	last_state_in_tick = SDL_GetTicks();
 }
 
+Uint32 network_release_fingerprint(void)
+{
+	return fnv1a32(OPENTYRIAN_VERSION, sizeof(OPENTYRIAN_VERSION) - 1);
+}
+
 // Build and send PACKET_CONNECT.  Sent more than once during the handshake (retry, and again
 // after sync), so it lives here rather than being spelled out at each site.
 static void send_connect_packet(Uint16 episodes_local)
@@ -1273,6 +1280,7 @@ static void send_connect_packet(Uint16 episodes_local)
 	packet_out_temp->data[NET_CONNECT_CUSTOM + CUSTOM_EPISODE_FILE_LEN + 8] =
 		(Uint8)network_host_custom_endless;
 	endlessPackDebugBlock(&packet_out_temp->data[NET_CONNECT_DEBUG]);
+	SDLNet_Write32(network_release_fingerprint(), &packet_out_temp->data[NET_CONNECT_RELEASE]);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
 	network_send(NET_CONNECT_NAME + name_len + 1);
@@ -1416,6 +1424,11 @@ connect_again:
 	if (SDLNet_Read16(&packet_in[0]->data[4]) != (Uint16)(NET_VERSION + qa_net_version_skew))
 	{
 		fprintf(stderr, "error: network version did not match opponent's\n");
+		network_tyrian_halt(4, true);
+	}
+	if (SDLNet_Read32(&packet_in[0]->data[NET_CONNECT_RELEASE]) != network_release_fingerprint())
+	{
+		fprintf(stderr, "error: opponent runs a different release of the game\n");
 		network_tyrian_halt(4, true);
 	}
 	if (network_from_lobby)

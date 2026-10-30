@@ -189,7 +189,7 @@ static EndlessPageRow endlessPageRowAt(const EndlessPageState *page, int level, 
 	}
 	case ENDLESS_PAGE_RULES:
 	{
-		// In the Base Level row's order, which pairs each rule with its Shuffle twin.
+		// In the Base Level row's order, which pairs each rule with its Deck twin.
 		const int rule = (int)endlessBaseRuleAtMenuIndex(row);
 		out.label = endlessBaseLevelRuleName(rule);
 		out.zone  = endlessBestZoneAny(rule, table, mode);
