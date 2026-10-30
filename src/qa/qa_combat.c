@@ -1927,7 +1927,7 @@ void qa_test_concussion_mod(void)
 	}
 	qa_check(stunned * 100 > trials * (ENDLESS_CONCUSSION_CHANCE_PCT - 6) &&
 	         stunned * 100 < trials * (ENDLESS_CONCUSSION_CHANCE_PCT + 6),
-	         "about one hit in five concusses a ready ship");
+	         "about one hit in eight concusses a ready ship");
 
 	endlessConcussionReset();
 	const bool landed = qa_concussed_by_hits(0, 200);

@@ -663,7 +663,7 @@ Course-correction modifiers are exclusive. Canonicalization keeps the strongest:
 
 Concussion slows the ship a hit lands on. `JE_playerDamage` calls
 `endlessConcussionHit()` whenever shield or armor drops, and a ready ship rolls
-`mt_rand()` against a 20% chance. A landed roll slows that ship by 50% for 26
+`mt_rand()` against a 12% chance. A landed roll slows that ship by 50% for 26
 ticks, then holds a 140-tick guard in which no hit can concuss it again. Depth
 and difficulty change none of these numbers.
 

@@ -122,7 +122,7 @@ extern char endlessLastSpecialName[2][31]; // name of the last special weapon ea
 void endlessStaticLockoutTick(void);
 void endlessStaticLockoutReset(void);
 
-#define ENDLESS_CONCUSSION_CHANCE_PCT   20
+#define ENDLESS_CONCUSSION_CHANCE_PCT   12
 #define ENDLESS_CONCUSSION_TICKS        26
 #define ENDLESS_CONCUSSION_GUARD_TICKS 140
 #define ENDLESS_CONCUSSION_SLOW         0.50f
