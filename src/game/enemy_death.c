@@ -278,42 +278,57 @@ static int executionDamage[EXECUTION_REFLECT_MAX];
 static JE_byte executionOwner[EXECUTION_REFLECT_MAX];
 static int executionN = 0;
 
-void execution_reflect_capture(unsigned int slot, JE_byte playerNum)
+void execution_reflect_capture(unsigned int slot, int killer)
 {
+	if (killer < 0)
+		return;
 	int radius, count, cap;
-	const uint fxSaved = chain_fx_enter(playerNum >= 1 ? playerNum - 1 : 0);
+	const uint fxSaved = chain_fx_enter(killer);
 	const bool reflects = endlessPerkExecutionReflect(&radius, &count, &cap);
 	endlessSetFxPlayer(fxSaved);
 	if (!reflects)
 		return;
+	const int room = MIN(count, EXECUTION_REFLECT_MAX - executionN);
+	if (room <= 0)
+		return;
 
 	const int ax = enemy[slot].ex + enemy[slot].mapoffset;
 	const int ay = enemy[slot].ey;
-	const int first = executionN;
-	while (executionN - first < count && executionN < EXECUTION_REFLECT_MAX)
+	int pick[EXECUTION_REFLECT_MAX], pickDist2[EXECUTION_REFLECT_MAX];
+	int picked = 0;
+	for (int b = 0; b < ENEMY_SHOT_MAX; ++b)
 	{
-		int nearest = -1, nearestDist2 = 0;
-		for (int b = 0; b < ENEMY_SHOT_MAX; ++b)
-		{
-			if (enemyShotAvail[b] || enemyShot[b].sdmg == 0 || enemyShot[b].sgr >= 60000)
-				continue;
-			const int dx = enemyShot[b].sx - ax;
-			const int dy = enemyShot[b].sy - ay;
-			const int dist2 = dx * dx + dy * dy;
-			if (dist2 <= radius * radius && (nearest < 0 || dist2 < nearestDist2))
-			{
-				nearest = b;
-				nearestDist2 = dist2;
-			}
-		}
-		if (nearest < 0)
-			break;
+		if (enemyShotAvail[b] || enemyShot[b].sdmg == 0 || enemyShot[b].sgr >= 60000)
+			continue;
+		const int dx = enemyShot[b].sx - ax;
+		const int dy = enemyShot[b].sy - ay;
+		const int dist2 = dx * dx + dy * dy;
+		if (dist2 > radius * radius)
+			continue;
 
-		executionShot[executionN] = enemyShot[nearest];
-		executionDamage[executionN] = endlessReturnedShotDamage(enemyShot[nearest].sdmg, cap);
-		executionOwner[executionN] = playerNum;
+		int at = picked;
+		while (at > 0 && pickDist2[at - 1] > dist2)
+			--at;
+		if (at == room)
+			continue;
+		picked = MIN(picked + 1, room);
+		for (int k = picked - 1; k > at; --k)
+		{
+			pick[k] = pick[k - 1];
+			pickDist2[k] = pickDist2[k - 1];
+		}
+		pick[at] = b;
+		pickDist2[at] = dist2;
+	}
+
+	for (int k = 0; k < picked; ++k)
+	{
+		const int shot = pick[k];
+		executionShot[executionN] = enemyShot[shot];
+		executionDamage[executionN] = endlessReturnedShotDamage(enemyShot[shot].sdmg, cap);
+		executionOwner[executionN] = (JE_byte)(killer + 1);
 		++executionN;
-		enemyShotAvail[nearest] = true;
+		enemyShotAvail[shot] = true;
 	}
 }
 
@@ -515,6 +530,8 @@ static bool enemy_kill_group_matches(unsigned int slot, unsigned int part, JE_by
 // of the same shot in the same tick reads what they hold, and this keeps the extraction exact.
 void enemy_kill_group(unsigned int slot, int payee, int killer)
 {
+	execution_reflect_capture(slot, killer);
+
 	JE_byte link = enemy[slot].linknum;
 	if (link == 0)
 		link = 255;
@@ -805,6 +822,7 @@ void chain_reaction_process(void)
 					++bolts;
 				}
 
+				execution_reflect_capture((unsigned int)victim, chainPulseOwner[p]);
 				if (lone)
 					enemy_part_destroy(e, chainPulseOwner[p], chainPulseOwner[p], false);
 				else
@@ -839,16 +857,6 @@ void chain_reaction_process(void)
 	chainDrainSalvo = CHAIN_DRAIN_IDLE;   // the next fresh kill reads its own window and wave again
 }
 
-static void qa_chain_stage(unsigned int i, int x, int y, JE_byte armor)
-{
-	enemyAvail[i] = 0;
-	enemy[i].ex = (JE_integer)x;
-	enemy[i].ey = (JE_integer)y;
-	enemy[i].armorleft = armor;
-	enemy[i].enemytype = 1;
-	qa_enemy_dress_visible(i);
-}
-
 /* Contract in qa.h. The driver lives here because the queue and the drain do; the assertions live
  * with the state they read. */
 void qa_chain_kill_row(int owner, int evalue, int count,
@@ -857,11 +865,7 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 {
 	const JE_byte dieType = 1;   // any spawnable body; the test only asks whether one appeared
 
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;   // an empty field, so anything live afterwards came out of a death
-	}
+	qa_enemy_clear_all();   // an empty field, so anything live afterwards came out of a death
 
 	const uint fxSaved = chain_fx_enter(owner);
 	const int step = endlessPerkChainRadius() / 2;
@@ -869,7 +873,7 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 
 	for (int i = 0; i < count; ++i)
 	{
-		qa_chain_stage((unsigned int)i, 100 + i * step, 100, 1);   // one pulse finishes it
+		qa_enemy_stage((unsigned int)i, 100 + i * step, 100, 1);   // one pulse finishes it
 		enemy[i].evalue = (Sint16)evalue;
 		enemy[i].enemydie = dieType;
 		enemy[i].linknum = linknum;   // 0 lays out lone fodder, anything else one linked hull
@@ -909,13 +913,9 @@ int qa_chain_pulse_damage(int owner, bool salvo, int targetY, int pulseY)
 {
 	const JE_byte tough = 250;   // under the invulnerable sentinel, over anything a pulse deals
 
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 
-	qa_chain_stage(0, 100, targetY, tough);
+	qa_enemy_stage(0, 100, targetY, tough);
 
 	chain_reset_queue();
 	chain_queue_at(enemy[0].ex, pulseY, owner, salvo, 1);
@@ -927,11 +927,7 @@ int qa_chain_pulse_damage(int owner, bool salvo, int targetY, int pulseY)
 /* Verify that a salvo tag survives every hop of a long chain. */
 bool qa_chain_salvo_latch_holds(int owner)
 {
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 
 	const uint fxSaved = chain_fx_enter(owner);
 	const int step = endlessPerkChainRadius() / 2;
@@ -939,7 +935,7 @@ bool qa_chain_salvo_latch_holds(int owner)
 
 	const int row = 6;
 	for (int i = 0; i < row; ++i)
-		qa_chain_stage((unsigned int)i, 40 + i * step, 100, 1);
+		qa_enemy_stage((unsigned int)i, 40 + i * step, 100, 1);
 
 	chain_reset_queue();
 	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, true, 1);   // the volley's own pulse
@@ -985,7 +981,7 @@ void qa_test_chain_cascade(void)
 		for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
 		{
 			memset(&enemy[i], 0, sizeof(enemy[i]));
-			qa_chain_stage(i, 40 + (int)i * step, 100,
+			qa_enemy_stage(i, 40 + (int)i * step, 100,
 			               (JE_byte)(dmg > 1 ? dmg - 1 : 1));   // one pulse finishes it
 		}
 
@@ -1039,7 +1035,7 @@ void qa_test_chain_cascade(void)
 			enemyAvail[i] = 1;
 		}
 
-		qa_chain_stage(0, 60, 100, hulls[h].armor);
+		qa_enemy_stage(0, 60, 100, hulls[h].armor);
 		enemy[0].linknum = bossLink;
 
 		/* Use separate waves to cross the boss's fractional damage threshold. */
@@ -1072,7 +1068,7 @@ void qa_test_chain_cascade(void)
 	const int bossWorth = 500;
 	for (int i = 0; i < bossTiles; ++i)
 	{
-		qa_chain_stage((unsigned int)i, 60 + i * 8, 100, 10);
+		qa_enemy_stage((unsigned int)i, 60 + i * 8, 100, 10);
 		enemy[i].linknum = bossLink;
 		enemy[i].evalue = (Sint16)bossWorth;
 	}
@@ -1112,7 +1108,7 @@ void qa_test_chain_cascade(void)
 	const int nearX = 100;
 	for (uint i = 0; i < 3; ++i)
 	{
-		qa_chain_stage(i, nearX + (int)i * (radius / 2), 100, tileArmor);
+		qa_enemy_stage(i, nearX + (int)i * (radius / 2), 100, tileArmor);
 		enemy[i].linknum = tileLink;
 	}
 
@@ -1140,14 +1136,10 @@ static int qa_chain_pulses_wear(int x, int tiles, const JE_word *waves, int coun
 {
 	const JE_byte tough = 250;
 
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 	for (int i = 0; i < tiles; ++i)
 	{
-		qa_chain_stage((unsigned int)i, x + i * 8, 100, tough);
+		qa_enemy_stage((unsigned int)i, x + i * 8, 100, tough);
 		enemy[i].linknum = (tiles > 1) ? 7 : 0;
 	}
 
@@ -1203,14 +1195,10 @@ void qa_test_chain_wave_latch(void)
 
 	/* Across hops: a tough hull inside the seed pulse and inside the pulse of the fodder that seed
 	 * kills is hit by the seed and skipped by the hop, then hit again by the next kill's wave. */
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 	const JE_byte tough = 250;
-	qa_chain_stage(0, 100, 100, 1);                    // the fodder the seed kills
-	qa_chain_stage(1, 100 + radius / 2, 100, tough);   // the hull both pulses reach
+	qa_enemy_stage(0, 100, 100, 1);                    // the fodder the seed kills
+	qa_enemy_stage(1, 100 + radius / 2, 100, tough);   // the hull both pulses reach
 
 	chain_reset_queue();
 	chain_queue_at(100, 100, 0, false, 1);

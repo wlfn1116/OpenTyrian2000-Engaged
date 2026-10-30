@@ -36,7 +36,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "High-Velocity Shots", "Your shots travel faster.",        3 },
 	{ "Radar",            "Reveals sector levels; one reroll a visit.", 1 },
 	{ "Surveyor",         "An extra route; kills can drop pickups.",   2 },
-	{ "Executioner",      "Badly hurt foes take more; kills reflect fire.",  3 },
+	{ "Executioner",      "Dying foes take more; kills reflect fire near them.",  3 },
 	{ "Opening Salvo",    "A pause supercharges a second of fire.", 1 },
 	{ "Kinetic Converter","Hits refuel gear; twiddles cost less.", 3 },
 	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
@@ -338,7 +338,7 @@ static const struct
 	int cap;
 }
 endlessExecutionReflect[] = {
-	{ 64, 6, 33 }, { 88, 15, 66 }, { 112, 24, 100 },
+	{ 30, 6, 33 }, { 50, 13, 66 }, { 70, 20, 100 },
 };
 
 bool endlessPerkExecutionReflect(int *radius, int *count, int *cap)

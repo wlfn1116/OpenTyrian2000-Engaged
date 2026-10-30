@@ -72,6 +72,25 @@ void qa_enemy_dress_visible(unsigned int slot)
 	enemy[slot].egr[0] = 1;
 }
 
+void qa_enemy_clear_all(void)
+{
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+}
+
+void qa_enemy_stage(unsigned int i, int x, int y, JE_byte armor)
+{
+	enemyAvail[i] = 0;
+	enemy[i].ex = (JE_integer)x;
+	enemy[i].ey = (JE_integer)y;
+	enemy[i].armorleft = armor;
+	enemy[i].enemytype = 1;
+	qa_enemy_dress_visible(i);
+}
+
 /* Where a projectile is collided from. The geometry comes from sprite data alone, so a synthetic
  * frame pins it exactly; the shot loops in game_loop.c add the target's own middle to the
  * answer. */
@@ -164,11 +183,7 @@ void qa_test_guidance_perk(void)
 	const int guidedOwn = weapons[guidedGun].aim - 5;
 
 	/* Only the shootable hull is valid; the nearer pickup, invulnerable part, and scenery are decoys. */
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 	enemyAvail[0] = 0;
 	enemy[0].ex = 120;
 	enemy[0].mapoffset = -40;
@@ -392,11 +407,7 @@ void qa_test_guidance_perk(void)
 	         "an unsteered shot in a recycled slot does not inherit the guidance mark");
 	memset(shotAvail, 0, sizeof(shotAvail));
 
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
 	endlessPerkRederive();
 	power = savedPower;
@@ -605,11 +616,7 @@ void qa_test_surveyor_drop_perk(void)
 		weighted = picked[f] == endlessSurveyorScoreWeight(&endlessSurveyorScoreFinds[f]);
 	qa_check(weighted, "the find roll lands on each pickup exactly as often as its weight");
 
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 
 	// The loot anchor: a lone cell keeps its own anchor...
 	enemyAvail[0] = 0;
@@ -906,11 +913,7 @@ void qa_test_surveyor_drop_perk(void)
 	thisPlayerNum = savedThis;
 	endlessSetFxPlayer(0);
 
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
 	endlessPerkRederive();
 	memcpy(endlessPlayerMods, savedPlayerMods, sizeof(savedPlayerMods));
@@ -1520,7 +1523,7 @@ void qa_test_executioner_perk(void)
 	qa_exec_stacks(0, 0);
 	qa_check(!endlessPerkExecutionReflect(&radius, &count, &cap),
 	         "without the perk an execution reflects nothing");
-	static const int reach[3][3] = { { 64, 6, 33 }, { 88, 15, 66 }, { 112, 24, 100 } };
+	static const int reach[3][3] = { { 30, 6, 33 }, { 50, 13, 66 }, { 70, 20, 100 } };
 	bool scaled = true;
 	for (JE_byte stacks = 1; stacks <= 3; ++stacks)
 	{
@@ -1529,7 +1532,7 @@ void qa_test_executioner_perk(void)
 		         radius == reach[stacks - 1][0] && count == reach[stacks - 1][1] &&
 		         cap == reach[stacks - 1][2];
 	}
-	qa_check(scaled, "1, 2 and 3 stacks reflect 6, 15 and 24 bullets within 64, 88 and 112 px, "
+	qa_check(scaled, "1, 2 and 3 stacks reflect 6, 13 and 20 bullets within 30, 50 and 70 px, "
 	                 "each returning at most 33, 66 and 100 damage");
 
 	qa_check(endlessReturnedShotDamage(300, 249) == 249 &&
@@ -1544,11 +1547,11 @@ void qa_test_executioner_perk(void)
 	qa_exec_stacks(0, 1);
 	qa_exec_clear();
 	for (int i = 0; i < 7; ++i)
-		qa_exec_bullet(i, 100 + 9 * (i + 1), 100, 5, 12);
-	qa_exec_bullet(7, 165, 100, 5, 12);
+		qa_exec_bullet(i, 100 + 4 * (i + 1), 100, 5, 12);
+	qa_exec_bullet(7, 131, 100, 5, 12);
 	qa_exec_bullet(8, 104, 103, 5, 65535);
 	qa_exec_bullet(9, 103, 104, 0, 12);
-	execution_reflect_capture(slot, 1);
+	execution_reflect_capture(slot, 0);
 	bool took = true;
 	for (int i = 0; i < 6; ++i)
 		took = took && enemyShotAvail[i];
@@ -1559,21 +1562,21 @@ void qa_test_executioner_perk(void)
 	const int shots = qa_exec_returned(1, &returned);
 	bool reversed = false;
 	for (int i = 0; i < MAX_PWEAPON; ++i)
-		reversed |= shotAvail[i] != 0 && playerShotData[i].shotX == 109 &&
+		reversed |= shotAvail[i] != 0 && playerShotData[i].shotX == 104 &&
 		            playerShotData[i].shotY == 100 && playerShotData[i].shotXM == -1 &&
 		            playerShotData[i].shotYM == -2;
 	qa_check(took && left && shots == 6 && returned == 30 && reversed,
-	         "one stack turns the six nearest bullets within 64 px into the killer's shots");
+	         "one stack turns the six nearest bullets within 30 px into the killer's shots");
 
 	qa_exec_clear();
 	qa_exec_bullet(0, 110, 100, 30, 12);
 	qa_exec_bullet(1, 120, 100, 255, 12);
-	qa_exec_bullet(2, 130, 100, 40, 12);
-	execution_reflect_capture(slot, 1);
+	qa_exec_bullet(2, 125, 100, 40, 12);
+	execution_reflect_capture(slot, 0);
 	const bool turned = enemyShotAvail[0] && enemyShotAvail[1] && enemyShotAvail[2];
 	execution_reflect_process();
 	qa_check(turned && qa_exec_damage_at(110, 100) == 30 && qa_exec_damage_at(120, 100) == 33 &&
-	         qa_exec_damage_at(130, 100) == 33 && qa_exec_returned(1, &returned) == 3,
+	         qa_exec_damage_at(125, 100) == 33 && qa_exec_returned(1, &returned) == 3,
 	         "...each keeping its own damage up to 33, so a 255-damage bullet comes back at 33");
 
 	static const int capByStacks[3] = { 33, 66, 100 };
@@ -1584,7 +1587,7 @@ void qa_test_executioner_perk(void)
 		qa_exec_clear();
 		qa_exec_bullet(0, 105, 100, 255, 12);
 		qa_exec_bullet(1, 112, 100, 5, 12);
-		execution_reflect_capture(slot, 1);
+		execution_reflect_capture(slot, 0);
 		execution_reflect_process();
 		capped = capped && qa_exec_damage_at(105, 100) == capByStacks[stacks - 1] &&
 		         qa_exec_damage_at(112, 100) == 5;
@@ -1594,45 +1597,45 @@ void qa_test_executioner_perk(void)
 	qa_exec_stacks(0, 3);
 	qa_exec_clear();
 	qa_exec_bullet(0, 105, 100, 120, 12);
-	for (int i = 1; i <= 23; ++i)
-		qa_exec_bullet(i, 100 + 4 * (i + 2), 100, 5, 12);
-	execution_reflect_capture(slot, 1);
+	for (int i = 1; i <= 19; ++i)
+		qa_exec_bullet(i, 100 + 3 * (i + 2), 100, 5, 12);
+	execution_reflect_capture(slot, 0);
 	bool allTurned = true;
-	for (int i = 0; i <= 23; ++i)
+	for (int i = 0; i <= 19; ++i)
 		allTurned = allTurned && enemyShotAvail[i];
 	execution_reflect_process();
-	qa_check(allTurned && qa_exec_returned(1, &returned) == 24 && returned == 100 + 23 * 5 &&
+	qa_check(allTurned && qa_exec_returned(1, &returned) == 20 && returned == 100 + 19 * 5 &&
 	         qa_exec_damage_at(105, 100) == 100 && qa_exec_damage_at(112, 100) == 5,
-	         "a 120-damage bullet turns at the 100 cap beside 23 others, each at its own");
+	         "a 120-damage bullet turns at the 100 cap beside 19 others, each at its own");
 
 	qa_exec_stacks(0, 3);
 	qa_exec_clear();
-	for (int i = 0; i < 26; ++i)
-		qa_exec_bullet(i, 100 + 4 * (i + 1), 100, 1, 12);
-	qa_exec_bullet(26, 100, 213, 1, 12);
-	execution_reflect_capture(slot, 1);
-	bool most = !enemyShotAvail[24] && !enemyShotAvail[25] && !enemyShotAvail[26];
-	for (int i = 0; i < 24; ++i)
+	for (int i = 0; i < 22; ++i)
+		qa_exec_bullet(i, 100 + 3 * (i + 1), 100, 1, 12);
+	qa_exec_bullet(22, 100, 171, 1, 12);
+	execution_reflect_capture(slot, 0);
+	bool most = !enemyShotAvail[20] && !enemyShotAvail[21] && !enemyShotAvail[22];
+	for (int i = 0; i < 20; ++i)
 		most = most && enemyShotAvail[i];
 	execution_reflect_process();
-	qa_check(most && qa_exec_returned(1, &returned) == 24,
-	         "three stacks take the 24 nearest of a wider volley, out to 112 px");
+	qa_check(most && qa_exec_returned(1, &returned) == 20,
+	         "three stacks take the 20 nearest of a wider volley, out to 70 px");
 
 	qa_exec_stacks(0, 2);
 	qa_exec_clear();
-	qa_exec_bullet(0, 100, 188, 1, 12);
-	qa_exec_bullet(1, 100, 189, 1, 12);
+	qa_exec_bullet(0, 100, 150, 1, 12);
+	qa_exec_bullet(1, 100, 151, 1, 12);
 	qa_exec_bullet(3, 90, 100, 1, 12);
 	qa_exec_bullet(4, 100, 90, 1, 12);
 	qa_exec_bullet(5, 100, 107, 1, 12);
 	qa_exec_bullet(7, 110, 100, 1, 12);
 	qa_exec_bullet(8, 107, 100, 1, 12);
-	execution_reflect_capture(slot, 1);
-	const bool reach88 = enemyShotAvail[0] && !enemyShotAvail[1] && enemyShotAvail[3] &&
+	execution_reflect_capture(slot, 0);
+	const bool reach50 = enemyShotAvail[0] && !enemyShotAvail[1] && enemyShotAvail[3] &&
 	                     enemyShotAvail[4] && enemyShotAvail[5] && enemyShotAvail[7] &&
 	                     enemyShotAvail[8];
 	execution_reflect_process();
-	qa_check(reach88, "two stacks reach a bullet 88 px out but not one at 89");
+	qa_check(reach50, "two stacks reach a bullet 50 px out but not one at 51");
 
 	qa_exec_stacks(0, 1);
 	qa_exec_clear();
@@ -1642,7 +1645,7 @@ void qa_test_executioner_perk(void)
 	};
 	for (unsigned i = 0; i < COUNTOF(ring); ++i)
 		qa_exec_bullet(ring[i][0], ring[i][1], ring[i][2], 1, 12);
-	execution_reflect_capture(slot, 1);
+	execution_reflect_capture(slot, 0);
 	const bool ties = enemyShotAvail[1] && enemyShotAvail[3] && enemyShotAvail[4] &&
 	                  enemyShotAvail[6] && enemyShotAvail[7] && enemyShotAvail[9] &&
 	                  !enemyShotAvail[12] && !enemyShotAvail[15];
@@ -1654,9 +1657,9 @@ void qa_test_executioner_perk(void)
 	endlessSetFxPlayer(0);
 	qa_exec_clear();
 	qa_exec_bullet(0, 110, 100, 5, 12);
-	execution_reflect_capture(slot, 1);
+	execution_reflect_capture(slot, 0);
 	const bool bareSeat = !enemyShotAvail[0];
-	execution_reflect_capture(slot, 2);
+	execution_reflect_capture(slot, 1);
 	const bool holder = enemyShotAvail[0] && endlessFxPlayer() == 0;
 	execution_reflect_process();
 	qa_check(bareSeat && holder && qa_exec_returned(2, &returned) == 1 && returned == 5 &&
@@ -1676,7 +1679,7 @@ void qa_test_executioner_perk(void)
 		for (int i = 0; i < 16; ++i)
 			qa_exec_bullet(i * 3, 60 + (i * 37) % 90, 50 + (i * 53) % 110,
 			               (JE_byte)(1 + (i * 7) % 23), 12);
-		execution_reflect_capture(slot, m % 2 == 0 ? 2 : 1);
+		execution_reflect_capture(slot, m % 2 == 0 ? 1 : 0);
 		execution_reflect_process();
 		Uint32 h = 0;
 		for (int i = 0; i < 48; ++i)
@@ -1700,6 +1703,135 @@ void qa_test_executioner_perk(void)
 	memset(shotAvail, 0, sizeof(shotAvail));
 	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
 	endlessPerkRederive();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
+void qa_test_executioner_every_kill(void)
+{
+	static JE_MultiEnemyType savedEnemies;
+	static EnemyShotType savedShots[ENEMY_SHOT_MAX];
+	static JE_boolean savedShotAvail[ENEMY_SHOT_MAX];
+	JE_EnemyAvailType savedAvail;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedEnemies, enemy, sizeof(enemy));
+	memcpy(savedAvail, enemyAvail, sizeof(enemyAvail));
+	memcpy(savedShots, enemyShot, sizeof(savedShots));
+	memcpy(savedShotAvail, enemyShotAvail, sizeof(savedShotAvail));
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const Uint64 savedMods = endlessActiveMods;
+	const JE_word savedKilled = enemyKilled;
+	const int savedRunKills = endlessRunKills;
+	const Player savedShip = player[0];
+	const bool savedRamming = reworkEnabled[REWORK_RAMMING];
+	const JE_byte savedRate = damageRate, savedNoclip = noclipMode;
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	endlessActiveMods = 0;
+	endlessSetFxPlayer(0);
+	qa_exec_stacks(0, 1);
+	chain_reset_queue();
+
+	static const struct
+	{
+		JE_boolean seen;
+		JE_byte armor;
+	} kills[] = { { false, 100 }, { true, 80 }, { true, 10 } };
+	int returned = 0;
+	bool everyKill = true;
+	for (unsigned k = 0; k < COUNTOF(kills); ++k)
+	{
+		qa_enemy_clear_all();
+		qa_exec_clear();
+		qa_enemy_stage(0, 100, 100, kills[k].armor);
+		enemy[0].healthbar_seen = kills[k].seen;
+		enemy[0].healthbar_max = 100;
+		qa_exec_bullet(0, 110, 100, 5, 12);
+		enemy_kill_group(0, 0, 0);
+		const bool taken = enemyShotAvail[0];
+		execution_reflect_process();
+		everyKill = everyKill && taken && qa_exec_returned(1, &returned) == 1 && returned == 5;
+	}
+	qa_check(everyKill, "a kill reflects whether it lands from full health, from above the "
+	                    "wounded line or below it");
+
+	qa_enemy_clear_all();
+	qa_exec_clear();
+	qa_enemy_stage(0, 100, 100, 1);
+	qa_exec_bullet(0, 110, 100, 5, 12);
+	enemy_kill_group(0, 0, ENDLESS_KILLER_NONE);
+	const bool uncredited = !enemyShotAvail[0];
+	coopEndlessMode = true;
+	qa_exec_stacks(0, 1);
+	qa_enemy_stage(1, 100, 100, 1);
+	enemy_kill_group(1, 1, 1);
+	const bool partner = !enemyShotAvail[0];
+	coopEndlessMode = false;
+	qa_exec_stacks(0, 1);
+	execution_reflect_process();
+	qa_check(uncredited && partner && qa_exec_returned(1, &returned) == 0 &&
+	         qa_exec_returned(2, &returned) == 0,
+	         "a kill credited to nobody, or to a partner without the perk, reflects nothing");
+
+	qa_enemy_clear_all();
+	qa_exec_clear();
+	endlessPerkTakenBy[0][PERK_CHAINRXN] = 1;
+	endlessPerkRederive();
+	qa_enemy_stage(0, 100, 100, 1);
+	qa_enemy_stage(1, 145, 100, 1);
+	qa_exec_bullet(0, 105, 100, 5, 12);
+	qa_exec_bullet(1, 150, 100, 5, 12);
+	enemy_kill_group(0, 0, 0);
+	const bool firstKill = enemyShotAvail[0] && !enemyShotAvail[1];
+	chain_reaction_process();
+	const bool chainKill = enemyAvail[1] == 1 && enemyShotAvail[1];
+	execution_reflect_process();
+	chain_reset_queue();
+	qa_check(firstKill && chainKill && qa_exec_returned(1, &returned) == 2,
+	         "a Chain Reaction kill reflects the fire near the enemy it takes");
+
+	qa_enemy_clear_all();
+	qa_exec_clear();
+	qa_exec_stacks(0, 1);
+	reworkEnabled[REWORK_RAMMING] = true;
+	damageRate = 10;
+	noclipMode = 0;
+	qa_enemy_stage(0, 100, 150, 1);
+	player[0].x = 100;
+	player[0].y = 150;
+	player[0].is_alive = true;
+	player[0].armor = 28;
+	player[0].invulnerable_ticks = 0;
+	qa_exec_bullet(0, 110, 150, 5, 12);
+	JE_playerCollide(&player[0], 1);
+	const bool rammed = enemyAvail[0] == 1 && enemyShotAvail[0];
+	execution_reflect_process();
+	qa_check(rammed && qa_exec_returned(1, &returned) == 1,
+	         "a ram kill reflects the fire near the enemy it takes");
+
+	chain_reset_queue();
+	JE_resetSP();
+	memset(explosions, 0, sizeof(explosions));
+	enemyKilled = savedKilled;
+	endlessRunKills = savedRunKills;
+	noclipMode = savedNoclip;
+	damageRate = savedRate;
+	reworkEnabled[REWORK_RAMMING] = savedRamming;
+	player[0] = savedShip;
+	endlessActiveMods = savedMods;
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	memcpy(enemyShot, savedShots, sizeof(savedShots));
+	memcpy(enemyShotAvail, savedShotAvail, sizeof(savedShotAvail));
+	memset(shotAvail, 0, sizeof(shotAvail));
+	memcpy(enemy, savedEnemies, sizeof(enemy));
+	memcpy(enemyAvail, savedAvail, sizeof(enemyAvail));
+	endlessSetFxPlayer(0);
 	endlessMode = savedEndless;
 	endlessCampaignMods = savedCampaign;
 	coopEndlessMode = savedCoop;
@@ -2307,11 +2439,7 @@ void qa_test_guided_screen_aim(void)
 
 	/* Two enemies level with each other, both right of the shot on the map: A is the nearer by
 	 * map x, B by screen x. B is an invulnerable part, which the stock rule takes either way. */
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 	enemyAvail[0] = 0;
 	enemy[0].ex = 110;
 	enemy[0].mapoffset = 30;    // screen x 140
@@ -2359,11 +2487,7 @@ void qa_test_guided_screen_aim(void)
 	         "a Guided Aim shot whose enemy died veers off like the shipped rule");
 	memset(shotAvail, 0, sizeof(shotAvail));
 
-	for (uint i = 0; i < COUNTOF(enemy); ++i)
-	{
-		memset(&enemy[i], 0, sizeof(enemy[i]));
-		enemyAvail[i] = 1;
-	}
+	qa_enemy_clear_all();
 	guidedShotScreenAim = savedGuidedAim;
 	power = savedPower;
 	endlessMode = savedEndless;

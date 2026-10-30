@@ -128,7 +128,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       119          /* Every hit concusses a ready ship. */
+#define NET_VERSION       120          /* Every Executioner kill reflects, 30/50/70 px, 6/13/20. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

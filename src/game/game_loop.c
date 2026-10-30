@@ -4080,6 +4080,8 @@ level_loop:
 							}
 						}
 
+						const int killer = playerNum >= 1 ? (int)playerNum - 1 : ENDLESS_KILLER_NONE;
+
 						if (armorleft > damage)
 						{
 							if (z != MAX_PWEAPON - 1)
@@ -4106,6 +4108,7 @@ level_loop:
 							if ((armorleft - damage <= enemy[b].edlevel) &&
 							    ((!enemy[b].edamaged) ^ (enemy[b].edani < 0)))
 							{
+								bool reflected = false;
 
 								for (temp3 = 0; temp3 < 100; temp3++)
 								{
@@ -4149,12 +4152,13 @@ level_loop:
 											}
 											else
 											{
+												if (!reflected)
+													execution_reflect_capture(b, killer);
+												reflected = true;
 												// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all
 												// live in the one helper; never inline any of them here again (see
 												// enemy_death.h).
-												enemy_logical_death(temp3,
-												                    playerNum >= 1 ? (int)playerNum - 1
-												                                   : ENDLESS_KILLER_NONE);
+												enemy_logical_death(temp3, killer);
 											}
 
 											enemy[temp3].aniwhenfire = 0;
@@ -4183,11 +4187,8 @@ level_loop:
 						}
 						else
 						{
-							if (execRaw > 0)
-								execution_reflect_capture(b, playerNum);
 							// in galaga mode player 2 is sidekick, so give cash to player 1
-							enemy_kill_group(b, galagaMode ? 0 : (int)playerNum - 1,
-							                 playerNum >= 1 ? (int)playerNum - 1 : ENDLESS_KILLER_NONE);
+							enemy_kill_group(b, galagaMode ? 0 : (int)playerNum - 1, killer);
 						}
 
 						if (infiniteShot)
@@ -4240,7 +4241,8 @@ draw_player_shot_loop_end:
 	for (uint i = 0; i < (twoPlayerMode ? 2 : 1); ++i)
 		if (player[i].is_alive && !endLevel)
 			JE_playerCollide(&player[i], i + 1);
-	
+	execution_reflect_process();
+
 	if (firstGameOver)
 		JE_mainGamePlayerFunctions();      /* Player draw and movement. */
 

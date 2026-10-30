@@ -702,15 +702,18 @@ the ship whose effect is being calculated.
 - Deflector fires only when shield falls and armour does not. Apply its refund
   after damage resolution so overflow remains unchanged.
 - Executioner adds 17% per stack to hits on enemies below 25% health, or 20%
-  for bosses. A kill whose finishing hit carried that bonus captures the
-  nearest live enemy bullets before `enemy_kill_group` runs, so Shockwave
-  cannot clear them first: within 64, 88 or 112 px, at most 6, 15 or 24
-  bullets by stacks. Every captured bullet turns with its own damage, capped
-  at 33, 66 or 100 per bullet. The earlier pool slot wins a tie. Stacks are
-  the killer's own. Captures become the killer's shots through
-  `player_shot_create_deflected` after the player-shot pass, so they first
-  move next tick. Deflector and Executioner share `endlessReturnedShotDamage`,
-  which keeps returned damage at 249 or below and off the 99 ice marker.
+  for bosses. Every kill credited to a ship with the perk, at any health,
+  captures the live enemy bullets nearest the killed enemy before its parts
+  die, so Shockwave cannot clear them first: within 30, 50 or 70 px, at most
+  6, 13 or 20 bullets by stacks. Shot and ram kills capture in
+  `enemy_kill_group`, Chain Reaction kills in the chain drain, and a hit that
+  drops a hull to its damage level captures once for that hit. Every captured
+  bullet turns with its own damage, capped at 33, 66 or 100 per bullet. The
+  earlier pool slot wins a tie. Stacks are the killer's own. Captures become
+  the killer's shots through `player_shot_create_deflected` after the
+  player-shot pass and after ship collisions, so they first move next tick.
+  Deflector and Executioner share `endlessReturnedShotDamage`, which keeps
+  returned damage at 249 or below and off the 99 ice marker.
 - Opening Salvo tags emitted shots and Chain Reaction pulses. Only front-gun
   fire spends the charge.
 - Kinetic Converter uses actual shield or hull loss and applies only to

@@ -128,6 +128,8 @@ void qa_test_chain_cascade(void);
 // lands again (enemy_death.c).
 void qa_test_chain_wave_latch(void);
 void qa_enemy_dress_visible(unsigned int slot);
+void qa_enemy_clear_all(void);
+void qa_enemy_stage(unsigned int i, int x, int y, JE_byte armor);
 /* Run a Chain Reaction wave through the production queue. `linknum` 0 creates separate enemies;
  * other values create one linked hull. Returns payout, kills, and drop state, and clears enemy[]. */
 void qa_chain_kill_row(int owner, int evalue, int count, JE_byte linknum, int eliteState,

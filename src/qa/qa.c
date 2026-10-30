@@ -492,6 +492,7 @@ int qa_run_unit_suite(void)
 	qa_test_knife_fight_perk();
 	qa_test_deflector_perk();
 	qa_test_executioner_perk();
+	qa_test_executioner_every_kill();
 	qa_test_afterburner_perk();
 	qa_test_concussion_mod();
 	qa_test_boss_scroll_hold();

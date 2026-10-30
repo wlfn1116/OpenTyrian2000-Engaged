@@ -56,6 +56,7 @@ void qa_test_ramming_rework(void);
 void qa_test_knife_fight_perk(void);
 void qa_test_deflector_perk(void);
 void qa_test_executioner_perk(void);
+void qa_test_executioner_every_kill(void);
 void qa_test_afterburner_perk(void);
 void qa_test_concussion_mod(void);
 void qa_test_boss_scroll_hold(void);
