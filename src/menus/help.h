@@ -23,4 +23,6 @@
 void JE_helpSystem(JE_byte startTopic);
 void JE_inGameHelp(void);
 
+const char *help_prompt_fault(void);
+
 #endif /* HELP_H */

@@ -23,4 +23,6 @@
 void JE_destructGame(void);
 void destruct_deinit(void);
 
+const char *destruct_prompt_fault(void);
+
 #endif /* DESTRUCT_H */

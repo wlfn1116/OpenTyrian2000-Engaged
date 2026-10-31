@@ -12,6 +12,7 @@
 #include "mtrand.h"
 #include "palette.h"
 #include "picload.h"
+#include "prompt.h"
 #include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
@@ -102,6 +103,15 @@ const char *endlessSeedString(void)
 	return endlessRunSeed;
 }
 
+static const PromptText seedMenuKeys = {
+	"Up/Down Move    {confirm} Select    {back} Back", NULL, "Tap Select    {back} Back"
+};
+
+const char *endless_seed_prompt_fault(void)
+{
+	return prompt_fit_fault(&seedMenuKeys, 1, small_font, LEGACY_WIDTH - 10, "seed screen keys");
+}
+
 // Seed, run mode and base-level rule selection before the difficulty screen.
 bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode,
                        EndlessBaseRule *outBaseRule)
@@ -183,8 +193,10 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode,
 		}
 		draw_font_hv_shadow(VGAScreen, xCenter, yRows + dyRows * ROW_COUNT + 4,
 		                    rowHelp, small_font, centered, 15, 2, false, 1);
+		char keys[64];
 		draw_font_hv_shadow(VGAScreen, xCenter, yRows + dyRows * ROW_COUNT + 18,
-		                    "Up/Down Move    Enter Select    Esc Back", small_font, centered, 15, 4, false, 1);
+		                    prompt_text(keys, sizeof(keys), &seedMenuKeys),
+		                    small_font, centered, 15, 4, false, 1);
 
 		if (first)
 		{

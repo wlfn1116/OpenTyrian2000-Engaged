@@ -20,8 +20,12 @@
 
 #include "opentyr.h"
 #include "player.h"
+#include "prompt.h"
 
 void networkStartScreen(void);
+
+extern const PromptText netReadyPress, netReadyTakeBack, netReadyLeave;
+const char *networkReadyPromptFault(void);
 /* Encode and decode the host's lobby difficulty offset. */
 int networkDifficultyBump(void);
 /* Equip one ship for the Super Arcade run it chose (1..SA). Both machines call it for both

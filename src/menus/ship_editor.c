@@ -38,6 +38,7 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "prompt.h"
 #include "sfx.h"
 #include "sndmast.h"
 #include "sprite.h"
@@ -85,17 +86,20 @@ enum
 	SE_ACT_COUNT = SE_NAV_COUNT - SE_ACT_SPRITES,
 };
 
-static const struct { const char *label, *help; } seRows[SE_ROW_COUNT] = {
-	{ "Ship",           "Choose one of ten custom ships. In flight, hold Tab + its number." },
-	{ "Graphic",        "Hull artwork or a custom bank. Enter or click opens the grid." },
-	{ "Front Weapon",   "The main gun this ship flies with." },
-	{ "Rear Weapon",    "The rear gun, or None." },
-	{ "Special",        "The special weapon, or None." },
-	{ "Left Sidekick",  "The companion in the left bay, or None." },
-	{ "Right Sidekick", "The companion in the right bay, or None." },
-	{ "Generator",      "Recharges the shield and feeds the guns." },
-	{ "Shield",         "The shield model fitted to this ship." },
-	{ "Armor",          "Hull strength, 1 to 30." },
+static const struct { const char *label; PromptText help; } seRows[SE_ROW_COUNT] = {
+	{ "Ship",           { "Choose one of ten custom ships. In flight, hold Tab + its number.",
+	                      "Choose one of ten custom ships.", NULL } },
+	{ "Graphic",        { "Hull artwork or a custom bank. Enter or click opens the grid.",
+	                      "Hull artwork or a custom bank. {confirm} opens the grid.",
+	                      "Hull artwork or a custom bank. Tap to open the grid." } },
+	{ "Front Weapon",   { "The main gun this ship flies with." } },
+	{ "Rear Weapon",    { "The rear gun, or None." } },
+	{ "Special",        { "The special weapon, or None." } },
+	{ "Left Sidekick",  { "The companion in the left bay, or None." } },
+	{ "Right Sidekick", { "The companion in the right bay, or None." } },
+	{ "Generator",      { "Recharges the shield and feeds the guns." } },
+	{ "Shield",         { "The shield model fitted to this ship." } },
+	{ "Armor",          { "Hull strength, 1 to 30." } },
 };
 
 static const char *const seDefaultsHelp =
@@ -1599,13 +1603,24 @@ enum { SES_BANK_IMPORT, SES_BANK_EXPORT, SES_BANK_REVERT, SES_BANK_COUNT };
 static const char *const sesToolName[SES_TOOL_COUNT] = {
 	"Paint", "Fill", "Pick", "Erase", "Shade", "Colorize"
 };
-static const char *const sesToolHelp[SES_TOOL_COUNT] = {
-	"Draw with the chosen color. Right-click erases.",
-	"Flood the area you touch with the chosen color.",
-	"Copy the color you click, then return to Paint.",
-	"Rub out pixels wherever you draw.",
-	"Step a pixel lighter. Right-click steps it darker.",
-	"Recolor pixels as you draw. Right-click recolors the pose.",
+static const PromptText sesToolHelp[SES_TOOL_COUNT] = {
+	{ "Draw with the chosen color. Right-click erases.", "Draw with the chosen color.", NULL },
+	{ "Flood the area you touch with the chosen color." },
+	{ "Copy the color you click, then return to Paint.",
+	  "Copy a color from the pose, then return to Paint.",
+	  "Copy the color you tap, then return to Paint." },
+	{ "Rub out pixels wherever you draw." },
+	{ "Step a pixel lighter. Right-click steps it darker.", "Step a pixel lighter.", NULL },
+	{ "Recolor pixels as you draw. Right-click recolors the pose.", "Recolor pixels as you draw.",
+	  NULL },
+};
+static const PromptText sesCanvasHelp = {
+	"Arrows move, Enter uses the tool, Backspace erases, Tab leaves.", NULL,
+	"Tap or drag on the pose to use the tool."
+};
+static const PromptText sesDyeHelp = {
+	"Choose the dye color. {confirm} here recolors the whole pose.", NULL,
+	"Choose the dye color. Tap here to recolor the whole pose."
 };
 static const char *const sesGuidesName[SES_GUIDES_COUNT] = { "Off", "Vertical", "Horizontal", "Both" };
 static const char *const sesFlipName[SES_FLIP_COUNT] = {
@@ -1633,14 +1648,15 @@ static const char *const sesNudgeHelp[] = {
 	"Move this pose right by one pixel.",
 };
 
-static const struct { const char *label, *help; } sesActs[SES_ACT_COUNT] = {
-	{ "Capture All", "Copy the chosen artwork in. Left/Right picks how much." },
-	{ "Copy",        "Copy the chosen pose onto this one. Left/Right chooses." },
-	{ "Flip H",      "Mirror or fold this pose. Left/Right chooses." },
-	{ "Undo",        "Take back or redo an edit. Also Ctrl+Z and Ctrl+Y." },
-	{ "Clear",       "Erase this pose or every pose. Left/Right chooses." },
-	{ "Import Image", "Load this bank's poses from a 120x28 PNG. Left/Right chooses." },
-	{ "Done",        "Back to the loadout editor." },
+static const struct { const char *label; PromptText help; } sesActs[SES_ACT_COUNT] = {
+	{ "Capture All", { "Copy the chosen artwork in. Left/Right picks how much." } },
+	{ "Copy",        { "Copy the chosen pose onto this one. Left/Right chooses." } },
+	{ "Flip H",      { "Mirror or fold this pose. Left/Right chooses." } },
+	{ "Undo",        { "Take back or redo an edit. Also Ctrl+Z and Ctrl+Y.",
+	                   "Take back or redo an edit.", NULL } },
+	{ "Clear",       { "Erase this pose or every pose. Left/Right chooses." } },
+	{ "Import Image", { "Load this bank's poses from a 120x28 PNG. Left/Right chooses." } },
+	{ "Done",        { "Back to the loadout editor." } },
 };
 
 static const struct { const char *label, *help; } sesBankAlt[SES_BANK_COUNT - 1] = {
@@ -1649,6 +1665,23 @@ static const struct { const char *label, *help; } sesBankAlt[SES_BANK_COUNT - 1]
 };
 
 static const char *const sesPoseName[SE_FRAMES] = { "Hard Left", "Left", "Center", "Right", "Hard Right" };
+
+const char *JE_shipEditorPromptFault(void)
+{
+	const int width = LEGACY_WIDTH - 10;
+	const char *fault = prompt_fit_fault(&sesCanvasHelp, 1, small_font, width,
+	                                     "sprite editor help");
+	if (fault == NULL)
+		fault = prompt_fit_fault(&sesDyeHelp, 1, small_font, width, "sprite editor help");
+	for (int i = 0; i < SES_ACT_COUNT && fault == NULL; ++i)
+		fault = prompt_fit_fault(&sesActs[i].help, 1, small_font, width, "sprite editor help");
+	for (int i = 0; i < SE_ROW_COUNT && fault == NULL; ++i)
+		fault = prompt_fit_fault(&seRows[i].help, 1, small_font, width, "ship editor help");
+	if (fault == NULL)
+		fault = prompt_fit_fault(sesToolHelp, SES_TOOL_COUNT, small_font, width,
+		                         "sprite tool help");
+	return fault;
+}
 
 static void seFloodFill(int bank, int frame, int sx, int sy, JE_byte to)
 {
@@ -1877,7 +1910,7 @@ bool JE_shipStripImageSelfTest(void)
 		}
 	seStripApply(1, &strip);
 
-	const char *const importHelp = sesActs[SES_ACT_BANK - SES_ACT_CAPTURE].help;
+	const char *const importHelp = sesActs[SES_ACT_BANK - SES_ACT_CAPTURE].help.keys;
 	char dims[16];
 	snprintf(dims, sizeof(dims), "%dx%d", SE_STRIP_W, SE_FRAME_H);
 	Uint8 png[SE_STRIP_PNG_MAX_BYTES];
@@ -2337,16 +2370,20 @@ static void seSpriteEditor(int bank)
 			                    15, sel ? 6 : 4, false, 1);
 		}
 
-		const char *const help = canvasFocus ? "Arrows move, Enter uses the tool, Backspace erases, Tab leaves."
-		                       : selected == SES_ROW_TOOL ? sesToolHelp[tool]
+		char helpLine[128];
+		const char *const help = canvasFocus
+		                         ? prompt_text(helpLine, sizeof(helpLine), &sesCanvasHelp)
+		                       : selected == SES_ROW_TOOL
+		                         ? prompt_text(helpLine, sizeof(helpLine), &sesToolHelp[tool])
 		                       : selected < SES_ROW_COUNT ? sesRows[selected].help
 		                       : selected == SES_PAL_COLOR && tool == SES_TOOL_COLORIZE
-		                         ? "Choose the dye color. Enter here recolors the whole pose."
+		                         ? prompt_text(helpLine, sizeof(helpLine), &sesDyeHelp)
 		                       : selected < SES_NUDGE_LEFT ? sesPaletteHelp[selected - SES_PAL_COLOR]
 		                       : selected < SES_ACT_CAPTURE ? sesNudgeHelp[selected - SES_NUDGE_LEFT]
 		                       : selected == SES_ACT_BANK && bankMode != SES_BANK_IMPORT
 		                         ? sesBankAlt[bankMode - 1].help
-		                       : sesActs[selected - SES_ACT_CAPTURE].help;
+		                       : prompt_text(helpLine, sizeof(helpLine),
+		                                     &sesActs[selected - SES_ACT_CAPTURE].help);
 		editorDrawHint(notice[0] != '\0' ? notice : help);
 
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
@@ -2937,7 +2974,10 @@ void JE_shipEditor(bool fromOutpost)
 		JE_rectangle(VGAScreen, SE_BOX_X0 - 1, SE_BOX_Y0 - 1, SE_BOX_X1 + 1, SE_BOX_Y1 + 1, C_HI);
 
 		char caption[16];
-		snprintf(caption, sizeof(caption), "Tab + %d", slot % 10);
+		if (prompt_device() == PROMPT_KEYBOARD)
+			snprintf(caption, sizeof(caption), "Tab + %d", slot % 10);
+		else
+			snprintf(caption, sizeof(caption), "Custom Ship %d", slot);
 		draw_font_hv_shadow(VGAScreen, boxMid, SE_BOX_Y0 + 5, caption, small_font, centered, 5, 4, true, 1);
 
 		if (gr > 1)
@@ -3073,7 +3113,10 @@ void JE_shipEditor(bool fromOutpost)
 			                    enabled ? (sel ? 6 : 4) : -5, false, 1);
 		}
 
-		const char *const help = selected < SE_ROW_COUNT ? seRows[selected].help
+		char helpLine[128];
+		const char *const help = selected < SE_ROW_COUNT
+		                             ? prompt_text(helpLine, sizeof(helpLine),
+		                                           &seRows[selected].help)
 		                         : selected == SE_RESTORE_DEFAULTS
 		                             ? (defaultsArmed ? seDefaultsConfirmHelp : seDefaultsHelp)
 		                         : selected == SE_TOGGLE_STARS              ? seStarsHelp

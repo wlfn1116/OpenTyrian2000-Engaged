@@ -556,6 +556,7 @@ int qa_run_unit_suite(void)
 	qa_test_custom_music();
 	qa_test_custom_sounds();
 	qa_test_controller_hotplug();
+	qa_test_prompt_labels();
 	qa_test_swar_pixel_loops();
 	qa_test_background_bands();
 	qa_test_filter_subrows();

@@ -23,5 +23,6 @@
 void setupMenu(void);
 bool extraMenu(void);  // title-screen Extra menu; returns true if a game was launched
 bool setupMenuSelfTest(char *detail, size_t detailSize);
+const char *setup_menu_prompt_fault(void);
 
 #endif /* SETUP_MENU_H */

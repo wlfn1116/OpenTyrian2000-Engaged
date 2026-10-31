@@ -90,6 +90,7 @@ void qa_test_custom_audio_files(void);
 void qa_test_custom_music(void);
 void qa_test_custom_sounds(void);
 void qa_test_controller_hotplug(void);
+void qa_test_prompt_labels(void);
 #ifdef WITH_MIDI
 void qa_test_lds_midi_detune(void);
 #endif

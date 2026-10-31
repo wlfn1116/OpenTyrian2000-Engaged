@@ -23,6 +23,7 @@
 #include "mouse.h"
 #include "network.h"
 #include "opentyr.h"
+#include "prompt.h"
 #include "rollback.h"
 #include "timing.h"
 #include "touch_ui.h"
@@ -256,6 +257,11 @@ static bool touchFingerOwnsPointer(SDL_FingerID id)
 }
 #endif
 
+static bool key_event_from_keyboard(const SDL_KeyboardEvent *key)
+{
+	return key->windowID != 0;
+}
+
 void service_SDL_events(JE_boolean clear_new)
 {
 	SDL_Event ev;
@@ -327,6 +333,9 @@ void service_SDL_events(JE_boolean clear_new)
 				break;
 
 			case SDL_KEYDOWN:
+				if (key_event_from_keyboard(&ev.key))
+					prompt_use_keyboard();
+
 				/* <alt><enter> toggle fullscreen */
 				if (ev.key.keysym.mod & KMOD_ALT && ev.key.keysym.scancode == SDL_SCANCODE_RETURN)
 				{
@@ -379,6 +388,8 @@ void service_SDL_events(JE_boolean clear_new)
 
 			case SDL_MOUSEBUTTONDOWN:
 				mouseInactive = false;
+				if (ev.button.which != SDL_TOUCH_MOUSEID)
+					prompt_use_keyboard();
 
 				// fall through
 			case SDL_MOUSEBUTTONUP:
@@ -441,6 +452,9 @@ void service_SDL_events(JE_boolean clear_new)
 					break;
 #endif
 #ifdef TOUCH_UI_BUTTONS
+				if (ev.type == SDL_FINGERDOWN)
+					prompt_use_touch();
+
 				// An on-screen button claims its finger for the whole press, so a thumb
 				// resting on Pause never steers the ship and never opens fire.
 				bool claimedByButton;
@@ -529,6 +543,8 @@ void service_SDL_events(JE_boolean clear_new)
 				mouse_scroll += dy;
 				if (dy != 0)
 					mouseInactive = false;
+				if (dy != 0 && ev.wheel.which != SDL_TOUCH_MOUSEID)
+					prompt_use_keyboard();
 				break;
 			}
 

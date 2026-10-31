@@ -37,6 +37,7 @@
 #include "params.h"
 #include "picload.h"
 #include "player.h"
+#include "prompt.h"
 #include "qa.h"
 #include "savegame.h"
 #include "sfx.h"
@@ -1121,7 +1122,10 @@ void JE_highScoreCheck(void)
 				textGlowBrightness = 10;
 				JE_outTextGlow(VGAScreenSeg, 150, (slot * 12) + 65, t2kHighScores[table][slot].playerName);
 				textGlowBrightness = 10;
-				JE_outTextGlow(VGAScreenSeg, JE_fontCenter(miscText[4], TINY_FONT), vga_height, miscText[4]);
+				char pressKey[32];
+				prompt_text(pressKey, sizeof(pressKey), &helptextPressKey);
+				JE_outTextGlow(VGAScreenSeg, JE_fontCenter(pressKey, TINY_FONT), vga_height,
+				               pressKey);
 
 				JE_showVGA();
 
@@ -1181,7 +1185,9 @@ void JE_timedBattleResult(void)
 		snprintf(buffer, sizeof(buffer), "A draw.");
 	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 130, buffer, normal_font, centered, 15, -3, false, 2);
 
-	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 172, "Press a key", small_font,
+	char pressKey[32];
+	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 172,
+	                    prompt_text(pressKey, sizeof(pressKey), &helptextPressKey), small_font,
 	                    centered, 15, 2, false, 1);
 
 	JE_showVGA();

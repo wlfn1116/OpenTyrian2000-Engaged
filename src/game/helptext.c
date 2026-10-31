@@ -23,7 +23,10 @@
 #include "font.h"
 #include "menus.h"
 #include "opentyr.h"
+#include "sprite.h"
+#include "video.h"
 
+#include <limits.h>
 #include <string.h>
 
 const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
@@ -84,6 +87,99 @@ static char licensingInfo[3][46];                                               
 static char orderingInfo[6][32];                                                /* [1..6] of string */
 char superTyrianText[6][64];                                             /* [1..6] of string */
 char menuInt[MENU_MAX+1][14][24];
+
+const PromptText helptextPressKey = { miscText[4], "Press any button", "Tap to go on" };
+
+static const PromptText menuHelpDevices[HELPTEXT_MAINMENUHELP_COUNT] = {
+	[12] = { NULL, "Load a saved game.", NULL },
+	[13] = { NULL, "Save your game for later.", NULL },
+	[14] = { NULL, "Change volume with left/right on the {dpad}.",
+	         "Tap the bar to set the volume." },
+	[19] = { NULL, "Press {confirm} to change this key.", "Tap to change this key." },
+	[22] = { NULL, "Press {back} to exit.", NULL },
+	[23] = { NULL, "Select a weapon.  Left/right on the {dpad} changes power level.",
+	         "Select a weapon.  Tap the red arrows to change power level." },
+	[27] = { NULL, "Change detail level with left/right on the {dpad}.",
+	         "Tap the value to change detail level." },
+	[28] = { NULL, "Change game speed with left/right on the {dpad}.",
+	         "Tap the value to change game speed." },
+	[29] = { NULL, "Use the {dpad} to select the interface device to use.",
+	         "Tap to select the interface device to use." },
+	[30] = { NULL, "Change the function with left/right on the {dpad}.",
+	         "Tap to change the function." },
+};
+
+static const PromptText manualDevices[COUNTOF(helpTxt)] = {
+	[5] = {
+		NULL,
+		"~Purchasing~  Use up/down on the {dpad} to select the item you want to view.  When you "
+		"purchase the item, a bar will move to show the item you have purchased.  You may then "
+		"exit the menu using done or {back}.",
+		"~Purchasing~  Tap the item you want to view.  When you purchase the item, a bar will move "
+		"to show the item you have purchased.  You may then exit the menu using done or {back}.",
+	},
+	[9] = {
+		NULL,
+		"To ~upgrade~ or ~downgrade~ your existing gun, use right and left on the {dpad}.  The "
+		"bars in the center show you what power level your weapons are at.",
+		"To ~upgrade~ or ~downgrade~ your existing gun, tap the red arrows below your ship.  The "
+		"bars in the center show you what power level your weapons are at.",
+	},
+	[13] = {
+		NULL,
+		"~Shield~  Your ship is protected by a shield, which you upgrade in the same manner as "
+		"your ship. Just select the shield you like with up/down on the {dpad}, and buy it by "
+		"pressing {confirm}.",
+		"~Shield~  Your ship is protected by a shield, which you upgrade in the same manner as "
+		"your ship. Just tap the shield you like, and tap it again to buy it.",
+	},
+	[19] = {
+		NULL,
+		"~Done~  This selection allows you to return to the Main Menu. Select it when you're ready "
+		"to fly!",
+		"~Done~  This selection allows you to return to the Main Menu. Tap it when you're ready to "
+		"fly!",
+	},
+	[22] = {
+		NULL,
+		"To save a game select \"save game\" from the Options menu, find an empty slot, press "
+		"{confirm}, and enter the name of your choice.",
+		"To save a game select \"save game\" from the Options menu, find an empty slot, tap it, "
+		"and enter the name of your choice.",
+	},
+	[23] = {
+		NULL,
+		"~Load Game~  To load a game, follow the same procedure except all you need to do is "
+		"highlight the name of the game you wish to load and press {confirm}.",
+		"~Load Game~  To load a game, follow the same procedure except all you need to do is "
+		"select the name of the game you wish to load and tap it.",
+	},
+	[26] = {
+		NULL,
+		"~Volume~  You may also change the volume of the music or the sound in the game by "
+		"highlighting either \"Music\" or \"Sound\" in the Options menu and using left and right "
+		"on the {dpad} to change the volume.",
+		"~Volume~  You may also change the volume of the music or the sound in the game by tapping "
+		"the bar beside \"Music\" or \"Sound\" in the Options menu.",
+	},
+	[27] = {
+		NULL,
+		"~Quit Game~  Select this to quit your game.  You will be returned to the title screen.",
+		NULL,
+	},
+	[28] = {
+		NULL,
+		"To exit the game from the title screen simply select \"Quit Game\" again and press "
+		"{confirm}.",
+		"To exit the game from the title screen simply tap \"Quit Game\" again.",
+	},
+	[32] = {
+		NULL,
+		"~Weapon Mode~\xfe Some rear weapons can have their firing pattern changed with the "
+		"~{change}~ button.",
+		NULL,
+	},
+};
 
 static void decrypt_string(char *s, size_t len)
 {
@@ -148,16 +244,18 @@ static void read_section(FILE *f, void *strings, size_t count, size_t size)
 
 #define READ_SECTION(f, strings) read_section(f, strings, COUNTOF(strings), sizeof((strings)[0]))
 
-void JE_helpBox(SDL_Surface *screen,  int x, int y, const char *message, unsigned int boxwidth)
+static unsigned int help_box(SDL_Surface *screen, int x, int y, const char *message,
+                             unsigned int boxwidth)
 {
 	JE_byte startpos, endpos, pos;
 	JE_boolean endstring;
 
 	char substring[256];
+	unsigned int lines = 0;
 
 	if (strlen(message) == 0)
 	{
-		return;
+		return lines;
 	}
 
 	pos = 1;
@@ -188,7 +286,10 @@ void JE_helpBox(SDL_Surface *screen,  int x, int y, const char *message, unsigne
 		} while (!((unsigned)(pos - startpos) > boxwidth || endstring));
 
 		SDL_strlcpy(substring, message + startpos - 1, MIN((size_t)(endpos - startpos + 1), sizeof(substring)));
-		JE_textShade(screen, x, y, substring, helpBoxColor, helpBoxBrightness, helpBoxShadeType);
+		if (screen != NULL)
+			JE_textShade(screen, x, y, substring, helpBoxColor, helpBoxBrightness,
+			             helpBoxShadeType);
+		++lines;
 
 		y += verticalHeight;
 
@@ -196,16 +297,76 @@ void JE_helpBox(SDL_Surface *screen,  int x, int y, const char *message, unsigne
 
 	if (endpos != pos + 1)
 	{
-		JE_textShade(screen, x, y, message + endpos, helpBoxColor, helpBoxBrightness, helpBoxShadeType);
+		if (screen != NULL)
+			JE_textShade(screen, x, y, message + endpos, helpBoxColor, helpBoxBrightness,
+			             helpBoxShadeType);
+		++lines;
 	}
+
+	return lines;
+}
+
+void JE_helpBox(SDL_Surface *screen,  int x, int y, const char *message, unsigned int boxwidth)
+{
+	if (help_box(screen, x, y, message, boxwidth) == 0)
+		return;
 
 	helpBoxColor = 12;
 	helpBoxShadeType = FULL_SHADE;
 }
 
+static PromptText helptext_manual_prompt(unsigned int index)
+{
+	return (PromptText){ helpTxt[index], manualDevices[index].pad, manualDevices[index].touch };
+}
+
 void JE_HBox(SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsigned int boxwidth)
 {
-	JE_helpBox(screen, x, y, helpTxt[messagenum-1], boxwidth);
+	char message[sizeof(helpTxt[0])];
+	const PromptText text = helptext_manual_prompt(messagenum - 1);
+	JE_helpBox(screen, x, y, prompt_text(message, sizeof(message), &text), boxwidth);
+}
+
+PromptText helptext_menu_prompt(size_t index)
+{
+	return (PromptText){ mainMenuHelp[index], menuHelpDevices[index].pad,
+	                     menuHelpDevices[index].touch };
+}
+
+const char *helptext_menu_help(char *buf, size_t size, size_t index)
+{
+	const PromptText text = helptext_menu_prompt(index);
+	return prompt_text(buf, size, &text);
+}
+
+static int help_box_lines(const char *line, const void *boxwidth)
+{
+	if (strlen(line) >= sizeof(helpTxt[0]))
+		return INT_MAX;
+	return (int)help_box(NULL, 0, 0, line, *(const unsigned int *)boxwidth);
+}
+
+const char *helptext_prompt_fault(void)
+{
+	static const unsigned int boxWidths[] = { 40, 44, 45, 50, 55, 60 };
+
+	const char *fault = NULL;
+	for (unsigned int i = 0; i < COUNTOF(menuHelpDevices) && fault == NULL; ++i)
+	{
+		const PromptText text = helptext_menu_prompt(i);
+		fault = prompt_fit_fault(&text, 1, TINY_FONT, LEGACY_WIDTH - 11, "menu help");
+	}
+	for (unsigned int i = 0; i < COUNTOF(manualDevices) && fault == NULL; ++i)
+	{
+		const PromptText text = helptext_manual_prompt(i);
+		for (unsigned int w = 0; w < COUNTOF(boxWidths) && fault == NULL; ++w)
+		{
+			const int lines = help_box_lines(helpTxt[i], &boxWidths[w]);
+			fault = prompt_measure_fault(&text, 1, help_box_lines, &boxWidths[w], lines,
+			                             "manual page");
+		}
+	}
+	return fault;
 }
 
 void JE_loadHelpText(void)

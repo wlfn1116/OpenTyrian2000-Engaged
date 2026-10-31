@@ -41,6 +41,7 @@
 #include "palette.h"
 #include "params.h"
 #include "player.h"
+#include "prompt.h"
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
@@ -437,8 +438,8 @@ static bool JE_extraMenu(void)
 		"Don't die when armor runs out.",
 		"Cycle editor ships or restore your loadout.",
 		"Wear another hull's look. Stats stay the same.",
-		"Trigger the F-key cheat combos.",
-		"The Backspace debug-key combos.",
+		"Trigger the classic cheat codes.",
+		"Trigger the classic debug codes.",
 		"Return to the pause menu.",
 	};
 	static const char *const rootCombo[ROOT_COUNT] = {
@@ -629,7 +630,7 @@ static bool JE_extraMenu(void)
 		fill_rectangle_xy(VGAScreen, px0 + 1, py1 - footer_h, px1 - 1, py1 - footer_h,
 		                  PANEL_DIVIDER);
 		draw_font_hv(VGAScreen, px0 + 6, py1 - footer_h + 4, desc, small_font, left_aligned, 15, -3);
-		if (combos[selected][0] != '\0')
+		if (combos[selected][0] != '\0' && prompt_device() == PROMPT_KEYBOARD)
 		{
 			char keyline[40];
 			snprintf(keyline, sizeof(keyline), "Keys: %s", combos[selected]);
@@ -927,6 +928,22 @@ static bool JE_extraMenu(void)
 	return returnToGame;
 }
 
+#define PAUSE_HELP_BOX_W 255
+
+// Indexed by id (help for the sensitivity/Extra/Debug/Return/Quit rows is overridden below).
+static const size_t pauseHelpIndexes[] = { 14, 14, 14, 27, 28, 26, 26, 26, 26 };
+
+const char *ingame_menu_prompt_fault(void)
+{
+	const char *fault = NULL;
+	for (size_t i = 0; i < COUNTOF(pauseHelpIndexes) && fault == NULL; ++i)
+	{
+		const PromptText text = helptext_menu_prompt(pauseHelpIndexes[i]);
+		fault = prompt_fit_fault(&text, 1, TINY_FONT, PAUSE_HELP_BOX_W - 10, "pause menu help");
+	}
+	return fault;
+}
+
 static JE_boolean JE_inGameSetup(void)
 {
 	bool result = false;
@@ -946,9 +963,6 @@ static JE_boolean JE_inGameSetup(void)
 		MENU_ITEM_RETURN_TO_GAME,
 		MENU_ITEM_QUIT,
 	};
-
-	// Indexed by id (help for the sensitivity/Extra/Debug/Return/Quit rows is overridden below).
-	const size_t helpIndexes[] = { 14, 14, 14, 27, 28, 26, 26, 26, 26 };
 
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
@@ -998,8 +1012,8 @@ static JE_boolean JE_inGameSetup(void)
 
 	/* Center the legacy left-aligned boxes in the 299-pixel playfield. */
 	const int xOfs = (PLAYFIELD_WIDTH - 215) / 2 - 3;      /* main box: x 3..217 */
-	const int xHelpOfs = (PLAYFIELD_WIDTH - 255) / 2 - 3;  /* help box: x 3..257 */
-	const int xHelpMid = 3 + xHelpOfs + 255 / 2;
+	const int xHelpOfs = (PLAYFIELD_WIDTH - PAUSE_HELP_BOX_W) / 2 - 3;  /* help box: x 3..257 */
+	const int xHelpMid = 3 + xHelpOfs + PAUSE_HELP_BOX_W / 2;
 
 	/* Tiny-font baseline for vertically centered help text. */
 	const int yHelpBoxTop = 152, yHelpBoxBottom = 168;
@@ -1089,7 +1103,9 @@ static JE_boolean JE_inGameSetup(void)
 
 		// Draw help text.
 		const enum MenuItemIndex selectedId = items[selectedIndex];
-		const char* pause_help = mainMenuHelp[helpIndexes[selectedId]];
+		char pauseHelpLine[66];
+		const char* pause_help = helptext_menu_help(pauseHelpLine, sizeof(pauseHelpLine),
+		                                            pauseHelpIndexes[selectedId]);
 		if (selectedId == MENU_ITEM_EXTRA)
 			pause_help = "Cheats and bonus options.";
 		else if (selectedId == MENU_ITEM_DEBUG)

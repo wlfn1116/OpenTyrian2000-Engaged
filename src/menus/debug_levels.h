@@ -42,5 +42,6 @@ bool endlessJumpPickGet(Uint8 *block);              // fills ENDLESS_DEBUG_BLOCK
 void endlessJumpPickApply(const Uint8 *block, size_t len);
 void endlessJumpPickStage(void);                    // capture the state this machine just applied
 void endlessJumpPickReset(void);
+const char *debugLevelsPromptFault(void);
 
 #endif // DEBUG_LEVELS_H

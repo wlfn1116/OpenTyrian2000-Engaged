@@ -52,6 +52,7 @@
 #include "picload.h"
 #include "player.h"
 #include "player_ship.h"
+#include "prompt.h"
 #include "qa.h"
 #include "render_list.h"
 #include "save_menu.h"
@@ -131,6 +132,9 @@ enum
 
 // Keep menu rows above the help line.
 #define MENU_HELP_TEXT_Y 187
+
+#define JOYSTICK_VALUE_X 236
+#define JOYSTICK_VALUE_W (LEGACY_WIDTH - 8 - JOYSTICK_VALUE_X)
 
 // Ship color grid, rebuilt per visit because Endless reserves some palette banks.
 #define SHIP_COLOR_COLS     5
@@ -435,6 +439,16 @@ static bool outpostListScrolls(void)
 	return false;
 }
 
+static const PromptText shopRearModeCaption = {
+	miscText[70], "[{pages}] Rear Weapon Mode", "[{change}] Rear Weapon Mode"
+};
+static const PromptText shopWaitBackHint = { "Press {back} to go back.", NULL, NULL };
+static const PromptText shipColorTry = {
+	"Arrows try one, {confirm} keeps it.", "The {dpad} tries one, {confirm} keeps it.",
+	"Tap to try one, again to keep it."
+};
+static const PromptText shipColorKeep = { "{confirm} keeps it.", NULL, "Tap again to keep it." };
+
 /* Show the rear-mode button only while its weapon-preview row is selected. */
 static bool outpostRearModeCyclable(void)
 {
@@ -733,6 +747,21 @@ static void draw_menu_power_bar(SDL_Surface *s, int power_value)
 
 // Preview region (inclusive), in VGAScreen coordinates.
 enum { SIM_BOX_X0 = 8, SIM_BOX_Y0 = 8, SIM_BOX_X1 = 143, SIM_BOX_Y1 = 182 };
+
+const char *game_menu_prompt_fault(void)
+{
+	const int colorKeys = LEGACY_WIDTH - 11 - JE_textWidth("Color 255, flown by P2.  ", TINY_FONT);
+	const char *fault = prompt_fit_fault(&shopRearModeCaption, 1, TINY_FONT,
+	                                     SIM_BOX_X1 - SIM_BOX_X0 - 3, "rear weapon mode caption");
+	if (fault == NULL)
+		fault = prompt_fit_fault(&shopWaitBackHint, 1, small_font, LEGACY_WIDTH - 10,
+		                         "outpost wait");
+	if (fault == NULL)
+		fault = prompt_fit_fault(&shipColorTry, 1, TINY_FONT, colorKeys, "ship color help");
+	if (fault == NULL)
+		fault = prompt_fit_fault(&shipColorKeep, 1, TINY_FONT, colorKeys, "ship color help");
+	return fault;
+}
 
 // Supersampled present: the NxN replay of the recorded frame, and the frame handed to
 // present_hi. Kept allocated (like the gameplay hi buffers) and resized on a factor change.
@@ -2799,8 +2828,9 @@ int endlessCoopCourse = -1;
 
 static int shopEndlessAwaitCourse(bool escapable)
 {
+	char hint[48];
 	shopWaitNotice("Partner is charting a course.", "They pick the next sector.",
-	               escapable ? "Press Esc to go back." : NULL);
+	               escapable ? prompt_text(hint, sizeof(hint), &shopWaitBackHint) : NULL);
 
 	const Uint32 started = SDL_GetTicks();
 	while (escapable || SDL_GetTicks() - started < 8000)
@@ -2909,9 +2939,10 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 {
 	// Show one notice for both rendezvous; shading twice would darken the frame.
 	// Campaign may wait here while the other player finishes outfitting.
+	char hint[48];
 	shopWaitNotice("Waiting for other player.",
 	               coop_mode_active() ? "They are still in the outpost." : NULL,
-	               "Press Esc to go back.");
+	               prompt_text(hint, sizeof(hint), &shopWaitBackHint));
 
 	// Settle the next level while both peers are still in menu code. A staged debug
 	// pick outranks the campaign route and takes both players with it.
@@ -3608,10 +3639,13 @@ void JE_itemScreen(void)
 				}
 				else if (i < 14) // assignments
 				{
-					joystick_assignments_to_string(value, sizeof(value), joystick[joystick_config].assignment[i - 4]);
+					prompt_assignments_label(value, sizeof(value), joystick_config,
+					                         joystick[joystick_config].assignment[i - 4],
+					                         JOYSTICK_VALUE_W);
 				}
 
-				JE_textShade(VGAScreen, 236, 38 + i * 8, value, temp / 16, temp % 16 - 8, DARKEN);
+				JE_textShade(VGAScreen, JOYSTICK_VALUE_X, 38 + i * 8, value, temp / 16,
+				             temp % 16 - 8, DARKEN);
 			}
 
 			menuChoices[curMenu] = COUNTOF(menu_item) + 1;
@@ -4348,9 +4382,8 @@ void JE_itemScreen(void)
 
 				inputDetected = newkey || (mouseButton > 0 && !awaitClickRelease);
 
-#if defined(__SWITCH__) || defined(__vita__)
 				// Shoulder-button edges cycle the preview's rear-fire mode, matching
-				// the [ and ] keys below.
+				// the / key below.
 				{
 					static bool shoulder_was[2];
 					const int shoulder = joystick_shoulder_step(shoulder_was);
@@ -4365,7 +4398,6 @@ void JE_itemScreen(void)
 							shopPlayer()->weapon_mode = 1;
 					}
 				}
-#endif
 
 				/* Mouse wheel moves the buy/sell sub-list selection like the up/down
 				   arrows; inputDetected makes the outer loop redraw at the new selection. */
@@ -6582,7 +6614,7 @@ void JE_drawMainMenuHelpText(void)
 	if (curMenu == MENU_JOYSTICK_CONFIG) // joystick settings menu help
 	{
 		const int help[16] = { 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 24, 11 };
-		SDL_strlcpy(tempStr, mainMenuHelp[help[curSel[curMenu] - 2]], sizeof(tempStr));
+		helptext_menu_help(tempStr, sizeof(tempStr), help[curSel[curMenu] - 2]);
 	}
 	else if (curMenu < MENU_PLAY_NEXT_LEVEL || curMenu >= MENU_2_PLAYER_ARCADE)
 	{
@@ -6601,7 +6633,7 @@ void JE_drawMainMenuHelpText(void)
 		else if (outpost_trailing_kind(curMenu, sel) == OUTPOST_ROW_QUIT)
 		{
 			const int quitHelp = menuHelp[curMenu][outpost_stock_rows(curMenu) - 2];
-			SDL_strlcpy(tempStr, mainMenuHelp[quitHelp - 1], sizeof(tempStr));
+			helptext_menu_help(tempStr, sizeof(tempStr), quitHelp - 1);
 		}
 		else if (curMenu == MENU_DEBUG)
 		{
@@ -6610,7 +6642,7 @@ void JE_drawMainMenuHelpText(void)
 			else if (sel == 3)
 				SDL_strlcpy(tempStr, "Debug: select a level.", sizeof(tempStr));
 			else
-				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));
+				helptext_menu_help(tempStr, sizeof(tempStr), 12 - 1);
 		}
 		else if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && sel == 6)
 		{
@@ -6783,7 +6815,7 @@ void JE_drawMainMenuHelpText(void)
 			if (help == 0)
 				SDL_strlcpy(tempStr, SHIP_SENS_HELP, sizeof(tempStr));
 			else
-				SDL_strlcpy(tempStr, mainMenuHelp[help - 1], sizeof(tempStr));
+				helptext_menu_help(tempStr, sizeof(tempStr), help - 1);
 		}
 		else if (curMenu == MENU_CUSTOMIZE)
 		{
@@ -6814,7 +6846,7 @@ void JE_drawMainMenuHelpText(void)
 				SDL_strlcpy(tempStr, "Design your custom ships.", sizeof(tempStr));
 				break;
 			default:
-				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Exit
+				helptext_menu_help(tempStr, sizeof(tempStr), 12 - 1);  // Exit
 				break;
 			}
 		}
@@ -6822,7 +6854,7 @@ void JE_drawMainMenuHelpText(void)
 		{
 			const int cell = curSel[MENU_SHIP_COLOR] - 2;
 			const bool theirs = cell == ship_color_partner_cell();
-			char partner[4];
+			char partner[4], keys[48];
 			ship_color_partner_tag(partner, sizeof(partner));
 			if (cell == ship_color_cells)
 				SDL_strlcpy(tempStr, "Dye your sidekicks along with your ship.", sizeof(tempStr));
@@ -6834,11 +6866,12 @@ void JE_drawMainMenuHelpText(void)
 			else if (cell <= 0)
 				SDL_strlcpy(tempStr, "Fly the hull's own colors.", sizeof(tempStr));
 			else if (theirs)
-				snprintf(tempStr, sizeof(tempStr), "Color %d, flown by %s.  Enter keeps it.",
-				         ship_color_cell[cell], partner);
+				snprintf(tempStr, sizeof(tempStr), "Color %d, flown by %s.  %s",
+				         ship_color_cell[cell], partner,
+				         prompt_text(keys, sizeof(keys), &shipColorKeep));
 			else
-				snprintf(tempStr, sizeof(tempStr), "Color %d.  Arrows try one, Enter keeps it.",
-				         ship_color_cell[cell]);
+				snprintf(tempStr, sizeof(tempStr), "Color %d.  %s", ship_color_cell[cell],
+				         prompt_text(keys, sizeof(keys), &shipColorTry));
 		}
 		else if (curMenu == MENU_ONLINE_HPBARS)
 		{
@@ -6873,17 +6906,17 @@ void JE_drawMainMenuHelpText(void)
 		}
 		else
 		{
-			SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp]) - 1], sizeof(tempStr));
+			helptext_menu_help(tempStr, sizeof(tempStr), (menuHelp[curMenu][temp]) - 1);
 		}
 	}
 	else if (curMenu == MENU_KEYBOARD_CONFIG &&
 	         curSel[MENU_KEYBOARD_CONFIG] == 10)
 	{
-		SDL_strlcpy(tempStr, mainMenuHelp[25-1], sizeof(tempStr));
+		helptext_menu_help(tempStr, sizeof(tempStr), 25-1);
 	}
 	else if (leftPower || rightPower)
 	{
-		SDL_strlcpy(tempStr, mainMenuHelp[24-1], sizeof(tempStr));
+		helptext_menu_help(tempStr, sizeof(tempStr), 24-1);
 	}
 	else if (curMenu == MENU_PLAY_NEXT_LEVEL && curSel[curMenu] == endlessCourseRerollRow())
 	{
@@ -6898,11 +6931,11 @@ void JE_drawMainMenuHelpText(void)
 	else if (temp == menuChoices[curMenu] - 2 ||
 	         (curMenu == MENU_DATA_CUBES && cubeMax == 0))
 	{
-		SDL_strlcpy(tempStr, mainMenuHelp[12-1], sizeof(tempStr));
+		helptext_menu_help(tempStr, sizeof(tempStr), 12-1);
 	}
 	else
 	{
-		SDL_strlcpy(tempStr, mainMenuHelp[17 + curMenu - 3], sizeof(tempStr));
+		helptext_menu_help(tempStr, sizeof(tempStr), 17 + curMenu - 3);
 	}
 	
 	JE_textShade(VGAScreen, 10, MENU_HELP_TEXT_Y, tempStr, 14, 1, DARKEN);
@@ -7941,7 +7974,9 @@ void JE_drawShipSpecs(SDL_Surface * screen, SDL_Surface * temp_screen)
 	}
 	verticalHeight = 7;
 
-	JE_outText(screen, JE_fontCenter(miscText[4], TINY_FONT), 190, miscText[4], 12, 2);
+	char pressKey[32];
+	prompt_text(pressKey, sizeof(pressKey), &helptextPressKey);
+	JE_outText(screen, JE_fontCenter(pressKey, TINY_FONT), 190, pressKey, 12, 2);
 
 	//now draw the green ship over that.
 	//This hardcoded stuff is for positioning our little ship graphic
@@ -8089,12 +8124,10 @@ void JE_weaponSimUpdate(void)
 		// path, which still runs once this row is no longer selected (outpostRearModeCyclable).
 		if (outpostRearModeCyclable() && (weaponSimTime >= 75))
 		{
-#if defined(__SWITCH__) || defined(__vita__)
-			// Console shoulder-button help must fit inside the preview border.
-			JE_outTextOutlined(VGAScreen, 22, 137, "[L/R] Rear Weapon Mode", 1, 4);
-#else
-			JE_outTextOutlined(VGAScreen, 28, 137, miscText[70], 1, 4);
-#endif
+			char caption[48];
+			prompt_text(caption, sizeof(caption), &shopRearModeCaption);
+			const int x = (SIM_BOX_X0 + SIM_BOX_X1) / 2 - JE_textWidth(caption, TINY_FONT) / 2;
+			JE_outTextOutlined(VGAScreen, x, 137, caption, 1, 4);
 		}
 		else
 		{

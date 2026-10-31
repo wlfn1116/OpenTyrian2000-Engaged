@@ -41,6 +41,7 @@
 #include "palette.h"
 #include "params.h"
 #include "picload.h"
+#include "prompt.h"
 #include "save_menu.h"
 #include "sfx.h"
 #include "ship_editor.h"
@@ -326,6 +327,7 @@ typedef enum
 	MENU_ITEM_SFX_COPY_LIMIT,       // copies of one sound effect allowed at once
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
 	MENU_ITEM_RUMBLE,               // controller vibration strength
+	MENU_ITEM_JOYCONS,
 	MENU_ITEM_TOUCH_OPACITY,        // on-screen button opacity, touch ports only
 
 	/* Enhancements. */
@@ -466,6 +468,31 @@ typedef struct
 	const char *(*getPickerItem)(size_t i, char *buffer, size_t bufferSize);
 } MenuItem;
 
+#define SETUP_NAME_W  135
+#define SETUP_VALUE_W 95
+
+static const struct { MenuItemId id; const char *pad, *touch; } setupDeviceHelp[] = {
+	{ MENU_ITEM_SHIP_EDITOR,   "Design your custom ships.", NULL },
+	{ MENU_ITEM_CONSTANT_PLAY, "Testing mode; level screens skip their waits (CONSTANT).", NULL },
+};
+
+const char *setup_menu_prompt_fault(void)
+{
+	const int width = LEGACY_WIDTH - 1 - (LEGACY_WIDTH - SETUP_NAME_W - SETUP_VALUE_W) / 2;
+	const char *fault = NULL;
+	for (size_t i = 0; i < COUNTOF(setupDeviceHelp) && fault == NULL; ++i)
+	{
+		const PromptText text = { setupDeviceHelp[i].pad, NULL, setupDeviceHelp[i].touch };
+		fault = prompt_fit_fault(&text, 1, TINY_FONT, width, "setup help");
+	}
+	if (fault == NULL)
+	{
+		const PromptText volume = helptext_menu_prompt(14);
+		fault = prompt_fit_fault(&volume, 1, TINY_FONT, width, "setup volume help");
+	}
+	return fault;
+}
+
 static bool isMenuItemVisible(const MenuItem *item)
 {
 	// Invalid containers still keep Clear visible.
@@ -477,6 +504,8 @@ static bool isMenuItemVisible(const MenuItem *item)
 		return customEpisodeAnyPresent();
 	if (item->id == MENU_ITEM_RUMBLE)
 		return joystick_can_rumble();
+	if (item->id == MENU_ITEM_JOYCONS)
+		return joystick_joycons_connected();
 	if ((item->id == MENU_ITEM_SUBMENU && item->submenu == MENU_CRT) ||
 	    item->id == MENU_ITEM_CRT_FILTER || item->id == MENU_ITEM_CRT_STRENGTH ||
 	    item->id == MENU_ITEM_CRT_MASK || item->id == MENU_ITEM_CRT_CORNERS ||
@@ -688,6 +717,10 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 		set_vsync(!output_vsync);
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_JOYCONS:
+		joystick_set_joycons_separate(!joycons_separate);
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_MUSIC_DEVICE:
 	{
 		const int n = (int)getMusicDeviceItemsCount();
@@ -836,6 +869,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_RUMBLE, "Rumble:",
 				  "Gamepad vibration for hits on your ship and explosions.",
 				  .getPickerItemsCount = rumbleCount, .getPickerItem = rumbleItem },
+#ifndef PLATFORM_HANDHELD
+				{ MENU_ITEM_JOYCONS, "Joy-Cons:",
+				  "Separate lets two players each hold one Joy-Con." },
+#endif
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},
@@ -951,7 +988,7 @@ static bool runOptionsMenu(MenuId startMenu)
 #ifdef TOUCH_UI_BUTTONS
 				{ MENU_ITEM_TOUCH_SIDEKICKS, "Sidekick Buttons:", "On-screen buttons that fire your sidekicks." },
 				{ MENU_ITEM_TOUCH_NAV, "Nav Buttons:",
-				  "Cursor keys and confirm on every menu, not just lists." },
+				  "Arrows and confirm on every menu, not just lists." },
 #endif
 				MENU_DONE_ROW
 			},
@@ -1280,8 +1317,8 @@ static bool runOptionsMenu(MenuId startMenu)
 	/* See comment in JE_helpSystem regarding the virtual screen width. */
 	const int xCenter = 320 / 2;
 	const int yMenuHeader = 4;
-	const int wMenuItemName = 135;
-	const int wMenuItemValue = 95;
+	const int wMenuItemName = SETUP_NAME_W;
+	const int wMenuItemValue = SETUP_VALUE_W;
 	const int wMenuItem = wMenuItemName + wMenuItemValue;
 	const int xMenuItem = xCenter - wMenuItem / 2;
 	const int xMenuItemName = xMenuItem;
@@ -1452,6 +1489,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				value = output_vsync ? "On" : "Off";
 				break;
 
+			case MENU_ITEM_JOYCONS:
+				value = joycons_separate ? "Separate" : "Paired";
+				break;
+
 			case MENU_ITEM_FPS:
 				if (fpsTyped)
 					snprintf(buffer, sizeof(buffer), "%d_", fps_cap);
@@ -1605,6 +1646,18 @@ static bool runOptionsMenu(MenuId startMenu)
 				statusText = "Native OS synth -- ignores custom SoundFonts.";
 			}
 		}
+		char deviceStatus[96];
+		const MenuItemId statusId = menuItems[*selectedMenuItemIndex].id;
+		if (statusId == MENU_ITEM_MUSIC_VOLUME || statusId == MENU_ITEM_SOUND_VOLUME)
+			statusText = helptext_menu_help(deviceStatus, sizeof(deviceStatus), 14);
+		for (size_t i = 0; i < COUNTOF(setupDeviceHelp); ++i)
+		{
+			if (setupDeviceHelp[i].id != statusId)
+				continue;
+			const PromptText text = { statusText, setupDeviceHelp[i].pad,
+			                          setupDeviceHelp[i].touch };
+			statusText = prompt_text(deviceStatus, sizeof(deviceStatus), &text);
+		}
 		JE_textShade(VGAScreen, xMenuItemName, 190, statusText, 15, 4, PART_SHADE);
 
 		// Draw picker box and items.
@@ -1663,6 +1716,7 @@ static bool runOptionsMenu(MenuId startMenu)
 
 		bool mouseMoved = false;
 		int oldFullscreenDisplay = fullscreen_display;
+		const unsigned oldJoystickChanges = joystick_change_count();
 		do
 		{
 			idle_delay(1);  // fine poll so the cursor redraws at display rate on motion
@@ -1674,7 +1728,8 @@ static bool runOptionsMenu(MenuId startMenu)
 			service_SDL_events(false);
 
 			mouseMoved = mouse_xf != oldMouseX || mouse_yf != oldMouseY;
-		} while (!(newkey || newmouse || mouseMoved || fullscreen_display != oldFullscreenDisplay));
+		} while (!(newkey || newmouse || mouseMoved || fullscreen_display != oldFullscreenDisplay ||
+		           joystick_change_count() != oldJoystickChanges));
 
 		if (currentPicker == MENU_ITEM_NONE)
 		{
@@ -2202,6 +2257,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_VSYNC:
 				{
 					set_vsync(!output_vsync);
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_JOYCONS:
+				{
+					joystick_set_joycons_separate(!joycons_separate);
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

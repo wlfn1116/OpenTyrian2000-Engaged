@@ -27,6 +27,7 @@
 #include "qa.h"
 #include "palette.h"
 #include "player.h"
+#include "prompt.h"
 #include "savegame.h"
 #include "sprite.h"
 #include "timing.h"
@@ -1185,7 +1186,9 @@ static void endlessApproachTextScreen(const EndlessApproachScreen *sc)
 	const bool typedThrough = (frameCountMax != 0);
 	if (typedThrough)
 		frameCountMax = 6;
-	JE_outCharGlow(JE_fontCenter(miscText[4], TINY_FONT), 184, miscText[4]);
+	char pressKey[32];
+	prompt_text(pressKey, sizeof(pressKey), &helptextPressKey);
+	JE_outCharGlow(JE_fontCenter(pressKey, TINY_FONT), 184, pressKey);
 
 	do
 	{

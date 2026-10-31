@@ -390,6 +390,7 @@ void endlessClearRecordDifficulty(int variant, int players, EndlessRunMode mode,
 // Returns false when the seed screen is cancelled.
 bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode,
                        EndlessBaseRule *outBaseRule);
+const char *endless_seed_prompt_fault(void);
 
 void endlessSetSeed(const char *s);
 const char *endlessSeedString(void);

@@ -38,6 +38,7 @@
 #include "palette.h"
 #include "params.h"
 #include "player.h"
+#include "prompt.h"
 #include "qa.h"
 #include "sfx.h"
 #include "sndmast.h"
@@ -128,7 +129,10 @@ void JE_nextEpisode(void)
 	const char *episodeBanner = customEpisodeActive()
 		? customEpisodeActiveTitle() : episode_name[episodeNum];
 	JE_dString(VGAScreen, JE_fontCenter(episodeBanner, SMALL_FONT_SHAPES), 130, episodeBanner, SMALL_FONT_SHAPES);
-	JE_dString(VGAScreen, JE_fontCenter(miscText[5-1], SMALL_FONT_SHAPES), 185, miscText[5-1], SMALL_FONT_SHAPES);
+	char pressKey[32];
+	prompt_text(pressKey, sizeof(pressKey), &helptextPressKey);
+	JE_dString(VGAScreen, JE_fontCenter(pressKey, SMALL_FONT_SHAPES), 185, pressKey,
+	           SMALL_FONT_SHAPES);
 
 	const bool waitForEpisodeBanner = !constantPlay && qa_net_gameplay_ticks == 0;
 	if (waitForEpisodeBanner)
@@ -466,14 +470,15 @@ void JE_endLevelAni(void)
 	if (timedBattleMode && dual_ship_mode())
 		temp2 = 168;
 	// Leave room for two scores and the Endless payout block.
+	char pressKey[32];
+	prompt_text(pressKey, sizeof(pressKey), &helptextPressKey);
 	if (endlessMode)
 	{
 		temp2 = 168;
-		JE_outTextGlow(VGAScreenSeg, JE_fontCenter(miscText[5-1], SMALL_FONT_SHAPES), temp2,
-		               miscText[5-1]);
+		JE_outTextGlow(VGAScreenSeg, JE_fontCenter(pressKey, SMALL_FONT_SHAPES), temp2, pressKey);
 	}
 	else
-		JE_outTextGlow(VGAScreenSeg, 90, temp2, miscText[5-1]);
+		JE_outTextGlow(VGAScreenSeg, 90, temp2, pressKey);
 
 	// A gameplay wire test has no player to press past the level-complete screen.
 	if (!constantPlay && qa_net_gameplay_ticks == 0)

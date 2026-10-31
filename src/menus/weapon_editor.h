@@ -28,6 +28,7 @@ bool weaponEditorOutpostMusicSelfTest(void);
 bool weaponEditorSkinPreviewSelfTest(char *detail, size_t detailSize);
 bool weaponEditorIconPickerSelfTest(char *detail, size_t detailSize);
 bool weaponEditorTabNavSelfTest(char *detail, size_t detailSize);
+const char *weaponEditorPromptFault(void);
 void weaponEditorConfigLoad(const ConfigSection *section);
 void weaponEditorConfigSave(ConfigSection *section);
 

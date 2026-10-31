@@ -26,6 +26,7 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "net_style.h"
+#include "prompt.h"
 #include "sfx.h"
 #include "sndmast.h"
 #include "timing.h"
@@ -584,6 +585,32 @@ static int spInfoLines(const SpState *s, int cursor, SpInfoLine *lines)
 	return count;
 }
 
+static const char *const spKeyHint[2][2] = {
+	{ "Click or Enter picks, drag scrolls. Esc cancels.",
+	  "Click or Enter picks, drag scrolls, Tab pages. Esc cancels." },
+	{ "Click or Enter picks, drag scrolls, type a number. Esc cancels.",
+	  "Click or Enter picks, type a number, Tab pages. Esc cancels." },
+};
+static const char *const spPadHint[2] = {
+	"The {dpad} moves, {confirm} picks. {back} cancels.",
+	"The {dpad} moves, {confirm} picks, {pages} pages. {back} cancels.",
+};
+static const char spTouchHint[] = "Tap picks, drag scrolls. X cancels.";
+
+static PromptText spHint(bool numbered, bool paged)
+{
+	return (PromptText){ spKeyHint[numbered][paged], spPadHint[paged], spTouchHint };
+}
+
+const char *spritePickerHintFault(void)
+{
+	PromptText hints[4];
+	for (int i = 0; i < 4; ++i)
+		hints[i] = spHint(i / 2 != 0, i % 2 != 0);
+	return prompt_fit_fault(hints, COUNTOF(hints), small_font, LEGACY_WIDTH - 10,
+	                        "sprite picker hint");
+}
+
 static void spDraw(const SpState *s)
 {
 	const SpritePickerSpec *const spec = &s->spec;
@@ -635,20 +662,9 @@ static void spDraw(const SpState *s)
 	for (int i = 0; i < lineCount; ++i)
 		spDrawText(mid, iy1 + 5 + 10 * i, lines[i].text, lines[i].value);
 
-#if defined(__SWITCH__) || defined(__vita__)
-	const char *const hint = (spec->pageCount > 1)
-	                       ? "Tap or A picks, drag scrolls, L/R pages. B cancels."
-	                       : "Tap or A picks, drag scrolls. B cancels.";
-#else
-	const char *const hint = (p->listTag != NULL)
-	                       ? ((spec->pageCount > 1)
-	                          ? "Tap or Enter picks, drag scrolls, Tab pages. Esc cancels."
-	                          : "Tap or Enter picks, drag scrolls. Esc cancels.")
-	                       : (spec->pageCount > 1)
-	                       ? "Tap or Enter picks, drag scrolls, type a number, Tab pages."
-	                       : "Tap or Enter picks, drag scrolls, type a number. Esc cancels.";
-#endif
-	editorDrawHint(hint);
+	const PromptText hint = spHint(p->listTag == NULL, spec->pageCount > 1);
+	char line[96];
+	editorDrawHint(prompt_text(line, sizeof(line), &hint));
 }
 
 static void spEnsureVisible(SpState *s)

@@ -35,10 +35,12 @@
 #include "keyboard.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "net_start.h"
 #include "network.h"
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "prompt.h"
 #include "qa.h"
 #include "sfx.h"
 #include "sim_math.h"
@@ -980,6 +982,22 @@ static void JE_destructMain(void)
 }
 
 /* Compose from VGAScreen2 because online readiness redraws the title every frame. */
+static const PromptText destructTitleHelp[2] = {
+	{ NULL, "{fire} fires, {change} switches vehicle, the D-pad aims.",
+	  "The arrows aim, the buttons fire." },
+	{ NULL, "{lsidekick} and {rsidekick} change weapon.", "" },
+};
+
+const char *destruct_prompt_fault(void)
+{
+	PromptText lines[2];
+	for (int i = 0; i < 2; ++i)
+		lines[i] = (PromptText){ miscText[64 + i], destructTitleHelp[i].pad,
+		                         destructTitleHelp[i].touch };
+	return prompt_fit_fault(lines, COUNTOF(lines), TINY_FONT, LEGACY_WIDTH - 10,
+	                        "Destruct title help");
+}
+
 static void DE_composeIntro(bool localReady, bool peerReady)
 {
 	memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->h * VGAScreen->pitch);
@@ -1008,14 +1026,15 @@ static void DE_composeIntro(bool localReady, bool peerReady)
 		}
 
 		// Online, replace unsafe help and AI controls with barrier status.
+		char ownLine[64], leaveLine[64];
 		const char* const own = localReady ? "You are ready."
-		                                   : "Press any key when you are ready.";
+		                                   : prompt_text(ownLine, sizeof(ownLine), &netReadyPress);
 		const char* const other = peerReady ? "The other player is ready."
 		                                    : "Waiting for the other player...";
 		// Esc is a step back rather than a way out while this player stands confirmed, so it takes
 		// two presses to leave from there. Says which one it is about to be.
-		const char* const leave = localReady ? "Esc takes back your ready."
-		                                     : "Esc leaves the session.";
+		const char* const leave = prompt_text(leaveLine, sizeof(leaveLine),
+		                                      localReady ? &netReadyTakeBack : &netReadyLeave);
 		JE_outText(VGAScreen, center_text(own, TINY_FONT), 170, own, localReady ? 12 : 15, 4);
 		JE_outText(VGAScreen, center_text(other, TINY_FONT), 180, other, peerReady ? 12 : 15, 2);
 		JE_outText(VGAScreen, center_text(leave, TINY_FONT), 190, leave, 15, 2);
@@ -1025,8 +1044,14 @@ static void DE_composeIntro(bool localReady, bool peerReady)
 	(void)localReady;
 	(void)peerReady;
 
-	JE_outText(VGAScreen, center_text(miscText[64], TINY_FONT), 180, miscText[64], 15, 2);
-	JE_outText(VGAScreen, center_text(miscText[65], TINY_FONT), 190, miscText[65], 15, 2);
+	char help[2][64];
+	for (int i = 0; i < 2; ++i)
+	{
+		const PromptText line = { miscText[64 + i], destructTitleHelp[i].pad,
+		                          destructTitleHelp[i].touch };
+		prompt_text(help[i], sizeof(help[i]), &line);
+		JE_outText(VGAScreen, center_text(help[i], TINY_FONT), 180 + 10 * i, help[i], 15, 2);
+	}
 }
 
 /* Online title barrier: both players confirm before the battle starts. Escape

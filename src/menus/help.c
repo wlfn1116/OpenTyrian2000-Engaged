@@ -32,6 +32,7 @@
 #include "network.h"
 #include "palette.h"
 #include "picload.h"
+#include "prompt.h"
 #include "render_list.h"
 #include "sfx.h"
 #include "sndmast.h"
@@ -44,6 +45,10 @@
 
 #define MAX_PAGE 8
 #define TOPICS 6
+
+#define HELP_PLATE_X   16
+#define HELP_PLATE_W   228
+#define HELP_PLATE_MID 140
 static const JE_byte topicStart[TOPICS] = { 0, 1, 2, 3, 7, 255 };
 
 static bool helpSystemPage(Uint8 *topic, bool *restart);
@@ -449,8 +454,12 @@ void JE_inGameHelp(void)
 	}
 
 	// "press a key"
-	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
-	JE_outText(VGAScreenSeg, 120 - JE_textWidth(miscText[5 - 1], TINY_FONT) / 2 + 20, vga_height - 10, miscText[5 - 1], 0, 4);
+	char pressKey[32];
+	prompt_text(pressKey, sizeof(pressKey), &helptextPressKey);
+	// in-game text area
+	blit_sprite(VGAScreenSeg, HELP_PLATE_X, vga_height - 11, OPTION_SHAPES, 36);
+	JE_outText(VGAScreenSeg, HELP_PLATE_MID - JE_textWidth(pressKey, TINY_FONT) / 2,
+	           vga_height - 10, pressKey, 0, 4);
 
 	do
 	{
@@ -475,4 +484,10 @@ void JE_inGameHelp(void)
 	VGAScreen = temp_surface;
 
 	render_list_recording = rl_was_recording;
+}
+
+const char *help_prompt_fault(void)
+{
+	return prompt_fit_fault(&helptextPressKey, 1, TINY_FONT,
+	                        2 * (HELP_PLATE_X + HELP_PLATE_W - HELP_PLATE_MID), "in-game help");
 }

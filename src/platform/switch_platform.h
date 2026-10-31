@@ -48,6 +48,7 @@ void switch_controller_setup(int players);
 bool switch_slot_connected(int slot);
 // Whether that controller is a single Joy-Con, which is held sideways.
 bool switch_slot_single_joycon(int slot);
+bool switch_slot_left_joycon(int slot);
 
 // The buttons switch-sdl2 leaves out of a single Joy-Con, as bits of switch_slot_joycon_extra.
 // Both sides share them, the way switch-sdl2 numbers the rest of a single Joy-Con.

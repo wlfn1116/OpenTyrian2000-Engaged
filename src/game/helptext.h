@@ -20,6 +20,8 @@
 
 #include "opentyr.h"
 
+#include "prompt.h"
+
 #include "SDL.h"
 
 #include <stdio.h>
@@ -67,10 +69,16 @@ extern char shipInfo[HELPTEXT_SHIPINFO_COUNT][2][256];
 extern char superTyrianText[6][64];
 extern char menuInt[MENU_MAX+1][14][24];
 
+extern const PromptText helptextPressKey;
+
 void read_encrypted_pascal_string(char *s, size_t size, FILE *f);
 
 void JE_helpBox(SDL_Surface *screen, int x, int y, const char *message, unsigned int boxwidth);
 void JE_HBox(SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsigned int boxwidth);
 void JE_loadHelpText(void);
+
+PromptText helptext_menu_prompt(size_t index);
+const char *helptext_menu_help(char *buf, size_t size, size_t index);
+const char *helptext_prompt_fault(void);
 
 #endif /* HELPTEXT_H */

@@ -34,6 +34,7 @@
 #include "mouse.h"
 #include "network.h"
 #include "player.h"
+#include "prompt.h"
 #include "touch_ui.h"
 #include "video.h"
 
@@ -329,6 +330,41 @@ enum  // row kinds
 	EDR_LEVEL     // a level from allLevel*: the endless base list AND the campaign picker
 };
 enum { EDS_HUB, EDS_SECMOD, EDS_BUFMOD, EDS_PERK, EDS_GAMBLE, EDS_SCALING, EDS_BASE, EDS_SCREENS };
+
+static const PromptText debugScreenKeys[EDS_SCREENS] = {
+	{ "{confirm} Open  {back} Apply and close", NULL, NULL },
+	{ "{confirm} Toggle  {back} Back  {pages} Page", NULL, "Tap Toggle  X Back" },
+	{ "{confirm} Toggle  {back} Back", NULL, NULL },
+	{ "{confirm} Stack  Left/Right Adjust  {back} Back", NULL, NULL },
+	{ "{confirm} Fire  {back} Back  {pages} Page", NULL, "Tap Fire  X Back" },
+	{ "{confirm} Pin  Left/Right Adjust  {back} Back", NULL, NULL },
+	{ "{confirm} Pick  Left/Right Episode  {back} Back", NULL, NULL },
+};
+static const PromptText debugJumpKeys = { "{confirm} Open  {back} Close", NULL, NULL };
+static const PromptText debugBrowseKeys = {
+	"{confirm} Play  Left/Right Episode  {back} Back", NULL, NULL
+};
+static const PromptText debugZoneHelp = {
+	"Type a number, Left/Right +-1, {pages} +-10",
+#ifdef PLATFORM_HANDHELD
+	"{confirm} types, Left/Right +-1, {pages} +-10",
+#else
+	"Left/Right +-1, {pages} +-10",
+#endif
+	"Left/Right +-1",
+};
+static const PromptText debugGambleHelp = { "{confirm} fires this outcome now", NULL, NULL };
+
+const char *debugLevelsPromptFault(void)
+{
+	const char *fault = prompt_fit_fault(debugScreenKeys, EDS_SCREENS, small_font, 240,
+	                                     "Endless debug keys");
+	const PromptText *const more[] = { &debugJumpKeys, &debugBrowseKeys, &debugZoneHelp,
+	                                   &debugGambleHelp };
+	for (size_t i = 0; i < COUNTOF(more) && fault == NULL; ++i)
+		fault = prompt_fit_fault(more[i], 1, small_font, 240, "Endless debug help");
+	return fault;
+}
 enum { EDA_CLEAR, EDA_RESET, EDA_UNPIN };
 
 // The read-only figures on the scaling page: derived from depth like the levers, but with no knob
@@ -463,27 +499,6 @@ static bool endlessDebugScreen(bool jumpMode)
 		"SECTOR MODIFIERS", "PERSONAL BUFFS",
 		"PERKS", "GAMBLE OUTCOMES", "ZONE SCALING", "BASE LEVEL"
 	};
-#if defined(__SWITCH__) || defined(__vita__)
-	const char *const screenKeys[EDS_SCREENS] = {
-		jumpMode ? "A Open   B Close" : "A Open   B Apply and close",
-		"A Toggle   B Back   L/R Page",
-		"A Toggle   B Back",
-		"A Stack   B Back   L/R Page",
-		"A Fire   B Back   L/R Page",
-		"A Pin/unpin   L/R Adjust   B Back",
-		"A Pick   B Back   L/R Episode",
-	};
-#else
-	const char *const screenKeys[EDS_SCREENS] = {
-		jumpMode ? "Enter Open   Esc Close" : "Enter Open   Esc Apply and close",
-		"Enter Toggle   Esc Back   PgUp/PgDn",
-		"Enter Toggle   Esc Back",
-		"Enter Stack   L/R Adjust   Esc Back",
-		"Enter Fire   Esc Back",
-		"Enter Pin/unpin   L/R Adjust   Esc Back",
-		"Enter Pick   L/R Episode   Esc Back",
-	};
-#endif
 
 	const int NSEC   = (int)COUNTOF(endlessDebugSectorMods);
 	const int NBUF   = (int)COUNTOF(endlessDebugBuffMods);
@@ -901,11 +916,7 @@ static bool endlessDebugScreen(bool jumpMode)
 			break;
 		}
 		case EDR_ZONE:
-#if defined(__SWITCH__) || defined(__vita__)
-			help = "Confirm types a number;  L/R  +-10";
-#else
-			help = "Type a number;  L/R  +-1,  PgUp/PgDn  +-10";
-#endif
+			help = prompt_text(helpBuf, sizeof(helpBuf), &debugZoneHelp);
 			break;
 		case EDR_BASE:
 			help = "The shipped level under the zone";
@@ -943,7 +954,8 @@ static bool endlessDebugScreen(bool jumpMode)
 			help = endlessPerkDesc(rows[s].idx);
 			break;
 		case EDR_GAMBLE:
-			help = (dbgGambleMsg[0] != '\0') ? dbgGambleMsg : "Confirm fires this outcome now";
+			help = (dbgGambleMsg[0] != '\0') ? dbgGambleMsg
+			       : prompt_text(helpBuf, sizeof(helpBuf), &debugGambleHelp);
 			break;
 		case EDR_LEVEL:
 			if (rows[s].idx < 0)
@@ -960,7 +972,11 @@ static bool endlessDebugScreen(bool jumpMode)
 		}
 		if (help[0] != '\0')
 			draw_font_hv(VGAScreen, mid_x, py1 - 18, help, small_font, centered, 15, 1);
-		draw_font_hv(VGAScreen, mid_x, py1 - 9, screenKeys[screen], small_font, centered, 15, -3);
+		char keys[96];
+		const PromptText *const keyText = (screen == EDS_HUB && jumpMode)
+		                                  ? &debugJumpKeys : &debugScreenKeys[screen];
+		draw_font_hv(VGAScreen, mid_x, py1 - 9, prompt_text(keys, sizeof(keys), keyText),
+		             small_font, centered, 15, -3);
 
 		// A scrolling list: this screen keeps the cursor keys (see JE_debugMenu).
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
@@ -974,12 +990,10 @@ static bool endlessDebugScreen(bool jumpMode)
 
 		NETWORK_KEEP_ALIVE();  // browsing every level in the game can take a while; hold the link
 
-#if defined(__SWITCH__) || defined(__vita__)
 		{
 			static bool shoulder_was[2];
 			debug_panel_shoulder_paging(shoulder_was);
 		}
-#endif
 
 		/* wheel moves the selection; hover highlights; left-click acts on the row (the same thing
 		 * Confirm does there); right-click backs out. */
@@ -1562,13 +1576,9 @@ bool JE_debugLevelSelect(void)
 			         allLevelEp[lv], allLevelSec[lv], allLevelFile[lv]);
 			draw_font_hv(VGAScreen, mid_x, py1 - 18, detail, small_font, centered, 15, 1);
 		}
-#if defined(__SWITCH__) || defined(__vita__)
-		draw_font_hv(VGAScreen, mid_x, py1 - 9, "A Play   B Back   L/R Episode",
+		char keys[96];
+		draw_font_hv(VGAScreen, mid_x, py1 - 9, prompt_text(keys, sizeof(keys), &debugBrowseKeys),
 		             small_font, centered, 15, -3);
-#else
-		draw_font_hv(VGAScreen, mid_x, py1 - 9, "Enter Play   L/R Episode   Esc Back",
-		             small_font, centered, 15, -3);
-#endif
 
 		// A scrolling list: this screen keeps the cursor keys (see JE_debugMenu).
 		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
@@ -1583,12 +1593,10 @@ bool JE_debugLevelSelect(void)
 
 		NETWORK_KEEP_ALIVE();  // browsing every level in the game can take a while; hold the link
 
-#if defined(__SWITCH__) || defined(__vita__)
 		{
 			static bool shoulder_was[2];
 			debug_panel_shoulder_paging(shoulder_was);
 		}
-#endif
 
 		/* wheel moves the selection; hover highlights on pointer motion; a click plays the row
 		 * under it; right-click backs out. */

@@ -38,6 +38,7 @@
 #include "palette.h"
 #include "picload.h"
 #include "player.h"
+#include "prompt.h"
 #include "render_list.h"
 #include "sfx.h"
 #include "ship_skin.h"
@@ -114,58 +115,70 @@ enum
 	CWF_COUNT
 };
 
-static const struct { const char *label, *help; } cwFields[CWF_COUNT] =
+static const struct { const char *label; PromptText help; } cwFields[CWF_COUNT] =
 {
-	{ "Weapon",          "Choose which saved weapon to edit." },
-	{ "Name",            "Type to rename. Backspace erases." },
-	{ "Equip To",        "Mount it in a gun bay or as a sidekick." },
-	{ "Shop Icon",       "Shop and HUD icon. Enter or click opens the icon grid." },
-	{ "Cost",            "The shop price." },
-	{ "Power Use",       "Generator power drained by each shot." },
-	{ "Level",           "The power level being edited and previewed." },
-	{ "Fire Modes",      "A rear gun can toggle between two designs." },
-	{ "Fire Mode",       "Which of the two rear designs you are editing." },
-	{ "Fire Rate",       "Ticks between volleys. Lasers need Every tick." },
-	{ "Bullets",         "Bullets fired in each volley." },
-	{ "Pattern",         "Pattern length. Above Bullets varies volleys." },
-	{ "Anim Frames",     "Sprite frames each bullet cycles through." },
-	{ "Homing",          "Steers bullets toward enemies above 5." },
-	{ "Accel Up",        "Vertical acceleration." },
-	{ "Accel Side",      "Sideways acceleration." },
-	{ "Spiral",          "Corkscrew radius. Off flies straight." },
-	{ "Sound",           "Sound played when the weapon fires." },
-	{ "Trail",           "Exhaust trail behind each bullet." },
-	{ "Blast FX",        "Palette filter of the impact flash." },
-	{ "Bullet",          "Which bullet the rows below edit." },
-	{ "Sprite",          "Bullet sprite. Enter or click opens the sprite grid." },
-	{ "Sparks",          "Trail sparks in the bullet's own colour." },
-	{ "Damage",          "Damage per hit. 99 freezes as Ice." },
-	{ "Explode To",      "On a hit, burst into another weapon instead." },
-	{ "Life",            "Lifetime in ticks, or an aim or animation code." },
-	{ "Speed X",         "Plus moves right, minus left. Above 100 locks." },
-	{ "Speed Y",         "Plus moves up, minus down. 98 hovers." },
-	{ "Offset X",        "Horizontal spawn offset from the ship." },
-	{ "Offset Y",        "Vertical spawn offset from the ship." },
-	{ "Source",          "Stock weapon to copy from. The preview fires it." },
-	{ "Source Level",    "Source level for Replace and Add To Level." },
-	{ "Mount",           "Where the sidekick sits around the ship." },
-	{ "Body Sprite",     "Sidekick body. Charge stages step up. Enter opens the grid." },
-	{ "Body Frames",     "Body animation frames. 1 is static." },
-	{ "Frame Step",      "Sprite gap between body animation frames." },
-	{ "Animate",         "Animate the body always or once per shot." },
-	{ "Charge Stages",   "Charge shots. Each stage is a level to edit." },
-	{ "Targets",         "Practice targets that show hits, ice and homing." },
-	{ "Stats",           "Damage and fire rate under the level chart." },
-	{ "Star Background", "Show the drifting stars behind the preview." },
-	{ "Target Size",     "Width of the practice targets." },
-	{ "Target Spread",   "Space between the targets." },
-	{ "Target Y",        "How high the targets sit. Drag them too." },
-	{ "Target X",        "Slide the target row. Drag it too." },
-	{ "Target Armor",    "Target toughness. Higher drains slower." },
-	{ "Ship",            "The ship flying the preview. Enter opens the grid." },
-	{ "Ship X",          "Move the ship. Drag it too." },
-	{ "Ship Y",          "Move the ship. Drag it too." },
-	{ "Spread",          "How Auto-Scale lays out bullets. Auto picks at random." },
+	{ "Weapon",          { "Choose which saved weapon to edit." } },
+	{ "Name",            { "Type to rename. Backspace erases.",
+#ifdef PLATFORM_HANDHELD
+	                       "Press {confirm} to rename.",
+#else
+	                       NULL,
+#endif
+	                       "Tap to rename." } },
+	{ "Equip To",        { "Mount it in a gun bay or as a sidekick." } },
+	{ "Shop Icon",       { "Shop and HUD icon. Enter or click opens the icon grid.",
+	                       "Shop and HUD icon. {confirm} opens the icon grid.",
+	                       "Shop and HUD icon. Tap to open the icon grid." } },
+	{ "Cost",            { "The shop price." } },
+	{ "Power Use",       { "Generator power drained by each shot." } },
+	{ "Level",           { "The power level being edited and previewed." } },
+	{ "Fire Modes",      { "A rear gun can toggle between two designs." } },
+	{ "Fire Mode",       { "Which of the two rear designs you are editing." } },
+	{ "Fire Rate",       { "Ticks between volleys. Lasers need Every tick." } },
+	{ "Bullets",         { "Bullets fired in each volley." } },
+	{ "Pattern",         { "Pattern length. Above Bullets varies volleys." } },
+	{ "Anim Frames",     { "Sprite frames each bullet cycles through." } },
+	{ "Homing",          { "Steers bullets toward enemies above 5." } },
+	{ "Accel Up",        { "Vertical acceleration." } },
+	{ "Accel Side",      { "Sideways acceleration." } },
+	{ "Spiral",          { "Corkscrew radius. Off flies straight." } },
+	{ "Sound",           { "Sound played when the weapon fires." } },
+	{ "Trail",           { "Exhaust trail behind each bullet." } },
+	{ "Blast FX",        { "Palette filter of the impact flash." } },
+	{ "Bullet",          { "Which bullet the rows below edit." } },
+	{ "Sprite",          { "Bullet sprite. Enter or click opens the sprite grid.",
+	                       "Bullet sprite. {confirm} opens the sprite grid.",
+	                       "Bullet sprite. Tap to open the sprite grid." } },
+	{ "Sparks",          { "Trail sparks in the bullet's own colour." } },
+	{ "Damage",          { "Damage per hit. 99 freezes as Ice." } },
+	{ "Explode To",      { "On a hit, burst into another weapon instead." } },
+	{ "Life",            { "Lifetime in ticks, or an aim or animation code." } },
+	{ "Speed X",         { "Plus moves right, minus left. Above 100 locks." } },
+	{ "Speed Y",         { "Plus moves up, minus down. 98 hovers." } },
+	{ "Offset X",        { "Horizontal spawn offset from the ship." } },
+	{ "Offset Y",        { "Vertical spawn offset from the ship." } },
+	{ "Source",          { "Stock weapon to copy from. The preview fires it." } },
+	{ "Source Level",    { "Source level for Replace and Add To Level." } },
+	{ "Mount",           { "Where the sidekick sits around the ship." } },
+	{ "Body Sprite",     { "Sidekick body. Charge stages step up. {confirm} opens the grid.", NULL,
+	                       "Sidekick body. Charge stages step up. Tap to open the grid." } },
+	{ "Body Frames",     { "Body animation frames. 1 is static." } },
+	{ "Frame Step",      { "Sprite gap between body animation frames." } },
+	{ "Animate",         { "Animate the body always or once per shot." } },
+	{ "Charge Stages",   { "Charge shots. Each stage is a level to edit." } },
+	{ "Targets",         { "Practice targets that show hits, ice and homing." } },
+	{ "Stats",           { "Damage and fire rate under the level chart." } },
+	{ "Star Background", { "Show the drifting stars behind the preview." } },
+	{ "Target Size",     { "Width of the practice targets." } },
+	{ "Target Spread",   { "Space between the targets." } },
+	{ "Target Y",        { "How high the targets sit. Drag them too." } },
+	{ "Target X",        { "Slide the target row. Drag it too." } },
+	{ "Target Armor",    { "Target toughness. Higher drains slower." } },
+	{ "Ship",            { "The ship flying the preview. {confirm} opens the grid.", NULL,
+	                       "The ship flying the preview. Tap to open the grid." } },
+	{ "Ship X",          { "Move the ship. Drag it too." } },
+	{ "Ship Y",          { "Move the ship. Drag it too." } },
+	{ "Spread",          { "How Auto-Scale lays out bullets. Auto picks at random." } },
 };
 
 enum
@@ -196,31 +209,31 @@ enum
 	CWA_COUNT
 };
 
-static const struct { const char *label, *help; } cwActs[CWA_COUNT] =
+static const struct { const char *label; PromptText help; } cwActs[CWA_COUNT] =
 {
-	{ "Undo",          "Take back the last edit. Also Ctrl+Z." },
-	{ "Redo",          "Restore an undone edit. Also Ctrl+Y." },
-	{ "Save",          "Save the weapon library now. Also Ctrl+S." },
-	{ "Equip",         "Equip this weapon and return to the shop." },
-	{ "Done",          "Save the library and leave." },
-	{ "New",           "Add a new weapon to the library." },
-	{ "Duplicate",     "Copy this weapon into a new library slot." },
-	{ "Delete",        "Remove this weapon from the library." },
-	{ "Revert",        "Discard every change made since opening." },
-	{ "Add Bullet",    "Duplicate the selected bullet." },
-	{ "Remove Bullet", "Delete the selected bullet." },
-	{ "Auto-Scale",    "Build the other levels from this one." },
-	{ "Copy To All",   "Copy this level to every level." },
-	{ "Copy Level",    "Copy this level for pasting elsewhere." },
-	{ "Paste Level",   "Replace this level with the copied one." },
-	{ "Randomize",     "Roll a random design and name for this level." },
-	{ "Reset Level",   "Restore this level to the default blaster." },
-	{ "Reset Weapon",  "Restore the whole weapon to its defaults." },
-	{ "Replace Level", "Replace this level with the source's shots." },
-	{ "Replace All",   "Replace the whole weapon with the source." },
-	{ "Add To Level",  "Add the source's bullets to this level." },
-	{ "Add To All",    "Add the source's bullets to every level." },
-	{ "Reset Range",   "Restore the default ship and target layout." },
+	{ "Undo",          { "Take back the last edit. Also Ctrl+Z.", "Take back the last edit.", NULL } },
+	{ "Redo",          { "Restore an undone edit. Also Ctrl+Y.", "Restore an undone edit.", NULL } },
+	{ "Save",          { "Save the weapon library now. Also Ctrl+S.", "Save the weapon library now.", NULL } },
+	{ "Equip",         { "Equip this weapon and return to the shop." } },
+	{ "Done",          { "Save the library and leave." } },
+	{ "New",           { "Add a new weapon to the library." } },
+	{ "Duplicate",     { "Copy this weapon into a new library slot." } },
+	{ "Delete",        { "Remove this weapon from the library." } },
+	{ "Revert",        { "Discard every change made since opening." } },
+	{ "Add Bullet",    { "Duplicate the selected bullet." } },
+	{ "Remove Bullet", { "Delete the selected bullet." } },
+	{ "Auto-Scale",    { "Build the other levels from this one." } },
+	{ "Copy To All",   { "Copy this level to every level." } },
+	{ "Copy Level",    { "Copy this level for pasting elsewhere." } },
+	{ "Paste Level",   { "Replace this level with the copied one." } },
+	{ "Randomize",     { "Roll a random design and name for this level." } },
+	{ "Reset Level",   { "Restore this level to the default blaster." } },
+	{ "Reset Weapon",  { "Restore the whole weapon to its defaults." } },
+	{ "Replace Level", { "Replace this level with the source's shots." } },
+	{ "Replace All",   { "Replace the whole weapon with the source." } },
+	{ "Add To Level",  { "Add the source's bullets to this level." } },
+	{ "Add To All",    { "Add the source's bullets to every level." } },
+	{ "Reset Range",   { "Restore the default ship and target layout." } },
 };
 
 enum
@@ -369,18 +382,14 @@ static const CwLine *const cwPageLines[CWP_COUNT] =
 	cwImportLines, cwSidekickLines, cwRangeLines, cwHelpLines,
 };
 
-static const char *const cwHelpText[][2] =
+typedef struct
 {
-#ifdef PLATFORM_HANDHELD
-	{ "Up, Down",        "Choose a row" },
-	{ "Left, Right",     "Value or page" },
-	{ "Confirm",         "Use a button" },
-	{ "Cancel",          "Save and leave" },
-	{ "Tap a row",       "Select, change" },
-	{ "Tap a tab",       "Open that page" },
-	{ "Tap a level bar", "Edit that level" },
-	{ "Drag preview",    "Ship and targets" },
-#else
+	const char *key, *action;
+}
+CwKeyRow;
+
+static const CwKeyRow cwKeysKeyboard[] =
+{
 	{ "Tab",             "Next page" },
 	{ "PgUp, PgDn",      "Change level" },
 	{ "[ and ]",         "Change bullet" },
@@ -392,7 +401,59 @@ static const char *const cwHelpText[][2] =
 	{ "Click level bar", "Edit that level" },
 	{ "Drag preview",    "Ship and targets" },
 	{ "Esc",             "Save and leave" },
+};
+
+static const CwKeyRow cwKeysPad[] =
+{
+	{ "Up, Down",        "Choose a row" },
+	{ "Left, Right",     "Value or page" },
+	{ "{confirm}",       "Use a button" },
+	{ "{back}",          "Save and leave" },
+#ifdef PLATFORM_HANDHELD
+	{ "Tap a row",       "Select, change" },
+	{ "Tap a tab",       "Open that page" },
+	{ "Tap level bar",   "Edit that level" },
+	{ "Drag preview",    "Ship and targets" },
 #endif
+};
+
+static const CwKeyRow cwKeysTouch[] =
+{
+	{ "Tap a row",       "Select, change" },
+	{ "Tap a tab",       "Open that page" },
+	{ "Tap level bar",   "Edit that level" },
+	{ "Drag preview",    "Ship and targets" },
+	{ "{back}",          "Save and leave" },
+};
+
+static const CwKeyRow *cwKeyRows(PromptDevice device, size_t *count)
+{
+	switch (device)
+	{
+	case PROMPT_PAD:
+		*count = COUNTOF(cwKeysPad);
+		return cwKeysPad;
+	case PROMPT_TOUCH:
+		*count = COUNTOF(cwKeysTouch);
+		return cwKeysTouch;
+	case PROMPT_KEYBOARD:
+	default:
+		*count = COUNTOF(cwKeysKeyboard);
+		return cwKeysKeyboard;
+	}
+}
+
+static const PromptText cwTypingHint = {
+	"Type a value. {confirm} sets it, {back} cancels.", NULL, NULL
+};
+static const PromptText cwNumberHint = {
+	" Type a number.",
+#ifdef PLATFORM_HANDHELD
+	" {confirm} types a number.",
+#else
+	"",
+#endif
+	"",
 };
 
 static const char *const cwSlotNames[CUSTOM_EQUIP_COUNT] =
@@ -427,6 +488,7 @@ enum
 	CW_PAN_MID = (CW_PAN_X0 + CW_PAN_X1) / 2,
 	CW_INNER_X0 = CW_PAN_X0 + 2, CW_INNER_X1 = CW_PAN_X1 - 2,
 	CW_LABEL_X = CW_PAN_X0 + 5, CW_VALUE_X = CW_PAN_X1 - 5,
+	CW_KEY_COLUMN = 76,
 	CW_TAB_Y0 = 19, CW_TAB_PITCH = 12, CW_TAB_COLS = 4,
 	CW_PAGE_Y0 = 46, CW_ROW_H = 10, CW_GAP_H = 3,
 	CW_ACTIONS_Y = CW_PAN_Y1 - 11,
@@ -3072,12 +3134,16 @@ static void cwDrawPageExtras(void)
 	case CWP_HELP:
 	{
 		int y = CW_PAGE_Y0;
-		for (size_t i = 0; i < COUNTOF(cwHelpText); ++i, y += CW_ROW_H)
+		size_t count;
+		const CwKeyRow *const rows = cwKeyRows(prompt_device(), &count);
+		for (size_t i = 0; i < count; ++i, y += CW_ROW_H)
 		{
-			draw_font_hv_shadow(VGAScreen, CW_LABEL_X, y, cwHelpText[i][0], small_font,
-			                    left_aligned, 15, 6, false, 1);
-			draw_font_hv_shadow(VGAScreen, CW_LABEL_X + 76, y, cwHelpText[i][1], small_font,
-			                    left_aligned, 15, 3, false, 1);
+			char key[32];
+			prompt_expand(key, sizeof(key), rows[i].key);
+			draw_font_hv_shadow(VGAScreen, CW_LABEL_X, y, key, small_font, left_aligned, 15, 6,
+			                    false, 1);
+			draw_font_hv_shadow(VGAScreen, CW_LABEL_X + CW_KEY_COLUMN, y, rows[i].action,
+			                    small_font, left_aligned, 15, 3, false, 1);
 		}
 		break;
 	}
@@ -3118,12 +3184,39 @@ static void cwDrawPanel(Uint32 clock_ms)
 	cwDrawPageExtras();
 }
 
+const char *weaponEditorPromptFault(void)
+{
+	const int hint = LEGACY_WIDTH - 10;
+	const char *fault = prompt_fit_fault(&cwTypingHint, 1, small_font, hint, "weapon editor hint");
+	for (int f = 0; f < CWF_COUNT && fault == NULL; ++f)
+		fault = prompt_fit_fault(&cwFields[f].help, 1, small_font, hint,
+		                         "weapon editor field help");
+	for (int a = 0; a < CWA_COUNT && fault == NULL; ++a)
+		fault = prompt_fit_fault(&cwActs[a].help, 1, small_font, hint, "weapon editor button help");
+
+	for (int d = PROMPT_KEYBOARD; d <= PROMPT_PAD && fault == NULL; ++d)
+	{
+		size_t count;
+		const CwKeyRow *const rows = cwKeyRows((PromptDevice)d, &count);
+		const int actionWidth = CW_INNER_X1 - (CW_LABEL_X + CW_KEY_COLUMN);
+		for (size_t i = 0; i < count && fault == NULL; ++i)
+		{
+			const PromptText key = { rows[i].key, rows[i].key, rows[i].key };
+			const PromptText action = { rows[i].action, NULL, NULL };
+			fault = prompt_fit_fault(&key, 1, small_font, CW_KEY_COLUMN - 4, "weapon editor keys");
+			if (fault == NULL)
+				fault = prompt_fit_fault(&action, 1, small_font, actionWidth, "weapon editor keys");
+		}
+	}
+	return fault;
+}
+
 static const char *cwHintText(char *buf, size_t n)
 {
 	if (cwNoticeTicks > 0)
 		return cwNotice;
 	if (cwNumField >= 0)
-		return "Type a value. Enter sets it, Esc cancels.";
+		return prompt_text(buf, n, &cwTypingHint);
 
 	const CwNav *const nav = &cwNav[cwSelRow];
 	switch (nav->kind)
@@ -3139,19 +3232,18 @@ static const char *cwHintText(char *buf, size_t n)
 		int lo, hi;
 		if (!cwFieldActive(f))
 			return cwFieldInactiveReason(f);
-#ifdef PLATFORM_HANDHELD
-		if (f == CWF_NAME)
-			return "Press Confirm to rename.";
-#endif
 		if (f == CWF_POWER_LEVEL && cwIsSidekickSlot() && customWeaponChargeStages > 1)
 			return "The charge stage being edited and previewed.";
+		char help[128], number[48];
+		prompt_text(help, sizeof(help), &cwFields[f].help);
 		if (cwNumericRange(f, &lo, &hi))
 		{
-			snprintf(buf, n, "%s Type a number.", cwFields[f].help);
+			snprintf(buf, n, "%s%s", help, prompt_text(number, sizeof(number), &cwNumberHint));
 			if (JE_textWidth(buf, small_font) <= LEGACY_WIDTH - 20)
 				return buf;
 		}
-		return cwFields[f].help;
+		snprintf(buf, n, "%s", help);
+		return buf;
 	}
 	default:
 	{
@@ -3161,7 +3253,7 @@ static const char *cwHintText(char *buf, size_t n)
 			snprintf(buf, n, "Choose %s again to confirm.", cwActs[a].label);
 			return buf;
 		}
-		return cwActs[a].help;
+		return prompt_text(buf, n, &cwActs[a].help);
 	}
 	}
 }

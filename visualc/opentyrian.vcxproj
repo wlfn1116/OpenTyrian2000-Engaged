@@ -195,6 +195,7 @@
     <ClCompile Include="..\src\input\joystick.c" />
     <ClCompile Include="..\src\input\keyboard.c" />
     <ClCompile Include="..\src\input\mouse.c" />
+    <ClCompile Include="..\src\input\prompt.c" />
     <ClCompile Include="..\src\input\rumble.c" />
     <ClCompile Include="..\src\input\touch_ui.c" />
     <ClCompile Include="..\src\level\custom_episode.c" />
@@ -428,6 +429,7 @@
     <ClInclude Include="..\src\input\joystick.h" />
     <ClInclude Include="..\src\input\keyboard.h" />
     <ClInclude Include="..\src\input\mouse.h" />
+    <ClInclude Include="..\src\input\prompt.h" />
     <ClInclude Include="..\src\input\rumble.h" />
     <ClInclude Include="..\src\input\touch_ui.h" />
     <ClInclude Include="..\src\level\custom_episode.h" />

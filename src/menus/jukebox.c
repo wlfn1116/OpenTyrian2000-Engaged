@@ -26,6 +26,7 @@
 #include "mtrand.h"
 #include "musmast.h"
 #include "palette.h"
+#include "prompt.h"
 #include "sfx.h"
 #include "starlib.h"
 #include "timing.h"
@@ -125,25 +126,30 @@ static const struct
 	{ JOYSTICK_SHOULDER_LEFT, SDL_SCANCODE_M },
 };
 
-#if defined(__SWITCH__)
-static const char *const jukeboxHelp[2][2] =
+static const PromptText jukeboxHelp[2][2] =
 {
-	{ "Press B to quit the jukebox.", "The D-pad changes the song being played." },
-	{ "The D-pad picks a sound, A plays it.", "L mutes the music. B quits the jukebox." },
+	{
+		{ "Esc quits, / switches to sounds, F hides the text.",
+		  "{back} quits, {north} switches to sounds, {west} hides the text.",
+		  "X quits, the cycle button switches to sounds." },
+		{ "The arrow keys change the song being played.",
+		  "The {dpad} changes the song being played.",
+		  "The arrows change the song being played." },
+	},
+	{
+		{ "The arrow keys pick a sound, Enter plays it.",
+		  "The {dpad} picks a sound, {confirm} plays it.",
+		  "The arrows pick a sound, the speaker plays it." },
+		{ "M mutes the music, / switches to songs, Esc quits.",
+		  "{pageleft} mutes the music, {north} switches to songs, {back} quits.",
+		  "The mute button silences the music. X quits." },
+	},
 };
-#elif defined(__vita__)
-static const char *const jukeboxHelp[2][2] =
+
+const char *jukebox_qa_help_fault(void)
 {
-	{ "Press Circle to quit the jukebox.", "The D-pad changes the song being played." },
-	{ "The D-pad picks a sound, Cross plays it.", "L mutes the music. Circle quits the jukebox." },
-};
-#else
-static const char *const jukeboxHelp[2][2] =
-{
-	{ "Press ESC to quit the jukebox.", "Arrow keys change the song being played." },
-	{ "Arrow keys pick a sound, Enter plays it.", "M mutes the music. ESC quits the jukebox." },
-};
-#endif
+	return prompt_fit_fault(&jukeboxHelp[0][0], 4, small_font, LEGACY_WIDTH - 10, "jukebox help");
+}
 
 unsigned jukebox_claimed_buttons(void)
 {
@@ -292,8 +298,11 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 			
 			const int x = VGAScreen->w / 2;
 
-			draw_font_hv(VGAScreen, x, 170, jukeboxHelp[fx][0], small_font, centered, 1, 0);
-			draw_font_hv(VGAScreen, x, 180, jukeboxHelp[fx][1], small_font, centered, 1, 0);
+			char help[2][96];
+			prompt_text(help[0], sizeof(help[0]), &jukeboxHelp[fx][0]);
+			prompt_text(help[1], sizeof(help[1]), &jukeboxHelp[fx][1]);
+			draw_font_hv(VGAScreen, x, 170, help[0], small_font, centered, 1, 0);
+			draw_font_hv(VGAScreen, x, 180, help[1], small_font, centered, 1, 0);
 			draw_font_hv(VGAScreen, x, 190, buffer, small_font, centered, 1, 4);
 		}
 

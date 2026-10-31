@@ -29,5 +29,6 @@ bool JE_shipEditorConfirmationSelfTest(void);
 bool JE_shipEditorOutpostMusicSelfTest(void);
 bool JE_shipStripImageSelfTest(void);
 bool JE_shipStripColorSelfTest(void);
+const char *JE_shipEditorPromptFault(void);
 
 #endif /* SHIP_EDITOR_H */

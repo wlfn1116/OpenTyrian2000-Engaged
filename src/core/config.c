@@ -822,6 +822,7 @@ static bool load_opentyrian_config(void)
 		config_get_int_option(section, "rumble", &rumble_strength);
 		if (rumble_strength < RUMBLE_OFF || rumble_strength >= RUMBLE_COUNT)
 			rumble_strength = RUMBLE_OFF;
+		load_int_flag(section, "joycons_separate", &joycons_separate);
 
 		load_int_flag(section, "debug_mode", &debugMode);
 
@@ -1177,6 +1178,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "sfx_filter", sfx_filter);
 	config_set_int_option(section, "sfx_copy_limit", sfx_copy_limit);
 	config_set_int_option(section, "rumble", rumble_strength);
+	config_set_int_option(section, "joycons_separate", joycons_separate ? 1 : 0);
 	config_set_int_option(section, "debug_mode", debugMode ? 1 : 0);
 	config_set_int_option(section, "hang_timeout", crashlog_get_hang_timeout());
 	config_set_int_option(section, "net_log", crashlog_get_netlog_enabled() ? 1 : 0);

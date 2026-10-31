@@ -22,6 +22,8 @@
 
 void JE_doInGameSetup(void);
 
+const char *ingame_menu_prompt_fault(void);
+
 // Endless death prompt (Hardcore off only), shown over the frozen death frame before the run
 // summary. Values double as the row order.
 typedef enum

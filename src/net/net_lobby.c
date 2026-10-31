@@ -35,6 +35,7 @@
 #include "palette.h"
 #include "picload.h"
 #include "player.h"
+#include "prompt.h"
 #include "qa.h"
 #include "sfx.h"
 #include "timing.h"
@@ -47,6 +48,13 @@
 /* Menus render on a 320px virtual screen centred in the wider VGA buffer (same convention as
  * menus.c); centring on vga_width instead would drift when the menu is blitted over. */
 #define LOBBY_XCENTER  (320 / 2)
+#define LOBBY_FOOTER_MAX_PX 300
+
+static const PromptText lobbyAcceptKeys = { "{confirm} to accept, {back} to cancel", NULL, NULL };
+static const PromptText lobbyJoinKeys = { "{confirm} to join, {back} to go back", NULL, NULL };
+static const PromptText lobbyChooseKeys = { "{confirm} to choose, {back} to go back", NULL, NULL };
+static const PromptText lobbyCancelKey = { "{back} to cancel", NULL, NULL };
+static const PromptText lobbyBackKey = { "{back} to go back", NULL, NULL };
 
 // Lobby text must avoid missing small-font glyphs and the '~' brightness marker.
 
@@ -308,7 +316,9 @@ bool networkTextEntry(const char *title, const char *prompt, char *buf, size_t b
 				fill_rectangle_xy(VGAScreen, x + w + 2, 100, x + w + 3, 110, 252);
 		}
 
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 150, "Enter to accept, Esc to cancel",
+		char keys[64];
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 150,
+		                    prompt_text(keys, sizeof(keys), &lobbyAcceptKeys),
 		                    normal_font, centered, 15, -5, false, 2);
 
 		// Text fields use their own present loop, so composite the lobby cursor here.
@@ -715,7 +725,7 @@ static void lobbyShowSearching(const char *title, const char *text)
 
 // Let the player pick one of up to LOBBY_MAX_FOUND centred rows drawn over the current backdrop.
 // Returns the row's index, or -1 when the player backs out.
-static int lobbyPickRow(const char *const *rows, int count, const char *footer)
+static int lobbyPickRow(const char *const *rows, int count, const PromptText *footer)
 {
 	size_t selectedIndex = 0;
 	int wItem[LOBBY_MAX_FOUND] = { 0 };
@@ -743,7 +753,8 @@ static int lobbyPickRow(const char *const *rows, int count, const char *footer)
 			                    -4 + ((size_t)i == selectedIndex ? 2 : 0), false, 2);
 		}
 
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 180, footer,
+		char keys[64];
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 180, prompt_text(keys, sizeof(keys), footer),
 		                    normal_font, centered, 15, -5, false, 2);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
@@ -853,7 +864,7 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 		rows[i] = lines[i];
 	}
 
-	const int pick = lobbyPickRow(rows, count, "Enter to join, Esc to go back");
+	const int pick = lobbyPickRow(rows, count, &lobbyJoinKeys);
 	return pick >= 0 ? &hosts[pick] : NULL;
 }
 
@@ -1360,7 +1371,10 @@ static bool lobbyStartSession(bool as_host, bool wireless)
 	// A session on a console's local wireless network has no address worth reading out.
 	if (as_host && !wireless)
 		lobbyDrawLocalAddresses(100);
-	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160, "Esc to cancel", normal_font, centered, 15, -5, false, 2);
+	char keys[64];
+	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160,
+	                    prompt_text(keys, sizeof(keys), &lobbyCancelKey),
+	                    normal_font, centered, 15, -5, false, 2);
 	JE_showVGA();
 	fade_palette(colors, 10, 0, 255);
 
@@ -1427,7 +1441,7 @@ static bool lobbyJoinWireless(void)
 		return false;
 	}
 
-	const int pick = lobbyPickRow(rows, count, "Enter to join, Esc to go back");
+	const int pick = lobbyPickRow(rows, count, &lobbyJoinKeys);
 	uint32_t host = 0;
 	if (pick < 0 || !console_wireless_join(gameIndex[pick], network_player_name, &host))
 	{
@@ -1456,7 +1470,7 @@ static bool lobbyWirelessMenu(char *port_buf, size_t port_buf_size)
 
 	lobbyPrepareBackdrop("Local Wireless");
 
-	switch (lobbyPickRow(rows, (int)COUNTOF(rows), "Enter to choose, Esc to go back"))
+	switch (lobbyPickRow(rows, (int)COUNTOF(rows), &lobbyChooseKeys))
 	{
 	case 0:
 		return lobbyHostWireless(port_buf, port_buf_size);
@@ -1553,7 +1567,9 @@ bool networkLobby(void)
 			                    normal_font, centered, 15, -1, false, 2);
 			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 102, "35 fps due to stability concerns.",
 			                    normal_font, centered, 15, -1, false, 2);
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160, "Esc to go back",
+			char keys[64];
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160,
+			                    prompt_text(keys, sizeof(keys), &lobbyBackKey),
 			                    normal_font, centered, 15, -5, false, 2);
 		}
 		else
@@ -1847,6 +1863,12 @@ static void lobbyWorstString(char *out, size_t len, bool (*filter)(char))
 
 void qa_test_net_lobby_strings(void)
 {
+	const PromptText footers[] = { lobbyAcceptKeys, lobbyJoinKeys, lobbyChooseKeys, lobbyCancelKey,
+	                               lobbyBackKey };
+	const char *const footerFault = prompt_fit_fault(footers, COUNTOF(footers), normal_font,
+	                                                 LOBBY_FOOTER_MAX_PX, "lobby keys");
+	qa_check(footerFault == NULL, footerFault != NULL ? footerFault : "the lobby key lines fit");
+
 	// Host rows, in lobbyHostLabel order, against every value the row can show.
 	char portWorst[6];
 	lobbyWorstString(portWorst, sizeof(portWorst), filterDigits);

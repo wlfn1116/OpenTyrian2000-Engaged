@@ -25,6 +25,7 @@
 #include "network.h"
 #include "opentyr.h"
 #include "player_ship.h"
+#include "prompt.h"
 #include "rollback.h"
 #include "rumble.h"
 #include "timing.h"
@@ -46,6 +47,7 @@ static void code_to_assignment(Joystick_assignment *assignment, const char *buff
 static int joystick_repeat_delay = 300; // milliseconds, repeat delay for buttons
 bool joydown = false;            // any joystick buttons down, updated by poll_joysticks()
 bool ignore_joystick = false;
+bool joycons_separate = false;
 
 int joysticks = 0;
 Joystick *joystick = NULL;
@@ -59,6 +61,8 @@ static bool pad_database = false;  // SDL_INIT_GAMECONTROLLER is up, for default
 #endif
 
 bool joysticks_ready = false;
+
+static unsigned joystick_changes = 0;
 
 static const int joystick_analog_max = 32767;
 
@@ -146,6 +150,12 @@ static bool joystick_2p_joycon_layout(int j)
 {
 	return twoPlayerMode && !galagaMode && !isNetworkGame && !switch_slot_single_joycon(j);
 }
+
+static int joystick_2p_raw(int j, int num)
+{
+	// switch-sdl2's 8 and 9 are SL and SR on a single Joy-Con but ZL and ZR here.
+	return ((num == 8 || num == 9) && joystick_2p_joycon_layout(j)) ? num - 2 : num;  // L, R
+}
 #endif
 
 static unsigned menu_buttons_claimed;
@@ -161,18 +171,13 @@ static bool joystick_raw_held(int j, int num)
 static bool joystick_button_held(int j, int num)
 {
 #ifdef __SWITCH__
-	if (joystick_2p_joycon_layout(j))
-	{
-		// switch-sdl2's 8 and 9 are SL and SR on a single Joy-Con but ZL and ZR here.
-		if (num == 8 || num == 9)
-			return joystick_raw_held(j, num == 8 ? 6 : 7);  // L, R
-		if (num == SWITCH_JOYCON_ZLZR_BUTTON)
-			return joystick_raw_held(j, 8) || joystick_raw_held(j, 9);
-	}
+	if (num == SWITCH_JOYCON_ZLZR_BUTTON && joystick_2p_joycon_layout(j))
+		return joystick_raw_held(j, 8) || joystick_raw_held(j, 9);
 	if (num == SWITCH_JOYCON_LR_BUTTON)
 		return (switch_slot_joycon_extra(j) & SWITCH_JOYCON_LR) != 0;
 	if (num == SWITCH_JOYCON_ZLZR_BUTTON)
 		return (switch_slot_joycon_extra(j) & SWITCH_JOYCON_ZLZR) != 0;
+	num = joystick_2p_raw(j, num);
 #endif
 	return joystick_raw_held(j, num);
 }
@@ -299,7 +304,11 @@ void poll_joystick(int j)
 	
 	// if new input, reset press-repeat delay
 	if (joystick[j].input_pressed)
+	{
 		joystick[j].joystick_delay = SDL_GetTicks() + joystick_repeat_delay;
+		if (!rollback_resim)
+			prompt_use_pad(j);
+	}
 }
 
 // updates all joystick states
@@ -316,7 +325,7 @@ void push_key(SDL_Scancode key)
 {
 	SDL_Event e;
 	
-	memset(&e.key.keysym, 0, sizeof(e.key.keysym));
+	memset(&e, 0, sizeof(e));
 	
 	e.key.keysym.scancode = key;
 	e.key.state = SDL_RELEASED;
@@ -372,7 +381,10 @@ bool joystick_menu_button_down(JoystickMenuButton which)
 		const int num = joystick[j].menu_button[which];
 		if (joystick[j].handle != NULL && num >= 0 &&
 		    SDL_JoystickGetButton(joystick[j].handle, num) != 0)
+		{
+			prompt_use_pad(j);
 			return true;
+		}
 	}
 	return false;
 }
@@ -412,6 +424,20 @@ int joystick_page_step(bool was[2])
 	return (int)forward - (int)back;
 }
 
+static PadLabels joycon_labels(Uint16 vendor, Uint16 product)
+{
+	if (vendor != PAD_VENDOR_NINTENDO)
+		return PAD_LABELS_COUNT;
+
+	switch (product)
+	{
+	case PAD_PRODUCT_JOYCON_LEFT:  return PAD_LABELS_JOYCON_LEFT;
+	case PAD_PRODUCT_JOYCON_RIGHT: return PAD_LABELS_JOYCON_RIGHT;
+	case PAD_PRODUCT_JOYCON_PAIR:  return PAD_LABELS_NINTENDO;
+	default:                       return PAD_LABELS_COUNT;
+	}
+}
+
 #ifdef JOYSTICK_HOTPLUG
 static SDL_GameController *pad_open(int j)
 {
@@ -429,55 +455,194 @@ static SDL_GameController *pad_open(int j)
 	return SDL_GameControllerOpen(index);
 }
 
-static bool pad_names_by_label(SDL_GameController *pad)
+static PadLabels pad_labels(SDL_GameController *pad)
 {
+	const PadLabels joycon = joycon_labels(SDL_GameControllerGetVendor(pad),
+	                                       SDL_GameControllerGetProduct(pad));
+#ifdef SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS
+	if (SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS, SDL_FALSE) &&
+	    joycon != PAD_LABELS_COUNT)
+		return PAD_LABELS_NINTENDO;
+#endif
+	if (joycon != PAD_LABELS_COUNT)
+		return joycon;
+
 	switch (SDL_GameControllerGetType(pad))
 	{
+	case SDL_CONTROLLER_TYPE_XBOX360:
+		return PAD_LABELS_XBOX360;
+	case SDL_CONTROLLER_TYPE_PS3:
+		return PAD_LABELS_PS3;
+	case SDL_CONTROLLER_TYPE_PS4:
+		return PAD_LABELS_PS4;
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+	case SDL_CONTROLLER_TYPE_PS5:
+		return PAD_LABELS_PS5;
+#endif
 	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
 #if SDL_VERSION_ATLEAST(2, 24, 0)
 	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
 	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
 	case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
 #endif
-		return SDL_GetHintBoolean(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, SDL_TRUE);
+		return PAD_LABELS_NINTENDO;
 	default:
-		return false;
+		return PAD_LABELS_XBOX;
 	}
+}
+
+static bool pad_names_by_label(PadLabels labels)
+{
+	return (labels == PAD_LABELS_NINTENDO || joystick_sideways_joycon(labels)) &&
+	       SDL_GetHintBoolean(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, SDL_TRUE);
+}
+
+static PadSpot pad_button_spot(SDL_GameControllerButton button, bool byLabel)
+{
+	switch (button)
+	{
+	case SDL_CONTROLLER_BUTTON_A:             return byLabel ? PAD_SPOT_EAST : PAD_SPOT_SOUTH;
+	case SDL_CONTROLLER_BUTTON_B:             return byLabel ? PAD_SPOT_SOUTH : PAD_SPOT_EAST;
+	case SDL_CONTROLLER_BUTTON_X:             return byLabel ? PAD_SPOT_NORTH : PAD_SPOT_WEST;
+	case SDL_CONTROLLER_BUTTON_Y:             return byLabel ? PAD_SPOT_WEST : PAD_SPOT_NORTH;
+	case SDL_CONTROLLER_BUTTON_BACK:          return PAD_SPOT_BACK;
+	case SDL_CONTROLLER_BUTTON_GUIDE:         return PAD_SPOT_GUIDE;
+	case SDL_CONTROLLER_BUTTON_START:         return PAD_SPOT_START;
+	case SDL_CONTROLLER_BUTTON_LEFTSTICK:     return PAD_SPOT_LEFT_STICK_CLICK;
+	case SDL_CONTROLLER_BUTTON_RIGHTSTICK:    return PAD_SPOT_RIGHT_STICK_CLICK;
+	case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return PAD_SPOT_LEFT_SHOULDER;
+	case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return PAD_SPOT_RIGHT_SHOULDER;
+	case SDL_CONTROLLER_BUTTON_DPAD_UP:       return PAD_SPOT_DPAD_UP;
+	case SDL_CONTROLLER_BUTTON_DPAD_DOWN:     return PAD_SPOT_DPAD_DOWN;
+	case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     return PAD_SPOT_DPAD_LEFT;
+	case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    return PAD_SPOT_DPAD_RIGHT;
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+	case SDL_CONTROLLER_BUTTON_MISC1:         return PAD_SPOT_MISC;
+	case SDL_CONTROLLER_BUTTON_PADDLE1:       return PAD_SPOT_PADDLE1;
+	case SDL_CONTROLLER_BUTTON_PADDLE2:       return PAD_SPOT_PADDLE2;
+	case SDL_CONTROLLER_BUTTON_PADDLE3:       return PAD_SPOT_PADDLE3;
+	case SDL_CONTROLLER_BUTTON_PADDLE4:       return PAD_SPOT_PADDLE4;
+#endif
+	default:                                  return PAD_SPOT_NONE;
+	}
+}
+
+static PadSpot pad_axis_spot(SDL_GameControllerAxis axis)
+{
+	switch (axis)
+	{
+	case SDL_CONTROLLER_AXIS_LEFTX:
+	case SDL_CONTROLLER_AXIS_LEFTY:        return PAD_SPOT_LEFT_STICK;
+	case SDL_CONTROLLER_AXIS_RIGHTX:
+	case SDL_CONTROLLER_AXIS_RIGHTY:       return PAD_SPOT_RIGHT_STICK;
+	case SDL_CONTROLLER_AXIS_TRIGGERLEFT:  return PAD_SPOT_LEFT_TRIGGER;
+	case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: return PAD_SPOT_RIGHT_TRIGGER;
+	default:                               return PAD_SPOT_NONE;
+	}
+}
+
+static void pad_note_spot(Joystick *js, SDL_GameControllerButtonBind bind, PadSpot spot)
+{
+	if (bind.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON &&
+	    bind.value.button >= 0 && bind.value.button < JOYSTICK_SPOT_BUTTONS)
+		js->button_spot[bind.value.button] = (Sint8)spot;
+	else if (bind.bindType == SDL_CONTROLLER_BINDTYPE_AXIS &&
+	         bind.value.axis >= 0 && bind.value.axis < JOYSTICK_SPOT_AXES)
+		js->axis_spot[bind.value.axis] = (Sint8)spot;
+}
+
+static void pad_note_spots(Joystick *js, SDL_GameController *pad)
+{
+	js->labels = pad_labels(pad);
+	const bool byLabel = pad_names_by_label(js->labels);
+	for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b)
+		pad_note_spot(js, SDL_GameControllerGetBindForButton(pad, (SDL_GameControllerButton)b),
+		              pad_button_spot((SDL_GameControllerButton)b, byLabel));
+	for (int a = 0; a < SDL_CONTROLLER_AXIS_MAX; ++a)
+		pad_note_spot(js, SDL_GameControllerGetBindForAxis(pad, (SDL_GameControllerAxis)a),
+		              pad_axis_spot((SDL_GameControllerAxis)a));
 }
 #endif
 
-static void joystick_find_menu_buttons(int j)
-{
 #if defined(__SWITCH__)
-	static const int switchButtons[JOYSTICK_MENU_BUTTON_COUNT] = { 2, 3, 6, 7 };
-	memcpy(joystick[j].menu_button, switchButtons, sizeof(switchButtons));
+static const Sint8 console_button_spot[] = {
+	PAD_SPOT_EAST, PAD_SPOT_SOUTH, PAD_SPOT_NORTH, PAD_SPOT_WEST,
+	PAD_SPOT_LEFT_STICK_CLICK, PAD_SPOT_RIGHT_STICK_CLICK,
+	PAD_SPOT_LEFT_SHOULDER, PAD_SPOT_RIGHT_SHOULDER, PAD_SPOT_LEFT_TRIGGER, PAD_SPOT_RIGHT_TRIGGER,
+	PAD_SPOT_START, PAD_SPOT_BACK,
+	PAD_SPOT_DPAD_LEFT, PAD_SPOT_DPAD_UP, PAD_SPOT_DPAD_RIGHT, PAD_SPOT_DPAD_DOWN,
+};
+
+static const Sint8 switch_joycon_button_spot[] = {
+	PAD_SPOT_EAST, PAD_SPOT_SOUTH, PAD_SPOT_NORTH, PAD_SPOT_WEST,
+	PAD_SPOT_NONE, PAD_SPOT_NONE, PAD_SPOT_NONE, PAD_SPOT_NONE,
+	PAD_SPOT_LEFT_SHOULDER, PAD_SPOT_RIGHT_SHOULDER, PAD_SPOT_LEFT_STICK_CLICK, PAD_SPOT_START,
+	PAD_SPOT_DPAD_LEFT, PAD_SPOT_DPAD_UP, PAD_SPOT_DPAD_RIGHT, PAD_SPOT_DPAD_DOWN,
+};
+
+static PadLabels switch_slot_labels(int j)
+{
+	if (!switch_slot_single_joycon(j))
+		return PAD_LABELS_NINTENDO;
+	return switch_slot_left_joycon(j) ? PAD_LABELS_JOYCON_LEFT : PAD_LABELS_JOYCON_RIGHT;
+}
 #elif defined(__vita__)
-	static const int vitaButtons[JOYSTICK_MENU_BUTTON_COUNT] = { 0, 3, 4, 5 };
-	memcpy(joystick[j].menu_button, vitaButtons, sizeof(vitaButtons));
-#else
-	for (int which = 0; which < JOYSTICK_MENU_BUTTON_COUNT; ++which)
-		joystick[j].menu_button[which] = -1;
+static const Sint8 console_button_spot[] = {
+	PAD_SPOT_NORTH, PAD_SPOT_EAST, PAD_SPOT_SOUTH, PAD_SPOT_WEST,
+	PAD_SPOT_LEFT_SHOULDER, PAD_SPOT_RIGHT_SHOULDER,
+	PAD_SPOT_DPAD_DOWN, PAD_SPOT_DPAD_LEFT, PAD_SPOT_DPAD_UP, PAD_SPOT_DPAD_RIGHT,
+	PAD_SPOT_BACK, PAD_SPOT_START,
+};
+#endif
 
-	SDL_GameController *const pad = pad_open(j);
-	if (pad == NULL)
-		return;
-
-	const bool labels = pad_names_by_label(pad);
-	const SDL_GameControllerButton positions[JOYSTICK_MENU_BUTTON_COUNT] = {
-		labels ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y,
-		labels ? SDL_CONTROLLER_BUTTON_Y : SDL_CONTROLLER_BUTTON_X,
-		SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
-		SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+static void joystick_learn_layout(int j)
+{
+	static const PadSpot menuSpot[JOYSTICK_MENU_BUTTON_COUNT] = {
+		PAD_SPOT_NORTH, PAD_SPOT_WEST, PAD_SPOT_LEFT_SHOULDER, PAD_SPOT_RIGHT_SHOULDER,
 	};
+
+	Joystick *const js = &joystick[j];
+	memset(js->button_spot, PAD_SPOT_NONE, sizeof(js->button_spot));
+	memset(js->axis_spot, PAD_SPOT_NONE, sizeof(js->axis_spot));
+
+#if defined(__SWITCH__) || defined(__vita__)
+	memcpy(js->button_spot, console_button_spot, sizeof(console_button_spot));
+	js->axis_spot[0] = js->axis_spot[1] = PAD_SPOT_LEFT_STICK;
+	js->axis_spot[2] = js->axis_spot[3] = PAD_SPOT_RIGHT_STICK;
+#endif
+#if defined(__SWITCH__)
+	js->labels = switch_slot_labels(j);
+	if (joystick_sideways_joycon(js->labels))
+	{
+		const bool left = js->labels == PAD_LABELS_JOYCON_LEFT;
+		memcpy(js->button_spot, switch_joycon_button_spot, sizeof(switch_joycon_button_spot));
+		js->button_spot[SWITCH_JOYCON_LR_BUTTON] = left ? PAD_SPOT_PADDLE2 : PAD_SPOT_PADDLE1;
+		js->button_spot[SWITCH_JOYCON_ZLZR_BUTTON] = left ? PAD_SPOT_PADDLE4 : PAD_SPOT_PADDLE3;
+	}
+	else
+	{
+		js->button_spot[SWITCH_JOYCON_LR_BUTTON] = PAD_SPOT_LEFT_SHOULDER;
+		js->button_spot[SWITCH_JOYCON_ZLZR_BUTTON] = PAD_SPOT_LEFT_TRIGGER;
+	}
+#elif defined(__vita__)
+	js->labels = PAD_LABELS_VITA;
+#else
+	js->labels = PAD_LABELS_GENERIC;
+	SDL_GameController *const pad = pad_open(j);
+	if (pad != NULL)
+	{
+		pad_note_spots(js, pad);
+		SDL_GameControllerClose(pad);
+	}
+#endif
+
 	for (int which = 0; which < JOYSTICK_MENU_BUTTON_COUNT; ++which)
 	{
-		const SDL_GameControllerButtonBind bind =
-			SDL_GameControllerGetBindForButton(pad, positions[which]);
-		if (bind.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON)
-			joystick[j].menu_button[which] = bind.value.button;
+		js->menu_button[which] = -1;
+		for (int raw = 0; raw < JOYSTICK_SPOT_BUTTONS && js->menu_button[which] < 0; ++raw)
+			if (js->button_spot[raw] == menuSpot[which])
+				js->menu_button[which] = raw;
 	}
-	SDL_GameControllerClose(pad);
-#endif
 }
 
 // Open SDL device `index` into slot j with its saved bindings, or defaults for a new device.
@@ -489,6 +654,7 @@ static void joystick_open(int j, int index)
 	joystick[j].handle = SDL_JoystickOpen(index);
 	if (joystick[j].handle == NULL)
 		return;
+	++joystick_changes;
 
 	printf("joystick detected: %s ", SDL_JoystickName(joystick[j].handle));
 	printf("(%d axes, %d buttons, %d hats)\n",
@@ -496,7 +662,7 @@ static void joystick_open(int j, int index)
 	       SDL_JoystickNumButtons(joystick[j].handle),
 	       SDL_JoystickNumHats(joystick[j].handle));
 
-	joystick_find_menu_buttons(j);
+	joystick_learn_layout(j);
 
 #if defined(__SWITCH__) || defined(__vita__)
 	// There is no visible stdout on the consoles; mirror the controller capabilities
@@ -541,6 +707,9 @@ void init_joysticks(void)
 #ifdef SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE
 	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
 #endif
+#ifdef SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS
+	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, joycons_separate ? "0" : "1");
+#endif
 
 	if (SDL_InitSubSystem(SDL_INIT_JOYSTICK))
 	{
@@ -573,6 +742,10 @@ void init_joysticks(void)
 
 	joysticks_ready = true;
 
+	const int first = joystick_nth_connected(0);
+	if (first >= 0)
+		prompt_use_pad(first);
+
 	if (joysticks == 0)
 		printf("no joysticks detected\n");
 }
@@ -596,6 +769,55 @@ bool joystick_connected(int j)
 #else
 	return SDL_JoystickGetAttached(joystick[j].handle);
 #endif
+}
+
+PadSpot joystick_binding_spot(int j, const Joystick_assignment *binding)
+{
+	if (j < 0 || j >= joysticks)
+		return PAD_SPOT_NONE;
+
+	switch (binding->type)
+	{
+	case BUTTON:
+	{
+		int num = binding->num;
+#ifdef __SWITCH__
+		num = joystick_2p_raw(j, num);
+#endif
+		return (num >= 0 && num < JOYSTICK_SPOT_BUTTONS) ? (PadSpot)joystick[j].button_spot[num]
+		                                                 : PAD_SPOT_NONE;
+	}
+	case AXIS:
+		return (binding->num >= 0 && binding->num < JOYSTICK_SPOT_AXES)
+		       ? (PadSpot)joystick[j].axis_spot[binding->num] : PAD_SPOT_NONE;
+	case HAT:
+		if (binding->x_axis)
+			return binding->negative_axis ? PAD_SPOT_DPAD_LEFT : PAD_SPOT_DPAD_RIGHT;
+		return binding->negative_axis ? PAD_SPOT_DPAD_UP : PAD_SPOT_DPAD_DOWN;
+	default:
+		return PAD_SPOT_NONE;
+	}
+}
+
+bool joystick_sideways_joycon(PadLabels labels)
+{
+	return labels == PAD_LABELS_JOYCON_LEFT || labels == PAD_LABELS_JOYCON_RIGHT;
+}
+
+bool joystick_joycons_connected(void)
+{
+	for (int j = 0; j < joysticks; j++)
+		if (joystick_connected(j) &&
+		    joycon_labels(SDL_JoystickGetVendor(joystick[j].handle),
+		                  SDL_JoystickGetProduct(joystick[j].handle)) != PAD_LABELS_COUNT)
+			return true;
+	return false;
+}
+
+void joystick_set_joycons_separate(bool separate)
+{
+	joycons_separate = separate;
+	joystick_reopen_all();
 }
 
 int joystick_nth_connected(int n)
@@ -652,6 +874,7 @@ static void joystick_hotplug(void)
 
 		Joystick *const js = &joystick[j];
 		js->handle = NULL;
+		++joystick_changes;
 		js->x = js->y = 0;
 		memset(js->analog_direction, 0, sizeof(js->analog_direction));
 		memset(js->direction, 0, sizeof(js->direction));
@@ -675,6 +898,8 @@ static void joystick_hotplug(void)
 		if (j < 0)
 			continue;
 		joystick_open(j, index);
+		if (joystick[j].handle != NULL)
+			prompt_use_pad(j);
 	}
 }
 #endif
@@ -705,6 +930,17 @@ void joystick_service(void)
 		joystick_rescan();
 	}
 
+#ifdef __SWITCH__
+	for (int j = 0; j < joysticks; j++)
+	{
+		if (joystick[j].handle != NULL && joystick[j].labels != switch_slot_labels(j))
+		{
+			joystick_learn_layout(j);
+			++joystick_changes;
+		}
+	}
+#endif
+
 	// The game ends each pulse itself. SDL would end one only inside SDL_JoystickUpdate, which
 	// screens without a controller poll never call, and the Switch has no timer at all.
 	for (int j = 0; j < joysticks; j++)
@@ -712,13 +948,23 @@ void joystick_service(void)
 			joystick_rumble_mix(j, now);
 }
 
+unsigned joystick_change_count(void)
+{
+	return joystick_changes;
+}
+
 void joystick_reopen_all(void)
 {
 	if (ignore_joystick || !joysticks_ready)
 		return;
 
+	const PromptDevice device = prompt_device();
 	deinit_joysticks();
 	init_joysticks();
+	if (device == PROMPT_KEYBOARD)
+		prompt_use_keyboard();
+	else if (device == PROMPT_TOUCH)
+		prompt_use_touch();
 }
 
 // deinitializes SDL joystick system and saves joystick assignments
@@ -742,6 +988,7 @@ void deinit_joysticks(void)
 	joystick = NULL;
 	joysticks = 0;
 	joysticks_ready = false;
+	++joystick_changes;
 
 #ifdef JOYSTICK_HOTPLUG
 	if (pad_database)

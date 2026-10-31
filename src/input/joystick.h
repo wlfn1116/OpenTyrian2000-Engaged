@@ -63,11 +63,70 @@ typedef enum
 }
 JoystickMenuButton;
 
+typedef enum
+{
+	PAD_SPOT_NONE = -1,
+	PAD_SPOT_SOUTH,
+	PAD_SPOT_EAST,
+	PAD_SPOT_WEST,
+	PAD_SPOT_NORTH,
+	PAD_SPOT_BACK,
+	PAD_SPOT_GUIDE,
+	PAD_SPOT_START,
+	PAD_SPOT_LEFT_STICK_CLICK,
+	PAD_SPOT_RIGHT_STICK_CLICK,
+	PAD_SPOT_LEFT_SHOULDER,
+	PAD_SPOT_RIGHT_SHOULDER,
+	PAD_SPOT_LEFT_TRIGGER,
+	PAD_SPOT_RIGHT_TRIGGER,
+	PAD_SPOT_DPAD_UP,
+	PAD_SPOT_DPAD_DOWN,
+	PAD_SPOT_DPAD_LEFT,
+	PAD_SPOT_DPAD_RIGHT,
+	PAD_SPOT_LEFT_STICK,
+	PAD_SPOT_RIGHT_STICK,
+	PAD_SPOT_MISC,
+	PAD_SPOT_PADDLE1,
+	PAD_SPOT_PADDLE2,
+	PAD_SPOT_PADDLE3,
+	PAD_SPOT_PADDLE4,
+	PAD_SPOT_COUNT
+}
+PadSpot;
+
+typedef enum
+{
+	PAD_LABELS_GENERIC,
+	PAD_LABELS_XBOX360,
+	PAD_LABELS_XBOX,
+	PAD_LABELS_PS3,
+	PAD_LABELS_PS4,
+	PAD_LABELS_PS5,
+	PAD_LABELS_NINTENDO,
+	PAD_LABELS_JOYCON_LEFT,
+	PAD_LABELS_JOYCON_RIGHT,
+	PAD_LABELS_VITA,
+	PAD_LABELS_COUNT
+}
+PadLabels;
+
+#define JOYSTICK_SPOT_BUTTONS 32
+#define JOYSTICK_SPOT_AXES     8
+
+#define PAD_VENDOR_NINTENDO      0x057e
+#define PAD_PRODUCT_JOYCON_LEFT  0x2006
+#define PAD_PRODUCT_JOYCON_RIGHT 0x2007
+#define PAD_PRODUCT_JOYCON_PAIR  0x2008
+
 typedef struct
 {
 	SDL_Joystick *handle;  // NULL while the device is disconnected; the slot keeps its index
 	SDL_JoystickGUID guid; // the device this slot belongs to, so a reconnect finds it again
 	int menu_button[JOYSTICK_MENU_BUTTON_COUNT];
+
+	PadLabels labels;
+	Sint8 button_spot[JOYSTICK_SPOT_BUTTONS];
+	Sint8 axis_spot[JOYSTICK_SPOT_AXES];
 
 	Joystick_assignment assignment[10][2]; // 0-3: directions, 4-9: actions
 	
@@ -108,6 +167,7 @@ typedef enum
 } RumbleStrength;
 
 extern int rumble_strength;  // RumbleStrength, Setup > Rumble
+extern bool joycons_separate;
 
 // Pulse the controllers behind an input device (0 all, 1 keyboard, 2 mouse, 3+ joystick n-3).
 // Motor levels run 0..1 and are scaled by rumble_strength. A weaker pulse never cuts a stronger
@@ -125,11 +185,16 @@ bool joystick_can_rumble(void);
 bool joystick_pause_opens_menu(int j);
 // Whether joystick j has a controller connected right now.
 bool joystick_connected(int j);
+PadSpot joystick_binding_spot(int j, const Joystick_assignment *binding);
+bool joystick_sideways_joycon(PadLabels labels);
+bool joystick_joycons_connected(void);
+void joystick_set_joycons_separate(bool separate);
 int joystick_nth_connected(int n);
 
 // Called from the event pump: opens controllers connected after startup, closes ones that left,
 // and stops finished rumble.
 void joystick_service(void);
+unsigned joystick_change_count(void);
 // The connect and disconnect pass joystick_service runs once a second, run now. No-op on the
 // consoles, which keep their startup list.
 void joystick_rescan(void);

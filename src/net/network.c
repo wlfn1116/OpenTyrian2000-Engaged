@@ -71,6 +71,7 @@
 #include "params.h"
 #include "picload.h"
 #include "player.h"
+#include "prompt.h"
 #include "qa.h"
 #include "rollback.h"
 #include "save_menu.h"
@@ -3417,8 +3418,10 @@ void network_shop_sync_for_save(void)
 		if (!notice_drawn && SDL_GetTicks() - started > 400)
 		{
 			notice_drawn = true;
+			static const PromptText saveNow = { "Press {back} to save now.", NULL, NULL };
+			char hint[48];
 			shopWaitNotice("Waiting for other player.", "They have not reached the outpost yet.",
-			               "Press Esc to save now.");
+			               prompt_text(hint, sizeof(hint), &saveNow));
 		}
 
 		shopWaitFrame();

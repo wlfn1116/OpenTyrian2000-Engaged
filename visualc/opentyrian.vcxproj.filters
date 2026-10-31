@@ -226,6 +226,9 @@
     <ClCompile Include="..\src\input\mouse.c">
       <Filter>input</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\input\prompt.c">
+      <Filter>input</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\input\rumble.c">
       <Filter>input</Filter>
     </ClCompile>
@@ -633,6 +636,9 @@
       <Filter>input</Filter>
     </ClInclude>
     <ClInclude Include="..\src\input\mouse.h">
+      <Filter>input</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\input\prompt.h">
       <Filter>input</Filter>
     </ClInclude>
     <ClInclude Include="..\src\input\rumble.h">

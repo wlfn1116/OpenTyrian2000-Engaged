@@ -22,5 +22,6 @@
 
 void jukebox(void);
 unsigned jukebox_claimed_buttons(void);
+const char *jukebox_qa_help_fault(void);
 
 #endif /* JUKEBOX_H */

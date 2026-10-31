@@ -24,6 +24,7 @@
 #include "episodes.h"
 #include "extra_ships.h"
 #include "font.h"
+#include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
@@ -32,6 +33,7 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "prompt.h"
 #include "qa.h"
 #include "savegame.h"
 #include "sfx.h"
@@ -189,20 +191,27 @@ XferKind;
 
 static const char sxWaitingForDownload[] = "Waiting for a receiver...";
 static const char sxCannotBeFound     [] = "In use: send to an address instead.";
-static const char sxUploadKeys        [] = "Enter to custom send, Esc to cancel";
+static const PromptText sxUploadKeys = {
+	"{confirm} to custom send, {back} to cancel", "{confirm} custom send, {back} cancel", NULL
+};
 static const char sxSending           [] = "Sending...";
 static const char sxThisMachine       [] = "This machine:";
 static const char sxSearching         [] = "Searching the local network...";
 static const char sxNothingAnswered   [] = "Nothing on this network answered.";
-static const char sxDownloadKeys      [] = "Enter to choose, Esc to go back";
+static const PromptText sxDownloadKeys = { "{confirm} to choose, {back} to go back", NULL, NULL };
 static const char sxRowTypedAddress   [] = "Enter an address...";
 static const char sxRowWaitForSender  [] = "Wait for a sender";
 static const char sxAskingAddress     [] = "Asking that address...";
 static const char sxDownloading       [] = "Downloading...";
 static const char sxWaitingForSender  [] = "Waiting for a sender...";
 static const char sxSendHere          [] = "Send to this address.";
-static const char sxCancelKey         [] = "Esc to cancel";
-static const char sxAnyButton         [] = "Press any button";
+static const PromptText sxCancelKey = { "{back} to cancel", NULL, NULL };
+static char sxKeyLine[64];
+
+static const char *sxKeys(const PromptText *text)
+{
+	return prompt_text(sxKeyLine, sizeof(sxKeyLine), text);
+}
 static const char sxNoSaveThere       [] = "That address is not sharing a save.";
 static const char sxNoSavesThere      [] = "No save slots at that address.";
 static const char sxNoShipsThere      [] = "No custom ships at that address.";
@@ -437,7 +446,8 @@ static void saveXferNotice(const char *title, const char *line1, const char *lin
 	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 90, line1, normal_font, centered, 15, -2, false, 2);
 	if (line2 != NULL)
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 110, line2, normal_font, centered, 15, -4, false, 2);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, sxAnyButton, normal_font, centered, 15, -5, false, 2);
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, sxKeys(&helptextPressKey), normal_font,
+	                    centered, 15, -5, false, 2);
 
 	// Request buttons before the fade and throughout the wait.
 	touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
@@ -1106,7 +1116,7 @@ static void saveXferUploadScreen(const char *saveName, const char *note)
 		saveXferDrawLocalAddresses(110);
 	if (note != NULL)
 		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 156, note, normal_font, centered, 15, -3, false, 2);
-	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 172, sxUploadKeys,
+	draw_font_hv_shadow(VGAScreen, SX_XCENTER, 172, sxKeys(&sxUploadKeys),
 	                    normal_font, centered, 15, -5, false, 2);
 	saveXferPresent();
 }
@@ -1546,7 +1556,7 @@ static const SaveXferOffer *saveXferPickOffer(XferKind kind, UDPsocket sock, UDP
 		if (status[0] != '\0')
 			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 160, status, normal_font, centered, 15, -3, false, 2);
 
-		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 180, sxDownloadKeys,
+		draw_font_hv_shadow(VGAScreen, SX_XCENTER, 180, sxKeys(&sxDownloadKeys),
 		                    normal_font, centered, 15, -5, false, 2);
 
 		// Discard the press that started discovery.
@@ -1874,7 +1884,7 @@ static bool xferDownload(XferKind kind)
 			saveXferDrawLocalAddresses(90);
 			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 150, sxSendHere,
 			                    normal_font, centered, 15, -4, false, 2);
-			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 170, sxCancelKey,
+			draw_font_hv_shadow(VGAScreen, SX_XCENTER, 170, sxKeys(&sxCancelKey),
 			                    normal_font, centered, 15, -5, false, 2);
 			saveXferPresent();
 			service_SDL_events(true);
@@ -1975,10 +1985,10 @@ void qa_test_save_transfer(void)
 {
 	// The font is proportional, so source length does not prove these lines fit.
 	static const char *const centred[] = {
-		sxWaitingForDownload, sxCannotBeFound, sxUploadKeys, sxSending, sxThisMachine, sxSearching,
-		sxNothingAnswered, sxDownloadKeys, sxRowTypedAddress, sxRowWaitForSender,
-		sxAskingAddress, sxDownloading, sxWaitingForSender, sxSendHere, sxCancelKey,
-		sxAnyButton, sxNoSaveThere, sxNoShipsThere, sxNoWeaponsThere, sxNoCustomThere,
+		sxWaitingForDownload, sxCannotBeFound, sxSending, sxThisMachine, sxSearching,
+		sxNothingAnswered, sxRowTypedAddress, sxRowWaitForSender,
+		sxAskingAddress, sxDownloading, sxWaitingForSender, sxSendHere,
+		sxNoSaveThere, sxNoShipsThere, sxNoWeaponsThere, sxNoCustomThere,
 		sxNoSavesThere, sxNoAllThere, sxNeedAddress,
 		"Upload All Saves", "Download All Saves", "All saves",
 		"Upload Custom Ships", "Download Custom Ships", "Custom ships",
@@ -1993,6 +2003,10 @@ void qa_test_save_transfer(void)
 		snprintf(label, sizeof(label), "the save transfer line '%s' fits the menu field", centred[i]);
 		qa_check(JE_textWidth(centred[i], normal_font) <= SX_LINE_MAX_PX, label);
 	}
+	const PromptText keys[] = { sxUploadKeys, sxDownloadKeys, sxCancelKey, helptextPressKey };
+	const char *const keysFault = prompt_fit_fault(keys, COUNTOF(keys), normal_font, SX_LINE_MAX_PX,
+	                                               "save transfer keys");
+	qa_check(keysFault == NULL, keysFault != NULL ? keysFault : "the save transfer key lines fit");
 
 	{
 		const unsigned int up = 0x0001u, broadcast = 0x0002u, loopback = 0x0008u,

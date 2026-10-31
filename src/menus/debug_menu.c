@@ -42,6 +42,7 @@
 #include "network.h"
 #include "player.h"
 #include "player_ship.h"
+#include "prompt.h"
 #include "rollback.h"
 #include "sfx.h"
 #include "shots.h"
@@ -99,7 +100,6 @@ void debug_panel_scrollbar(int px1, int items_top, int row_h, int visibleRows, i
 	fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h, PANEL_EDGE_HI);
 }
 
-#if defined(__SWITCH__) || defined(__vita__)
 void debug_panel_shoulder_paging(bool was[2])
 {
 	const int step = joystick_shoulder_step(was);
@@ -109,7 +109,8 @@ void debug_panel_shoulder_paging(bool was[2])
 		lastkey_scan = (step < 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
 	}
 }
-#endif
+
+static const PromptText dbgExpertKeys = { "Left/Right change  {back} back", NULL, NULL };
 
 /* Expert-mode tuning submenu of the debug menu; rows come from the shared
  * expertSettings table plus a synthetic final "Reset Defaults" row. */
@@ -171,7 +172,8 @@ static void JE_expertSettingsMenu(int off_x, int off_y)
 				draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 		}
 
-		draw_font_hv(VGAScreen, mid_x, py1 - 8, "Left/Right: change    Esc: back",
+		char keys[64];
+		draw_font_hv(VGAScreen, mid_x, py1 - 8, prompt_text(keys, sizeof(keys), &dbgExpertKeys),
 		             small_font, centered, 15, -3);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
@@ -376,46 +378,76 @@ static const char *const dbgLabel[DBG_ROW_COUNT] = {
 
 /* One line per row, shown under the list while that row is selected: what it DOES, not what it is
  * called. Keep each under ~40 characters; that is the panel's inner width in small_font. */
-static const char *const dbgHelp[DBG_ROW_COUNT] = {
-	[DBG_PLAYER]              = "Whose gear the rows below edit",
-	[DBG_SHIP]                = "Swap the hull; red = no such ship",
-	[DBG_FRONT_WEAPON]        = "Front gun; red = no such weapon",
-	[DBG_FRONT_POWER]         = "Front gun power level, 1 to 11",
-	[DBG_REAR_WEAPON]         = "Rear gun; red = no such weapon",
-	[DBG_REAR_POWER]          = "Rear gun power level, 1 to 11",
-	[DBG_SHIELD]              = "Shield type, which sets max shield",
-	[DBG_GENERATOR]           = "Generator type, which sets power",
-	[DBG_SIDEKICK_L]          = "Left sidekick pod",
-	[DBG_SIDEKICK_R]          = "Right sidekick pod",
-	[DBG_SPECIAL]             = "Equipped special (safe ids only)",
-	[DBG_TWIDDLE]             = "Pick a twiddle special; Enter fires it",
-	[DBG_AUTOFIRE_TWIDDLE]    = "Refire that twiddle while fire is held",
-	[DBG_TOGGLE_FIRE]         = "Fire button toggles auto-fire",
-	[DBG_AUTOFIRE_SPECIAL]    = "Fire your special as you shoot",
-	[DBG_AUTOFIRE_CHARGE]     = "When charge pods release on their own",
-	[DBG_INSTANT_CHARGE]      = "Charge pods sit at full charge",
-	[DBG_INF_SIDEKICK_AMMO]   = "Sidekick ammo never runs out",
-	[DBG_INF_GENERATOR]       = "Generator power never drains",
-	[DBG_GOD_MODE]            = "Invulnerable: armor, shield, or both",
-	[DBG_NOCLIP]              = "Fly through everything (+ ghost look)",
-	[DBG_EXPERT_MODE]         = "Harder rules: tough enemies, dear shop",
-	[DBG_EXPERT_SETTINGS]     = "Opens the expert multipliers",
-	[DBG_AUTO_DIFFICULTY]     = "Score bumps difficulty between levels",
-	[DBG_DIFFICULTY]          = "The difficulty being played right now",
-	[DBG_ADD_CASH]            = "Type an amount, or L/R for max cash",
-	[DBG_NO_ENEMY_FIRE]       = "Enemies never shoot",
-	[DBG_SKIP_LEVEL]          = "Ends the level now and moves on",
-	[DBG_PLAY_SOUND]          = "L/R picks a sample; Enter plays it",
-	[DBG_PLAY_MUSIC]          = "L/R picks a track; Enter plays it",
-	[DBG_SPRITE_VIEWER]       = "Opens the sprite sheet browser",
-	[DBG_HITBOX]              = "Draw hit boxes on enemies and ship",
-	[DBG_PERF]                = "FPS, enemy and shot counts on screen",
-	[DBG_HANG_TIMEOUT]        = "Seconds of freeze before the log fires",
-	[DBG_ROLLBACK_SELFTEST]   = "Replay every tick to verify rollback",
-	[DBG_ENDLESS_FX]          = "Endless mods/perks in a normal game",
-	[DBG_ENDLESS_TUNE]        = "Opens the mod, perk and scaling panel",
-	[DBG_FORCE_CRASH]         = "Faults on purpose to test the crash log",
+static const PromptText dbgHelp[DBG_ROW_COUNT] = {
+	[DBG_PLAYER]              = { "Whose gear the rows below edit" },
+	[DBG_SHIP]                = { "Swap the hull; red = no such ship" },
+	[DBG_FRONT_WEAPON]        = { "Front gun; red = no such weapon" },
+	[DBG_FRONT_POWER]         = { "Front gun power level, 1 to 11" },
+	[DBG_REAR_WEAPON]         = { "Rear gun; red = no such weapon" },
+	[DBG_REAR_POWER]          = { "Rear gun power level, 1 to 11" },
+	[DBG_SHIELD]              = { "Shield type, which sets max shield" },
+	[DBG_GENERATOR]           = { "Generator type, which sets power" },
+	[DBG_SIDEKICK_L]          = { "Left sidekick pod" },
+	[DBG_SIDEKICK_R]          = { "Right sidekick pod" },
+	[DBG_SPECIAL]             = { "Equipped special (safe ids only)" },
+	[DBG_TWIDDLE]             = { "Pick a twiddle special; {confirm} fires it", NULL, NULL },
+	[DBG_AUTOFIRE_TWIDDLE]    = { "Refire that twiddle while fire is held" },
+	[DBG_TOGGLE_FIRE]         = { "Fire button toggles auto-fire" },
+	[DBG_AUTOFIRE_SPECIAL]    = { "Fire your special as you shoot" },
+	[DBG_AUTOFIRE_CHARGE]     = { "When charge pods release on their own" },
+	[DBG_INSTANT_CHARGE]      = { "Charge pods sit at full charge" },
+	[DBG_INF_SIDEKICK_AMMO]   = { "Sidekick ammo never runs out" },
+	[DBG_INF_GENERATOR]       = { "Generator power never drains" },
+	[DBG_GOD_MODE]            = { "Invulnerable: armor, shield, or both" },
+	[DBG_NOCLIP]              = { "Fly through everything (+ ghost look)" },
+	[DBG_EXPERT_MODE]         = { "Harder rules: tough enemies, dear shop" },
+	[DBG_EXPERT_SETTINGS]     = { "Opens the expert multipliers" },
+	[DBG_AUTO_DIFFICULTY]     = { "Score bumps difficulty between levels" },
+	[DBG_DIFFICULTY]          = { "The difficulty being played right now" },
+	[DBG_ADD_CASH]            = { "Type an amount, or Left/Right for max cash",
+#ifdef PLATFORM_HANDHELD
+	                              "{confirm} types an amount, Left/Right max cash",
+#else
+	                              "Left/Right for max cash",
+#endif
+	                              NULL },
+	[DBG_NO_ENEMY_FIRE]       = { "Enemies never shoot" },
+	[DBG_SKIP_LEVEL]          = { "Ends the level now and moves on" },
+	[DBG_PLAY_SOUND]          = { "Left/Right picks a sample; {confirm} plays it", NULL, NULL },
+	[DBG_PLAY_MUSIC]          = { "Left/Right picks a track; {confirm} plays it", NULL, NULL },
+	[DBG_SPRITE_VIEWER]       = { "Opens the sprite sheet browser" },
+	[DBG_HITBOX]              = { "Draw hit boxes on enemies and ship" },
+	[DBG_PERF]                = { "FPS, enemy and shot counts on screen" },
+	[DBG_HANG_TIMEOUT]        = { "Seconds of freeze before the log fires" },
+	[DBG_ROLLBACK_SELFTEST]   = { "Replay every tick to verify rollback" },
+	[DBG_ENDLESS_FX]          = { "Endless mods/perks in a normal game" },
+	[DBG_ENDLESS_TUNE]        = { "Opens the mod, perk and scaling panel" },
+	[DBG_FORCE_CRASH]         = { "Faults on purpose to test the crash log" },
 };
+
+static const PromptText dbgKeys[2] = {
+	{ "Left/Right set, {confirm} use, {back} exit",
+	  "Left/Right set, {confirm} use, {back} exit, {pages} page", NULL },
+	{ "Type a number, {confirm} set, {back} close",
+#ifdef PLATFORM_HANDHELD
+	  "{confirm} types a number, {back} close",
+#else
+	  NULL,
+#endif
+	  NULL },
+};
+
+const char *debug_menu_prompt_fault(void)
+{
+	const int width = DEBUG_MENU_WIDTH - 10;
+	const char *fault = prompt_fit_fault(dbgHelp, DBG_ROW_COUNT, small_font, width,
+	                                     "debug menu help");
+	if (fault == NULL)
+		fault = prompt_fit_fault(dbgKeys, COUNTOF(dbgKeys), small_font, width, "debug menu keys");
+	if (fault == NULL)
+		fault = prompt_fit_fault(&dbgExpertKeys, 1, small_font, width, "expert settings keys");
+	return fault;
+}
 
 /* The display order: the rows above under non-selectable headings (id < 0). Grouping is the whole
  * point; a flat 34-row list of hull ids, cheats and diagnostics reads as noise. */
@@ -943,7 +975,7 @@ void JE_debugMenu(bool center)
 				sprintf(buf, "%s", cheatNoEnemyFire ? "ON" : "OFF");
 				break;
 			case DBG_SKIP_LEVEL:  // action
-				sprintf(buf, "%s", "[Enter]");
+				prompt_expand(buf, sizeof(buf), "[{confirm}]");
 				break;
 			case DBG_PLAY_SOUND:  // Left/Right id, Enter plays
 				snprintf(buf, sizeof(buf), "%d", dbgSoundId);
@@ -1002,7 +1034,7 @@ void JE_debugMenu(bool center)
 					sprintf(buf, "%s", "ON");
 				break;
 			case DBG_FORCE_CRASH:  // Crash-logger test action.
-				sprintf(buf, "%s", "[Enter]");
+				prompt_expand(buf, sizeof(buf), "[{confirm}]");
 				break;
 			default:
 				buf[0] = '\0';
@@ -1039,20 +1071,12 @@ void JE_debugMenu(bool center)
 		/* Footer line 1: what the selected row DOES; 34 cheats and diagnostics is far too many
 		 * to carry their meaning in the label alone. Line 2: the keys, named for the platform. */
 		const int shownId = dbgRowId(selected);
-		draw_font_hv(VGAScreen, mid_x, py1 - 17, dbgHelp[shownId], small_font, centered, 15, 1);
-#if defined(__SWITCH__) || defined(__vita__)
-		draw_font_hv(VGAScreen, mid_x, py1 - 8,
-		             (shownId == DBG_ADD_CASH || shownId == DBG_HANG_TIMEOUT)
-		                 ? "A types a number   B close"
-		                 : "Left/Right change   A use   B close   L/R page",
+		char help[96], keys[96];
+		draw_font_hv(VGAScreen, mid_x, py1 - 17, prompt_text(help, sizeof(help), &dbgHelp[shownId]),
+		             small_font, centered, 15, 1);
+		const bool typed = shownId == DBG_ADD_CASH || shownId == DBG_HANG_TIMEOUT;
+		draw_font_hv(VGAScreen, mid_x, py1 - 8, prompt_text(keys, sizeof(keys), &dbgKeys[typed]),
 		             small_font, centered, 15, -3);
-#else
-		draw_font_hv(VGAScreen, mid_x, py1 - 8,
-		             (shownId == DBG_ADD_CASH || shownId == DBG_HANG_TIMEOUT)
-		                 ? "Type a number   Enter set   Esc close"
-		                 : "Left/Right change   Enter use   Esc close",
-		             small_font, centered, 15, -3);
-#endif
 
 		// A scrolling list, so a tap only reaches the rows already drawn: this screen keeps
 		// the cursor keys.
@@ -1069,12 +1093,10 @@ void JE_debugMenu(bool center)
 		// Keep pumping packets while the modal panel stops gameplay.
 		NETWORK_KEEP_ALIVE();
 
-#if defined(__SWITCH__) || defined(__vita__)
 		{
 			static bool shoulder_was[2];
 			debug_panel_shoulder_paging(shoulder_was);
 		}
-#endif
 
 		/* wheel scrolls the selection; hover highlights on pointer motion; a click
 		 * acts on the row (left = activate/advance, right = reverse, Enter rows drill in) */

@@ -37,6 +37,7 @@
 #include "palette.h"
 #include "picload.h"
 #include "player.h"
+#include "prompt.h"
 #include "qa.h"
 #include "savegame.h"
 #include "sfx.h"
@@ -48,6 +49,19 @@
 
 #include <stdio.h>
 #include <string.h>
+
+const PromptText netReadyPress = {
+	"Press any key when you are ready.", "Press any button when you are ready.",
+	"Tap when you are ready."
+};
+const PromptText netReadyTakeBack = { "{back} takes back your ready.", NULL, NULL };
+const PromptText netReadyLeave = { "{back} leaves the session.", NULL, NULL };
+
+const char *networkReadyPromptFault(void)
+{
+	const PromptText lines[] = { netReadyPress, netReadyTakeBack, netReadyLeave };
+	return prompt_fit_fault(lines, COUNTOF(lines), small_font, LEGACY_WIDTH - 10, "ready lines");
+}
 
 /* Start a fresh online Endless run. Everything it needs came over in the connect packet, so both
  * machines build the same run without exchanging anything further. */
@@ -427,8 +441,10 @@ static void networkTimedBattleReady(void)
 
 		// Where the pair stands, brightened as each side commits: the wait has no timeout, so the
 		// screen has to say which of the two it is still waiting on.
+		char own[64], leave[64];
 		draw_font_hv_shadow(VGAScreen, 320 / 2, 150,
-		                    ready.localReady ? "You are ready." : "Press a key when you are ready.",
+		                    ready.localReady ? "You are ready."
+		                                     : prompt_text(own, sizeof(own), &netReadyPress),
 		                    small_font, centered, 15, ready.localReady ? 6 : 2, false, 1);
 		draw_font_hv_shadow(VGAScreen, 320 / 2, 162,
 		                    ready.peerReady ? "The other player is ready."
@@ -437,8 +453,8 @@ static void networkTimedBattleReady(void)
 		// Esc is a step back rather than a way out while this player stands confirmed, so it takes
 		// two presses to leave from there. Says which one it is about to be.
 		draw_font_hv_shadow(VGAScreen, 320 / 2, 178,
-		                    ready.localReady ? "Esc takes back your ready."
-		                                     : "Esc leaves the session.",
+		                    prompt_text(leave, sizeof(leave),
+		                                ready.localReady ? &netReadyTakeBack : &netReadyLeave),
 		                    small_font, centered, 15, 0, false, 1);
 
 		JE_showVGA();

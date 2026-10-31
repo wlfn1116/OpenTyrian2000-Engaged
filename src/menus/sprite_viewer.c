@@ -26,6 +26,7 @@
 #include "mouse.h"
 #include "network.h"
 #include "palette.h"
+#include "prompt.h"
 #include "sprite.h"
 #include "video.h"
 
@@ -429,6 +430,17 @@ static bool try_load_newsh(char c, Sprite2_array *out)
 }
 
 /* Debug sprite browser with palette switching and neighbouring frames. */
+static const PromptText viewerKeys[2] = {
+	{ "Left/Right sprite  Up/Down source  [ ] palette", "Left/Right sprite  Up/Down source", NULL },
+	{ "Home/End  PgUp/PgDn  {back} back", "{pages} page  {back} back", "Tap next  X back" },
+};
+
+const char *sprite_viewer_prompt_fault(void)
+{
+	return prompt_fit_fault(viewerKeys, COUNTOF(viewerKeys), small_font, DEBUG_MENU_WIDTH - 10,
+	                        "sprite viewer keys");
+}
+
 void JE_spriteViewer(int off_x, int off_y)
 {
 	wait_noinput_consume(false, false, true);  // don't let the click/key that opened us leak in
@@ -634,12 +646,11 @@ void JE_spriteViewer(int off_x, int off_y)
 		}
 
 		/* two-line footer, kept inside the panel */
-		draw_font_hv(VGAScreen, mid_x, py1 - 20,
-		             "L/R sprite    U/D source    [ ] palette",
-		             small_font, centered, 15, -3);
-		draw_font_hv(VGAScreen, mid_x, py1 - 11,
-		             "Home/End   PgUp/PgDn   Esc back",
-		             small_font, centered, 15, -3);
+		char keys[2][64];
+		prompt_text(keys[0], sizeof(keys[0]), &viewerKeys[0]);
+		prompt_text(keys[1], sizeof(keys[1]), &viewerKeys[1]);
+		draw_font_hv(VGAScreen, mid_x, py1 - 20, keys[0], small_font, centered, 15, -3);
+		draw_font_hv(VGAScreen, mid_x, py1 - 11, keys[1], small_font, centered, 15, -3);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
@@ -650,6 +661,10 @@ void JE_spriteViewer(int off_x, int off_y)
 		service_SDL_events(true);
 
 		NETWORK_KEEP_ALIVE();  // nothing else pumps packets while this panel is up
+		{
+			static bool shoulder_was[2];
+			debug_panel_shoulder_paging(shoulder_was);
+		}
 
 		/* wheel walks sprites; left-click = next, right-click = exit */
 		if (mouse_scroll != 0)

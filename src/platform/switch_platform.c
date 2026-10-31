@@ -189,6 +189,11 @@ bool switch_slot_single_joycon(int slot)
 	return style == HidNpadStyleTag_NpadJoyLeft || style == HidNpadStyleTag_NpadJoyRight;
 }
 
+bool switch_slot_left_joycon(int slot)
+{
+	return switch_slot_style(slot) == HidNpadStyleTag_NpadJoyLeft;
+}
+
 unsigned switch_slot_joycon_extra(int slot)
 {
 	const HidNpadIdType id = (HidNpadIdType)(HidNpadIdType_No1 + slot);

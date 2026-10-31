@@ -19,5 +19,6 @@
 #define SPRITE_VIEWER_H
 
 void JE_spriteViewer(int off_x, int off_y);
+const char *sprite_viewer_prompt_fault(void);
 
 #endif // SPRITE_VIEWER_H

@@ -46,6 +46,7 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
+#include "prompt.h"
 #include "qa.h"
 #include "savegame.h"
 #include "sfx.h"
@@ -1403,7 +1404,9 @@ static void JE_displayText(void)
 	if (warningRed)
 		tempW = 7 * 16 + 6;
 
-	JE_outCharGlow(JE_fontCenter(miscText[4], TINY_FONT), tempW, miscText[4]);
+	char pressKey[32];
+	prompt_text(pressKey, sizeof(pressKey), &helptextPressKey);
+	JE_outCharGlow(JE_fontCenter(pressKey, TINY_FONT), tempW, pressKey);
 
 	do
 	{
