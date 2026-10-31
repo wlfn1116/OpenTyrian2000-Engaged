@@ -127,17 +127,18 @@ void JE_drawPortConfigButtons(void) // rear weapon pattern indicator
 // are HUD_SCORE_Y-1 .. HUD_SCORE_Y+8.
 #define HUD_SCORE_Y      (vga_height - 25)
 #define HUD_ROW_H        10   // row pitch that keeps two shadowed TINY_FONT lines clear of each other
-#define HUD_SUPERBOMB_Y  160  // row the superbomb icons blit at, in both bottom corners
+#define HUD_SUPERBOMB_Y  158  // row the superbomb icons blit at, in both bottom corners
+#define HUD_SUPERBOMB_DX 10
 
 uint hud_superbomb_count(uint p)
 {
 	return player_is_out(p) ? 0 : player[p].superbombs;
 }
 
-// Rightmost column player 1's superbomb row reaches (icons march right from x30).
+// Rightmost column player 1's superbomb row reaches (icons march right from x24).
 static int hud_superbomb_p1_right(void)
 {
-	return 30 + 12 * (int)hud_superbomb_count(0);
+	return PLAYFIELD_LEFT + HUD_SUPERBOMB_DX * (int)hud_superbomb_count(0);
 }
 
 // text row the FPS counter occupies
@@ -926,12 +927,12 @@ void JE_inGameDisplays(void)
 	const uint last_bomb_player = dual_ship_mode() ? local_player + 1 : COUNTOF(player);
 	for (uint i = first_bomb_player; i < last_bomb_player; ++i)
 	{
-		int x = dual_ship_mode() || i == 0 ? 30 : PLAYFIELD_WIDTH + 7;
+		int x = dual_ship_mode() || i == 0 ? PLAYFIELD_LEFT : PLAYFIELD_RIGHT - 11;
 
 		for (uint j = hud_superbomb_count(i); j > 0; --j)
 		{
-			blit_sprite2(VGAScreen, x, 160, spriteSheet9, 304);
-			x += (dual_ship_mode() || i == 0) ? 12 : -12;
+			blit_sprite2(VGAScreen, x, HUD_SUPERBOMB_Y, spriteSheet9, 304);
+			x += (dual_ship_mode() || i == 0) ? HUD_SUPERBOMB_DX : -HUD_SUPERBOMB_DX;
 		}
 	}
 

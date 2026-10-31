@@ -598,7 +598,7 @@ static void qa_boss_bar_side(bool onLeft, int inkBottom, int inkTop, const char 
 static void qa_boss_bar_clearance(void)
 {
 	const int scoreTop = vga_height - 26;   // the score row's outline top
-	const int bombTop  = 160;               // the superbomb icon row
+	const int bombTop  = 158;               // the superbomb icon row
 
 	/* Separate arcade, both ships holding a special: the machine flying ship two draws the
 	 * block in the right corner over that ship's name and lives rows. */
