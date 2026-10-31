@@ -72,7 +72,7 @@ Open **Online Multiplayer** from the main menu. A host can be
 found over LAN or joined by address. The default port is UDP 1333.
 
 Players can mix Windows, macOS, Linux, Android, iOS, Switch, and Vita builds
-when both copies use the same game version. Rollback is the default netcode;
+when both copies use the same game version. Rollback is the default netcode,
 delay-based lockstep remains available from the lobby. Campaign and Endless
 sessions can be saved and resumed through their original game type.
 
