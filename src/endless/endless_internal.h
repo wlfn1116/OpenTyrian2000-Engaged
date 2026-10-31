@@ -123,7 +123,7 @@ void endlessStaticLockoutTick(void);
 void endlessStaticLockoutReset(void);
 
 #define ENDLESS_CONCUSSION_TICKS        26
-#define ENDLESS_CONCUSSION_GUARD_TICKS 140
+#define ENDLESS_CONCUSSION_GUARD_TICKS  53
 #define ENDLESS_CONCUSSION_SLOW         0.50f
 void endlessConcussionTick(void);
 void endlessConcussionReset(void);
@@ -176,7 +176,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_SURVEYOR_ROUTES 1
 #define ENDLESS_PERK_SURVEYOR_DROP_BASE 100  // kill drops: 1-in-(N/stacks), rolled per pickup kind
 #define ENDLESS_PERK_SURVEYOR_CUBE_BASE 300
-#define ENDLESS_PERK_SURVEYOR_SCORE_BASE 80
+#define ENDLESS_PERK_SURVEYOR_SCORE_BASE 66
 #define ENDLESS_PERK_EXEC_DMG_PCT   17
 #define ENDLESS_PERK_EXEC_HP_PCT    25
 #define ENDLESS_PERK_EXEC_BOSS_PCT  20

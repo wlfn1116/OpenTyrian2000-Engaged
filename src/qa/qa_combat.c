@@ -700,7 +700,7 @@ void qa_test_surveyor_drop_perk(void)
 	{
 		endlessPerkTakenBy[0][PERK_SURVEYOR] = stacks;
 		endlessPerkRederive();
-		const Uint32 odds = stacks == 1 ? 80 : 40;
+		const Uint32 odds = stacks == 1 ? 66 : 33;
 		for (Uint32 k = 0; k < 4000; ++k)
 		{
 			for (uint i = 0; i < COUNTOF(enemy); ++i)
@@ -722,7 +722,7 @@ void qa_test_surveyor_drop_perk(void)
 			reskinned += got != NULL && enemyDat[got->carrier].egraphic[0] != got->graphic;
 		}
 	}
-	qa_check(oneIn, "a kill's score roll lands 1 in 80 with one stack and 1 in 40 with two, "
+	qa_check(oneIn, "a kill's score roll lands 1 in 66 with one stack and 1 in 33 with two, "
 	                "and drops exactly the pickup its pick draw names");
 	qa_check(reskinned > 0,
 	         "...including other episodes' pickups, in their own sprite, value and popup");

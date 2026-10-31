@@ -663,7 +663,7 @@ Course-correction modifiers are exclusive. Canonicalization keeps the strongest:
 
 Concussion slows the ship a hit lands on. `JE_playerDamage` calls
 `endlessConcussionHit()` whenever shield or armor drops, and every such hit
-on a ready ship slows it by 50% for 26 ticks, then holds a 140-tick guard in
+on a ready ship slows it by 50% for 26 ticks, then holds a 53-tick guard in
 which no hit can concuss it again. Depth and difficulty change none of these
 numbers.
 
@@ -722,7 +722,7 @@ the ship whose effect is being calculated.
   on the hull. The AST. CITY superbomb (enemy 800) and the ASTEROID1 orbiting
   orb (enemy 535) roll 1-in-(100/stacks) of the killing ship, the
   random-special datacube (enemy 513) 1-in-(300/stacks), and a score pickup
-  1-in-(80/stacks). A landed score roll spends one more draw on
+  1-in-(66/stacks). A landed score roll spends one more draw on
   `endlessSurveyorScoreFinds`: every score pickup worth 100 or more in any
   episode's enemy table that moves on its own, so the stationary Soh Jin
   artifact (enemy 475) is left out. Weights follow the gem ladder's
