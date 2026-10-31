@@ -7,16 +7,16 @@ an open-source port of the DOS game Tyrian 2000.
 
 This fork adds:
 
-- a wider 16:9 playfield and smooth high-refresh rendering;
-- Endless mode built from the original levels and new gameplay effects;
-- two-player online play across every mode;
-- an in-game remake of the SHIPEDIT.EXE ship editor;
-- an in-game custom weapon editor;
-- optional restored weapons, effects, sprites, and level objects;
-- FluidSynth and native MIDI support on Windows x86-64;
-- custom music and sound effect replacement support;
-- Android (8.0+), iOS (13.0+), macOS (11.0+), Nintendo Switch and PlayStation Vita ports;
-- save and custom-data transfers between platforms;
+- a wider 16:9 playfield and smooth high-refresh rendering,
+- Endless mode built from the original levels and new gameplay effects,
+- two-player online play across every mode,
+- an in-game remake of the SHIPEDIT.EXE ship editor,
+- an in-game custom weapon editor,
+- optional restored weapons, effects, sprites, and level objects,
+- FluidSynth and native MIDI support on Windows x86-64,
+- custom music and sound effect replacement support,
+- Android (8.0+), iOS (13.0+), macOS (11.0+), Nintendo Switch and PlayStation Vita ports,
+- save and custom-data transfers between platforms,
 - [Tyrian2000Atlas](https://github.com/wlfn1116/Tyrian2000Atlas) integration.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
