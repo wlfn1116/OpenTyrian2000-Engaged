@@ -157,6 +157,7 @@ void shopWaitNotice(const char *text, const char *detail, const char *hint);
 void shopWaitFrame(void);
 
 const char *game_menu_prompt_fault(void);
+const char *game_menu_cube_wrap_fault(void);
 
 extern JE_word mapOrigin, mapPNum;
 extern JE_byte mapPlanet[5], mapSection[5];

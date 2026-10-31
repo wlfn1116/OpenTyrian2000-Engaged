@@ -80,5 +80,6 @@ void JE_loadHelpText(void);
 PromptText helptext_menu_prompt(size_t index);
 const char *helptext_menu_help(char *buf, size_t size, size_t index);
 const char *helptext_prompt_fault(void);
+const char *helptext_wrap_fault(void);
 
 #endif /* HELPTEXT_H */

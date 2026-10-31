@@ -5309,6 +5309,80 @@ void draw_ship_illustration(void)
 	blit_sprite_hv(VGAScreenSeg, 28, 23, OPTION_SHAPES, 26, 15, shields[shopPlayer()->items.shield].mpwr - 10);
 }
 
+struct cube_wrap
+{
+	uint line, chars, width;
+	bool wrapped;
+};
+
+static bool cube_add_word(struct cube_struct *c, struct cube_wrap *wrap, const char *word)
+{
+	const uint word_chars = strlen(word),
+	           word_width = JE_textWidth(word, TINY_FONT);
+
+	// word won't fit; no can do
+	if (word_chars > cube_line_chars || word_width > cube_line_width)
+		return false;
+
+	bool prepend_space = !wrap->wrapped;
+
+	wrap->chars += word_chars + (prepend_space ? 1 : 0);
+	wrap->width += word_width + (prepend_space ? 6 : 0);
+
+	// word won't fit on current line; use next
+	if (wrap->chars > cube_line_chars || wrap->width > cube_line_width)
+	{
+		++wrap->line;
+		wrap->chars = word_chars;
+		wrap->width = word_width;
+
+		prepend_space = false;
+	}
+	wrap->wrapped = !prepend_space && word_chars == 0;
+
+	// append word
+	if (wrap->line < COUNTOF(c->text))
+	{
+		if (prepend_space)
+			strcat(c->text[wrap->line], " ");
+		strcat(c->text[wrap->line], word);
+
+		// track last line with text
+		c->last_line = wrap->line + 1;
+	}
+	return true;
+}
+
+const char *game_menu_cube_wrap_fault(void)
+{
+	static struct cube_struct probe;
+
+	int emptyWraps = 0;
+	for (uint len = 1; len <= 12; ++len)
+	{
+		for (uint count = 1; count <= 40; ++count)
+		{
+			char word[16];
+			memset(word, 'i', len);
+			word[len] = '\0';
+
+			memset(&probe, 0, sizeof(probe));
+			struct cube_wrap wrap = { 0, 0, 0, false };
+			for (uint i = 0; i < count; ++i)
+				cube_add_word(&probe, &wrap, word);
+			const uint before = wrap.line;
+			cube_add_word(&probe, &wrap, "");
+			emptyWraps += wrap.line != before;
+			cube_add_word(&probe, &wrap, "next");
+
+			for (int line = 1; line < probe.last_line; ++line)
+				if (probe.text[line][0] == ' ')
+					return "a wrapped datacube line starts with a space";
+		}
+	}
+	return emptyWraps > 0 ? NULL : "no datacube probe broke a line at a double space";
+}
+
 void load_cubes(void)
 {
 	for (int cube_slot = 0; cube_slot < cubeMax; ++cube_slot)
@@ -5339,7 +5413,7 @@ bool load_cube(int cube_slot, int cube_index)
 	read_encrypted_pascal_string(cube[cube_slot].title, sizeof(cube[cube_slot].title), f);
 	read_encrypted_pascal_string(cube[cube_slot].header, sizeof(cube[cube_slot].header), f);
 
-	uint line = 0, line_chars = 0, line_width = 0;
+	struct cube_wrap wrap = { 0, 0, 0, false };
 
 	// for each line of decrypted text, split the line into words
 	// and add them individually to the lines of wrapped text
@@ -5354,12 +5428,13 @@ bool load_cube(int cube_slot, int cube_index)
 		// new paragraph
 		if (strlen(buf) == 0)
 		{
-			if (line_chars == 0)
-				line += 4;  // subsequent new paragaphs indicate 4-line break
+			if (wrap.chars == 0)
+				wrap.line += 4;  // subsequent new paragaphs indicate 4-line break
 			else
-				++line;
-			line_chars = 0;
-			line_width = 0;
+				++wrap.line;
+			wrap.chars = 0;
+			wrap.width = 0;
+			wrap.wrapped = false;
 
 			continue;
 		}
@@ -5377,38 +5452,8 @@ bool load_cube(int cube_slot, int cube_index)
 				char *word = &buf[word_start];
 				word_start = i + 1;
 
-				uint word_chars = strlen(word),
-				     word_width = JE_textWidth(word, TINY_FONT);
-
-				// word won't fit; no can do
-				if (word_chars > cube_line_chars || word_width > cube_line_width)
+				if (!cube_add_word(&cube[cube_slot], &wrap, word))
 					break;
-
-				bool prepend_space = true;
-
-				line_chars += word_chars + (prepend_space ? 1 : 0);
-				line_width += word_width + (prepend_space ? 6 : 0);
-
-				// word won't fit on current line; use next
-				if (line_chars > cube_line_chars || line_width > cube_line_width)
-				{
-					++line;
-					line_chars = word_chars;
-					line_width = word_width;
-
-					prepend_space = false;
-				}
-
-				// append word
-				if (line < COUNTOF(cube->text))
-				{
-					if (prepend_space)
-						strcat(cube[cube_slot].text[line], " ");
-					strcat(cube[cube_slot].text[line], word);
-
-					// track last line with text
-					cube[cube_slot].last_line = line + 1;
-				}
 			}
 
 			if (end_of_line)

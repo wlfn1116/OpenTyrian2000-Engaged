@@ -576,3 +576,17 @@ void qa_test_prompt_labels(void)
 		qa_check(fault == NULL, fault != NULL ? fault : "a screen's prompts fit on every device");
 	}
 }
+
+void qa_test_wrapped_lines(void)
+{
+	const char *(*const checks[])(void) = {
+		helptext_wrap_fault,
+		game_menu_cube_wrap_fault,
+		spritePickerWrapFault,
+	};
+	for (size_t i = 0; i < COUNTOF(checks); ++i)
+	{
+		const char *const fault = checks[i]();
+		qa_check(fault == NULL, fault != NULL ? fault : "no wrapped line starts with a space");
+	}
+}

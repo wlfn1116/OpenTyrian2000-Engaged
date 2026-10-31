@@ -78,5 +78,6 @@ bool spritePickerTagSelfTest(char *detail, size_t detailSize);
 bool spritePickerDyeSelfTest(const SpritePickerPage *page, char *detail, size_t detailSize);
 bool spritePickerTagFits(const char *tag);
 const char *spritePickerHintFault(void);
+const char *spritePickerWrapFault(void);
 
 #endif // SPRITE_PICKER_H

@@ -244,8 +244,33 @@ static void read_section(FILE *f, void *strings, size_t count, size_t size)
 
 #define READ_SECTION(f, strings) read_section(f, strings, COUNTOF(strings), sizeof((strings)[0]))
 
-static unsigned int help_box(SDL_Surface *screen, int x, int y, const char *message,
-                             unsigned int boxwidth)
+typedef void (*HelpBoxSink)(const char *line, void *context);
+
+typedef struct
+{
+	SDL_Surface *screen;
+	int x, y;
+}
+HelpBoxPen;
+
+static void help_box_draw(const char *line, void *context)
+{
+	HelpBoxPen *const pen = context;
+	JE_textShade(pen->screen, pen->x, pen->y, line, helpBoxColor, helpBoxBrightness,
+	             helpBoxShadeType);
+	pen->y += verticalHeight;
+}
+
+static const char *help_box_line(const char *text, unsigned int line)
+{
+	if (line > 0)
+		while (*text == ' ')
+			++text;
+	return text;
+}
+
+static unsigned int help_box_wrap(const char *message, unsigned int boxwidth, HelpBoxSink sink,
+                                  void *context)
 {
 	JE_byte startpos, endpos, pos;
 	JE_boolean endstring;
@@ -286,20 +311,16 @@ static unsigned int help_box(SDL_Surface *screen, int x, int y, const char *mess
 		} while (!((unsigned)(pos - startpos) > boxwidth || endstring));
 
 		SDL_strlcpy(substring, message + startpos - 1, MIN((size_t)(endpos - startpos + 1), sizeof(substring)));
-		if (screen != NULL)
-			JE_textShade(screen, x, y, substring, helpBoxColor, helpBoxBrightness,
-			             helpBoxShadeType);
+		if (sink != NULL)
+			sink(help_box_line(substring, lines), context);
 		++lines;
-
-		y += verticalHeight;
 
 	} while (!endstring);
 
 	if (endpos != pos + 1)
 	{
-		if (screen != NULL)
-			JE_textShade(screen, x, y, message + endpos, helpBoxColor, helpBoxBrightness,
-			             helpBoxShadeType);
+		if (sink != NULL)
+			sink(help_box_line(message + endpos, lines), context);
 		++lines;
 	}
 
@@ -308,7 +329,8 @@ static unsigned int help_box(SDL_Surface *screen, int x, int y, const char *mess
 
 void JE_helpBox(SDL_Surface *screen,  int x, int y, const char *message, unsigned int boxwidth)
 {
-	if (help_box(screen, x, y, message, boxwidth) == 0)
+	HelpBoxPen pen = { screen, x, y };
+	if (help_box_wrap(message, boxwidth, help_box_draw, &pen) == 0)
 		return;
 
 	helpBoxColor = 12;
@@ -343,7 +365,70 @@ static int help_box_lines(const char *line, const void *boxwidth)
 {
 	if (strlen(line) >= sizeof(helpTxt[0]))
 		return INT_MAX;
-	return (int)help_box(NULL, 0, 0, line, *(const unsigned int *)boxwidth);
+	return (int)help_box_wrap(line, *(const unsigned int *)boxwidth, NULL, NULL);
+}
+
+typedef struct
+{
+	unsigned int lines;
+	bool spaced;
+}
+HelpBoxProbe;
+
+static void help_box_probe(const char *line, void *context)
+{
+	HelpBoxProbe *const probe = context;
+	if (probe->lines++ > 0 && line[0] == ' ')
+		probe->spaced = true;
+}
+
+static int help_box_spaced(const char *line, const void *boxwidth)
+{
+	HelpBoxProbe probe = { 0, false };
+	if (strlen(line) < UINT8_MAX)
+		help_box_wrap(line, *(const unsigned int *)boxwidth, help_box_probe, &probe);
+	return probe.spaced ? 1 : 0;
+}
+
+const char *helptext_wrap_fault(void)
+{
+	static const unsigned int boxWidths[] = { 18, 22, 24, 25, 30, 40, 44, 45, 50, 55, 60 };
+	static char fault[128];
+
+	for (unsigned int w = 0; w < COUNTOF(boxWidths); ++w)
+	{
+		const unsigned int *const width = &boxWidths[w];
+		for (unsigned int i = 0; i < COUNTOF(manualDevices); ++i)
+		{
+			const PromptText text = helptext_manual_prompt(i);
+			const char *const page = prompt_measure_fault(&text, 1, help_box_spaced, width, 0,
+			                                              "manual page wraps to a leading space");
+			if (page != NULL)
+				return page;
+		}
+
+		const char *plain[COUNTOF(miscText) + COUNTOF(superShips) + 2 * COUNTOF(shipInfo)];
+		size_t count = 0;
+		for (size_t i = 0; i < COUNTOF(miscText); ++i)
+			plain[count++] = miscText[i];
+		for (size_t i = 0; i < COUNTOF(superShips); ++i)
+			plain[count++] = superShips[i];
+		for (size_t i = 0; i < COUNTOF(shipInfo); ++i)
+		{
+			plain[count++] = shipInfo[i][0];
+			plain[count++] = shipInfo[i][1];
+		}
+		for (size_t i = 0; i < count; ++i)
+		{
+			if (help_box_spaced(plain[i], width))
+			{
+				snprintf(fault, sizeof(fault), "\"%.48s\" wraps to a leading space at %u",
+				         plain[i], *width);
+				return fault;
+			}
+		}
+	}
+	return NULL;
 }
 
 const char *helptext_prompt_fault(void)

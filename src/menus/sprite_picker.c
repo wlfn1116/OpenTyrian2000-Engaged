@@ -502,8 +502,13 @@ static const char *spWrapSplit(const char *text, char *first, size_t n)
 		if (first[cut] != ' ')
 			continue;
 		first[cut] = '\0';
-		if (JE_textWidth(first, small_font) <= SP_INFO_X1 - SP_INFO_X0)
-			return text + cut + 1;
+		if (first[cut - 1] == ' ' || JE_textWidth(first, small_font) > SP_INFO_X1 - SP_INFO_X0)
+			continue;
+
+		const char *rest = text + cut + 1;
+		while (*rest == ' ')
+			++rest;
+		return (*rest != '\0') ? rest : NULL;
 	}
 	SDL_strlcpy(first, text, n);
 	return NULL;
@@ -521,6 +526,33 @@ static int spInfoAdd(SpInfoLine *lines, int count, const char *text, Sint8 value
 		lines[count++].value = value;
 	}
 	return count;
+}
+
+const char *spritePickerWrapFault(void)
+{
+	char text[48];
+	int splits = 0;
+	for (size_t len = 1; len <= 12; ++len)
+	{
+		memset(text, 'W', sizeof(text) - 1);
+		text[sizeof(text) - 1] = '\0';
+		for (size_t i = len; i + 1 < sizeof(text) - 1; i += len + 2)
+			text[i] = text[i + 1] = ' ';
+
+		for (size_t end = 1; end < sizeof(text); ++end)
+		{
+			char probe[48], first[48];
+			SDL_strlcpy(probe, text, end + 1);
+			const char *const rest = spWrapSplit(probe, first, sizeof(first));
+			if (rest == NULL)
+				continue;
+			++splits;
+			const size_t used = strlen(first);
+			if (rest[0] == ' ' || (used > 0 && first[used - 1] == ' '))
+				return "a picker info line split at a double space keeps a space";
+		}
+	}
+	return splits > 0 ? NULL : "no picker info line split in the probe";
 }
 
 bool spritePickerTagFits(const char *tag)
