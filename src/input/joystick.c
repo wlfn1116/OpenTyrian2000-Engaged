@@ -160,12 +160,27 @@ static int joystick_2p_raw(int j, int num)
 
 static unsigned menu_buttons_claimed;
 
-static bool joystick_raw_held(int j, int num)
+static bool joystick_raw_claimed(int j, int num)
 {
 	for (int which = 0; which < JOYSTICK_MENU_BUTTON_COUNT; ++which)
 		if ((menu_buttons_claimed & (1u << which)) != 0 && joystick[j].menu_button[which] == num)
-			return false;
-	return SDL_JoystickGetButton(joystick[j].handle, num) == 1;
+			return true;
+	return false;
+}
+
+static bool joystick_raw_held(int j, int num)
+{
+	return !joystick_raw_claimed(j, num) && SDL_JoystickGetButton(joystick[j].handle, num) == 1;
+}
+
+static int joystick_binding_raw(int j, const Joystick_assignment *binding)
+{
+#ifdef __SWITCH__
+	return joystick_2p_raw(j, binding->num);
+#else
+	(void)j;
+	return binding->num;
+#endif
 }
 
 static bool joystick_button_held(int j, int num)
@@ -359,12 +374,15 @@ void push_joysticks_as_keyboard(void)
 		if (!joystick[j].input_pressed)
 			continue;
 		
-		// If one button maps to confirm and cancel, emit only cancel. Sending Return
-		// and Escape together can select and leave a menu in the same frame.
-		if (joystick[j].cancel)
-			push_key(cancel);
-		else if (joystick[j].confirm)
-			push_key(confirm);
+		if (!joystick_menu_actions_fixed(j))
+		{
+			// If one button maps to confirm and cancel, emit only cancel. Sending Return
+			// and Escape together can select and leave a menu in the same frame.
+			if (joystick[j].cancel)
+				push_key(cancel);
+			else if (joystick[j].confirm)
+				push_key(confirm);
+		}
 		
 		for (uint d = 0; d < COUNTOF(joystick[j].direction_pressed); d++)
 		{
@@ -392,6 +410,19 @@ bool joystick_menu_button_down(JoystickMenuButton which)
 void joystick_claim_menu_buttons(unsigned mask)
 {
 	menu_buttons_claimed = mask;
+}
+
+bool joystick_binding_claimed(int j, const Joystick_assignment *binding)
+{
+	return binding->type == BUTTON && joystick_raw_claimed(j, joystick_binding_raw(j, binding));
+}
+
+bool joystick_menu_actions_fixed(int j)
+{
+	const unsigned fixed = (1u << JOYSTICK_FACE_CONFIRM) | (1u << JOYSTICK_FACE_BACK);
+	return (menu_buttons_claimed & fixed) == fixed && j >= 0 && j < joysticks &&
+	       joystick[j].menu_button[JOYSTICK_FACE_CONFIRM] >= 0 &&
+	       joystick[j].menu_button[JOYSTICK_FACE_BACK] >= 0;
 }
 
 int joystick_shoulder_step(bool was[2])
@@ -436,6 +467,11 @@ static PadLabels joycon_labels(Uint16 vendor, Uint16 product)
 	case PAD_PRODUCT_JOYCON_PAIR:  return PAD_LABELS_NINTENDO;
 	default:                       return PAD_LABELS_COUNT;
 	}
+}
+
+static bool joystick_nintendo_face(PadLabels labels)
+{
+	return labels == PAD_LABELS_NINTENDO || joystick_sideways_joycon(labels);
 }
 
 #ifdef JOYSTICK_HOTPLUG
@@ -493,7 +529,7 @@ static PadLabels pad_labels(SDL_GameController *pad)
 
 static bool pad_names_by_label(PadLabels labels)
 {
-	return (labels == PAD_LABELS_NINTENDO || joystick_sideways_joycon(labels)) &&
+	return joystick_nintendo_face(labels) &&
 	       SDL_GetHintBoolean(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, SDL_TRUE);
 }
 
@@ -597,10 +633,6 @@ static const Sint8 console_button_spot[] = {
 
 static void joystick_learn_layout(int j)
 {
-	static const PadSpot menuSpot[JOYSTICK_MENU_BUTTON_COUNT] = {
-		PAD_SPOT_NORTH, PAD_SPOT_WEST, PAD_SPOT_LEFT_SHOULDER, PAD_SPOT_RIGHT_SHOULDER,
-	};
-
 	Joystick *const js = &joystick[j];
 	memset(js->button_spot, PAD_SPOT_NONE, sizeof(js->button_spot));
 	memset(js->axis_spot, PAD_SPOT_NONE, sizeof(js->axis_spot));
@@ -636,6 +668,11 @@ static void joystick_learn_layout(int j)
 	}
 #endif
 
+	const bool nintendo = joystick_nintendo_face(js->labels);
+	const PadSpot menuSpot[JOYSTICK_MENU_BUTTON_COUNT] = {
+		PAD_SPOT_NORTH, PAD_SPOT_WEST, PAD_SPOT_LEFT_SHOULDER, PAD_SPOT_RIGHT_SHOULDER,
+		nintendo ? PAD_SPOT_EAST : PAD_SPOT_SOUTH, nintendo ? PAD_SPOT_SOUTH : PAD_SPOT_EAST,
+	};
 	for (int which = 0; which < JOYSTICK_MENU_BUTTON_COUNT; ++which)
 	{
 		js->menu_button[which] = -1;
@@ -780,10 +817,7 @@ PadSpot joystick_binding_spot(int j, const Joystick_assignment *binding)
 	{
 	case BUTTON:
 	{
-		int num = binding->num;
-#ifdef __SWITCH__
-		num = joystick_2p_raw(j, num);
-#endif
+		const int num = joystick_binding_raw(j, binding);
 		return (num >= 0 && num < JOYSTICK_SPOT_BUTTONS) ? (PadSpot)joystick[j].button_spot[num]
 		                                                 : PAD_SPOT_NONE;
 	}

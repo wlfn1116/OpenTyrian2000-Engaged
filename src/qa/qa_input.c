@@ -198,7 +198,9 @@ void qa_test_controller_hotplug(void)
 		qa_check(menu[JOYSTICK_FACE_NORTH] == SDL_CONTROLLER_BUTTON_Y &&
 		         menu[JOYSTICK_FACE_WEST] == SDL_CONTROLLER_BUTTON_X &&
 		         menu[JOYSTICK_SHOULDER_LEFT] == SDL_CONTROLLER_BUTTON_LEFTSHOULDER &&
-		         menu[JOYSTICK_SHOULDER_RIGHT] == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+		         menu[JOYSTICK_SHOULDER_RIGHT] == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER &&
+		         menu[JOYSTICK_FACE_CONFIRM] == SDL_CONTROLLER_BUTTON_A &&
+		         menu[JOYSTICK_FACE_BACK] == SDL_CONTROLLER_BUTTON_B,
 		         "a known controller's face and shoulder buttons are found by position");
 
 		const SDL_GameControllerButton north = SDL_CONTROLLER_BUTTON_Y;
@@ -209,9 +211,13 @@ void qa_test_controller_hotplug(void)
 		const bool northSeen = joystick_menu_button_down(JOYSTICK_FACE_NORTH);
 		const bool northFree = !joystick[slot].action[3];
 		qa_pad_hold(slot, &north, 1, false);
-		qa_check(northSeen && northFree && !qa_pad_button(slot, west, 2) &&
-		         !qa_pad_button(slot, left, 2) && qa_pad_button(slot, confirm, 0),
-		         "jukebox buttons skip their bindings while it is open, and A still confirms");
+		qa_pad_hold(slot, &confirm, 1, true);
+		const bool confirmSeen = joystick_menu_button_down(JOYSTICK_FACE_CONFIRM);
+		qa_pad_hold(slot, &confirm, 1, false);
+		qa_check(northSeen && northFree && confirmSeen && joystick_menu_actions_fixed(slot) &&
+		         !qa_pad_button(slot, west, 2) && !qa_pad_button(slot, left, 2) &&
+		         !qa_pad_button(slot, confirm, 0),
+		         "the jukebox reads its own buttons by position and ignores the gameplay bindings");
 
 		Joystick_assignment savedPause[2];
 		memcpy(savedPause, joystick[slot].assignment[9], sizeof(savedPause));
@@ -221,10 +227,11 @@ void qa_test_controller_hotplug(void)
 		const bool claimedQuits = joystick[slot].cancel;
 		qa_pad_hold(slot, &north, 1, false);
 		qa_pad_hold(slot, &cancel, 1, true);
-		const bool cancelQuits = joystick[slot].cancel;
+		const bool backSeen = joystick_menu_button_down(JOYSTICK_FACE_BACK);
+		const bool backBinding = joystick[slot].cancel;
 		qa_pad_hold(slot, &cancel, 1, false);
-		qa_check(!claimedQuits && cancelQuits,
-		         "a jukebox button bound to pause does not quit it, and B still does");
+		qa_check(!claimedQuits && backSeen && !backBinding,
+		         "a jukebox button bound to pause does not quit it; B quits as its back button");
 
 		joystick_claim_menu_buttons(0);
 		qa_pad_hold(slot, &north, 1, true);
@@ -232,6 +239,48 @@ void qa_test_controller_hotplug(void)
 		qa_pad_hold(slot, &north, 1, false);
 		memcpy(joystick[slot].assignment[9], savedPause, sizeof(savedPause));
 		qa_check(releasedQuits, "outside the jukebox the same button pauses again");
+
+		Joystick_assignment savedRows[3][2];
+		memcpy(savedRows, &joystick[slot].assignment[4], sizeof(savedRows));
+		const PadLabels savedLabels = joystick[slot].labels;
+		joystick[slot].labels = PAD_LABELS_VITA;
+		joystick[slot].assignment[5][0] = (Joystick_assignment){ .type = BUTTON, .num = north };
+		joystick[slot].assignment[5][1].type = NONE;
+		prompt_use_pad(slot);
+		static const char jukeSongs[] =
+			"{back} quits, {north} switches to sounds, {west} hides the text.";
+		static const char vitaSongs[] =
+			"Circle quits, Triangle switches to sounds, Square hides the text.";
+		static const char vitaSongsUnclaimed[] =
+			"Start quits, Triangle switches to sounds, Square hides the text.";
+		char juke[3][96];
+		joystick_claim_menu_buttons(jukebox_claimed_buttons());
+		prompt_expand(juke[0], sizeof(juke[0]), jukeSongs);
+		prompt_expand(juke[1], sizeof(juke[1]),
+		              "{pageleft} mutes the music, {north} switches to songs, {back} quits.");
+		joystick_claim_menu_buttons(0);
+		prompt_expand(juke[2], sizeof(juke[2]), jukeSongs);
+		static const char vitaSounds[] =
+			"L mutes the music, Triangle switches to songs, Circle quits.";
+		qa_check(strcmp(juke[0], vitaSongs) == 0 && strcmp(juke[1], vitaSounds) == 0,
+		         "with change fire on Triangle, the Vita jukebox quits with Circle and says so");
+		qa_check(strcmp(juke[2], vitaSongsUnclaimed) == 0,
+		         "a line never names one button for two jobs; back moves to another binding");
+
+		joystick[slot].labels = savedLabels;
+		joystick[slot].assignment[4][0] = (Joystick_assignment){ .type = BUTTON, .num = confirm };
+		joystick[slot].assignment[4][1].type = NONE;
+		joystick[slot].assignment[5][0] = joystick[slot].assignment[4][0];
+		static const PromptText shared = {
+			"Enter picks. Esc cancels.", "{confirm} picks. {back} cancels.", NULL
+		};
+		char line2[64];
+		prompt_text(line2, sizeof(line2), &shared);
+		qa_check(strcmp(line2, "Enter picks. Esc cancels.") == 0,
+		         "a button that both fires and cancels is never offered as confirm");
+		memcpy(&joystick[slot].assignment[4], savedRows, sizeof(savedRows));
+		qa_check(strcmp(prompt_expand(line2, sizeof(line2), "{rsidekick} {north}"), "RB Y") == 0,
+		         "a token moves to its other binding when the first one is named for another job");
 
 		SDL_Joystick *const pad = joystick[slot].handle;
 		SDL_JoystickSetVirtualAxis(pad, SDL_CONTROLLER_AXIS_LEFTY, -32768);
@@ -385,6 +434,12 @@ void qa_test_controller_hotplug(void)
 #endif
 }
 
+static int qa_prompt_length(const char *line, const void *context)
+{
+	(void)context;
+	return (int)strlen(line);
+}
+
 static bool qa_prompt_says(PromptDevice device, PadLabels labels, const char *tmpl,
                            const char *want)
 {
@@ -424,6 +479,14 @@ void qa_test_prompt_labels(void)
 	qa_check(qa_prompt_says(PROMPT_PAD, PAD_LABELS_GENERIC, "{confirm} {back}",
 	                        "Button 1 Button 2"),
 	         "an unknown controller's buttons go by number");
+
+	static const PromptText twice = {
+		"Y fires, Y quits.", "{rsidekick} fires, {north} quits.", NULL
+	};
+	const char *const caught = prompt_measure_fault(&twice, 1, qa_prompt_length, NULL, 1000,
+	                                                "probe");
+	qa_check(caught != NULL && strstr(caught, "two jobs") != NULL,
+	         "the screen checks catch a line that names one button for two jobs");
 
 	static const char joyconKeys[] = "{confirm} {back} {north} {west} {pages} {menu} {dpad}";
 	qa_check(qa_prompt_says(PROMPT_PAD, PAD_LABELS_JOYCON_LEFT, joyconKeys,

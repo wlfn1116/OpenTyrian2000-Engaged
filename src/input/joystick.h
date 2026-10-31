@@ -59,6 +59,8 @@ typedef enum
 	JOYSTICK_FACE_WEST,
 	JOYSTICK_SHOULDER_LEFT,
 	JOYSTICK_SHOULDER_RIGHT,
+	JOYSTICK_FACE_CONFIRM,
+	JOYSTICK_FACE_BACK,
 	JOYSTICK_MENU_BUTTON_COUNT
 }
 JoystickMenuButton;
@@ -213,6 +215,8 @@ void push_joysticks_as_keyboard(void);
 
 bool joystick_menu_button_down(JoystickMenuButton which);
 void joystick_claim_menu_buttons(unsigned mask);
+bool joystick_binding_claimed(int j, const Joystick_assignment *binding);
+bool joystick_menu_actions_fixed(int j);
 int joystick_shoulder_step(bool was[2]);
 int joystick_page_step(bool was[2]);
 

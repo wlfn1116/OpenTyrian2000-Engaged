@@ -124,6 +124,8 @@ static const struct
 	{ JOYSTICK_FACE_WEST,     SDL_SCANCODE_F },
 	{ JOYSTICK_FACE_NORTH,    SDL_SCANCODE_SLASH },
 	{ JOYSTICK_SHOULDER_LEFT, SDL_SCANCODE_M },
+	{ JOYSTICK_FACE_CONFIRM,  SDL_SCANCODE_RETURN },
+	{ JOYSTICK_FACE_BACK,     SDL_SCANCODE_ESCAPE },
 };
 
 static const PromptText jukeboxHelp[2][2] =
@@ -274,7 +276,8 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 		// starlib input needs to be rewritten
 		JE_starlib_main(step, scale > 1 ? juke_hi : VGAScreen, scale);
 
-		// Face buttons by position: west hides the text, north switches songs and sounds, L mutes.
+		// Face buttons by position: confirm plays, back quits, west hides the text, north switches
+		// songs and sounds, L mutes.
 		for (size_t b = 0; b < COUNTOF(jukeboxPadButtons); ++b)
 		{
 			const bool down = joystick_menu_button_down(jukeboxPadButtons[b].button);

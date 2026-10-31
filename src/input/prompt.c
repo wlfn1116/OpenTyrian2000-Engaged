@@ -60,11 +60,36 @@ static const char *const promptTokens[PROMPT_KEY_COUNT] = {
 	"north", "west", "pageleft", "pageright", "pages", "dpad",
 };
 
-static const int promptAction[PROMPT_KEY_PAUSE + 1] = { 4, 5, 4, 5, 6, 7, 8, 9 };
+static const Sint8 promptRows[PROMPT_KEY_PAUSE + 1][3] = {
+	[PROMPT_KEY_CONFIRM]        = { 4, -1, -1 },
+	[PROMPT_KEY_BACK]           = { 5, 8, 9 },
+	[PROMPT_KEY_FIRE]           = { 4, -1, -1 },
+	[PROMPT_KEY_CHANGE_FIRE]    = { 5, -1, -1 },
+	[PROMPT_KEY_LEFT_SIDEKICK]  = { 6, -1, -1 },
+	[PROMPT_KEY_RIGHT_SIDEKICK] = { 7, -1, -1 },
+	[PROMPT_KEY_MENU]           = { 8, -1, -1 },
+	[PROMPT_KEY_PAUSE]          = { 9, -1, -1 },
+};
+
+static const Sint8 promptRole[PROMPT_KEY_COUNT] = {
+	[PROMPT_KEY_CONFIRM] = 0, [PROMPT_KEY_FIRE] = 0, [PROMPT_KEY_BACK] = 1,
+	[PROMPT_KEY_CHANGE_FIRE] = 1, [PROMPT_KEY_LEFT_SIDEKICK] = 2, [PROMPT_KEY_RIGHT_SIDEKICK] = 3,
+	[PROMPT_KEY_MENU] = 4, [PROMPT_KEY_PAUSE] = 5, [PROMPT_KEY_NORTH] = 6, [PROMPT_KEY_WEST] = 7,
+	[PROMPT_KEY_PAGE_LEFT] = 8, [PROMPT_KEY_PAGE_RIGHT] = 8, [PROMPT_KEY_PAGES] = 8,
+	[PROMPT_KEY_DPAD] = -1,
+};
 
 static const JoystickMenuButton promptMenuButton[] = {
 	JOYSTICK_FACE_NORTH, JOYSTICK_FACE_WEST, JOYSTICK_SHOULDER_LEFT, JOYSTICK_SHOULDER_RIGHT,
 };
+
+typedef struct
+{
+	int identity[16];
+	Sint8 role[16];
+	int count;
+}
+PromptUsed;
 
 static const char *const padSpotNames[PAD_LABELS_COUNT][PAD_SPOT_COUNT] = {
 	[PAD_LABELS_XBOX360] = {
@@ -128,6 +153,7 @@ static bool promptForced = false;
 static PromptDevice promptForcedDevice = PROMPT_HOME;
 static PadLabels promptForcedLabels = PAD_LABELS_XBOX;
 static bool promptUnresolved = false;
+static bool promptConflict = false;
 
 void prompt_use_keyboard(void)
 {
@@ -302,36 +328,158 @@ static const char *prompt_touch_label(PromptKey key)
 	}
 }
 
-static const char *prompt_pad_label(char *buf, size_t size, PromptKey key)
+static int prompt_identity(int j, const Joystick_assignment *binding)
+{
+	const PadSpot spot = joystick_binding_spot(j, binding);
+	if (spot != PAD_SPOT_NONE)
+		return spot;
+	return PAD_SPOT_COUNT + ((binding->type * 256 + binding->num) * 2 + binding->x_axis) * 2 +
+	       binding->negative_axis;
+}
+
+static bool prompt_conflicts(const PromptUsed *used, int role, int identity)
+{
+	for (int i = 0; i < used->count; ++i)
+		if (used->identity[i] == identity && used->role[i] != role)
+			return true;
+	return false;
+}
+
+static void prompt_note_used(PromptUsed *used, int role, int identity)
+{
+	if (used->count < (int)COUNTOF(used->identity))
+	{
+		used->identity[used->count] = identity;
+		used->role[used->count] = (Sint8)role;
+		++used->count;
+	}
+}
+
+static bool prompt_fixed_binding(int j, PromptKey key, Joystick_assignment *binding)
+{
+	JoystickMenuButton which;
+	if (key >= PROMPT_KEY_NORTH && key <= PROMPT_KEY_PAGE_RIGHT)
+		which = promptMenuButton[key - PROMPT_KEY_NORTH];
+	else if ((key == PROMPT_KEY_CONFIRM || key == PROMPT_KEY_BACK) &&
+	         joystick_menu_actions_fixed(j))
+		which = (key == PROMPT_KEY_CONFIRM) ? JOYSTICK_FACE_CONFIRM : JOYSTICK_FACE_BACK;
+	else
+		return false;
+
+	*binding = (Joystick_assignment){ .type = BUTTON, .num = joystick[j].menu_button[which] };
+	return true;
+}
+
+static bool prompt_cancels(int j, int identity)
+{
+	const Sint8 *const rows = promptRows[PROMPT_KEY_BACK];
+	for (size_t r = 0; r < COUNTOF(promptRows[PROMPT_KEY_BACK]); ++r)
+	{
+		const Joystick_assignment *const pair = joystick[j].assignment[rows[r]];
+		for (int i = 0; i < 2; ++i)
+			if (pair[i].type != NONE && prompt_identity(j, &pair[i]) == identity)
+				return true;
+	}
+	return false;
+}
+
+static bool prompt_pick_binding(int j, PromptKey key, const PromptUsed *used,
+                                Joystick_assignment *picked)
+{
+	if (prompt_fixed_binding(j, key, picked))
+		return picked->num >= 0;
+
+	for (size_t r = 0; r < COUNTOF(promptRows[key]) && promptRows[key][r] >= 0; ++r)
+	{
+		const Joystick_assignment *const pair = joystick[j].assignment[promptRows[key][r]];
+		for (int i = 0; i < 2; ++i)
+		{
+			const Joystick_assignment *const binding = &pair[i];
+			if (binding->type == NONE || (binding->type == BUTTON && binding->num < 0) ||
+			    joystick_binding_claimed(j, binding))
+				continue;
+			const int identity = prompt_identity(j, binding);
+			if ((key == PROMPT_KEY_CONFIRM && prompt_cancels(j, identity)) ||
+			    prompt_conflicts(used, promptRole[key], identity))
+				continue;
+			*picked = *binding;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void prompt_note_fixed_key(PromptKey key, int j, PadLabels labels, PromptUsed *used)
+{
+	Joystick_assignment binding;
+	if (j >= 0)
+	{
+		if (prompt_fixed_binding(j, key, &binding) && binding.num >= 0)
+			prompt_note_used(used, promptRole[key], prompt_identity(j, &binding));
+	}
+	else if (key >= PROMPT_KEY_NORTH && key <= PROMPT_KEY_PAGE_RIGHT &&
+	         labels != PAD_LABELS_GENERIC)
+	{
+		prompt_note_used(used, promptRole[key], padDefaultSpot[labels][key]);
+	}
+}
+
+static int prompt_token_at(const char *p, const char **close)
+{
+	*close = (*p == '{') ? strchr(p, '}') : NULL;
+	for (int k = 0; *close != NULL && k < PROMPT_KEY_COUNT; ++k)
+		if (strlen(promptTokens[k]) == (size_t)(*close - p - 1) &&
+		    strncmp(p + 1, promptTokens[k], (size_t)(*close - p - 1)) == 0)
+			return k;
+	return -1;
+}
+
+static void prompt_note_fixed(const char *tmpl, PromptUsed *used)
+{
+	const int j = prompt_slot();
+	const PadLabels labels = prompt_pad_labels();
+	for (const char *p = tmpl; *p != '\0'; ++p)
+	{
+		const char *close;
+		const int key = prompt_token_at(p, &close);
+		if (key < 0)
+			continue;
+		if (key == PROMPT_KEY_PAGES)
+		{
+			prompt_note_fixed_key(PROMPT_KEY_PAGE_LEFT, j, labels, used);
+			prompt_note_fixed_key(PROMPT_KEY_PAGE_RIGHT, j, labels, used);
+		}
+		else
+		{
+			prompt_note_fixed_key((PromptKey)key, j, labels, used);
+		}
+		p = close;
+	}
+}
+
+static const char *prompt_pad_label(char *buf, size_t size, PromptKey key, PromptUsed *used)
 {
 	if (key == PROMPT_KEY_DPAD)
 		return joystick_sideways_joycon(prompt_pad_labels()) ? "stick" : "D-pad";
 	if (key == PROMPT_KEY_PAGES)
 	{
 		char left[24], right[24];
-		const char *const l = prompt_pad_label(left, sizeof(left), PROMPT_KEY_PAGE_LEFT);
-		const char *const r = prompt_pad_label(right, sizeof(right), PROMPT_KEY_PAGE_RIGHT);
+		const char *const l = prompt_pad_label(left, sizeof(left), PROMPT_KEY_PAGE_LEFT, used);
+		const char *const r = prompt_pad_label(right, sizeof(right), PROMPT_KEY_PAGE_RIGHT, used);
 		if (l == NULL || r == NULL)
 			return NULL;
 		snprintf(buf, size, "%s/%s", l, r);
 		return buf;
 	}
 
+	const int role = promptRole[key];
 	const int j = prompt_slot();
 	if (j >= 0)
 	{
-		Joystick_assignment binding = { .type = BUTTON, .num = -1 };
-		if (key <= PROMPT_KEY_PAUSE)
-		{
-			const Joystick_assignment *const pair = joystick[j].assignment[promptAction[key]];
-			binding = (pair[0].type != NONE) ? pair[0] : pair[1];
-		}
-		else
-		{
-			binding.num = joystick[j].menu_button[promptMenuButton[key - PROMPT_KEY_NORTH]];
-		}
-		if (binding.type == NONE || (binding.type == BUTTON && binding.num < 0))
+		Joystick_assignment binding;
+		if (!prompt_pick_binding(j, key, used, &binding))
 			return NULL;
+		prompt_note_used(used, role, prompt_identity(j, &binding));
 		return prompt_binding_label(buf, size, j, &binding);
 	}
 
@@ -340,13 +488,21 @@ static const char *prompt_pad_label(char *buf, size_t size, PromptKey key)
 	{
 		if (key > PROMPT_KEY_PAUSE)
 			return NULL;
-		snprintf(buf, size, "Button %d", promptAction[key] - 3);
+		snprintf(buf, size, "Button %d", promptRows[key][0] - 3);
 		return buf;
 	}
-	return prompt_spot_name(labels, (PadSpot)padDefaultSpot[labels][key]);
+	const PadSpot spot = (PadSpot)padDefaultSpot[labels][key];
+	if (prompt_conflicts(used, role, spot))
+	{
+		promptConflict = true;
+		return NULL;
+	}
+	prompt_note_used(used, role, spot);
+	return prompt_spot_name(labels, spot);
 }
 
-static const char *prompt_key_label(char *buf, size_t size, PromptKey key, PromptDevice device)
+static const char *prompt_key_label(char *buf, size_t size, PromptKey key, PromptDevice device,
+                                    PromptUsed *used)
 {
 	switch (device)
 	{
@@ -356,7 +512,7 @@ static const char *prompt_key_label(char *buf, size_t size, PromptKey key, Promp
 		return prompt_touch_label(key);
 	case PROMPT_PAD:
 	default:
-		return prompt_pad_label(buf, size, key);
+		return prompt_pad_label(buf, size, key, used);
 	}
 }
 
@@ -365,16 +521,16 @@ static const char *prompt_expand_for(char *buf, size_t size, const char *tmpl, P
 	if (size == 0)
 		return buf;
 
+	PromptUsed used = { .count = 0 };
+	if (device == PROMPT_PAD)
+		prompt_note_fixed(tmpl, &used);
+
 	size_t n = 0;
 	const char *p = tmpl;
 	while (*p != '\0' && n + 1 < size)
 	{
-		const char *const close = (*p == '{') ? strchr(p, '}') : NULL;
-		int key = -1;
-		for (int k = 0; close != NULL && k < PROMPT_KEY_COUNT && key < 0; ++k)
-			if (strlen(promptTokens[k]) == (size_t)(close - p - 1) &&
-			    strncmp(p + 1, promptTokens[k], (size_t)(close - p - 1)) == 0)
-				key = k;
+		const char *close;
+		const int key = prompt_token_at(p, &close);
 		if (key < 0)
 		{
 			buf[n++] = *p++;
@@ -382,7 +538,7 @@ static const char *prompt_expand_for(char *buf, size_t size, const char *tmpl, P
 		}
 
 		char label[48];
-		const char *text = prompt_key_label(label, sizeof(label), (PromptKey)key, device);
+		const char *text = prompt_key_label(label, sizeof(label), (PromptKey)key, device, &used);
 		if (text == NULL)
 		{
 			promptUnresolved = true;
@@ -411,7 +567,17 @@ const char *prompt_text(char *buf, size_t size, const PromptText *text)
 		tmpl = text->pad;
 
 	promptUnresolved = false;
+	promptConflict = false;
 	prompt_expand_for(buf, size, tmpl, device);
+#if defined(__SWITCH__) || defined(__vita__)
+	if (promptUnresolved && !promptForced)
+	{
+		prompt_force(PROMPT_PAD, prompt_pad_labels());
+		promptUnresolved = false;
+		prompt_expand_for(buf, size, tmpl, PROMPT_PAD);
+		prompt_unforce();
+	}
+#endif
 	if (promptUnresolved && tmpl != text->keys)
 	{
 		promptUnresolved = false;
@@ -458,7 +624,14 @@ const char *prompt_measure_fault(const PromptText *texts, size_t count, PromptMe
 				char line[256];
 				prompt_text(line, sizeof(line), &texts[i]);
 				const int m = measure(line, context);
-				if (m > limit || promptUnresolved || strchr(line, '{') != NULL)
+				if (promptConflict)
+				{
+					snprintf(fault, sizeof(fault),
+					         "%s: \"%s\" names one button for two jobs (family %d)", where,
+					         texts[i].pad != NULL ? texts[i].pad : texts[i].keys, l);
+					result = fault;
+				}
+				else if (m > limit || promptUnresolved || strchr(line, '{') != NULL)
 				{
 					snprintf(fault, sizeof(fault), "%s: \"%s\" measures %d, %d fit", where, line,
 					         m, limit);
