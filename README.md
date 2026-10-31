@@ -34,7 +34,7 @@ Release packages include the freeware Tyrian 2000 data. Source builds
 need a copy from [camanis.net](https://www.camanis.net/tyrian/tyrian2000.zip).
 
 On Windows and Linux, the executable should be beside the `data` directory.
-The macOS app bundle and the console packages carry the data inside them;
+The macOS app bundle and the console packages carry the data inside them,
 the consoles can also use an external copy. See their build guides.
 
 ## Display and controls
