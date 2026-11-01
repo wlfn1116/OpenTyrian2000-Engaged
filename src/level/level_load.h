@@ -30,6 +30,7 @@ extern JE_word levelEnemyFrequency;
 void JE_loadMap(void);
 void close_episode_file(void);
 bool level_read_event_script(FILE *f);
+bool event_spawns_linked_enemy(JE_byte type);
 void level_scan_boss_leadins(void);
 bool level_boss_leadin_active(void);
 

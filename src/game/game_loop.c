@@ -1783,6 +1783,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 	enemyShot[b].seekerArm = 0;
 	enemyShot[b].seekerLeft = 0;
 	enemyShot[b].filter = tint;
+	enemyShot[b].martyr = 0;
 	enemyShot[b].syc = weapons[w].acceleration;
 	enemyShot[b].sxc = weapons[w].accelerationx;
 	enemyShot[b].sxm = weapons[w].sx[0];
@@ -1911,6 +1912,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 			enemyShot[c].seekerArm = 0;
 			enemyShot[c].seekerLeft = 0;
 			enemyShot[c].filter = tint;
+			enemyShot[c].martyr = 0;
 		}
 	}
 }
@@ -2385,6 +2387,7 @@ enemy_still_exists:
 								// An elite or champion fires in its own bank, so its bullets read as
 								// dangerous as the body they came from. 0 outside an endless run.
 								enemyShot[b].filter = endlessEliteTint(enemy[i].eliteState);
+								enemyShot[b].martyr = 0;
 								switch (j)
 								{
 								case 1:
@@ -4341,8 +4344,10 @@ draw_player_shot_loop_end:
 								const uint armorBefore = player[i].armor;
 								if ((temp = JE_playerDamage(temp, &player[i])) > 0)
 								{
-									player[i].x_velocity += (enemyShot[z].sxm * temp) / 2;
-									player[i].y_velocity += (enemyShot[z].sym * temp) / 2;
+									player[i].x_velocity +=
+										endlessPerkKnockback(i, (enemyShot[z].sxm * temp) / 2);
+									player[i].y_velocity +=
+										endlessPerkKnockback(i, (enemyShot[z].sym * temp) / 2);
 								}
 
 								// Reflect shield-only hits through the owning ship's perk context.
@@ -5027,6 +5032,9 @@ draw_player_shot_loop_end:
 			explodeMove = 2;
 		}
 	}
+
+	if (level_stall_lost_super_enemy())
+		level_super_enemy_down(254);
 
 	// Cull unreachable above-screen orphans after a prolonged map stop. Live linked boss anchors
 	// remain untouched.

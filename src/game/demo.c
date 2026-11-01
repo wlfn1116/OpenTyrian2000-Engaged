@@ -149,11 +149,11 @@ bool replay_demo_keys(void)
 
 void begin_demo_recording(void)
 {
-	Uint8 new_demo_num = 0;
+	unsigned int new_demo_num = 0;
 
 	do
 	{
-		sprintf(tempStr, "demorec.%d", new_demo_num++);
+		sprintf(tempStr, "demorec.%u", new_demo_num++);
 	} while (dir_file_exists(get_user_directory(), tempStr)); // until file doesn't exist
 
 	demo_file = dir_fopen_warn(get_user_directory(), tempStr, "wb");

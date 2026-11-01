@@ -79,8 +79,96 @@ void JE_eventJump(JE_word jump)
 	do
 	{
 		tempW++;
-	} while (!(eventRec[tempW-1].eventtime >= target));
+	} while (tempW <= maxEvent && eventRec[tempW-1].eventtime < target);
 	eventLoc = tempW - 1;
+}
+
+void level_super_enemy_down(JE_byte link)
+{
+	if (link != 254 || superEnemy254Jump == 0)
+		return;
+
+	const JE_word jump = superEnemy254Jump;
+	superEnemy254Jump = 0;
+	JE_eventJump(jump);
+}
+
+static int event_skip_count(const struct JE_EventRecType *e)
+{
+	switch (e->eventtype)
+	{
+	case 61: return e->eventdat3;
+	case 63: return e->eventdat;
+	case 66: return e->eventdat2;
+	case 75: return e->eventdat4;
+	default: return 0;
+	}
+}
+
+static bool super_exit_stranded(JE_word before, JE_word after)
+{
+	if (superEnemy254Jump <= after || returnActive || (levelTimer && levelTimerCountdown > 0))
+		return false;
+
+	JE_word armed = before;
+	while (armed > 0 && eventRec[armed - 1].eventtype != 57)
+		--armed;
+	if (armed == 0 || (JE_word)eventRec[armed - 1].eventdat != superEnemy254Jump)
+		return false;
+
+	for (unsigned int i = 0; i < COUNTOF(enemy); ++i)
+		if (enemyAvail[i] == 0 && enemy[i].linknum == 254)
+			return false;
+	return true;
+}
+
+bool level_stall_lost_super_enemy(void)
+{
+	return !endLevel && backMove == 0 && map1YDelayMax <= 1 && !forceEvents &&
+	       stopBackgroundNum == 0 && !readyToEndLevel && super_exit_stranded(eventLoc - 1, curLoc);
+}
+
+bool level_loop_lost_super_enemy(JE_word target)
+{
+	const JE_word jump = eventLoc - 1;
+	const JE_word here = eventRec[jump].eventtime;
+	if (target >= here || !super_exit_stranded(jump, here))
+		return false;
+
+	for (JE_word i = 0; i < jump; ++i)
+	{
+		const struct JE_EventRecType *const e = &eventRec[i];
+		if (e->eventtime < target)
+			continue;
+		if ((event_spawns_linked_enemy(e->eventtype) && e->eventdat4 == 254) ||
+		    (e->eventtype == 39 && e->eventdat2 == 254))
+			return false;
+		if ((e->eventtype == 54 || e->eventtype == 70 || e->eventtype == 71) &&
+		    (JE_word)e->eventdat > here)
+			return false;
+		if (i + event_skip_count(e) >= jump)
+			return false;
+	}
+	return true;
+}
+
+static bool event_jumps_back(const struct JE_EventRecType *e)
+{
+	return (e->eventtype == 54 || e->eventtype == 70 || e->eventtype == 71) &&
+	       (JE_word)e->eventdat < e->eventtime;
+}
+
+static void event_script_jump(JE_word target)
+{
+	if (!level_loop_lost_super_enemy(target))
+	{
+		JE_eventJump(target);
+		return;
+	}
+
+	level_super_enemy_down(254);
+	if (eventLoc > 1 && !event_jumps_back(&eventRec[eventLoc - 1]))
+		--eventLoc;
 }
 
 static bool JE_searchFor/*enemy*/(JE_byte PLType, JE_byte* out_index)
@@ -783,7 +871,7 @@ void JE_eventSystem(void)
 		break;
 
 	case 54:
-		JE_eventJump(eventRec[eventLoc-1].eventdat);
+		event_script_jump(eventRec[eventLoc-1].eventdat);
 		break;
 
 	case 55: /* Enemy Global AccelRev */
@@ -915,19 +1003,19 @@ void JE_eventSystem(void)
 				found = found || JE_searchFor(temp, NULL);
 
 			if (!found)
-				JE_eventJump(eventRec[eventLoc-1].eventdat);
+				event_script_jump(eventRec[eventLoc-1].eventdat);
 		}
 		else if (!JE_searchFor(eventRec[eventLoc-1].eventdat2, NULL) &&
 		         (eventRec[eventLoc-1].eventdat3 == 0 || !JE_searchFor(eventRec[eventLoc-1].eventdat3, NULL)) &&
 		         (eventRec[eventLoc-1].eventdat4 == 0 || !JE_searchFor(eventRec[eventLoc-1].eventdat4, NULL)))
 		{
-			JE_eventJump(eventRec[eventLoc-1].eventdat);
+			event_script_jump(eventRec[eventLoc-1].eventdat);
 		}
 		break;
 
 	case 71:
 		if (((((intptr_t)mapYPos - (intptr_t)&megaData1.mainmap) / sizeof(JE_byte *)) * 2) <= (unsigned)eventRec[eventLoc-1].eventdat2)
-			JE_eventJump(eventRec[eventLoc-1].eventdat);
+			event_script_jump(eventRec[eventLoc-1].eventdat);
 		break;
 
 	case 72:
@@ -961,18 +1049,25 @@ void JE_eventSystem(void)
 		break;
 
 	case 75:;
-		bool temp_no_clue = false; // whether the requested link range contains a live stationary enemy
-
+		bool lastStill[256] = { false };
 		for (temp = 0; temp < 100; temp++)
 		{
 			if (enemyAvail[temp] == 0 &&
-			    enemy[temp].eyc == 0 &&
 			    enemy[temp].linknum >= eventRec[eventLoc-1].eventdat &&
 			    enemy[temp].linknum <= eventRec[eventLoc-1].eventdat2)
 			{
-				temp_no_clue = true;
+				lastStill[enemy[temp].linknum] = enemy[temp].eyc == 0;
 			}
 		}
+
+		bool temp_no_clue = false; // a link in range whose last live enemy stands still
+		for (uint link = 0; link < COUNTOF(lastStill); ++link)
+			temp_no_clue = temp_no_clue || lastStill[link];
+
+		const int plSlot = eventRec[eventLoc-1].eventdat3 - 80;
+		JE_byte plDiscard;
+		JE_byte *const pl = (plSlot >= 0 && plSlot < (int)COUNTOF(newPL)) ? &newPL[plSlot]
+		                                                                   : &plDiscard;
 
 		if (temp_no_clue)
 		{
@@ -982,11 +1077,11 @@ void JE_eventSystem(void)
 				temp = (mt_rand() % (eventRec[eventLoc-1].eventdat2 + 1 - eventRec[eventLoc-1].eventdat)) + eventRec[eventLoc-1].eventdat;
 			} while (!(JE_searchFor(temp, &enemy_i) && enemy[enemy_i].eyc == 0));
 
-			newPL[eventRec[eventLoc-1].eventdat3 - 80] = temp;
+			*pl = temp;
 		}
 		else
 		{
-			newPL[eventRec[eventLoc-1].eventdat3 - 80] = 255;
+			*pl = 255;
 			if (eventRec[eventLoc-1].eventdat4 > 0)
 			{ /*Skip*/
 				curLoc = eventRec[eventLoc-1 + eventRec[eventLoc-1].eventdat4].eventtime - 1;

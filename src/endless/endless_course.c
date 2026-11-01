@@ -40,18 +40,40 @@ static int endlessCourseBaseDanger(int i)
 	return endlessLevelBaseDanger(endlessCourseEp[i], endlessCourseFile[i], difficultyLevel);
 }
 
+static Uint64 endlessSectorThreats(Uint64 courseMods)
+{
+	Uint64 shared = 0;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		shared |= endlessPurchasedMods[p] & ~ENDLESS_PERSONAL_MOD_MASK;
+
+	const Uint64 base = endlessFoldPurchasedMods(courseMods, 0);
+	Uint64 cancelled = ~(Uint64)0;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		cancelled &= base & ~endlessFoldPurchasedMods(courseMods | shared,
+		                                              endlessPurchasedMods[p]
+		                                              & ENDLESS_PERSONAL_MOD_MASK);
+	return courseMods & ~cancelled;
+}
+
+static Uint64 endlessSabotage(Uint64 courseMods)
+{
+	const Uint64 threats = endlessSectorThreats(courseMods);
+	const bool spotlight = endlessZoneLightConeRoll();
+	Uint64 kept = threats;
+	for (int c = endlessCleanseCharges(); c > 0; --c)
+		kept = endlessStripWorstMod(kept, spotlight);
+	return (courseMods & ~(threats & ~kept)) | (kept & ENDLESS_MOD_NOSPOTLIGHT);
+}
+
 // Reproduce the purchase and Sabotage passes used at launch. Report stripped bits through
 // `cleansedOut`; The Long Con remains hidden until launch.
 static Uint64 endlessCourseLaunchMods(int i, Uint64 *cleansedOut)
 {
 	const Uint64 folded = endlessFoldPurchasedMods(endlessCourseMod[i],
 	                                              endlessPurchasedMods[endlessEconomyIndex()]);
-	const int charges = endlessCleanseCharges();
-	Uint64 kept = folded;
-	for (int c = 0; c < charges; ++c)
-		kept = endlessStripWorstMod(kept);
+	const Uint64 launched = endlessSabotage(endlessCourseMod[i]);
 	if (cleansedOut != NULL)
-		*cleansedOut = folded & ~kept;
+		*cleansedOut = (endlessCourseMod[i] & ~launched) | (launched & ENDLESS_MOD_NOSPOTLIGHT);
 	return folded;
 }
 
@@ -1413,12 +1435,12 @@ int endlessCourseModRows(int i, EndlessCourseModRow *rows, int max)
 		rows[n].cleansed = (cleansed & ENDLESS_MOD_OVERCLOCK) != 0;
 		++n;
 	}
-	if (n < max && endlessZoneLightConeRoll() && !(mods & ENDLESS_MOD_TOPSY))
+	if (n < max && endlessZoneLightConeRoll() && !(mods & ~cleansed & ENDLESS_MOD_TOPSY))
 	{
 		rows[n].word     = "spotlight view";
 		rows[n].weight   = 4;
 		rows[n].hostile  = true;
-		rows[n].cleansed = false;
+		rows[n].cleansed = (cleansed & ENDLESS_MOD_NOSPOTLIGHT) != 0;
 		++n;
 	}
 	for (int a = 1; a < n; ++a)  // insertion sort, worst first; n is tiny
@@ -1485,12 +1507,9 @@ JE_byte endlessSelectCourse(int i)
 	forcedLvlFileNum = endlessCourseFile[i];  // load this course's exact level file (see JE_loadMap)
 	// Apply the same Sabotage pass used to price and colour the course card, then hand each
 	// player their own effect mask: what they bought for themselves boosts them alone.
-	endlessActiveMods = endlessCourseMod[i];
-	const int charges = endlessCleanseCharges();  // the pair's, at the run-wide cap
+	endlessActiveMods = endlessSabotage(endlessCourseMod[i]);
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 		endlessCleanseChargeCount[p] = 0;
-	for (int c = 0; c < charges; ++c)  // Sabotage: strip the worst hostile bit per charge
-		endlessActiveMods = endlessStripWorstMod(endlessActiveMods);
 	// Add The Long Con's Apex ambush after cleansing so Sabotage cannot remove it.
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 		if (endlessLongCon[p] > 0 && --endlessLongCon[p] == 0)

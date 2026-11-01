@@ -392,7 +392,7 @@ typedef struct
 static LevelBossLeadIn levelBossLeadIn[LEVEL_BOSS_LEADINS];
 static unsigned int levelBossLeadIns = 0;
 
-static bool event_spawns_linked_enemy(JE_byte type)
+bool event_spawns_linked_enemy(JE_byte type)
 {
 	switch (type)
 	{
@@ -909,8 +909,12 @@ new_game:
 						do
 						{
 							read_encrypted_pascal_string(s, sizeof(s), ep_f);
-							strcpy(levelWarningText[levelWarningLines], s);
-							levelWarningLines++;
+							if (levelWarningLines < COUNTOF(levelWarningText))
+							{
+								SDL_strlcpy(levelWarningText[levelWarningLines], s,
+								            sizeof(*levelWarningText));
+								levelWarningLines++;
+							}
 						} while (s[0] != '#');
 						levelWarningLines--;
 

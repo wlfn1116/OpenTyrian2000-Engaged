@@ -36,6 +36,74 @@ static const struct
 	{ 4, 10,  7, 393 },  // DESERTRUN
 };
 
+static const struct
+{
+	JE_byte episode, lvl_file;
+	JE_word time;
+} qa_boss_loops[] =
+{
+	{ 1, 18, 11910 },
+	{ 2,  6,  5599 },
+	{ 2,  7,  3799 },
+	{ 2,  7,  5439 },
+	{ 3,  6,  7000 },
+	{ 4, 15,  9120 },
+	{ 5,  5,  3400 },
+};
+
+static unsigned int qa_boss_loops_shipped(void)
+{
+	unsigned int n = 0;
+	for (size_t i = 0; i < COUNTOF(qa_boss_loops); ++i)
+		n += episodeAvail[qa_boss_loops[i].episode - 1] ? 1 : 0;
+	return n;
+}
+
+static void qa_scan_boss_loops(unsigned int *matched, unsigned int *unexpected)
+{
+	JE_EnemyAvailType savedAvail;
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	const JE_word savedLoc = eventLoc, savedJump = superEnemy254Jump;
+	const JE_boolean savedTimer = levelTimer, savedReturn = returnActive;
+	memset(enemyAvail, 1, sizeof(enemyAvail));
+	levelTimer = false;
+	returnActive = false;
+
+	for (JE_word j = 0; j < maxEvent; ++j)
+	{
+		const struct JE_EventRecType *const e = &eventRec[j];
+		if (e->eventtype != 54 || (JE_word)e->eventdat >= e->eventtime)
+			continue;
+
+		superEnemy254Jump = 0;
+		for (JE_word a = j; a > 0; --a)
+			if (eventRec[a - 1].eventtype == 57)
+			{
+				superEnemy254Jump = (JE_word)eventRec[a - 1].eventdat;
+				break;
+			}
+		eventLoc = j + 1;
+		if (!level_loop_lost_super_enemy((JE_word)e->eventdat))
+			continue;
+
+		bool known = false;
+		for (size_t k = 0; k < COUNTOF(qa_boss_loops); ++k)
+			known = known || (qa_boss_loops[k].episode == episodeNum &&
+			                  qa_boss_loops[k].lvl_file == lvlFileNum &&
+			                  qa_boss_loops[k].time == e->eventtime);
+		if (known)
+			++*matched;
+		else
+			++*unexpected;
+	}
+
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	eventLoc = savedLoc;
+	superEnemy254Jump = savedJump;
+	levelTimer = savedTimer;
+	returnActive = savedReturn;
+}
+
 static bool qa_spread_authored(const struct JE_EventRecType *e)
 {
 	for (size_t i = 0; i < COUNTOF(qa_authored_spread); ++i)
@@ -474,6 +542,7 @@ void qa_test_level_event_scripts(void)
 	const JE_byte saved_episode = episodeNum, saved_lvl_file = lvlFileNum;
 
 	unsigned int levels = 0, nubs = 0, attached = 0, scattered = 0;
+	unsigned int bossLoops = 0, strayLoops = 0;
 	bool read_all = true, gryphon = false, harvest = false, underdeli = false;
 	bool fleet = false, core = false;
 	for (int ep = 1; ep <= EPISODE_MAX; ++ep)
@@ -517,6 +586,7 @@ void qa_test_level_event_scripts(void)
 
 			++levels;
 			scattered += qa_scattered_spawns();
+			qa_scan_boss_loops(&bossLoops, &strayLoops);
 			if (ep == 4 && lvlFileNum == 4)
 				attached += qa_attached_surface_nubs(&nubs);
 			if (ep == 2 && lvlFileNum == 6)
@@ -549,6 +619,10 @@ void qa_test_level_event_scripts(void)
 	         "SURFACE's arch nubs spawn beside their arches, as in Tyrian 2.1");
 	qa_check(scattered == 0, "outside the authored designs, no spawn group places a piece over "
 	         "100px from its median height");
+	qa_check(bossLoops == qa_boss_loops_shipped() && strayLoops == 0,
+	         "a loop that waits on a 254 enemy that is gone takes its exit on exactly the shipped "
+	         "boss waits (ALE, GRYPHON, GEM WAR twice, FLEET, BRAINIAC, ASTEROIDS) and nowhere "
+	         "else");
 	qa_check(!episodeAvail[2 - 1] || gryphon,
 	         "GRYPHON keeps one bar: the body's in the campaign, the head's under scaled boss "
 	         "HP, with the body still on boss HP");
@@ -562,4 +636,215 @@ void qa_test_level_event_scripts(void)
 	         "seals at 255, opens from it and sets a larger pool");
 	printf("# level events: %u levels, %u SURFACE arch nubs, %u scattered spawns\n",
 	       levels, nubs, scattered);
+}
+
+static void qa_loop_script(void)
+{
+	memset(eventRec, 0, 6 * sizeof(eventRec[0]));
+	eventRec[0].eventtime = 10;
+	eventRec[0].eventtype = 57;
+	eventRec[0].eventdat = 100;
+	eventRec[1].eventtime = 20;
+	eventRec[1].eventtype = 7;
+	eventRec[1].eventdat4 = 254;
+	eventRec[2].eventtime = 30;
+	eventRec[2].eventtype = 9;
+	eventRec[3].eventtime = 50;
+	eventRec[3].eventtype = 54;
+	eventRec[3].eventdat = 30;
+	eventRec[4].eventtime = 100;
+	eventRec[4].eventtype = 9;
+	eventRec[5].eventtime = 65500;
+	maxEvent = 5;
+	superEnemy254Jump = 100;
+	levelTimer = false;
+	returnActive = false;
+	memset(enemyAvail, 1, sizeof(enemyAvail));
+}
+
+static JE_word qa_loop_run(void)
+{
+	eventLoc = 4;
+	curLoc = 50;
+	JE_eventSystem();
+	return curLoc;
+}
+
+void qa_test_super_enemy_loops(void)
+{
+	struct JE_EventRecType *const saved = malloc(sizeof(eventRec));
+	if (saved == NULL)
+	{
+		qa_check(false, "the script-loop test can save the loaded event script");
+		return;
+	}
+	memcpy(saved, eventRec, sizeof(eventRec));
+	static JE_MultiEnemyType savedEnemies;
+	memcpy(savedEnemies, enemy, sizeof(enemy));
+	JE_EnemyAvailType savedAvail;
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	JE_byte savedPL[COUNTOF(newPL)];
+	memcpy(savedPL, newPL, sizeof(savedPL));
+	const JE_word savedMax = maxEvent, savedLoc = eventLoc, savedCur = curLoc;
+	const JE_word savedJump = superEnemy254Jump, savedCountdown = levelTimerCountdown;
+	const JE_boolean savedTimer = levelTimer, savedReturn = returnActive;
+
+	qa_loop_script();
+	qa_enemy_stage(0, 100, 50, 20);
+	enemy[0].linknum = 254;
+	const bool waits = qa_loop_run() == 30 && eventLoc == 3 && superEnemy254Jump == 100;
+	qa_loop_script();
+	const bool exits = qa_loop_run() == 100 && eventLoc == 5 && superEnemy254Jump == 0;
+	qa_loop_script();
+	enemyAvail[0] = 2;
+	const bool wreck = qa_loop_run() == 100;
+	qa_loop_script();
+	eventRec[6] = eventRec[5];
+	eventRec[5] = eventRec[4];
+	eventRec[4].eventtime = 99;
+	maxEvent = 6;
+	const bool likeKill = qa_loop_run() == 100 && eventRec[eventLoc - 1].eventtime == 99;
+	qa_check(waits && exits && wreck && likeKill,
+	         "a script loop waiting on its 254 enemy loops while it lives and takes the armed exit "
+	         "once it is gone, a wreck included, running the event before the exit as a kill "
+	         "would unless that event is the loop's own jump back");
+
+	bool held = true;
+	qa_loop_script();
+	eventRec[2].eventtype = 7;
+	eventRec[2].eventdat4 = 254;
+	held = held && qa_loop_run() == 30;
+	qa_loop_script();
+	eventRec[2].eventtype = 39;
+	eventRec[2].eventdat2 = 254;
+	held = held && qa_loop_run() == 30;
+	qa_loop_script();
+	eventRec[2].eventtype = 70;
+	eventRec[2].eventdat = 200;
+	held = held && qa_loop_run() == 30;
+	qa_loop_script();
+	eventRec[2].eventtype = 63;
+	eventRec[2].eventdat = 1;
+	held = held && qa_loop_run() == 30;
+	qa_loop_script();
+	eventRec[0].eventdat = 40;
+	superEnemy254Jump = 40;
+	held = held && qa_loop_run() == 30;
+	qa_loop_script();
+	eventRec[0].eventtype = 9;
+	eventRec[4].eventtype = 57;
+	eventRec[4].eventdat = 100;
+	held = held && qa_loop_run() == 30;
+	qa_loop_script();
+	levelTimer = true;
+	levelTimerCountdown = 5;
+	held = held && qa_loop_run() == 30;
+	qa_loop_script();
+	returnActive = true;
+	held = held && qa_loop_run() == 30;
+	qa_check(held,
+	         "...but loops on while its body can spawn or retag a 254 enemy, has another way out, "
+	         "a timer or return is pending, or the armed exit belongs to another stretch");
+
+	const JE_word savedBack = backMove;
+	const JE_byte savedDelayMax = map1YDelayMax, savedStopNum = stopBackgroundNum;
+	const JE_boolean savedForce = forceEvents, savedReady = readyToEndLevel, savedEnd = endLevel;
+	qa_loop_script();
+	backMove = 0;
+	map1YDelayMax = 1;
+	forceEvents = false;
+	stopBackgroundNum = 0;
+	readyToEndLevel = false;
+	endLevel = false;
+	eventLoc = 3;
+	curLoc = 30;
+	qa_enemy_stage(0, 100, 50, 20);
+	enemy[0].linknum = 254;
+	const bool aliveHolds = !level_stall_lost_super_enemy();
+	enemyAvail[0] = 1;
+	const bool stranded = level_stall_lost_super_enemy();
+	bool moving = true;
+	forceEvents = true;
+	moving = moving && !level_stall_lost_super_enemy();
+	forceEvents = false;
+	backMove = 1;
+	moving = moving && !level_stall_lost_super_enemy();
+	backMove = 0;
+	stopBackgroundNum = 1;
+	moving = moving && !level_stall_lost_super_enemy();
+	stopBackgroundNum = 0;
+	readyToEndLevel = true;
+	moving = moving && !level_stall_lost_super_enemy();
+	readyToEndLevel = false;
+	superEnemy254Jump = 20;
+	moving = moving && !level_stall_lost_super_enemy();
+	superEnemy254Jump = 100;
+	level_super_enemy_down(254);
+	const bool resumed = curLoc == 100 && superEnemy254Jump == 0;
+	backMove = savedBack;
+	map1YDelayMax = savedDelayMax;
+	stopBackgroundNum = savedStopNum;
+	forceEvents = savedForce;
+	readyToEndLevel = savedReady;
+	endLevel = savedEnd;
+	qa_check(aliveHolds && stranded && moving && resumed,
+	         "a frozen map stop waiting on a 254 enemy that is gone takes the armed exit, but not "
+	         "while one lives, the clock still runs, a stop resumes itself or the level can end");
+
+	memset(eventRec, 0, 3 * sizeof(eventRec[0]));
+	eventRec[0].eventtime = 10;
+	eventRec[0].eventtype = 75;
+	eventRec[0].eventdat = 5;
+	eventRec[0].eventdat2 = 5;
+	eventRec[0].eventdat3 = 80;
+	eventRec[1].eventtime = 65500;
+	maxEvent = 1;
+	qa_enemy_clear_all();
+	qa_enemy_stage(3, 100, 50, 10);
+	qa_enemy_stage(7, 120, 50, 10);
+	enemy[3].linknum = 5;
+	enemy[7].linknum = 5;
+	enemy[7].eyc = 1;
+	newPL[0] = 0;
+	eventLoc = 1;
+	curLoc = 10;
+	JE_eventSystem();
+	const bool noPick = newPL[0] == 255;
+	enemy[7].eyc = 0;
+	eventLoc = 1;
+	JE_eventSystem();
+	const bool picked = newPL[0] == 5;
+	JE_byte before[COUNTOF(newPL)];
+	memcpy(before, newPL, sizeof(before));
+	eventRec[0].eventdat3 = 95;
+	eventLoc = 1;
+	JE_eventSystem();
+	const bool contained = memcmp(before, newPL, sizeof(before)) == 0;
+	qa_check(noPick && picked && contained,
+	         "a random-link pick returns when no link's last live enemy stands still, picks one "
+	         "that does, and never writes outside its ten registers");
+
+	memset(eventRec, 0, 8 * sizeof(eventRec[0]));
+	eventRec[0].eventtime = 10;
+	eventRec[1].eventtime = 20;
+	eventRec[2].eventtime = 65500;
+	maxEvent = 2;
+	eventLoc = 1;
+	curLoc = 10;
+	JE_eventJump(65510);
+	qa_check(eventLoc == maxEvent,
+	         "a jump past the last event parks on the sentinel instead of running off the script");
+
+	memcpy(eventRec, saved, sizeof(eventRec));
+	free(saved);
+	memcpy(enemy, savedEnemies, sizeof(enemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	memcpy(newPL, savedPL, sizeof(savedPL));
+	maxEvent = savedMax;
+	eventLoc = savedLoc;
+	curLoc = savedCur;
+	superEnemy254Jump = savedJump;
+	levelTimer = savedTimer;
+	levelTimerCountdown = savedCountdown;
+	returnActive = savedReturn;
 }

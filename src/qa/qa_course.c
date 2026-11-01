@@ -1264,3 +1264,129 @@ void qa_test_custom_endless_pool(void)
 
 	customEndlessMode = savedMode;
 }
+
+static bool qa_course_row(int i, const char *word, bool *cleansed)
+{
+	EndlessCourseModRow rows[16];
+	const int n = endlessCourseModRows(i, rows, (int)COUNTOF(rows));
+	for (int r = 0; r < n; ++r)
+		if (strcmp(rows[r].word, word) == 0)
+		{
+			*cleansed = rows[r].cleansed;
+			return true;
+		}
+	return false;
+}
+
+void qa_test_spotlight_sabotage(void)
+{
+	const int savedCount = endlessCourseCnt;
+	const Uint64 savedCourse = endlessCourseMod[0];
+	const Uint64 savedMods = endlessActiveMods;
+	qa_reset_course_inputs("LIGHTS OUT", 0, 2);
+
+	int hit = -1, miss = -1;
+	for (int depth = 0; depth < 400 && (hit < 0 || miss < 0); ++depth)
+	{
+		endlessRunDepth = depth;
+		if (endlessZoneLightConeRoll())
+			hit = (hit < 0) ? depth : hit;
+		else if (miss < 0)
+			miss = depth;
+	}
+	qa_check(hit >= 0 && miss >= 0, "the seeded spotlight lands on some zones and not on others");
+
+	qa_check(endlessStripWorstMod(0, true) == ENDLESS_MOD_NOSPOTLIGHT &&
+	         endlessStripWorstMod(0, false) == 0 &&
+	         endlessStripWorstMod(ENDLESS_MOD_HOMING, true) == 0 &&
+	         endlessStripWorstMod(ENDLESS_MOD_TOPSY, true) == 0 &&
+	         endlessStripWorstMod(ENDLESS_MOD_NOSPOTLIGHT, true) == ENDLESS_MOD_NOSPOTLIGHT,
+	         "Sector Sabotage takes the spotlight only once every modifier is gone, Topsy Turvy "
+	         "and the homing tiers included");
+
+	if (hit >= 0 && miss >= 0)
+	{
+		endlessRunDepth = hit;
+		endlessCourseCnt = 1;
+		endlessCourseMod[0] = 0;
+		bool cleansed = true;
+		const bool listed = qa_course_row(0, "spotlight view", &cleansed) && !cleansed;
+		const Sint64 bare = endlessCoursePayout(0);
+		endlessCleanseChargeCount[0] = 1;
+		const bool stripped = qa_course_row(0, "spotlight view", &cleansed) && cleansed;
+		qa_check(listed && stripped && endlessCoursePayout(0) == bare,
+		         "a charge with no modifier left to take strips the spotlight, the card says so, "
+		         "and the payout stays put");
+
+		endlessCourseMod[0] = ENDLESS_MOD_TOPSY;
+		endlessCleanseChargeCount[0] = 0;
+		const bool hidden = !qa_course_row(0, "spotlight view", &cleansed);
+		endlessCleanseChargeCount[0] = 1;
+		bool flip = false;
+		const bool shown = qa_course_row(0, "spotlight view", &cleansed) && !cleansed &&
+		                   qa_course_row(0, "upside-down view", &flip) && flip;
+		endlessCleanseChargeCount[0] = 2;
+		const bool both = qa_course_row(0, "spotlight view", &cleansed) && cleansed;
+		qa_check(hidden && shown && both,
+		         "under Topsy Turvy the card lists the spotlight once a charge strips the flip, "
+		         "and a second charge strips it as well");
+
+		endlessActiveMods = 0;
+		const bool dark = endlessZoneLightConeShows();
+		endlessActiveMods = ENDLESS_MOD_NOSPOTLIGHT;
+		const bool lit = !endlessZoneLightConeShows();
+		endlessRunDepth = miss;
+		endlessActiveMods = 0;
+		endlessCourseMod[0] = 0;
+		const bool unlisted = !endlessZoneLightConeShows() &&
+		                      !qa_course_row(0, "spotlight view", &cleansed);
+		qa_check(dark && lit && unlisted,
+		         "a stripped spotlight leaves its zone lit, and a zone without one lists none");
+	}
+
+	endlessCleanseChargeCount[0] = 0;
+	endlessCourseCnt = savedCount;
+	endlessCourseMod[0] = savedCourse;
+	endlessActiveMods = savedMods;
+}
+
+void qa_test_sabotage_skips_cancelled(void)
+{
+	const int savedCount = endlessCourseCnt;
+	const Uint64 savedCourse = endlessCourseMod[0];
+	const JE_boolean savedCoop = coopEndlessMode;
+	qa_reset_course_inputs("CANCELLED", 0, 2);
+	coopEndlessMode = false;
+	while (endlessRunDepth < 400 && endlessZoneLightConeRoll())
+		++endlessRunDepth;
+
+	endlessCourseCnt = 1;
+	endlessCourseMod[0] = ENDLESS_MOD_BURNOUT | ENDLESS_MOD_SWIFT;
+	endlessCleanseChargeCount[0] = 1;
+	bool burnout = false, swift = true;
+	const bool plain = qa_course_row(0, "kills weaken guns", &burnout) && burnout &&
+	                   qa_course_row(0, "faster enemy shots", &swift) && !swift;
+
+	endlessPurchasedMods[0] = ENDLESS_MOD_TURBODRIVE;
+	const bool skipped = !qa_course_row(0, "kills weaken guns", &burnout) &&
+	                     qa_course_row(0, "faster enemy shots", &swift) && swift;
+
+	coopEndlessMode = true;
+	const bool partnerFaces = qa_course_row(0, "faster enemy shots", &swift) && !swift;
+	endlessPurchasedMods[1] = ENDLESS_MOD_OVERBLAST;
+	const bool bothReplaced = qa_course_row(0, "faster enemy shots", &swift) && swift;
+	coopEndlessMode = false;
+
+	qa_check(plain && skipped && partnerFaces && bothReplaced,
+	         "Sector Sabotage skips a threat every ship's own purchase already replaces, and "
+	         "still strips one a partner flies against");
+
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		endlessPurchasedMods[p] = 0;
+		endlessCleanseChargeCount[p] = 0;
+	}
+	endlessCourseCnt = savedCount;
+	endlessCourseMod[0] = savedCourse;
+	coopEndlessMode = savedCoop;
+}

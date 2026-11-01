@@ -638,8 +638,8 @@ bool endlessTryBuyCleanse(void)
 	endlessCleanseCost[me()] = endlessRebuy(endlessCleanseCost[me()], ENDLESS_REBUY_CLEANSE_NUM, ENDLESS_REBUY_CLEANSE_DEN, 0);
 	return true;
 }
-// Strip the single most-dangerous hostile bit from a modifier set (one per cleanse charge).
-Uint64 endlessStripWorstMod(Uint64 mods)
+// Strip the single most-dangerous threat from a modifier set (one per cleanse charge).
+Uint64 endlessStripWorstMod(Uint64 mods, bool spotlight)
 {
 	// Include every priced hostile bit. Exclude label-only and gamble-only bits.
 	// Ordering is curated by how much a bit hurts to fly with, not strictly by reward tenths.
@@ -657,11 +657,19 @@ Uint64 endlessStripWorstMod(Uint64 mods)
 		ENDLESS_MOD_SWIFT, ENDLESS_MOD_OVERCLOCK, ENDLESS_MOD_ENRAGE, ENDLESS_MOD_SLIPSTREAM,
 		// Strip Gravity with its direction flag.
 		ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI, ENDLESS_MOD_TOPSY,
-		ENDLESS_MOD_KAMIKAZE, ENDLESS_MOD_HOMING,  // mild homing tiers are stripped last
+		ENDLESS_MOD_KAMIKAZE, ENDLESS_MOD_HOMING,  // mild homing tiers, then the spotlight, go last
+		ENDLESS_MOD_NOSPOTLIGHT,
 	};
 	for (unsigned i = 0; i < COUNTOF(order); ++i)
-		if (mods & order[i])
+	{
+		if (order[i] == ENDLESS_MOD_NOSPOTLIGHT)
+		{
+			if (spotlight && !(mods & (ENDLESS_MOD_TOPSY | ENDLESS_MOD_NOSPOTLIGHT)))
+				return mods | ENDLESS_MOD_NOSPOTLIGHT;
+		}
+		else if (mods & order[i])
 			return mods & ~order[i];
+	}
 	return mods;
 }
 

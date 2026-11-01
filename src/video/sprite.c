@@ -17,6 +17,7 @@
  */
 #include "sprite.h"
 
+#include "crashlog.h"
 #include "draw.h"
 #include "file.h"
 #include "lvlmast.h"
@@ -947,29 +948,54 @@ static void repair_t2000_gencore_ii_holes(Sprite2_array *sheet)
 	(void)sprite2_replace_cells(sheet, destination, &filled[0][0], COUNTOF(destination));
 }
 
+typedef struct
+{
+	unsigned int cell;
+	Uint8 color;
+	int count;
+}
+Sprite2Key;
+
+static void sprite2_clear_keys(Sprite2_array *sheet, const Sprite2Key *keys, size_t n)
+{
+	unsigned int *const destination = malloc_die(n * sizeof(*destination));
+	Uint8 *const cleaned = malloc_die(n * SPRITE2_CELL_PIXELS);
+	bool matches = true;
+
+	for (size_t k = 0; k < n && matches; ++k)
+	{
+		Uint8 *const pixels = cleaned + k * SPRITE2_CELL_PIXELS;
+		destination[k] = keys[k].cell;
+		matches = sprite2_decode_cell(*sheet, keys[k].cell, pixels);
+		int found = 0;
+		for (int pixel = 0; pixel < SPRITE2_CELL_PIXELS; ++pixel)
+			if (pixels[pixel] == keys[k].color)
+			{
+				pixels[pixel] = 0;
+				++found;
+			}
+		matches = matches && found == keys[k].count;
+	}
+
+	if (matches)
+		(void)sprite2_replace_cells(sheet, destination, cleaned, n);
+	free(cleaned);
+	free(destination);
+}
+
 // Clean U-Ship only when every affected cell matches its stock bad-pixel count.
 static void repair_uship_stray_pixels(Sprite2_array *sheet)
 {
-	static const unsigned int destination[4] = { 276, 289, 293, 295 };
-	static const int expectedBadPixels[4] = { 1, 1, 2, 7 };
-	Uint8 cleaned[4][SPRITE2_CELL_PIXELS];
+	static const Sprite2Key stray[4] = {
+		{ 276, 0xfe, 1 }, { 289, 0xfe, 1 }, { 293, 0xfe, 2 }, { 295, 0xfe, 7 },
+	};
+	sprite2_clear_keys(sheet, stray, COUNTOF(stray));
+}
 
-	for (uint cell = 0; cell < COUNTOF(destination); ++cell)
-	{
-		if (!sprite2_decode_cell(*sheet, destination[cell], cleaned[cell]))
-			return;
-		int badPixels = 0;
-		for (int pixel = 0; pixel < SPRITE2_CELL_PIXELS; ++pixel)
-			badPixels += cleaned[cell][pixel] == 0xfe;
-		if (badPixels != expectedBadPixels[cell])
-			return;
-	}
-
-	for (uint cell = 0; cell < COUNTOF(destination); ++cell)
-		for (int pixel = 0; pixel < SPRITE2_CELL_PIXELS; ++pixel)
-			if (cleaned[cell][pixel] == 0xfe)
-				cleaned[cell][pixel] = 0;
-	(void)sprite2_replace_cells(sheet, destination, &cleaned[0][0], COUNTOF(destination));
+static void repair_xmas_keyed_shots(Sprite2_array *sheet)
+{
+	static const Sprite2Key key[2] = { { 204, 0x30, 120 }, { 241, 0x60, 106 } };
+	sprite2_clear_keys(sheet, key, COUNTOF(key));
 }
 
 /* Return a packed sprite's dominant color bank, or 0 when it paints nothing. */
@@ -2250,55 +2276,81 @@ void blit_sprite_table_scaled(SDL_Surface *surface, int x, int y, unsigned int t
 	}
 }
 
-// tyrianc.shp duplicates bank 7 into bank 11. Load bank 11 from tyrian.shp,
-// where its 304-entry layout matches and the player-shot art is correct.
-static void reload_shot_sprites_2_from_default(void)
-{
-	enum { SHP_NUM = 13, BANK = 11 };
+enum { SHP_BANKS = 13 };
 
+static bool shp_bank_offsets(FILE *f, JE_longint pos[SHP_BANKS + 1])
+{
+	JE_word banks;
+	fread_u16_die(&banks, 1, f);
+	if (banks != SHP_BANKS)
+		return false;
+
+	fread_s32_die(pos, banks, f);
+	fseek(f, 0, SEEK_END);
+	pos[SHP_BANKS] = ftell(f);
+	return true;
+}
+
+static void shp_load_sprite2s(FILE *f, const JE_longint *pos, unsigned int bank,
+                              Sprite2_array *sheet)
+{
+	fseek(f, pos[bank], SEEK_SET);
+	sheet->size = pos[bank + 1] - pos[bank];
+	JE_loadCompShapesB(sheet, f);
+}
+
+// Load one bank from tyrian.shp, whose 304-entry layouts match tyrianc.shp's.
+static bool load_default_sprite2s(unsigned int bank, Sprite2_array *sheet)
+{
 	FILE *f = dir_fopen_warn(data_dir(), "tyrian.shp", "rb");
 	if (f == NULL)
+		return false;
+
+	JE_longint pos[SHP_BANKS + 1];
+	const bool found = shp_bank_offsets(f, pos);
+	if (found)
+		shp_load_sprite2s(f, pos, bank, sheet);
+	fclose(f);
+	return found;
+}
+
+static void repair_xmas_blank_cells(Sprite2_array *sheet, unsigned int bank)
+{
+	Sprite2_array stock = { 0, NULL };
+	if (!load_default_sprite2s(bank, &stock))
 		return;
 
-	JE_word shpNumb;
-	JE_longint shpPos[SHP_NUM + 1];  // +1 for storing file length
-
-	fread_u16_die(&shpNumb, 1, f);
-	if (shpNumb + 1u == COUNTOF(shpPos))
+	const int count = sprite2_count(sheet);
+	if (count > 0)
 	{
-		fread_s32_die(shpPos, shpNumb, f);
-
-		fseek(f, 0, SEEK_END);
-		for (unsigned int i = shpNumb; i < COUNTOF(shpPos); ++i)
-			shpPos[i] = ftell(f);
-
-		free_sprite2s(&spriteSheet12);
-		fseek(f, shpPos[BANK], SEEK_SET);
-		spriteSheet12.size = shpPos[BANK + 1] - shpPos[BANK];
-		JE_loadCompShapesB(&spriteSheet12, f);
+		unsigned int *const destination = malloc_die((size_t)count * sizeof(*destination));
+		Uint8 *const cells = malloc_die((size_t)count * SPRITE2_CELL_PIXELS);
+		size_t blanks = 0;
+		for (int index = 1; index <= count; ++index)
+			if (sprite2_is_blank(*sheet, index) && !sprite2_is_blank(stock, index) &&
+			    sprite2_decode_cell(stock, index, cells + blanks * SPRITE2_CELL_PIXELS))
+				destination[blanks++] = (unsigned int)index;
+		if (blanks > 0)
+			(void)sprite2_replace_cells(sheet, destination, cells, blanks);
+		free(cells);
+		free(destination);
 	}
-
-	fclose(f);
+	free_sprite2s(&stock);
 }
 
 void JE_loadMainShapeTables(const char *shpfile)
 {
-	enum { SHP_NUM = 13 };
-
 	FILE *f = dir_fopen_die(data_dir(), shpfile, "rb");
-	
-	JE_word shpNumb;
-	JE_longint shpPos[SHP_NUM + 1]; // +1 for storing file length
-	
-	fread_u16_die(&shpNumb, 1, f);
-	assert(shpNumb + 1u == COUNTOF(shpPos));
-	
-	fread_s32_die(shpPos, shpNumb, f);
-	
-	fseek(f, 0, SEEK_END);
-	for (unsigned int i = shpNumb; i < COUNTOF(shpPos); ++i)
-		shpPos[i] = ftell(f);
-	
+
+	JE_longint shpPos[SHP_BANKS + 1]; // +1 for storing file length
+	if (!shp_bank_offsets(f, shpPos))
+	{
+		fclose(f);
+		fprintf(stderr, "error: '%s' does not hold %d sprite banks\n", shpfile, SHP_BANKS);
+		crashlog_report_fatal("FATAL (bad sprite file -- JE_loadMainShapeTables)", shpfile);
+		JE_tyrianExitWithoutSaving(EXIT_FAILURE);
+	}
+
 	int i;
 	// fonts, interface, option sprites
 	for (i = 0; i < 7; i++)
@@ -2306,47 +2358,43 @@ void JE_loadMainShapeTables(const char *shpfile)
 		fseek(f, shpPos[i], SEEK_SET);
 		load_sprites(i, f);
 	}
-	
+
 	// player shot sprites
-	spriteSheet8.size = shpPos[i + 1] - shpPos[i];
-	JE_loadCompShapesB(&spriteSheet8, f);
-	i++;
-	
+	shp_load_sprite2s(f, shpPos, i++, &spriteSheet8);
+
 	// player ship sprites
-	spriteSheet9.size = shpPos[i + 1] - shpPos[i];
-	JE_loadCompShapesB(&spriteSheet9 , f);
+	shp_load_sprite2s(f, shpPos, i++, &spriteSheet9);
 	repair_uship_stray_pixels(&spriteSheet9);
-	i++;
-	
+
 	// power-up sprites
-	spriteSheet10.size = shpPos[i + 1] - shpPos[i];
-	JE_loadCompShapesB(&spriteSheet10, f);
-	i++;
-	
+	shp_load_sprite2s(f, shpPos, i++, &spriteSheet10);
+
 	// coins, datacubes, etc sprites
-	spriteSheet11.size = shpPos[i + 1] - shpPos[i];
-	JE_loadCompShapesB(&spriteSheet11, f);
-	i++;
-	
+	shp_load_sprite2s(f, shpPos, i++, &spriteSheet11);
+
 	// more player shot sprites
-	spriteSheet12.size = shpPos[i + 1] - shpPos[i];
-	JE_loadCompShapesB(&spriteSheet12, f);
-	i++;
+	shp_load_sprite2s(f, shpPos, i++, &spriteSheet12);
 
 	// tyrian 2000 ship sprites
-	spriteSheetT2000.size = shpPos[i + 1] - shpPos[i];
-	JE_loadCompShapesB(&spriteSheetT2000, f);
+	shp_load_sprite2s(f, shpPos, i, &spriteSheetT2000);
 	repair_t2000_gencore_ii_hard_left(&spriteSheetT2000);
 	repair_t2000_gencore_ii_holes(&spriteSheetT2000);
 
 	fclose(f);
 
-	// repair tyrianc.shp's duplicated bank 11; see reload_shot_sprites_2_from_default()
-	if (strcmp(shpfile, "tyrian.shp") != 0 &&
-	    spriteSheet12.size == spriteSheet8.size &&
-	    memcmp(spriteSheet12.data, spriteSheet8.data, spriteSheet12.size) == 0)
+	if (strcmp(shpfile, "tyrian.shp") != 0)
 	{
-		reload_shot_sprites_2_from_default();
+		// repair tyrianc.shp's duplicated bank 11
+		Sprite2_array stock = { 0, NULL };
+		if (spriteSheet12.size == spriteSheet8.size &&
+		    memcmp(spriteSheet12.data, spriteSheet8.data, spriteSheet12.size) == 0 &&
+		    load_default_sprite2s(11, &stock))
+		{
+			free_sprite2s(&spriteSheet12);
+			spriteSheet12 = stock;
+		}
+		repair_xmas_keyed_shots(&spriteSheet8);
+		repair_xmas_blank_cells(&spriteSheet9, 8);
 	}
 }
 

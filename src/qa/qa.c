@@ -457,6 +457,7 @@ int qa_run_unit_suite(void)
 	qa_test_flying_punch_bolt();
 	qa_test_dragonwing_row();
 	qa_test_wide_hull_columns();
+	qa_test_xmas_sprites();
 	qa_test_dual_mode_tag();
 	qa_test_weapon_bay_tags();
 	qa_test_ship_editor_file();
@@ -493,6 +494,7 @@ int qa_run_unit_suite(void)
 	qa_test_deflector_perk();
 	qa_test_executioner_perk();
 	qa_test_executioner_every_kill();
+	qa_test_super_enemy_kills();
 	qa_test_afterburner_perk();
 	qa_test_concussion_mod();
 	qa_test_boss_scroll_hold();
@@ -546,8 +548,11 @@ int qa_run_unit_suite(void)
 	qa_test_course_reroll();
 	qa_test_course_seat_parity();
 	qa_test_course_reroll_dodge();
+	qa_test_spotlight_sabotage();
+	qa_test_sabotage_skips_cancelled();
 	qa_test_level_event_scripts();
 	qa_test_boosted_boss_pacing();
+	qa_test_super_enemy_loops();
 	qa_test_item_data_settings();
 	qa_test_zica_lv11_pattern();
 	qa_test_firing_sound_levels();

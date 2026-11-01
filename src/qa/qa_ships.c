@@ -29,6 +29,7 @@
 #include "sprite_picker.h"
 #include "video.h"
 #include "weapon_editor.h"
+#include "xmas.h"
 
 #include "SDL.h"
 
@@ -1265,4 +1266,78 @@ void qa_test_custom_ship_equip(void)
 	memcpy(extraShips, savedTable, sizeof(savedTable));
 	memcpy(player, savedPlayers, sizeof(savedPlayers));
 	extraShipReturnRestore(savedReturn);
+}
+
+static Sprite2_array qa_sheet_copy(Sprite2_array sheet)
+{
+	Sprite2_array copy = { 0, malloc(sheet.size > 0 ? sheet.size : 1) };
+	if (copy.data != NULL && sheet.data != NULL)
+	{
+		memcpy(copy.data, sheet.data, sheet.size);
+		copy.size = sheet.size;
+	}
+	return copy;
+}
+
+static bool qa_sheets_equal(Sprite2_array a, Sprite2_array b)
+{
+	return a.size == b.size && a.data != NULL && b.data != NULL &&
+	       memcmp(a.data, b.data, a.size) == 0;
+}
+
+static bool qa_cells_equal(Sprite2_array a, Sprite2_array b, unsigned int cell)
+{
+	for (int y = 0; y < SPRITE2_CELL_H; ++y)
+		for (int x = 0; x < SPRITE2_CELL_W; ++x)
+			if (sprite2x2_pixel(a, cell, x, y) != sprite2x2_pixel(b, cell, x, y))
+				return false;
+	return true;
+}
+
+static int qa_cell_ink(Sprite2_array sheet, unsigned int cell)
+{
+	int ink = 0;
+	for (int y = 0; y < SPRITE2_CELL_H; ++y)
+		for (int x = 0; x < SPRITE2_CELL_W; ++x)
+			ink += sprite2x2_pixel(sheet, cell, x, y) != 0;
+	return ink;
+}
+
+void qa_test_xmas_sprites(void)
+{
+	if (spriteSheet9.data == NULL || xmas || !xmas_data_present())
+		return;
+
+	static const unsigned int borrowed[] = {
+		2, 21, 93, 94, 95, 112, 113, 114, 131, 132, 133, 150, 151, 152, 166, 185, 204,
+	};
+	Sprite2_array ships = qa_sheet_copy(spriteSheet9);
+	Sprite2_array shots = qa_sheet_copy(spriteSheet8);
+	Sprite2_array moreShots = qa_sheet_copy(spriteSheet12);
+
+	free_main_shape_tables();
+	JE_loadMainShapeTables("tyrianc.shp");
+
+	bool filled = true;
+	for (size_t i = 0; i < COUNTOF(borrowed); ++i)
+		filled = filled && !sprite2_is_blank(spriteSheet9, borrowed[i]) &&
+		         qa_cells_equal(spriteSheet9, ships, borrowed[i]);
+	qa_check(filled && !qa_cells_equal(spriteSheet9, ships, 115),
+	         "Christmas keeps its own ship art and takes the stock art for the Tyrian 2000 cells "
+	         "it left blank: the special-ready light, the Nort Ship and six sidekicks");
+	qa_check(!sprite2_has_color(spriteSheet8, 204, 0x30) && qa_cell_ink(spriteSheet8, 204) == 48 &&
+	         !sprite2_has_color(spriteSheet8, 241, 0x60) && qa_cell_ink(spriteSheet8, 241) == 62,
+	         "the two Christmas shots painted on a filled box lose the box and keep their art");
+	qa_check(qa_sheets_equal(spriteSheet12, moreShots),
+	         "Christmas still takes its second shot bank from the stock file");
+
+	free_main_shape_tables();
+	JE_loadMainShapeTables("tyrian.shp");
+	qa_check(qa_sheets_equal(spriteSheet9, ships) && qa_sheets_equal(spriteSheet8, shots) &&
+	         qa_sheets_equal(spriteSheet12, moreShots),
+	         "leaving Christmas restores the stock sheets byte for byte");
+
+	free(ships.data);
+	free(shots.data);
+	free(moreShots.data);
 }

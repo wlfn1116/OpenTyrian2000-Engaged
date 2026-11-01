@@ -230,6 +230,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_AFTERBURNER_SPEED_PCT  10
 #define ENDLESS_PERK_AFTERBURNER_RESIST_PCT 16
 #define ENDLESS_PERK_AFTERBURNER_RESIST_MAX 80
+#define ENDLESS_PERK_AFTERBURNER_KNOCKBACK_PCT 20
 
 // Offer-array width is fixed by the widest persisted slate.
 #define ENDLESS_PERK_OFFERS           3
@@ -359,7 +360,7 @@ Sint64 endlessClearBase(void);              // the depth-scaled unit every endle
 // Clear payout for any modifier set at the current depth.
 Sint64 endlessClearBonusForEx(Uint64 mods, int payoutMille);
 int    endlessSortiePayoutMille(void);
-Uint64 endlessStripWorstMod(Uint64 mods);   // strip the single most-dangerous hostile bit (one per cleanse charge)
+Uint64 endlessStripWorstMod(Uint64 mods, bool spotlight);  // strip the worst threat per charge
 
 // Modifier registry.
 typedef struct {
@@ -464,6 +465,7 @@ extern uint    endlessChartSeat;
 
 Uint64 endlessZonePhaseSalt(Uint64 phase);  // depth-keyed phase salt, shifted by the reroll count
 bool   endlessZoneLightConeRoll(void);
+bool   endlessZoneLightConeShows(void);
 void   endlessChartVisit(void);             // fresh outpost: latch the redeal inputs and chart
 void   endlessChartRedeal(void);            // chart again at the current reroll count
 void   endlessChartSyncRerolls(uint p, JE_byte rerolls);  // adopt a peer's reroll (shop packet)

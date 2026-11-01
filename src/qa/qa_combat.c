@@ -1814,6 +1814,38 @@ void qa_test_executioner_every_kill(void)
 	qa_check(rammed && qa_exec_returned(1, &returned) == 1,
 	         "a ram kill reflects the fire near the enemy it takes");
 
+	qa_enemy_clear_all();
+	qa_exec_clear();
+	qa_exec_stacks(0, 1);
+	qa_enemy_stage(0, 100, 100, 1);
+	qa_exec_bullet(0, 105, 100, 5, 12);
+	qa_exec_bullet(1, 108, 100, 5, 12);
+	enemyShot[1].martyr = 1;
+	enemy_kill_group(0, 0, 0);
+	const bool burstKept = enemyShotAvail[0] && !enemyShotAvail[1];
+	execution_reflect_process();
+	const bool ordinaryTurned = qa_exec_returned(1, &returned) == 1;
+
+	endlessActiveMods = ENDLESS_MOD_MARTYRDOM;
+	qa_enemy_clear_all();
+	qa_exec_clear();
+	qa_enemy_stage(0, 100, 100, 1);
+	qa_enemy_stage(1, 112, 100, 1);
+	enemy_kill_group(0, 0, 0);
+	int burst = 0;
+	for (int s = 0; s < ENEMY_SHOT_MAX; ++s)
+		burst += !enemyShotAvail[s] && enemyShot[s].martyr;
+	enemy_kill_group(1, 0, 0);
+	int flying = 0;
+	for (int s = 0; s < ENEMY_SHOT_MAX; ++s)
+		flying += !enemyShotAvail[s] && enemyShot[s].martyr;
+	execution_reflect_process();
+	endlessActiveMods = 0;
+	qa_check(burstKept && ordinaryTurned && burst > 0 && flying == 2 * burst &&
+	         qa_exec_returned(1, &returned) == 0,
+	         "Executioner leaves Martyrdom death bursts in flight, even one beside the next kill, "
+	         "and still turns ordinary fire");
+
 	chain_reset_queue();
 	JE_resetSP();
 	memset(explosions, 0, sizeof(explosions));
@@ -1898,6 +1930,23 @@ static Uint64 qa_sideways_gravity_seed(void)
 	return heading;
 }
 
+static int qa_afterburner_shove(int stacks)
+{
+	qa_enemy_clear_all();
+	endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, stacks);
+	qa_enemy_stage(0, 100, 150, 40);
+	enemy[0].exc = 4;
+	player[0].x = 100;
+	player[0].y = 150;
+	player[0].x_velocity = 0;
+	player[0].y_velocity = 0;
+	player[0].is_alive = true;
+	player[0].armor = 28;
+	player[0].invulnerable_ticks = 0;
+	JE_playerCollide(&player[0], 1);
+	return player[0].x_velocity;
+}
+
 void qa_test_afterburner_perk(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -1973,8 +2022,46 @@ void qa_test_afterburner_perk(void)
 	qa_check(coopOwnShip && soloIgnoresRowTwo && endlessShipMoveScale(1) > 1.0f,
 	         "Afterburners act only on their own ship in co-op and on the shared row elsewhere");
 
+	endlessActiveMods = 0;
+	bool knockLadder = true;
+	for (int stacks = 0; stacks <= maxStacks; ++stacks)
+	{
+		endlessPerkSetOwnedFor(0, PERK_AFTERBURNER, stacks);
+		const int kept = 100 - stacks * ENDLESS_PERK_AFTERBURNER_KNOCKBACK_PCT;
+		knockLadder = knockLadder && endlessPerkKnockback(0, 100) == kept &&
+		              endlessPerkKnockback(0, -100) == -kept;
+	}
+	qa_check(knockLadder && ENDLESS_PERK_AFTERBURNER_KNOCKBACK_PCT == 20 &&
+	         endlessPerkKnockback(0, 100) == 0,
+	         "Afterburners resist a fifth of a hit's knockback per stack and all of it at five");
+
+	static JE_MultiEnemyType shoveEnemies;
+	JE_EnemyAvailType shoveAvail;
+	memcpy(shoveEnemies, enemy, sizeof(enemy));
+	memcpy(shoveAvail, enemyAvail, sizeof(shoveAvail));
+	const Player shoveShip = player[0];
+	const JE_byte shoveRate = damageRate, shoveNoclip = noclipMode;
+	const JE_word shoveKilled = enemyKilled;
+	const int shoveRunKills = endlessRunKills;
+	damageRate = 10;
+	noclipMode = 0;
+	const int stockShove = qa_afterburner_shove(0);
+	const int oneStackShove = qa_afterburner_shove(1);
+	const int fullShove = qa_afterburner_shove(maxStacks);
+	memset(explosions, 0, sizeof(explosions));
+	memcpy(enemy, shoveEnemies, sizeof(enemy));
+	memcpy(enemyAvail, shoveAvail, sizeof(shoveAvail));
+	player[0] = shoveShip;
+	damageRate = shoveRate;
+	noclipMode = shoveNoclip;
+	enemyKilled = shoveKilled;
+	endlessRunKills = shoveRunKills;
+	qa_check(stockShove > 0 && oneStackShove == stockShove * 80 / 100 && fullShove == 0,
+	         "...the shove a collision gives included");
+
 	endlessMode = false;
-	qa_check(endlessShipMoveScale(0) == 1.0f && endlessShipGravityDriftY(0) == 0.0f,
+	qa_check(endlessShipMoveScale(0) == 1.0f && endlessShipGravityDriftY(0) == 0.0f &&
+	         endlessPerkKnockback(0, 100) == 100,
 	         "Afterburners do nothing outside Endless effects");
 
 	qa_check(player_ship_move_scale_self_test(),
@@ -2128,7 +2215,8 @@ void qa_test_concussion_mod(void)
 	endlessConcussionReset();
 	qa_check(qa_concussed_by_damage(1),
 	         "a real hit through the damage path concusses the ship it lands on");
-	qa_check(endlessStripWorstMod(ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SWIFT) == ENDLESS_MOD_SWIFT,
+	qa_check(endlessStripWorstMod(ENDLESS_MOD_CONCUSSION | ENDLESS_MOD_SWIFT, false)
+	         == ENDLESS_MOD_SWIFT,
 	         "Sector Sabotage strips Concussion before Swift Death");
 	qa_check(endlessModWord(ENDLESS_MOD_CONCUSSION)[0] != '\0' &&
 	         endlessDangerScore(ENDLESS_MOD_CONCUSSION) > 0,
@@ -3648,4 +3736,108 @@ void qa_test_shot_shadow_edge(void)
 	memset(shotAvail, 0, sizeof(shotAvail));
 	background2 = savedBackground2;
 	power = savedPower;
+}
+
+static void qa_super_enemy_stage(unsigned int slot, int x, int y)
+{
+	qa_enemy_clear_all();
+	qa_enemy_stage(slot, x, y, 1);
+	enemy[slot].linknum = 254;
+	superEnemy254Jump = 100;
+	eventLoc = 1;
+	curLoc = 10;
+}
+
+void qa_test_super_enemy_kills(void)
+{
+	struct JE_EventRecType *const savedScript = malloc(sizeof(eventRec));
+	if (savedScript == NULL)
+	{
+		qa_check(false, "the 254-kill test can save the loaded event script");
+		return;
+	}
+	memcpy(savedScript, eventRec, sizeof(eventRec));
+	static JE_MultiEnemyType savedEnemies;
+	memcpy(savedEnemies, enemy, sizeof(enemy));
+	JE_EnemyAvailType savedAvail;
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	const Player savedPlayers[2] = { player[0], player[1] };
+	const JE_word savedMax = maxEvent, savedLoc = eventLoc, savedCur = curLoc;
+	const JE_word savedJump = superEnemy254Jump, savedKilled = enemyKilled;
+	const int savedRunKills = endlessRunKills;
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const Uint64 savedMods = endlessActiveMods;
+	const bool savedRamming = reworkEnabled[REWORK_RAMMING];
+	const JE_byte savedRate = damageRate, savedNoclip = noclipMode;
+
+	memset(eventRec, 0, 3 * sizeof(eventRec[0]));
+	eventRec[0].eventtime = 10;
+	eventRec[1].eventtime = 100;
+	eventRec[2].eventtime = 65500;
+	maxEvent = 2;
+	endlessMode = false;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	endlessActiveMods = 0;
+
+	qa_super_enemy_stage(0, 100, 50);
+	enemy_kill_group(0, 0, 0);
+	const bool shot = curLoc == 100 && superEnemy254Jump == 0;
+	qa_super_enemy_stage(0, 100, 50);
+	superEnemy254Jump = 0;
+	enemy_kill_group(0, 0, 0);
+	qa_check(shot && curLoc == 10,
+	         "killing a 254 enemy takes the armed exit once, and a kill with the exit spent "
+	         "replays nothing");
+
+	reworkEnabled[REWORK_RAMMING] = false;
+	damageRate = 10;
+	noclipMode = 0;
+	qa_super_enemy_stage(0, 100, 150);
+	player[0].x = 100;
+	player[0].y = 150;
+	player[0].is_alive = true;
+	player[0].armor = 28;
+	player[0].invulnerable_ticks = 0;
+	JE_playerCollide(&player[0], 1);
+	qa_check(enemyAvail[0] == 1 && curLoc == 100 && superEnemy254Jump == 0,
+	         "ramming a 254 enemy apart under the stock rules takes the armed exit as well");
+
+	endlessMode = true;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkSetOwnedFor(0, PERK_CHAINRXN, 1);
+	qa_super_enemy_stage(0, 100, 50);
+	long paid0 = 0, paid1 = 0;
+	int killed = 0;
+	bool dropped = false;
+	qa_chain_kill_row(0, 100, 1, 254, 0, &paid0, &paid1, &killed, &dropped);
+	chain_reset_queue();
+	qa_check(killed == 1 && curLoc == 100 && superEnemy254Jump == 0,
+	         "...and so does a Chain Reaction kill");
+
+	memset(explosions, 0, sizeof(explosions));
+	memcpy(eventRec, savedScript, sizeof(eventRec));
+	free(savedScript);
+	memcpy(enemy, savedEnemies, sizeof(enemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	player[0] = savedPlayers[0];
+	player[1] = savedPlayers[1];
+	maxEvent = savedMax;
+	eventLoc = savedLoc;
+	curLoc = savedCur;
+	superEnemy254Jump = savedJump;
+	enemyKilled = savedKilled;
+	endlessRunKills = savedRunKills;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+	endlessActiveMods = savedMods;
+	reworkEnabled[REWORK_RAMMING] = savedRamming;
+	damageRate = savedRate;
+	noclipMode = savedNoclip;
 }

@@ -159,6 +159,7 @@ enum {
 #define ENDLESS_MOD_TRUEAIM      ((Uint64)1 << 56)
 #define ENDLESS_MOD_KILLSHOT     ((Uint64)1 << 57)
 #define ENDLESS_MOD_CONCUSSION   ((Uint64)1 << 58)
+#define ENDLESS_MOD_NOSPOTLIGHT  ((Uint64)1 << 59)
 
 #define ENDLESS_MOD_SEEKER_ANY (ENDLESS_MOD_SEEKER | ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_HUNTER | \
                                 ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_KILLSHOT)
@@ -752,6 +753,7 @@ float endlessShipGravityDriftX(uint p);
 float endlessShipGravityDriftY(uint p);
 float endlessMoveScale(void);
 float endlessShipMoveScale(uint p);
+int   endlessPerkKnockback(uint p, int impulse);
 
 // Power-system modifiers.
 bool     endlessShieldRegenOff(void);

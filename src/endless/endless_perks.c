@@ -302,6 +302,15 @@ float endlessPerkGravityScale(uint p)
 	return 1.0f - (float)endlessPerkAfterburnerResist(p) / 100.0f;
 }
 
+int endlessPerkKnockback(uint p, int impulse)
+{
+	if (!endlessFxActive())
+		return impulse;
+	const int resist = endlessClamp(perkShip(p, PERK_AFTERBURNER)
+	                                * ENDLESS_PERK_AFTERBURNER_KNOCKBACK_PCT, 0, 100);
+	return impulse * (100 - resist) / 100;
+}
+
 // Radar adds the shipped level name to each Chart-a-Course help line, for the player who owns it.
 bool endlessPerkRadarActive(void)
 {

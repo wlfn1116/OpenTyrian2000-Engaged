@@ -203,7 +203,8 @@ typedef struct {
 	JE_byte seekerArm;
 	JE_byte seekerLeft;
 	JE_byte filter;  // shooter's tier bank, stamped at spawn; 0 for the sprite's own colours
-	JE_byte fill[9];
+	JE_byte martyr;
+	JE_byte fill[8];
 } EnemyShotType;
 
 extern JE_integer tempDat, tempDat2, tempDat3;

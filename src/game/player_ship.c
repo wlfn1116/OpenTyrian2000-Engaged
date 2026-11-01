@@ -41,6 +41,7 @@
 #include "ingame_menu.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "level_events.h"
 #include "lvlmast.h"
 #include "mouse.h"
 #include "mtrand.h"
@@ -3389,8 +3390,11 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					// player ship gets push-back from collision
 					if (enemy[z].armorleft > 0)
 					{
-						this_player->x_velocity += (enemy[z].exc * enemy[z].armorleft) / 2;
-						this_player->y_velocity += (enemy[z].eyc * enemy[z].armorleft) / 2;
+						const uint self = (uint)(this_player - &player[0]);
+						this_player->x_velocity +=
+							endlessPerkKnockback(self, (enemy[z].exc * enemy[z].armorleft) / 2);
+						this_player->y_velocity +=
+							endlessPerkKnockback(self, (enemy[z].eyc * enemy[z].armorleft) / 2);
 					}
 
 					// Nx boss HP (expert mode and/or endless depth) and the endless tier, spent
@@ -3431,6 +3435,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					{
 						// A ram removes the enemy without awarding a kill: no payout, no bounty, no
 						// death effects.
+						level_super_enemy_down((JE_byte)temp);
 						for (temp2 = 0; temp2 < 100; temp2++)
 						{
 							if (enemyAvail[temp2] != 1)

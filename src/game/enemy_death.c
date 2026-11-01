@@ -175,6 +175,7 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots, Uin
 		enemyShot[b].seekerArm = 0;
 		enemyShot[b].seekerLeft = 0;
 		enemyShot[b].filter = tint;
+		enemyShot[b].martyr = 1;
 	}
 }
 
@@ -298,7 +299,8 @@ void execution_reflect_capture(unsigned int slot, int killer)
 	int picked = 0;
 	for (int b = 0; b < ENEMY_SHOT_MAX; ++b)
 	{
-		if (enemyShotAvail[b] || enemyShot[b].sdmg == 0 || enemyShot[b].sgr >= 60000)
+		if (enemyShotAvail[b] || enemyShot[b].sdmg == 0 || enemyShot[b].sgr >= 60000 ||
+		    enemyShot[b].martyr)
 			continue;
 		const int dx = enemyShot[b].sx - ax;
 		const int dy = enemyShot[b].sy - ay;
@@ -536,8 +538,7 @@ void enemy_kill_group(unsigned int slot, int payee, int killer)
 	if (link == 0)
 		link = 255;
 
-	if (link == 254 && superEnemy254Jump > 0)
-		JE_eventJump(superEnemy254Jump);
+	level_super_enemy_down(link);
 
 	for (temp2 = 0; temp2 < 100; temp2++)
 	{
@@ -716,6 +717,8 @@ static bool chain_group_target(JE_byte linknum, int px, int py, int radius, JE_w
 // under a killing shot.
 static void chain_destroy_group(JE_byte linknum, int owner)
 {
+	level_super_enemy_down(linknum);
+
 	for (int g = 0; g < 100; ++g)
 	{
 		if (enemy[g].linknum != linknum || enemyAvail[g] == 1)
