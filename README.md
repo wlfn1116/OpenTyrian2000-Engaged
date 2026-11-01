@@ -12,7 +12,7 @@ This fork adds:
 - two-player online play across every mode,
 - an in-game remake of the SHIPEDIT.EXE ship editor,
 - an in-game custom weapon editor,
-- optional restored weapons, effects, sprites, and level objects,
+- optional restored weapons, effects, sprites and level objects,
 - FluidSynth and native MIDI support on Windows x86-64,
 - custom music and sound effect replacement support,
 - Android (8.0+), iOS (13.0+), macOS (11.0+), Nintendo Switch and PlayStation Vita ports,
