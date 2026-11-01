@@ -4241,7 +4241,7 @@ draw_player_shot_loop_end:
 	
 	/* Collision detection. */
 	
-	for (uint i = 0; i < (twoPlayerMode ? 2 : 1); ++i)
+	for (uint i = 0; i < (twoPlayerMode ? 2u : 1u); ++i)
 		if (player[i].is_alive && !endLevel)
 			JE_playerCollide(&player[i], i + 1);
 	execution_reflect_process();
@@ -4318,7 +4318,7 @@ draw_player_shot_loop_end:
 					const int eShotHitX = enemyShot[z].sx + eShotHitDx;
 					const int eShotHitY = enemyShot[z].sy + eShotHitDy;
 
-					for (uint i = 0; i < (twoPlayerMode ? 2 : 1); ++i)
+					for (uint i = 0; i < (twoPlayerMode ? 2u : 1u); ++i)
 					{
 						// endless LOW PROFILE boon shrinks the box ~25%; endlessHitboxScale returns the
 						// stock extent otherwise, so this reads as the vanilla test in every other game.
