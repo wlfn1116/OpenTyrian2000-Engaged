@@ -754,6 +754,7 @@ float endlessShipGravityDriftY(uint p);
 float endlessMoveScale(void);
 float endlessShipMoveScale(uint p);
 int   endlessPerkKnockback(uint p, int impulse);
+bool  endlessShipAdrenalineActive(uint p);
 
 // Power-system modifiers.
 bool     endlessShieldRegenOff(void);

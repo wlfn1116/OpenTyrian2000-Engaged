@@ -125,6 +125,7 @@ enum { SPRITE2_CELL_W = 12, SPRITE2_CELL_H = 14, SPRITE2_CELL_PIXELS = 12 * 14 }
 
 int sprite2_count(const Sprite2_array *);
 Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank (0..15) the sprite is mostly drawn in
+Uint8 sprite2x2_dominant_bank(Sprite2_array, unsigned int index);
 
 // Extent of the sprite's painted pixels within its 12px cell, for centring it on something else.
 bool sprite2_ink_bounds(Sprite2_array, unsigned int index, int *x0, int *y0, int *x1, int *y1);

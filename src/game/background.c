@@ -117,6 +117,15 @@ JE_integer mapXPos, oldMapXOfs, mapXOfs, mapX2Ofs, mapX2Pos, mapX3Pos, oldMapX3O
 intptr_t mapXbpPos, mapX2bpPos, mapX3bpPos;
 JE_byte map1YDelay, map1YDelayMax, map2YDelay, map2YDelayMax;
 
+JE_byte **bg_wrap_target(JE_byte **pos, JE_byte **wrap, JE_byte **to, int width)
+{
+	if (to > wrap)
+		return to - (wrap - pos) / width * width;
+	if (to == wrap)
+		return to - (to - pos) % width;
+	return to;
+}
+
 JE_boolean  anySmoothies;
 JE_byte     smoothie_data[9]; /* [1..9] */
 

@@ -352,28 +352,52 @@ static void event_backdate_savara_cannons(void)
 	}
 }
 
-// Tyrian 2000 moved every SURFACE arch nub (enemy 212) to y 116, where it pops in mid-screen 194px
-// below its arch. Restore the Tyrian 2.1 spot: 18px left of the arch's enemy 213 and 6px lower.
-static void event_reattach_surface_arch_nubs(void)
+typedef struct
 {
-	if (episodeNum != 4 || lvlFileNum != 4 || customEpisodeActive())
+	JE_byte episode, lvl_file, type;
+	JE_integer piece, anchor;
+	JE_integer from_x, from_y, to_x, to_y;
+} EventPieceSpot;
+
+static const EventPieceSpot event_piece_spots[] =
+{
+	{ 4, 3, 6, 171, 172, 6, -22, 0, -28 },
+	// Tyrian 2000 moved every SURFACE arch nub (enemy 212) to y 116, where it pops in mid-screen
+	// 194px below its arch. Restore the Tyrian 2.1 spot: 18px left of the arch's enemy 213 and
+	// 6px lower.
+	{ 4, 4, 7, 212, 213, 0, 200, -18, 6 },
+};
+
+static void event_restore_piece_spots(void)
+{
+	if (customEpisodeActive())
 		return;
 
-	for (JE_word i = 0; i < maxEvent; ++i)
+	for (size_t s = 0; s < COUNTOF(event_piece_spots); ++s)
 	{
-		struct JE_EventRecType *const nub = &eventRec[i];
-		if (nub->eventtype != 7 || nub->eventdat != 212 || nub->eventdat5 != 116)
+		const EventPieceSpot *const spot = &event_piece_spots[s];
+		if (episodeNum != spot->episode || lvlFileNum != spot->lvl_file)
 			continue;
 
-		for (JE_word j = 0; j < maxEvent; ++j)
+		for (JE_word i = 0; i < maxEvent; ++i)
 		{
-			const struct JE_EventRecType *const arch = &eventRec[j];
-			if (arch->eventtype == 7 && arch->eventdat == 213 &&
-			    arch->eventtime == nub->eventtime && arch->eventdat2 == nub->eventdat2)
+			struct JE_EventRecType *const piece = &eventRec[i];
+			if (piece->eventtype != spot->type || piece->eventdat != spot->piece)
+				continue;
+
+			for (JE_word j = 0; j < maxEvent; ++j)
 			{
-				nub->eventdat2 = arch->eventdat2 - 18;
-				nub->eventdat5 = arch->eventdat5 + 6;
-				break;
+				const struct JE_EventRecType *const anchor = &eventRec[j];
+				if (anchor->eventtype == spot->type && anchor->eventdat == spot->anchor &&
+				    anchor->eventtime == piece->eventtime &&
+				    anchor->eventdat4 == piece->eventdat4 &&
+				    piece->eventdat2 == anchor->eventdat2 + spot->from_x &&
+				    piece->eventdat5 == anchor->eventdat5 + spot->from_y)
+				{
+					piece->eventdat2 = anchor->eventdat2 + spot->to_x;
+					piece->eventdat5 = anchor->eventdat5 + spot->to_y;
+					break;
+				}
 			}
 		}
 	}
@@ -502,7 +526,7 @@ bool level_read_event_script(FILE *f)
 	eventRec[maxEvent].eventtime = 65500;  /* Sentinel event. */
 
 	event_backdate_savara_cannons();
-	event_reattach_surface_arch_nubs();
+	event_restore_piece_spots();
 	level_scan_boss_leadins();
 	return true;
 }

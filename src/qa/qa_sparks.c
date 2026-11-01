@@ -734,3 +734,120 @@ void qa_test_knife_fight_blood(void)
 	endlessCampaignMods = savedCampaign;
 	coopEndlessMode = savedCoop;
 }
+
+static void qa_spark_frame_halo(Uint32 seed)
+{
+	JE_beginSPPass();
+	JE_drawSPUnder();
+	JE_doSPHaloSeeded(200, 100, 12, 14, 2, 2, 15 << 4, 0, seed);
+	JE_doSPSeeded(100, 100, 5, 3, 7 << 4, false, 0, false, seed);
+	JE_drawSP();
+}
+
+void qa_test_spark_halo(void)
+{
+	if (VGAScreen == NULL || VGAScreen->format->BitsPerPixel != 8)
+		return;
+
+	const bool savedExtra = extraSparks;
+	extraSparks = true;
+
+	JE_resetSP();
+	JE_doSPHaloSeeded(200, 100, 12, 14, 48, 2, 15 << 4, 0, 4242u);
+	int live = 0, edge = 0, outward = 0, under = 0;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		const superpixel_type *const s = &superpixels[i];
+		if (s->z == 0)
+			continue;
+		const int dx = (int)s->x - 200, dy = (int)s->y - 100;
+		const float r2 = (dx / 12.0f) * (dx / 12.0f) + (dy / 14.0f) * (dy / 14.0f);
+		++live;
+		edge += (r2 >= 0.85f && r2 <= 1.15f);
+		outward += (dx * s->delta_x + dy * s->delta_y > 0 && abs(s->delta_x) <= 2 &&
+		            abs(s->delta_y) <= 2);
+		under += (s->under && s->z == SUPERPIXEL_SPAWN_Z);
+	}
+	qa_check(live == 48 && edge == live && outward == live && under == live,
+	         "a halo starts each spark on its ellipse, sends it outward no faster than its pace, "
+	         "and files it under the ships at full life");
+
+	JE_resetSP();
+	JE_doSPHaloSeeded(200, 100, 12, 14, 4, 2, 15 << 4, 0, 4242u);
+	JE_doSPSeeded(100, 100, 4, 3, 7 << 4, false, 0, false, 99u);
+	JE_drawSP();
+	bool overOnly = true;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		const unsigned int want = SUPERPIXEL_SPAWN_Z - (superpixels[i].under ? 0 : 1);
+		if (superpixels[i].z != 0)
+			overOnly = overOnly && superpixels[i].z == want;
+	}
+	JE_drawSPUnder();
+	bool both = true;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+		if (superpixels[i].z != 0)
+			both = both && superpixels[i].z == SUPERPIXEL_SPAWN_Z - 1;
+	qa_check(overOnly && both,
+	         "the spark pass leaves halo sparks to the pass under the ships, which steps only "
+	         "them");
+
+	JE_resetSP();
+	for (Uint32 f = 0; f < 3; ++f)
+		qa_spark_frame_halo(1234u + f);
+	const Uint32 cleanHash = qa_spark_hash();
+	JE_resetSP();
+	for (Uint32 f = 0; f < 2; ++f)
+		qa_spark_frame_halo(1234u + f);
+	qa_spark_frame_halo(1236u);
+	JE_discardSPPass();
+	qa_spark_frame_halo(1236u);
+	qa_check(qa_spark_hash() == cleanHash,
+	         "a discarded pass rewinds the sparks under the ships with the rest");
+
+	JE_resetSP();
+	JE_doSPHaloSeeded(200, 100, 12, 14, 1, 2, 15 << 4, 0, 4242u);
+	int slot = -1;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS && slot < 0; ++i)
+		if (superpixels[i].z != 0)
+			slot = (int)i;
+	for (int t = 0; t < SUPERPIXEL_SPAWN_Z - 1; ++t)
+		JE_drawSPUnder();
+	const bool lastStep = slot >= 0 && superpixels[slot].z == 1;
+	JE_drawSPUnder();
+	JE_drawSPUnder();
+	qa_check(lastStep && superpixels[slot].z == 0,
+	         "a spark under the ships plays out its full life and then the pass has nothing to do");
+
+	JE_resetSP();
+	JE_beginSPPass();
+	JE_drawSPUnder();
+	JE_doSPHaloSeeded(200, 100, 12, 14, 1, 2, 15 << 4, 0, 4242u);
+	JE_drawSP();
+	JE_discardSPPass();
+	JE_beginSPPass();
+	JE_drawSPUnder();
+	bool playsOut = false;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+		playsOut = playsOut || (superpixels[i].under && superpixels[i].z == SUPERPIXEL_SPAWN_Z - 1);
+	qa_check(playsOut, "a halo spark left by a discarded pass still plays out under the ships");
+
+	Uint8 cells[52] = { 0 };
+	for (unsigned int k = 1; k <= 21; ++k)
+	{
+		const Uint16 at = (k <= 2) ? 43 : (k >= 20) ? 47 : 42;
+		cells[2 * (k - 1)] = (Uint8)(at & 0xff);
+		cells[2 * (k - 1) + 1] = (Uint8)(at >> 8);
+	}
+	static const Uint8 twoOf3[] = { 0x20, 0x31, 0x32, 0x0f };
+	static const Uint8 threeOf5[] = { 0x30, 0x51, 0x52, 0x53, 0x0f };
+	cells[42] = 0x0f;
+	memcpy(&cells[43], twoOf3, sizeof(twoOf3));
+	memcpy(&cells[47], threeOf5, sizeof(threeOf5));
+	const Sprite2_array sheet = { .size = sizeof(cells), .data = cells };
+	qa_check(sprite2_dominant_bank(sheet, 1) == 3 && sprite2x2_dominant_bank(sheet, 1) == 5,
+	         "a 2x2 hull takes the bank its four cells are mostly drawn in, not its first cell's");
+
+	JE_resetSP();
+	extraSparks = savedExtra;
+}

@@ -517,6 +517,7 @@ int qa_run_unit_suite(void)
 	qa_test_spark_ring_bounds();
 	qa_test_vaporised_shot_sparks();
 	qa_test_knife_fight_blood();
+	qa_test_spark_halo();
 	qa_test_online_ship_style();
 	qa_test_partner_hp_bars();
 	qa_test_network_settings();
@@ -553,6 +554,7 @@ int qa_run_unit_suite(void)
 	qa_test_level_event_scripts();
 	qa_test_boosted_boss_pacing();
 	qa_test_super_enemy_loops();
+	qa_test_map_top_pin();
 	qa_test_item_data_settings();
 	qa_test_zica_lv11_pattern();
 	qa_test_firing_sound_levels();

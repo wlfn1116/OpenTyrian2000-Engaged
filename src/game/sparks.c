@@ -110,12 +110,14 @@ static unsigned int next_superpixel(bool classic_cap)
 /* Spark-ring checkpoint for a drawing pass that rollback may discard and replay. */
 static unsigned int sp_pass_superpixel, sp_pass_uncapped;
 static bool sp_pass_advanced;   // JE_drawSP stepped the ring during this pass
+static unsigned int sp_under_ticks, sp_pass_under_ticks;
 
 void JE_beginSPPass(void)
 {
 	sp_pass_superpixel = last_superpixel;
 	sp_pass_uncapped = last_uncapped_superpixel;
 	sp_pass_advanced = false;
+	sp_pass_under_ticks = sp_under_ticks;
 }
 
 static void sp_rewind(unsigned int i)
@@ -141,6 +143,8 @@ void JE_discardSPPass(void)
 			sp_rewind(i);
 	}
 	sp_pass_advanced = false;
+	if (sp_under_ticks < sp_pass_under_ticks)
+		sp_under_ticks = sp_pass_under_ticks;
 }
 
 void JE_resetSP(void)
@@ -151,9 +155,27 @@ void JE_resetSP(void)
 	sp_pass_superpixel = 0;
 	sp_pass_uncapped = SUPERPIXELS_CLASSIC;
 	sp_pass_advanced = false;
+	sp_under_ticks = 0;
+	sp_pass_under_ticks = 0;
 	memset(superpixels, 0, sizeof(superpixels));
 	sp_live_lo = MAX_SUPERPIXELS;
 	sp_live_hi = 0;
+}
+
+static unsigned int sp_emit(bool classic_cap, int x, int y, int delta_x, int delta_y, Uint8 color,
+                            Uint8 bright, bool occluded, unsigned int life)
+{
+	const unsigned int slot = next_superpixel(classic_cap);
+	superpixels[slot].x = (unsigned int)x;
+	superpixels[slot].y = (unsigned int)y;
+	superpixels[slot].delta_x = delta_x;
+	superpixels[slot].delta_y = delta_y;
+	superpixels[slot].color = color;
+	superpixels[slot].bright = bright;
+	superpixels[slot].occluded = occluded;
+	superpixels[slot].under = false;
+	superpixels[slot].z = life;
+	return slot;
 }
 
 // The simulation-RNG shower behind JE_doSP and JE_doSPBrief; `life` is the spawn z.
@@ -171,15 +193,7 @@ static void sp_scatter(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE
 		if (rollback_resim_silent)
 			continue;
 
-		const unsigned int slot = next_superpixel(classic_cap);
-		superpixels[slot].x = tempx + x;
-		superpixels[slot].y = tempy + y;
-		superpixels[slot].delta_x = tempx;
-		superpixels[slot].delta_y = tempy + 1;
-		superpixels[slot].color = color;
-		superpixels[slot].bright = bright;
-		superpixels[slot].occluded = false;
-		superpixels[slot].z = life;
+		sp_emit(classic_cap, tempx + x, tempy + y, tempx, tempy + 1, color, bright, false, life);
 	}
 }
 
@@ -228,15 +242,8 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 		const signed int tempy = roundf(cosf(angle) * reach * explowidth);
 		const signed int tempx = roundf(sinf(angle) * reach * explowidth);
 
-		const unsigned int slot = next_superpixel(classic_cap);
-		superpixels[slot].x = tempx + x;
-		superpixels[slot].y = tempy + y;
-		superpixels[slot].delta_x = tempx;
-		superpixels[slot].delta_y = tempy + 1;
-		superpixels[slot].color = color;
-		superpixels[slot].bright = bright;
-		superpixels[slot].occluded = occluded;
-		superpixels[slot].z = SUPERPIXEL_SPAWN_Z;
+		sp_emit(classic_cap, tempx + x, tempy + y, tempx, tempy + 1, color, bright, occluded,
+		        SUPERPIXEL_SPAWN_Z);
 	}
 }
 
@@ -277,15 +284,7 @@ void JE_doSPRingSeeded(JE_word x, JE_word y, JE_word radius, JE_byte spacing, JE
 		const signed int tempx = roundf(sinf(angle) * step);
 		const signed int tempy = roundf(cosf(angle) * step);
 
-		const unsigned int slot = next_superpixel(false);
-		superpixels[slot].x = tempx + x;
-		superpixels[slot].y = tempy + y;
-		superpixels[slot].delta_x = tempx;
-		superpixels[slot].delta_y = tempy;
-		superpixels[slot].color = color;
-		superpixels[slot].bright = bright;
-		superpixels[slot].occluded = false;
-		superpixels[slot].z = life;
+		sp_emit(false, tempx + x, tempy + y, tempx, tempy, color, bright, false, life);
 	}
 }
 
@@ -316,15 +315,9 @@ void JE_doSPBoltSeeded(JE_word x0, JE_word y0, JE_word x1, JE_word y1, JE_byte s
 		seed += SP_SEED_STRIDE;
 		const JE_real swing = ((JE_real)(sp_mix32(seed) >> 16) / 32768.0 - 1.0) * wander * sinf(M_PI * t);
 
-		const unsigned int slot = next_superpixel(false);
-		superpixels[slot].x = (unsigned int)(signed int)roundf(x0 + dx * t + nx * swing);
-		superpixels[slot].y = (unsigned int)(signed int)roundf(y0 + dy * t + ny * swing);
-		superpixels[slot].delta_x = 0;   // a bolt holds its shape and fades in place
-		superpixels[slot].delta_y = 0;
-		superpixels[slot].color = color;
-		superpixels[slot].bright = bright;
-		superpixels[slot].occluded = false;
-		superpixels[slot].z = life;
+		// A bolt holds its shape and fades in place.
+		sp_emit(false, (signed int)roundf(x0 + dx * t + nx * swing),
+		        (signed int)roundf(y0 + dy * t + ny * swing), 0, 0, color, bright, false, life);
 	}
 }
 
@@ -351,15 +344,31 @@ void JE_doSPDripSeeded(JE_word x, JE_word y, JE_word num, JE_byte spread, JE_byt
 		const int fall = SP_DRIP_FALL_MIN
 		               + (int)(sp_mix32(seed) % (SP_DRIP_FALL_MAX - SP_DRIP_FALL_MIN + 1));
 
-		const unsigned int slot = next_superpixel(false);
-		superpixels[slot].x = (unsigned int)((int)x + offX);
-		superpixels[slot].y = (unsigned int)((int)y + offY);
-		superpixels[slot].delta_x = 0;   // a drop runs straight down
-		superpixels[slot].delta_y = fall;
-		superpixels[slot].color = color;
-		superpixels[slot].bright = bright;
-		superpixels[slot].occluded = false;
-		superpixels[slot].z = life;
+		// A drop runs straight down.
+		sp_emit(false, (int)x + offX, (int)y + offY, 0, fall, color, bright, false, life);
+	}
+}
+
+void JE_doSPHaloSeeded(JE_word x, JE_word y, JE_byte rx, JE_byte ry, JE_word num, JE_byte pace,
+                       JE_byte color, JE_byte bright, Uint32 seed)
+{
+	if (pace == 0)
+		return;
+
+	for (JE_word sp = 0; sp < num; sp++)
+	{
+		seed += SP_SEED_STRIDE;
+		const JE_real angle = (JE_real)(sp_mix32(seed) >> 16) / 65536.0 * (2 * M_PI);
+		seed += SP_SEED_STRIDE;
+		const JE_real speed = 1 + (JE_real)(sp_mix32(seed) >> 16) / 65536.0 * (pace - 1);
+		const JE_real ux = sinf(angle), uy = cosf(angle);
+
+		const unsigned int slot = sp_emit(false, (int)x + (int)roundf(ux * rx),
+		                                  (int)y + (int)roundf(uy * ry), (int)roundf(ux * speed),
+		                                  (int)roundf(uy * speed), color, bright, false,
+		                                  SUPERPIXEL_SPAWN_Z);
+		superpixels[slot].under = true;
+		sp_under_ticks = SUPERPIXEL_SPAWN_Z;
 	}
 }
 
@@ -396,9 +405,9 @@ void enemy_shot_vaporise_sparks(unsigned int slot)
 	              color, false, ENDLESS_SPARK_BRIGHT, false, seed);
 }
 
-static void sp_step(unsigned int i)
+static void sp_step(unsigned int i, bool under)
 {
-	if (superpixels[i].z)
+	if (superpixels[i].z && superpixels[i].under == under)
 	{
 		superpixels[i].x += superpixels[i].delta_x;
 		superpixels[i].y += superpixels[i].delta_y;
@@ -447,7 +456,7 @@ void JE_drawSP(void)
 	unsigned int live_lo = MAX_SUPERPIXELS, live_hi = 0;
 	for (unsigned int i = sp_live_hi + 1; i-- > sp_live_lo; )
 	{
-		sp_step(i);
+		sp_step(i, false);
 		if (superpixels[i].z != 0)
 		{
 			if (live_hi == 0)
@@ -459,7 +468,20 @@ void JE_drawSP(void)
 	sp_live_hi = live_hi;
 
 	for (unsigned int i = SUPERPIXELS_CLASSIC; i-- > 0; )
-		sp_step(i);
+		sp_step(i, false);
 
 	sp_occluder_count = 0;  // the boxes describe the frame just drawn; the next one republishes
+}
+
+void JE_drawSPUnder(void)
+{
+	if (sp_under_ticks == 0)
+		return;
+	--sp_under_ticks;
+	sp_pass_advanced = true;
+
+	for (unsigned int i = sp_live_hi + 1; i-- > sp_live_lo; )
+		sp_step(i, true);
+	for (unsigned int i = SUPERPIXELS_CLASSIC; i-- > 0; )
+		sp_step(i, true);
 }

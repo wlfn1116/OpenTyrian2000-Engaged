@@ -998,13 +998,11 @@ static void repair_xmas_keyed_shots(Sprite2_array *sheet)
 	sprite2_clear_keys(sheet, key, COUNTOF(key));
 }
 
-/* Return a packed sprite's dominant color bank, or 0 when it paints nothing. */
-Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
+static void sprite2_count_banks(Sprite2_array sprite2s, unsigned int index, unsigned int count[16])
 {
 	if (!sprite2_index_valid(sprite2s, index))
-		return 0;
+		return;
 
-	unsigned int count[16] = { 0 };
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 
 	for (; *data != 0x0f; ++data)
@@ -1016,7 +1014,22 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 			++count[*data >> 4];
 		}
 	}
+}
 
+/* Return a packed sprite's dominant color bank, or 0 when it paints nothing. */
+Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
+{
+	unsigned int count[16] = { 0 };
+	sprite2_count_banks(sprite2s, index, count);
+	return dominant_bank_of(count);
+}
+
+Uint8 sprite2x2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
+{
+	static const unsigned int cells[] = { 0, 1, 19, 20 };
+	unsigned int count[16] = { 0 };
+	for (size_t i = 0; i < COUNTOF(cells); ++i)
+		sprite2_count_banks(sprite2s, index + cells[i], count);
 	return dominant_bank_of(count);
 }
 

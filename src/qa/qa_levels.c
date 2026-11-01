@@ -167,23 +167,23 @@ static unsigned int qa_scattered_spawns(void)
 	return scattered;
 }
 
-// Count the loaded SURFACE nubs, returning how many sit where the load-time correction puts them.
-static unsigned int qa_attached_surface_nubs(unsigned int *nubs)
+// Count the loaded pieces of one enemy, returning how many sit at (dx, dy) from a same-tick anchor.
+static unsigned int qa_attached_pieces(JE_byte type, JE_integer piece, JE_integer anchor, int dx,
+                                       int dy, unsigned int *pieces)
 {
 	unsigned int attached = 0;
 	for (JE_word i = 0; i < maxEvent; ++i)
 	{
-		const struct JE_EventRecType *const nub = &eventRec[i];
-		if (nub->eventtype != 7 || nub->eventdat != 212)
+		const struct JE_EventRecType *const p = &eventRec[i];
+		if (p->eventtype != type || p->eventdat != piece)
 			continue;
 
-		++*nubs;
+		++*pieces;
 		for (JE_word j = 0; j < maxEvent; ++j)
 		{
-			const struct JE_EventRecType *const arch = &eventRec[j];
-			if (arch->eventtype == 7 && arch->eventdat == 213 &&
-			    arch->eventtime == nub->eventtime &&
-			    arch->eventdat2 == nub->eventdat2 + 18 && arch->eventdat5 == nub->eventdat5 - 6)
+			const struct JE_EventRecType *const a = &eventRec[j];
+			if (a->eventtype == type && a->eventdat == anchor && a->eventtime == p->eventtime &&
+			    p->eventdat2 == a->eventdat2 + dx && p->eventdat5 == a->eventdat5 + dy)
 			{
 				++attached;
 				break;
@@ -541,7 +541,7 @@ void qa_test_level_event_scripts(void)
 	const JE_word saved_events = maxEvent;
 	const JE_byte saved_episode = episodeNum, saved_lvl_file = lvlFileNum;
 
-	unsigned int levels = 0, nubs = 0, attached = 0, scattered = 0;
+	unsigned int levels = 0, nubs = 0, attached = 0, scattered = 0, turrets = 0, stacked = 0;
 	unsigned int bossLoops = 0, strayLoops = 0;
 	bool read_all = true, gryphon = false, harvest = false, underdeli = false;
 	bool fleet = false, core = false;
@@ -587,8 +587,9 @@ void qa_test_level_event_scripts(void)
 			++levels;
 			scattered += qa_scattered_spawns();
 			qa_scan_boss_loops(&bossLoops, &strayLoops);
+			stacked += qa_attached_pieces(6, 171, 172, 0, -28, &turrets);
 			if (ep == 4 && lvlFileNum == 4)
-				attached += qa_attached_surface_nubs(&nubs);
+				attached += qa_attached_pieces(7, 212, 213, -18, 6, &nubs);
 			if (ep == 2 && lvlFileNum == 6)
 				gryphon = qa_gryphon_bar_follows_head();
 			if (ep == 4 && lvlFileNum == 1)
@@ -617,6 +618,8 @@ void qa_test_level_event_scripts(void)
 	         "a boosted scroll holds from a boss's spawn: HARVEST's pieces, both UNDERDELI bosses");
 	qa_check(!episodeAvail[4 - 1] || (nubs > 0 && attached == nubs),
 	         "SURFACE's arch nubs spawn beside their arches, as in Tyrian 2.1");
+	qa_check(!episodeAvail[1 - 1] || (turrets > 0 && stacked == turrets),
+	         "every Savara cannon top sits on its tower, SAVARA IV's included, as in Tyrian 2.1");
 	qa_check(scattered == 0, "outside the authored designs, no spawn group places a piece over "
 	         "100px from its median height");
 	qa_check(bossLoops == qa_boss_loops_shipped() && strayLoops == 0,
@@ -634,8 +637,8 @@ void qa_test_level_event_scripts(void)
 	qa_check(qa_rearm_rules(),
 	         "an Endless re-arm spares a wounded boss part but still re-arms ordinary enemies, "
 	         "seals at 255, opens from it and sets a larger pool");
-	printf("# level events: %u levels, %u SURFACE arch nubs, %u scattered spawns\n",
-	       levels, nubs, scattered);
+	printf("# level events: %u levels, %u SURFACE arch nubs, %u cannon tops, %u scattered spawns\n",
+	       levels, nubs, turrets, scattered);
 }
 
 static void qa_loop_script(void)
@@ -847,4 +850,29 @@ void qa_test_super_enemy_loops(void)
 	levelTimer = savedTimer;
 	levelTimerCountdown = savedCountdown;
 	returnActive = savedReturn;
+}
+
+void qa_test_map_top_pin(void)
+{
+	JE_byte **const map1 = &megaData1.mainmap[0][0];
+	JE_byte **const map3 = &megaData3.mainmap[0][0];
+	JE_byte **const top1 = &megaData1.mainmap[1][0];
+	JE_byte **const top3 = &megaData3.mainmap[1][0];
+
+	const bool arrives = bg_wrap_target(top1 - 1, top1, top1, 14) == top1 - 1 &&
+	                     bg_wrap_target(top3 - 1, top3, top3, 15) == top3 - 1;
+	const bool holds = bg_wrap_target(map1 - 1, top1, top1, 14) == top1 - 1 &&
+	                   bg_wrap_target(map3 - 1, top3, top3, 15) == top3 - 1;
+	JE_byte **const stop = map1 + 5 * 14;
+	const bool phase = bg_wrap_target(map1 + 3 * 14 + 10, stop, stop, 14) == map1 + 4 * 14 + 10 &&
+	                   bg_wrap_target(map1 + 3 * 14 + 13, stop, stop, 14) == map1 + 4 * 14 + 13;
+	qa_check(arrives && holds && phase,
+	         "a layer that scrolls into the top of its map holds there in its own column");
+
+	JE_byte **const map2 = &megaData2.mainmap[0][0];
+	JE_byte **const loopFrom = map2 + 100, **const loopTo = map2 + 8287;
+	qa_check(bg_wrap_target(map2 + 97, loopFrom, loopTo, 14) == loopTo &&
+	         bg_wrap_target(map2 + 83, loopFrom, loopTo, 14) == loopTo - 14 &&
+	         bg_wrap_target(map2 + 97, loopTo, loopFrom, 14) == loopFrom,
+	         "a map loop keeps its whole rows of overshoot and an authored jump lands as authored");
 }

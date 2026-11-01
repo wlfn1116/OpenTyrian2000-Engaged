@@ -3295,11 +3295,11 @@ level_loop:
 	/*Background Wrapping*/
 	// Preserve whole-row overshoot when boosted scroll crosses a wrap; stop wraps remain pinned.
 	if (mapYPos <= BKwrap1)
-		mapYPos = (BKwrap1to > BKwrap1) ? BKwrap1to - (BKwrap1 - mapYPos) / 14 * 14 : BKwrap1to;
+		mapYPos = bg_wrap_target(mapYPos, BKwrap1, BKwrap1to, 14);
 	if (mapY2Pos <= BKwrap2)
-		mapY2Pos = (BKwrap2to > BKwrap2) ? BKwrap2to - (BKwrap2 - mapY2Pos) / 14 * 14 : BKwrap2to;
+		mapY2Pos = bg_wrap_target(mapY2Pos, BKwrap2, BKwrap2to, 14);
 	if (mapY3Pos <= BKwrap3)
-		mapY3Pos = (BKwrap3to > BKwrap3) ? BKwrap3to - (BKwrap3 - mapY3Pos) / 15 * 15 : BKwrap3to;
+		mapY3Pos = bg_wrap_target(mapY3Pos, BKwrap3, BKwrap3to, 15);
 
 	allPlayersGone = all_players_dead() &&
 	                 ((*player[0].lives == 1 && player[0].exploding_ticks == 0) || !arcade_rules_active()) &&
@@ -4246,6 +4246,8 @@ draw_player_shot_loop_end:
 			JE_playerCollide(&player[i], i + 1);
 	execution_reflect_process();
 
+	if (!rollback_resim_silent)
+		JE_drawSPUnder();
 	if (firstGameOver)
 		JE_mainGamePlayerFunctions();      /* Player draw and movement. */
 

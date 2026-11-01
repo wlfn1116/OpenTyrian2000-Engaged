@@ -114,6 +114,7 @@ void qa_test_custom_episode(void);
 void qa_test_level_event_scripts(void);
 void qa_test_boosted_boss_pacing(void);
 void qa_test_super_enemy_loops(void);
+void qa_test_map_top_pin(void);
 
 void qa_test_load_screen_help(void);
 void qa_test_endless_shop_stock(void);

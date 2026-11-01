@@ -510,6 +510,27 @@ static void qa_perk_matrix(void)
 	endlessSetFxPlayer(1);
 	qa_check(!endlessAdrenalineActive(),
 	         "a ship that never picked Adrenaline gets nothing from being hurt");
+
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	endlessMode = true;
+	endlessCampaignMods = false;
+	bool sameRule = true;
+	for (uint p = 0; p < 2; ++p)
+	{
+		endlessSetFxPlayer(p);
+		sameRule = sameRule && endlessShipAdrenalineActive(p) == endlessAdrenalineActive();
+	}
+	qa_check(sameRule && endlessShipAdrenalineActive(0) && !endlessShipAdrenalineActive(1),
+	         "the Adrenaline sparks show on the hurt owner alone, by the rule its bonus uses");
+	player[0].armor = 30;
+	qa_check(!endlessShipAdrenalineActive(0),
+	         "...and go out once the owner is back above the line");
+	player[0].armor = 1;
+	endlessMode = false;
+	qa_check(!endlessShipAdrenalineActive(0), "...and never show outside Endless effects");
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+
 	endlessSetFxPlayer(0);
 	qa_clear_ships();
 

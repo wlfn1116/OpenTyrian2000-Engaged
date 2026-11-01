@@ -84,6 +84,7 @@ void qa_test_superspark_shapes(void);
 void qa_test_spark_ring_bounds(void);
 void qa_test_vaporised_shot_sparks(void);
 void qa_test_knife_fight_blood(void);
+void qa_test_spark_halo(void);
 
 void qa_test_item_data_settings(void);
 void qa_test_zica_lv11_pattern(void);

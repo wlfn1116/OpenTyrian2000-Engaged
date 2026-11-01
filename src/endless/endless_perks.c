@@ -175,12 +175,21 @@ static int endlessAccumSteps(int *accum, int rate)
 	return steps;
 }
 
+static bool adrenalineArmed(uint p)
+{
+	return endlessPerkEffective(p, PERK_ADRENALINE) > 0 && player[p].initial_armor > 0
+	    && player[p].armor * ENDLESS_PERK_ADRENALINE_HP < player[p].initial_armor;
+}
+
 /* Arm personal effects from the owning ship's hull. */
 bool endlessAdrenalineActive(void)
 {
-	const uint p = endlessFxPlayer();
-	return perkFx(PERK_ADRENALINE) > 0 && player[p].initial_armor > 0
-	    && player[p].armor * ENDLESS_PERK_ADRENALINE_HP < player[p].initial_armor;
+	return adrenalineArmed(endlessFxPlayer());
+}
+
+bool endlessShipAdrenalineActive(uint p)
+{
+	return endlessFxActive() && adrenalineArmed(coopEndlessMode ? p : 0);
 }
 
 // Fire-rate decrement percentage, including Adrenaline when `hurtBonus` is true.

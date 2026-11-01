@@ -93,6 +93,8 @@ void blit_background_row_scaled_batch(SDL_Surface *surface, const BgRowDraw *row
 // Update layer 1's scroll anchor even when Astral Zone skips drawing the layer.
 void bg_publish_layer_1_phase(void);
 
+JE_byte **bg_wrap_target(JE_byte **pos, JE_byte **wrap, JE_byte **to, int width);
+
 void draw_background_1(SDL_Surface *surface);
 void draw_background_2(SDL_Surface *surface);
 void draw_background_2_blend(SDL_Surface *surface);

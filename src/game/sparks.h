@@ -31,6 +31,7 @@ typedef struct {
 	signed int delta_x, delta_y;
 	Uint8 color, bright;
 	bool occluded;
+	bool under;
 } superpixel_type;
 
 extern superpixel_type superpixels[MAX_SUPERPIXELS];
@@ -65,9 +66,12 @@ void JE_doSPBoltSeeded(JE_word x0, JE_word y0, JE_word x1, JE_word y1, JE_byte s
 // pace, so the shower reads as a drip rather than a burst. Seeded and uncapped like the shapes above.
 void JE_doSPDripSeeded(JE_word x, JE_word y, JE_word num, JE_byte spread, JE_byte color,
                        JE_byte life, JE_byte bright, Uint32 seed);
+void JE_doSPHaloSeeded(JE_word x, JE_word y, JE_byte rx, JE_byte ry, JE_word num, JE_byte pace,
+                       JE_byte color, JE_byte bright, Uint32 seed);
 // Presentation-only spark pop; call while the enemy-shot slot is still live.
 void enemy_shot_vaporise_sparks(unsigned int slot);
 void JE_drawSP(void);
+void JE_drawSPUnder(void);
 void JE_resetSP(void);
 // Discard restores the spark ring to the state captured by begin.
 void JE_beginSPPass(void);

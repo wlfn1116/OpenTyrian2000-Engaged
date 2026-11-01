@@ -630,6 +630,30 @@ static void blit_ship2x2_blend(SDL_Surface *surface, int x, int y, Sprite2_array
 		blit_sprite2x2_alpha(surface, x, y, sheet, index, style.bank, (Uint8)(style.opacity / 2));
 }
 
+#define ENDLESS_ADRENALINE_SPARK_TICKS 5
+#define ENDLESS_ADRENALINE_SPARK_PACE  2
+
+static void ship_adrenaline_sparks(const Player *this_player, int left, int right,
+                                   Sprite2_array sheet, unsigned int index)
+{
+	if (rollback_resim_silent || !this_player->is_alive || !ship_draw_casts_shadow() ||
+	    rl_presented_frames() % ENDLESS_ADRENALINE_SPARK_TICKS != ship_draw_seat ||
+	    !endlessShipAdrenalineActive(ship_draw_seat))
+		return;
+
+	const int cx = this_player->x + (left + right) / 2;
+	const int cy = this_player->y + 7;
+	if (cx < 0 || cy < 0)
+		return;
+
+	const NetShipStyle style = ship_draw_style();
+	const Uint8 bank = (style.bank >= 0) ? (Uint8)style.bank
+	                                     : sprite2x2_dominant_bank(sheet, index);
+	JE_doSPHaloSeeded((JE_word)cx, (JE_word)cy, (JE_byte)((right - left) / 2), 14, 1,
+	                  ENDLESS_ADRENALINE_SPARK_PACE, (JE_byte)(bank << 4), ENDLESS_SPARK_BRIGHT,
+	                  rl_presented_frames() * 151u + ship_draw_seat);
+}
+
 // Resting/home position for a front-mounted (style 2) option.
 static int front_option_home_x(const Player *this_player, uint i)
 {
@@ -2188,6 +2212,12 @@ redo:
 		}
 
 		rl_current_id = 0;  // end ship tag
+
+		if (shipGr_ <= 1)
+			ship_adrenaline_sparks(this_player, -17, 31, *shipGrPtr_,
+			                       shipGr_ == 0 ? (unsigned int)(ship_sprite + 13) : 220u);
+		else
+			ship_adrenaline_sparks(this_player, -5, 19, *look_sheet, (unsigned int)look_sprite);
 
 		/*Options Location*/
 		if (shipGr_ == 0)  // The Dragonwing's wide hull sets sidekicks further out, either seat.
