@@ -34,7 +34,7 @@ extern int customEndlessMode;          /* Persisted menu value. */
 int customEndlessEffectiveMode(void);  /* Local or host-session value. */
 
 /* Installs the host-ordered collection used by extended episode IDs. */
-void customEpisodeSessionBegin(const char names[][CUSTOM_EPISODE_FILE_LEN], int count, int mode);
+void customEpisodeSessionBegin(char names[][CUSTOM_EPISODE_FILE_LEN], int count, int mode);
 void customEpisodeSessionEnd(void);
 bool customEpisodeSessionActive(void);
 int customEpisodeIdCount(void);           /* Entries visible to Endless. */

@@ -496,7 +496,7 @@ void JE_spriteViewer(int off_x, int off_y)
 		{ "User ship 1",   "user1.shp" },
 		{ "User ship 2",   "user2.shp" },
 	};
-	Sprite_array localArrs[COUNTOF(arrFiles)];
+	static Sprite_array localArrs[COUNTOF(arrFiles)];
 	int nArr = 0;
 	for (size_t i = 0; i < COUNTOF(arrFiles) && nsrc < (int)COUNTOF(src); ++i)
 	{

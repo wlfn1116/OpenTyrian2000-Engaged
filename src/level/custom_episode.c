@@ -434,7 +434,7 @@ static char sessionNames[CUSTOM_EPISODE_MAX][CUSTOM_EPISODE_FILE_LEN];
 static int  sessionCount = -1;
 static int  sessionMode = CUSTOM_ENDLESS_OFF;
 
-void customEpisodeSessionBegin(const char names[][CUSTOM_EPISODE_FILE_LEN], int count, int mode)
+void customEpisodeSessionBegin(char names[][CUSTOM_EPISODE_FILE_LEN], int count, int mode)
 {
 	if (count < 0)
 		count = 0;

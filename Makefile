@@ -72,7 +72,7 @@ CFLAGS ?= -pedantic \
           -O2
 LDFLAGS ?=
 LDLIBS ?=
-LTO_FLAGS ?= -flto
+LTO_FLAGS ?= -flto=auto
 
 SDL_CPPFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --cflags)
 SDL_LDFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-L --libs-only-other)

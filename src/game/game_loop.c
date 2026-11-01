@@ -1368,7 +1368,7 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 		return;
 	const unsigned int index = specialPickup
 	                         ? (unsigned int)ENDLESS_SPECIAL_PICKUP_ICON + sprite_offset
-	                         : enemy[i].egr[cycle - 1] + sprite_offset;
+	                         : (unsigned int)(enemy[i].egr[cycle - 1] + sprite_offset);
 	if (index == 0 || (size_t)index * sizeof(Uint16) > sheet->size)
 		return;
 

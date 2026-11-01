@@ -87,12 +87,13 @@ void qa_test_weapon_editor(void)
 		const int level = (int)(pass % CUSTOM_POWER_LEVELS);
 		customWeaponDeserializeLevel(mode, level, malformed);
 		const JE_WeaponType *w = &customWeaponRaw[mode][level];
+		const int multi = w->multi, maxPattern = w->max;
 		bool cleared = true;
-		for (int k = MAX(w->multi, w->max); k < WEAPON_MULTI_MAX; ++k)
+		for (int k = MAX(multi, maxPattern); k < WEAPON_MULTI_MAX; ++k)
 			cleared = cleared && w->attack[k] == 0 && w->del[k] == 0 && w->sx[k] == 0 &&
 			          w->sy[k] == 0 && w->bx[k] == 0 && w->by[k] == 0 && w->sg[k] == 0;
-		qa_check(w->multi >= 1 && w->multi <= CUSTOM_BULLETS_MAX
-		         && w->max >= 1 && w->max <= CUSTOM_BULLETS_MAX
+		qa_check(multi >= 1 && multi <= CUSTOM_BULLETS_MAX
+		         && maxPattern >= 1 && maxPattern <= CUSTOM_BULLETS_MAX
 		         && w->sound <= CUSTOM_SOUND_MAX && customWeaponTrailValid(w->trail)
 		         && w->aim <= CUSTOM_AIM_MAX && cleared,
 		         "weapon editor rejects malformed values outside engine bounds");

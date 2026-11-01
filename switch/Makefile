@@ -36,7 +36,7 @@ PKGCONF := $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 
 # Match desktop Release, retain symbols, and preserve engine/netplay assumptions.
 CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsigned-char \
-          -ffp-contract=off -flto $(ARCH)
+          -ffp-contract=off -flto=auto $(ARCH)
 
 # TYRIAN_DIR is a fallback behind the sdmc:/ and romfs: paths. Networking uses
 # switch-sdl2_net and the socket initialization in switch_platform.c.
@@ -51,7 +51,7 @@ endif
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
 ASFLAGS := -g $(ARCH)
-LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g -flto $(ARCH) -Wl,-Map,$(notdir $*.map)
+LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g -flto=auto $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 # SDL2 and its full (static) dependency chain, then libnx/libm as a safe backstop.
 # SDL2_net comes first so the static linker resolves its SDL2 references.

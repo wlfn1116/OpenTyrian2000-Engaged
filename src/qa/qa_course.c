@@ -164,7 +164,13 @@ void qa_test_seeker_tiers(void)
 	const bool savedCampaign = endlessCampaignMods;
 	const Uint64 savedMods = endlessActiveMods;
 
-	static const struct { Uint64 mods; int tier; int passes; float turnCos; } cases[] = {
+	static const struct
+	{
+		Uint64 mods;
+		EndlessSeekerTier tier;
+		int passes;
+		float turnCos;
+	} cases[] = {
 		{ 0,                       ENDLESS_SEEK_NONE,  0, 1.0000f },
 		{ ENDLESS_MOD_SEEKER,      ENDLESS_SEEK_CURVE, 1, 0.9205f },
 		{ ENDLESS_MOD_TWINSEEK,    ENDLESS_SEEK_TWIN,  2, 0.9205f },

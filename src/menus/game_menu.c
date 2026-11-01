@@ -1108,7 +1108,7 @@ static int endlessCourseRerollRow(void)
 static void configure_endless_course_menu(void)
 {
 	char (*p)[24] = menuInt[MENU_PLAY_NEXT_LEVEL + 1];
-	const int n = endlessCourseCount();
+	const int n = MIN(endlessCourseCount(), (int)COUNTOF(mapPlanet));
 
 	mapPNum = (JE_byte)n;
 	for (int i = 0; i < n; ++i)

@@ -4,10 +4,9 @@
  * SceNet backing for the SDL_net subset the netplay code uses; see vita_net.h.
  */
 #include "vita_net.h"
+#include "vita_platform.h"
 
 #ifdef __vita__
-
-#include "vita_platform.h"
 
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
