@@ -538,6 +538,7 @@ int qa_run_unit_suite(void)
 	qa_test_endless_suite();
 	qa_test_save_fixtures();
 	qa_test_present_paths();
+	qa_test_palette_search();
 	qa_test_scaled_sprite_blocks();
 	qa_test_scaled_table_sprites();
 	qa_test_resync_serialization();

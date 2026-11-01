@@ -149,11 +149,10 @@ static int hi_texture_w = 0, hi_texture_h = 0;
 
 static ScalerFunction scaler_function;
 
-#ifndef __vita__  // side-gradient cache; unused on Vita (plain black pillarbox)
 static Uint8 gradient_cache[256][MENU_X_OFFSET];
-static Uint32 last_gradient_palette[256];
+static bool gradient_ready[256];
+static PaletteSearch gradient_search;
 static bool gradient_cache_valid = false;
-#endif
 
 static void init_renderer(void);
 static void deinit_renderer(void);
@@ -169,9 +168,7 @@ static void native_windowed_size(int *out_w, int *out_h);
 static void calc_dst_render_rect(SDL_Surface *src_surface, SDL_Rect *dst_rect);
 static void scale_and_flip(SDL_Surface *);
 static void blit_with_offset(SDL_Surface* src, SDL_Surface* dst, int x_offset);
-#ifndef __vita__
 static void update_gradient_cache(void);
-#endif
 
 void init_video(void)
 {
@@ -2008,40 +2005,42 @@ void video_repaint_if_stale(bool force)
 	}
 }
 
-#ifndef __vita__  // gradient helpers; unused on Vita, which draws a plain black pillarbox
 static void update_gradient_cache(void)
 {
-	if (!gradient_cache_valid || memcmp(last_gradient_palette, rgb_palette, sizeof(rgb_palette)) != 0)
+	if (!gradient_cache_valid || memcmp(gradient_search.colors, colors, sizeof(colors)) != 0)
 	{
-		memcpy(last_gradient_palette, rgb_palette, sizeof(rgb_palette));
-
-		for (int c = 0; c < 256; ++c)
-		{
-			SDL_Color col = colors[c];
-			gradient_cache[c][0] = 0;
-			for (int i = 1; i < MENU_X_OFFSET; ++i)
-			{
-				float factor = (float)i / MENU_X_OFFSET;
-				Uint8 r = (Uint8)(col.r * factor);
-				Uint8 g = (Uint8)(col.g * factor);
-				Uint8 b = (Uint8)(col.b * factor);
-				const SDL_Color shade = { r, g, b, SDL_ALPHA_OPAQUE };
-				gradient_cache[c][i] = palette_nearest(colors, 0, shade);
-			}
-		}
-
+		palette_search_init(&gradient_search, colors);
+		memset(gradient_ready, 0, sizeof(gradient_ready));
 		gradient_cache_valid = true;
 	}
 }
-#endif  // !__vita__
+
+static SDL_Color gradient_shade(SDL_Color col, int step)
+{
+	const float factor = (float)step / MENU_X_OFFSET;
+	const SDL_Color shade = { (Uint8)(col.r * factor), (Uint8)(col.g * factor),
+	                          (Uint8)(col.b * factor), SDL_ALPHA_OPAQUE };
+	return shade;
+}
+
+static const Uint8 *gradient_row(Uint8 c)
+{
+	if (!gradient_ready[c])
+	{
+		gradient_cache[c][0] = 0;
+		for (int i = 1; i < MENU_X_OFFSET; ++i)
+		{
+			const SDL_Color shade = gradient_shade(gradient_search.colors[c], i);
+			gradient_cache[c][i] = palette_search_nearest(&gradient_search, shade);
+		}
+		gradient_ready[c] = true;
+	}
+	return gradient_cache[c];
+}
 
 static void blit_with_offset(SDL_Surface* src, SDL_Surface* dst, int x_offset)
 {
-#ifndef __vita__
-	// The side gradient's nearest-palette-index rebuild (256-colour search per cell) reruns
-	// every menu-fade frame and dominates the Vita's slow CPU, so Vita draws plain black bars.
 	update_gradient_cache();
-#endif
 
 	for (int y = 0; y < vga_height; ++y)
 	{
@@ -2050,24 +2049,113 @@ static void blit_with_offset(SDL_Surface* src, SDL_Surface* dst, int x_offset)
 
 		memcpy(dst_row + x_offset, src_row, LEGACY_WIDTH);
 
-#ifdef __vita__
-		// Plain black pillarbox bars (index 0 = black, as the gradient's own edge column is).
-		memset(dst_row, 0, x_offset);
-		memset(dst_row + x_offset + LEGACY_WIDTH, 0, x_offset);
-#else
-		Uint8 left_color = src_row[0];
+		const Uint8 *left = gradient_row(src_row[0]);
 		for (int i = 0; i < x_offset; ++i)
 		{
-			dst_row[i] = gradient_cache[left_color][i];
+			dst_row[i] = left[i];
 		}
 
-		Uint8 right_color = src_row[LEGACY_WIDTH - 1];
+		const Uint8 *right = gradient_row(src_row[LEGACY_WIDTH - 1]);
 		for (int i = 0; i < x_offset; ++i)
 		{
-			dst_row[x_offset + LEGACY_WIDTH + i] = gradient_cache[right_color][x_offset - 1 - i];
+			dst_row[x_offset + LEGACY_WIDTH + i] = right[x_offset - 1 - i];
 		}
-#endif
 	}
+}
+
+static Uint8 side_test_edge(int y, bool right)
+{
+	return (Uint8)(right ? y * 101 + 7 : y * 37 + 11);
+}
+
+static bool side_test_matches(const SDL_Surface *frame)
+{
+	for (int y = 0; y < vga_height; ++y)
+	{
+		const Uint8 *const src = (const Uint8 *)VGAScreen->pixels + y * VGAScreen->pitch;
+		const Uint8 *const row = (const Uint8 *)frame->pixels + y * frame->pitch;
+		if (memcmp(row + MENU_X_OFFSET, src, LEGACY_WIDTH) != 0 || row[0] != 0
+		    || row[vga_width - 1] != 0)
+			return false;
+
+		for (int step = 1; step < MENU_X_OFFSET; ++step)
+		{
+			const SDL_Color left = gradient_shade(colors[src[0]], step);
+			const SDL_Color right = gradient_shade(colors[src[LEGACY_WIDTH - 1]], step);
+			if (row[step] != palette_nearest(colors, 0, left)
+			    || row[vga_width - 1 - step] != palette_nearest(colors, 0, right))
+				return false;
+		}
+	}
+	return true;
+}
+
+bool video_test_side_gradient(char *detail, size_t detailSize)
+{
+	enum { FADE_STEPS = 8, POISON_STEP = 9 };
+	const size_t bytes = (size_t)VGAScreen->pitch * VGAScreen->h;
+	Uint8 *const saved_pixels = malloc(bytes);
+	if (saved_pixels == NULL)
+	{
+		if (detail != NULL && detailSize != 0)
+			snprintf(detail, detailSize, "out of memory");
+		return false;
+	}
+
+	Palette saved_colors;
+	Uint32 saved_rgb[256];
+	const int saved_offset = current_x_offset;
+	memcpy(saved_pixels, VGAScreen->pixels, bytes);
+	memcpy(saved_colors, colors, sizeof(saved_colors));
+	memcpy(saved_rgb, rgb_palette, sizeof(saved_rgb));
+
+	current_x_offset = MENU_X_OFFSET;
+	for (int y = 0; y < vga_height; ++y)
+	{
+		Uint8 *const row = (Uint8 *)VGAScreen->pixels + y * VGAScreen->pitch;
+		memset(row, y, vga_width);
+		row[0] = side_test_edge(y, false);
+		row[LEGACY_WIDTH - 1] = side_test_edge(y, true);
+	}
+
+	const char *fault = NULL;
+	for (int p = 0; p < palette_count && fault == NULL; p += 11)
+	{
+		memcpy(colors, palettes[p], sizeof(colors));
+		if (!side_test_matches(video_compose_frame()))
+			fault = "a shipped palette's side gradient differs from a full palette search";
+	}
+
+	if (fault == NULL)
+	{
+		const Uint8 poisoned = gradient_cache[side_test_edge(0, false)][POISON_STEP] ^= 0x5a;
+		for (int step = 0; step < FADE_STEPS; ++step)
+		{
+			for (int i = 0; i < 256; ++i)
+				rgb_palette[i] = (rgb_palette[i] >> 1) & 0x7f7f7f7fu;
+			video_compose_frame();
+		}
+		if (((const Uint8 *)menu_screen->pixels)[POISON_STEP] != poisoned)
+			fault = "a palette fade step rebuilt the side gradient";
+	}
+
+	if (fault == NULL)
+	{
+		colors[side_test_edge(2, true)].g ^= 0x80;
+		if (!side_test_matches(video_compose_frame()))
+			fault = "a one-entry palette change kept a stale side gradient row";
+	}
+
+	memcpy(VGAScreen->pixels, saved_pixels, bytes);
+	memcpy(colors, saved_colors, sizeof(colors));
+	memcpy(rgb_palette, saved_rgb, sizeof(rgb_palette));
+	current_x_offset = saved_offset;
+	gradient_cache_valid = false;
+	free(saved_pixels);
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }
 
 void set_menu_centered(bool centered)

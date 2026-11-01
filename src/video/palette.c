@@ -129,6 +129,58 @@ Uint8 palette_nearest(const SDL_Color *colors, int first, SDL_Color c)
 	return (Uint8)best;
 }
 
+static int palette_sum(SDL_Color c)
+{
+	return c.r + c.g + c.b;
+}
+
+void palette_search_init(PaletteSearch *search, const SDL_Color *colors)
+{
+	int at[3 * 255 + 2] = { 0 };
+
+	memcpy(search->colors, colors, sizeof(search->colors));
+	for (int i = 0; i < 256; ++i)
+		++at[palette_sum(colors[i]) + 1];
+	for (unsigned int s = 1; s < COUNTOF(at); ++s)
+		at[s] += at[s - 1];
+	for (int i = 0; i < 256; ++i)
+	{
+		const int sum = palette_sum(colors[i]);
+		search->sum[at[sum]] = (Uint16)sum;
+		search->order[at[sum]++] = (Uint8)i;
+	}
+}
+
+Uint8 palette_search_nearest(const PaletteSearch *search, SDL_Color c)
+{
+	const int sum = palette_sum(c);
+	int hi = 0;
+	for (int step = 256; step > 0; step /= 2)
+	{
+		if (hi + step <= 256 && search->sum[hi + step - 1] < sum)
+			hi += step;
+	}
+
+	int lo = hi - 1, best = 0, best_dist = INT_MAX / 3;
+	for (;;)
+	{
+		const int below = lo >= 0 ? sum - search->sum[lo] : INT_MAX;
+		const int above = hi < 256 ? search->sum[hi] - sum : INT_MAX;
+		const int gap = MIN(below, above);
+		if (gap == INT_MAX || gap * gap > 3 * best_dist)
+			break;
+
+		const int i = search->order[below <= above ? lo-- : hi++];
+		const int dist = palette_distance(search->colors[i], c);
+		if (dist < best_dist || (dist == best_dist && i < best))
+		{
+			best = i;
+			best_dist = dist;
+		}
+	}
+	return (Uint8)best;
+}
+
 void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color)
 {
 	for (uint i = first_color; i <= last_color; ++i)

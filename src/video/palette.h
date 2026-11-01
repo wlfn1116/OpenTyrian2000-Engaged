@@ -45,6 +45,16 @@ Uint8 palette_peak(void);
 int palette_distance(SDL_Color a, SDL_Color b);
 Uint8 palette_nearest(const SDL_Color *colors, int first, SDL_Color c);
 
+typedef struct
+{
+	Palette colors;
+	Uint8 order[256];
+	Uint16 sum[256];
+} PaletteSearch;
+
+void palette_search_init(PaletteSearch *search, const SDL_Color *colors);
+Uint8 palette_search_nearest(const PaletteSearch *search, SDL_Color c);
+
 void init_step_fade_palette(int diff[256][3], Palette colors, unsigned int first_color, unsigned int last_color);
 void init_step_fade_solid(int diff[256][3], SDL_Color color, unsigned int first_color, unsigned int last_color);
 void step_fade_palette(int diff[256][3], int steps, unsigned int first_color, unsigned int last_color);

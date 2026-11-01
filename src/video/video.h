@@ -219,6 +219,7 @@ bool video_test_crt_rows(char *detail, size_t detailSize);
 bool video_test_crt_curve(char *detail, size_t detailSize);
 bool video_test_crt_layers(char *detail, size_t detailSize);
 bool video_test_idle_refresh(char *detail, size_t detailSize);
+bool video_test_side_gradient(char *detail, size_t detailSize);
 void set_vsync(bool enabled);
 
 // Recover the window contents after a resolution change / expose.

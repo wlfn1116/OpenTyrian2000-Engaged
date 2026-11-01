@@ -147,6 +147,7 @@ void qa_test_custom_ship_equip(void);
 void qa_test_endless_special_names(void);
 
 void qa_test_present_paths(void);
+void qa_test_palette_search(void);
 void qa_test_scaled_sprite_blocks(void);
 void qa_test_scaled_table_sprites(void);
 void qa_test_swar_pixel_loops(void);

@@ -142,6 +142,13 @@ void qa_test_present_paths(void)
 	qa_check(idleRefresh, label);
 
 	detail[0] = '\0';
+	const bool sideGradient = video_test_side_gradient(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "the menu side gradient matches a full palette search and survives fade steps%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(sideGradient, label);
+
+	detail[0] = '\0';
 	const bool waitFrames = timing_test_wait_frames(detail, sizeof(detail));
 	snprintf(label, sizeof(label),
 	         "waits pacing a new frame leave presenting to it; holds and idle waits do not%s%s",
@@ -149,6 +156,57 @@ void qa_test_present_paths(void)
 	qa_check(waitFrames, label);
 
 	memcpy(rgb_palette, savedPalette, sizeof(savedPalette));
+}
+
+void qa_test_palette_search(void)
+{
+	static PaletteSearch search;
+	bool same = true;
+	for (int p = 0; p < palette_count && same; ++p)
+	{
+		palette_search_init(&search, palettes[p]);
+		for (int c = 0; c < 256 && same; ++c)
+		{
+			for (int k = 0; k <= 16 && same; ++k)
+			{
+				const SDL_Color col = palettes[p][c];
+				const SDL_Color q = { (Uint8)(col.r * k / 16), (Uint8)(col.g * k / 16),
+				                      (Uint8)(col.b * k / 16), SDL_ALPHA_OPAQUE };
+				same = palette_search_nearest(&search, q) == palette_nearest(palettes[p], 0, q);
+			}
+		}
+	}
+	qa_check(same, "the sorted palette search picks what the full search picks in every shipped "
+	               "palette, for each color and its shades down to black");
+
+	static const Uint8 levels[] = { 40, 80, 120, 160, 200 };
+	static Palette lattice;
+	Uint32 seed = 0x9a1e77eu;
+	same = true;
+	for (int round = 0; round < 16 && same; ++round)
+	{
+		for (int i = 0; i < 256; ++i)
+		{
+			seed = seed * 1664525u + 1013904223u;
+			lattice[i] = (SDL_Color){ levels[(seed >> 8) % COUNTOF(levels)],
+			                          levels[(seed >> 16) % COUNTOF(levels)],
+			                          levels[(seed >> 24) % COUNTOF(levels)], SDL_ALPHA_OPAQUE };
+		}
+		palette_search_init(&search, lattice);
+		for (int r = 0; r <= 240 && same; r += 20)
+		{
+			for (int g = 0; g <= 240 && same; g += 20)
+			{
+				for (int b = 0; b <= 240 && same; b += 20)
+				{
+					const SDL_Color q = { (Uint8)r, (Uint8)g, (Uint8)b, SDL_ALPHA_OPAQUE };
+					same = palette_search_nearest(&search, q) == palette_nearest(lattice, 0, q);
+				}
+			}
+		}
+	}
+	qa_check(same, "the sorted palette search breaks equal-distance ties toward the lowest index, "
+	               "as the full search does");
 }
 
 static void qa_scalar_sprite2_block(SDL_Surface *surface, int x, int y, int scale, Uint8 d,
