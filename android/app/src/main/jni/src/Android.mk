@@ -16,7 +16,7 @@ LOCAL_C_INCLUDES := $(JNI_PATH)/../SDL2/include $(JNI_PATH)/../SDL2_net \
                     $(LOCAL_PATH) $(addprefix $(LOCAL_PATH)/,$(OT_SRC_DIRS))
 
 # Keep character and floating-point behavior consistent with other netplay targets.
-LOCAL_CFLAGS := -std=iso9899:1999 -O2 -fsigned-char -ffp-contract=off \
+LOCAL_CFLAGS := -std=iso9899:1999 -O2 -fsigned-char -ffp-contract=off -flto=thin \
                 -Wall -Wno-format-truncation -Wno-missing-field-initializers \
                 -DNDEBUG -DTARGET_UNIX -DTYRIAN_DIR=\"data\"
 
@@ -27,5 +27,6 @@ endif
 LOCAL_SHARED_LIBRARIES := SDL2 SDL2_net
 
 LOCAL_LDLIBS := -lm -llog
+LOCAL_LDFLAGS := -flto=thin
 
 include $(BUILD_SHARED_LIBRARY)

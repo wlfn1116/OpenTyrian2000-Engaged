@@ -72,6 +72,7 @@ CFLAGS ?= -pedantic \
           -O2
 LDFLAGS ?=
 LDLIBS ?=
+LTO_FLAGS ?= -flto
 
 SDL_CPPFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --cflags)
 SDL_LDFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-L --libs-only-other)
@@ -106,6 +107,7 @@ debug : CPPFLAGS += -UNDEBUG
 debug : CFLAGS += -Werror
 debug : CFLAGS += -O0
 debug : CFLAGS += -g3
+debug : LTO_FLAGS =
 debug : all
 
 .PHONY : test test-unit test-replay test-network
@@ -178,7 +180,7 @@ clean :
 	rm -f $(TARGET) $(SAN_TARGET)
 
 $(TARGET) : $(OBJS)
-	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -o $@ $^ $(ALL_LDLIBS)
+	$(CC) $(ALL_CFLAGS) $(LTO_FLAGS) $(ALL_LDFLAGS) -o $@ $^ $(ALL_LDLIBS)
 
 $(SAN_TARGET) : $(SAN_OBJS)
 	$(CC) $(ALL_CFLAGS) $(SANITIZER_FLAGS) $(ALL_LDFLAGS) -o $@ $^ $(ALL_LDLIBS)
@@ -187,7 +189,7 @@ $(SAN_TARGET) : $(SAN_OBJS)
 
 obj/%.o : src/%.c
 	@mkdir -p "$(dir $@)"
-	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -c -o $@ $<
+	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) $(LTO_FLAGS) -c -o $@ $<
 
 obj/sanitize/%.o : src/%.c
 	@mkdir -p "$(dir $@)"

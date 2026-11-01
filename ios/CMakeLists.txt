@@ -49,6 +49,14 @@ endif()
 
 add_executable(OpenTyrian2000 MACOSX_BUNDLE ${OT_SOURCES} ${SDL_NET_SOURCES})
 
+include(CheckIPOSupported)
+check_ipo_supported(RESULT OT_LTO OUTPUT OT_LTO_ERROR LANGUAGES C)
+if(OT_LTO)
+  set_property(TARGET OpenTyrian2000 PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+else()
+  message(STATUS "Building without LTO: ${OT_LTO_ERROR}")
+endif()
+
 # Copy data post-build; MACOSX_PACKAGE_LOCATION works only with the Xcode generator.
 add_custom_command(TARGET OpenTyrian2000 POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_directory

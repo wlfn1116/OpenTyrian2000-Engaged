@@ -321,6 +321,11 @@ static inline Vec8x8 vec8x8_select(Vec8x8 a, Vec8x8 b, Vec8x8 mask)
 	return vbsl_u8(mask, b, a);
 }
 
+static inline Vec8x8 vec8x8_reverse(Vec8x8 v)
+{
+	return vrev64_u8(v);
+}
+
 #else
 #define VEC8_BYTES 0
 #endif

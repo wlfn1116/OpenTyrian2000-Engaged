@@ -50,6 +50,14 @@ endforeach()
 
 add_executable(${PROJECT_NAME} ${OT_SOURCES})
 
+include(CheckIPOSupported)
+check_ipo_supported(RESULT OT_LTO OUTPUT OT_LTO_ERROR LANGUAGES C)
+if(OT_LTO)
+  set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+else()
+  message(STATUS "Building without LTO: ${OT_LTO_ERROR}")
+endif()
+
 target_include_directories(${PROJECT_NAME} PRIVATE
   ${OT_INCLUDE_DIRS}
   "$ENV{VITASDK}/arm-vita-eabi/include/SDL2"   # the engine includes "SDL.h" unqualified

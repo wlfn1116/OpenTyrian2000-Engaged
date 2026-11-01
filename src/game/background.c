@@ -209,6 +209,17 @@ static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool 
 		vec8_write(dst + i, vec8_select(d, v, vec8_nonzero(s)));
 	}
 #endif
+#if VEC8X8_BYTES
+	for (; i < BG_TILE_W; i += VEC8X8_BYTES)
+	{
+		const Vec8x8 s = flip ? vec8x8_reverse(vec8x8_read(data + BG_TILE_W - VEC8X8_BYTES - i))
+		                      : vec8x8_read(data + i);
+		const Vec8x8 d = vec8x8_read(dst + i);
+		const Vec8x8 v = blend ? vec8x8_or(vec8x8_and(s, vec8x8_splat(0xF0)), vec8x8_avg_low(s, d))
+		                       : s;
+		vec8x8_write(dst + i, vec8x8_select(d, v, vec8x8_nonzero(s)));
+	}
+#else
 	for (; i < BG_TILE_W; i += SWAR8_BYTES)
 	{
 		const Swar8 s = flip ? swar8_reverse(swar8_read(data + BG_TILE_W - SWAR8_BYTES - i))
@@ -217,6 +228,7 @@ static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool 
 		const Swar8 v = blend ? ((s & SWAR8(0xF0)) | swar8_avg_low(s, d)) : s;
 		swar8_write(dst + i, swar8_select(d, v, swar8_nonzero(s)));
 	}
+#endif
 }
 
 static inline void blit_background_rows(SDL_Surface *surface, int x, int y, Uint8 **map,
