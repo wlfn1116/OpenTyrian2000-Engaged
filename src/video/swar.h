@@ -175,7 +175,7 @@ static inline Vec8 vec8_reverse(Vec8 v)
 	return _mm_or_si128(_mm_slli_epi16(v, 8), _mm_srli_epi16(v, 8));
 }
 
-#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(_M_ARM64)
 #include <arm_neon.h>
 
 typedef uint8x16_t Vec8;

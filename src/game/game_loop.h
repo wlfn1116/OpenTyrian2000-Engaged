@@ -26,6 +26,7 @@
 // Block-expand an 8-bit frame onto a supersampled one, every pixel a scale x scale block.
 void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale);
 bool present_overlay_on_last_hi_frame(void);
+bool hi_compose_skip_self_test(void);
 
 typedef struct
 {
@@ -57,6 +58,11 @@ void endlessScanSceneryLinks(void);
 
 /* True if Endless homing may steer this body. Call endlessScanSceneryLinks first. */
 bool endlessHomingChaser(unsigned int slot);
+void endlessBossHomingFrames(void);
+int event_scroll_landing(int extra);
+int event_grid_point(int eventTime);
+void event_grid_rebase(int origin, int step);
+void event_grid_set_step(int step);
 
 /* Presented-frame clock for cosmetics; never simulation or rollback state. */
 Uint32 rl_presented_frames(void);

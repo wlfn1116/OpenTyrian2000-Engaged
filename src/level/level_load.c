@@ -411,6 +411,7 @@ typedef struct
 {
 	JE_word from, until;
 	Uint32 links[8];
+	Uint32 frame_links[8];
 } LevelBossLeadIn;
 
 static LevelBossLeadIn levelBossLeadIn[LEVEL_BOSS_LEADINS];
@@ -428,15 +429,25 @@ bool event_spawns_linked_enemy(JE_byte type)
 	}
 }
 
+static bool link_set_has(const Uint32 *set, int link)
+{
+	return link > 0 && link < 256 && (set[link / 32] & (1u << (link % 32))) != 0;
+}
+
+static void link_set_add(Uint32 *set, int link)
+{
+	if (link > 0 && link < 256)
+		set[link / 32] |= 1u << (link % 32);
+}
+
 static bool leadin_has_link(const LevelBossLeadIn *w, int link)
 {
-	return link > 0 && link < 256 && (w->links[link / 32] & (1u << (link % 32))) != 0;
+	return link_set_has(w->links, link);
 }
 
 static void leadin_add_link(LevelBossLeadIn *w, int link)
 {
-	if (link > 0 && link < 256)
-		w->links[link / 32] |= 1u << (link % 32);
+	link_set_add(w->links, link);
 }
 
 static bool leadin_spawn(const LevelBossLeadIn *w, const struct JE_EventRecType *e)
@@ -464,6 +475,23 @@ void level_scan_boss_leadins(void)
 			    leadin_has_link(w, eventRec[i].eventdat2))
 				leadin_add_link(w, eventRec[i].eventdat);
 
+		memcpy(w->frame_links, w->links, sizeof(w->frame_links));
+		for (bool grew = true; grew; )
+		{
+			grew = false;
+			for (JE_word i = 0; i < maxEvent; ++i)
+			{
+				const struct JE_EventRecType *const e = &eventRec[i];
+				if (e->eventtype == 39 && e->eventtime <= w->until && e->eventdat > 0 &&
+				    e->eventdat < 256 && link_set_has(w->frame_links, e->eventdat2) &&
+				    !link_set_has(w->frame_links, e->eventdat))
+				{
+					link_set_add(w->frame_links, e->eventdat);
+					grew = true;
+				}
+			}
+		}
+
 		int start = -1;
 		for (JE_word i = 0; i < maxEvent; ++i)
 			if (leadin_spawn(w, &eventRec[i]) && eventRec[i].eventtime <= w->until &&
@@ -486,6 +514,17 @@ void level_scan_boss_leadins(void)
 		w->from = (JE_word)start;
 		++levelBossLeadIns;
 	}
+}
+
+int level_boss_leadin_window(JE_byte link)
+{
+	for (unsigned int n = 0; n < levelBossLeadIns; ++n)
+	{
+		const LevelBossLeadIn *const w = &levelBossLeadIn[n];
+		if (curLoc >= w->from && curLoc <= w->until && link_set_has(w->frame_links, link))
+			return (int)n;
+	}
+	return -1;
 }
 
 bool level_boss_leadin_active(void)

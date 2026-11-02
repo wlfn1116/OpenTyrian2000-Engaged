@@ -767,6 +767,7 @@ int  endlessScrollBoostPercent(void);
 bool endlessScrollBoostActive(void);
 bool endlessScrollModActive(void);
 int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick, float *rateOut, float *fracOut);
+int  endlessScrollLinkLayer3(int extra1, int ratio, float *fracOut);
 int  endlessShipTintFilter(void);
 
 // Combat hooks for modifiers that need engine-owned object pools.

@@ -505,6 +505,7 @@ int qa_run_unit_suite(void)
 	qa_test_vulnerable_cue();
 	qa_test_elite_tier_eligibility();
 	qa_test_homing_chaser_eligibility();
+	qa_test_boss_homing_frames();
 	qa_test_elite_explosion_tint();
 	qa_test_elite_shot_tint();
 	qa_test_elite_message_tint();
@@ -556,6 +557,7 @@ int qa_run_unit_suite(void)
 	qa_test_sabotage_skips_cancelled();
 	qa_test_level_event_scripts();
 	qa_test_boosted_boss_pacing();
+	qa_test_boosted_scroll_landing();
 	qa_test_super_enemy_loops();
 	qa_test_map_top_pin();
 	qa_test_item_data_settings();
@@ -570,6 +572,7 @@ int qa_run_unit_suite(void)
 	qa_test_wrapped_lines();
 	qa_test_swar_pixel_loops();
 	qa_test_background_bands();
+	qa_test_fresh_background_rows();
 	qa_test_filter_subrows();
 	qa_test_flat_bands();
 	qa_test_png_codec();

@@ -1459,36 +1459,62 @@ typedef struct
 	int width;
 } PaletteRows;
 
+// Eight lookups per iteration. This pass converts vga_width*vga_height*N*N pixels every
+// frame, and a one-pixel loop stalls on the dependent index load and palette gather.
+static inline void palette_row(const Uint8 *src, Uint32 *dst, int width)
+{
+	int x = width;
+	for (; x >= 8; x -= 8, src += 8, dst += 8)
+	{
+		dst[0] = rgb_palette[src[0]];
+		dst[1] = rgb_palette[src[1]];
+		dst[2] = rgb_palette[src[2]];
+		dst[3] = rgb_palette[src[3]];
+		dst[4] = rgb_palette[src[4]];
+		dst[5] = rgb_palette[src[5]];
+		dst[6] = rgb_palette[src[6]];
+		dst[7] = rgb_palette[src[7]];
+	}
+	for (; x > 0; --x)
+		*dst++ = rgb_palette[*src++];
+}
+
 static void palette_rows(void *p, int row_begin, int row_end)
 {
 	const PaletteRows *const job = p;
 
-	// Eight lookups per iteration. This pass converts vga_width*vga_height*N*N pixels every
-	// frame, and a one-pixel loop stalls on the dependent index load and palette gather.
 	const Uint8 *src_row = job->src + (size_t)row_begin * job->src_pitch;
 	Uint8 *dst_row = job->dst + (size_t)row_begin * job->dst_pitch;
 	for (int y = row_begin; y < row_end; ++y)
 	{
-		const Uint8 *src = src_row;
-		Uint32 *dst = (Uint32 *)dst_row;
-
-		int x = job->width;
-		for (; x >= 8; x -= 8, src += 8, dst += 8)
-		{
-			dst[0] = rgb_palette[src[0]];
-			dst[1] = rgb_palette[src[1]];
-			dst[2] = rgb_palette[src[2]];
-			dst[3] = rgb_palette[src[3]];
-			dst[4] = rgb_palette[src[4]];
-			dst[5] = rgb_palette[src[5]];
-			dst[6] = rgb_palette[src[6]];
-			dst[7] = rgb_palette[src[7]];
-		}
-		for (; x > 0; --x)
-			*dst++ = rgb_palette[*src++];
-
+		palette_row(src_row, (Uint32 *)dst_row, job->width);
 		src_row += job->src_pitch;
 		dst_row += job->dst_pitch;
+	}
+}
+
+typedef struct
+{
+	PaletteRows hud;
+	const Uint8 *playfield;
+	int playfield_pitch, playfield_w, playfield_h;
+} PaletteSplitRows;
+
+static void palette_split_rows(void *p, int row_begin, int row_end)
+{
+	const PaletteSplitRows *const job = p;
+	for (int y = row_begin; y < row_end; ++y)
+	{
+		const Uint8 *const hud = job->hud.src + (size_t)y * job->hud.src_pitch;
+		Uint32 *const dst = (Uint32 *)(job->hud.dst + (size_t)y * job->hud.dst_pitch);
+		if (y >= job->playfield_h)
+		{
+			palette_row(hud, dst, job->hud.width);
+			continue;
+		}
+		palette_row(job->playfield + (size_t)y * job->playfield_pitch, dst, job->playfield_w);
+		palette_row(hud + job->playfield_w, dst + job->playfield_w,
+		            job->hud.width - job->playfield_w);
 	}
 }
 
@@ -1499,7 +1525,8 @@ void video_palette_rows(const Uint8 *src, int src_pitch, Uint8 *dst, int dst_pit
 	video_rows(VIDEO_ROWS_FLAT, palette_rows, (void *)&job, rows, width * rows, unlock);
 }
 
-void present_hi(SDL_Surface *hi)
+static void present_hi_from(SDL_Surface *hi, const SDL_Surface *playfield, int playfield_x,
+                            int playfield_w, int playfield_h)
 {
 	assert(hi->format->BitsPerPixel == 8);
 
@@ -1519,7 +1546,19 @@ void present_hi(SDL_Surface *hi)
 			return;
 
 		const PaletteRows job = { hi->pixels, hi->pitch, tex_pixels, tex_pitch, hi->w };
-		video_rows(VIDEO_ROWS_HI, palette_rows, (void *)&job, hi->h, hi->w * hi->h, hi_texture);
+		if (playfield == NULL)
+		{
+			video_rows(VIDEO_ROWS_HI, palette_rows, (void *)&job, hi->h, hi->w * hi->h, hi_texture);
+		}
+		else
+		{
+			const PaletteSplitRows split = {
+				job, (const Uint8 *)playfield->pixels + playfield_x, playfield->pitch, playfield_w,
+				playfield_h
+			};
+			video_rows(VIDEO_ROWS_HI, palette_split_rows, (void *)&split, hi->h, hi->w * hi->h,
+			           hi_texture);
+		}
 	}
 
 	// Supersampling uses the classic destination rectangle and never changes output size.
@@ -1540,6 +1579,17 @@ void present_hi(SDL_Surface *hi)
 	// Keep the mouse mapping in sync with what is actually on screen.
 	last_output_rect = dst_rect;
 	last_present_texture = hi_texture;
+}
+
+void present_hi(SDL_Surface *hi)
+{
+	present_hi_from(hi, NULL, 0, 0, 0);
+}
+
+void present_hi_split(SDL_Surface *hud, const SDL_Surface *playfield, int playfield_x,
+                      int playfield_w, int playfield_h)
+{
+	present_hi_from(hud, playfield, playfield_x, playfield_w, playfield_h);
 }
 
 bool video_test_parallel_rows(char *detail, size_t detailSize)
@@ -1599,6 +1649,59 @@ bool video_test_parallel_rows(char *detail, size_t detailSize)
 	       threaded ? "ran" : "unavailable");
 	if (fault == NULL && !threaded && SDL_GetCPUCount() > 1)
 		fault = "frame-row threads did not start on a multi-core machine";
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+bool video_test_split_rows(char *detail, size_t detailSize)
+{
+	const char *fault = NULL;
+	Uint32 seed = 0x5eed5917u;
+
+	for (int scale = 1; scale <= 4 && fault == NULL; ++scale)
+	{
+		const int w = vga_width * scale, h = vga_height * scale;
+		const int pf_x = PLAYFIELD_LEFT * scale, pf_w = PLAYFIELD_WIDTH * scale, pf_h = 184 * scale;
+		const int src_pitch = w + 3, dst_pitch = w * 4 + 12;
+		Uint8 *const hud = malloc((size_t)src_pitch * h);
+		Uint8 *const playfield = malloc((size_t)src_pitch * h);
+		Uint8 *const composed = malloc((size_t)src_pitch * h);
+		Uint8 *const a = malloc((size_t)dst_pitch * h);
+		Uint8 *const b = malloc((size_t)dst_pitch * h);
+		if (hud == NULL || playfield == NULL || composed == NULL || a == NULL || b == NULL)
+		{
+			fault = "allocation failed";
+		}
+		else
+		{
+			for (size_t i = 0; i < (size_t)src_pitch * h; ++i)
+			{
+				seed = seed * 1664525u + 1013904223u;
+				hud[i] = (Uint8)(seed >> 24);
+				playfield[i] = (Uint8)(seed >> 16);
+			}
+			memcpy(composed, hud, (size_t)src_pitch * h);
+			for (int y = 0; y < pf_h; ++y)
+				memcpy(composed + (size_t)y * src_pitch, playfield + (size_t)y * src_pitch + pf_x,
+				       (size_t)pf_w);
+			memset(a, 0xcd, (size_t)dst_pitch * h);
+			memset(b, 0xcd, (size_t)dst_pitch * h);
+			PaletteRows whole = { composed, src_pitch, a, dst_pitch, w };
+			PaletteSplitRows split = { { hud, src_pitch, b, dst_pitch, w }, playfield + pf_x,
+			                           src_pitch, pf_w, pf_h };
+			palette_rows(&whole, 0, h);
+			video_rows_threaded(palette_split_rows, &split, h);
+			if (memcmp(a, b, (size_t)dst_pitch * h) != 0)
+				fault = "split palette rows differ from converting the composed frame";
+		}
+		free(hud);
+		free(playfield);
+		free(composed);
+		free(a);
+		free(b);
+	}
+
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);
 	return fault == NULL;

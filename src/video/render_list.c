@@ -1108,24 +1108,31 @@ static void rl_band_rows(void *p, int row_begin, int row_end)
 	if (job->clear_b)
 		JE_clr256(&band_b);
 
+	bool fresh = job->clear_a;
 	for (size_t i = job->first; i < job->first + job->count; ++i)
 	{
 		const RlBandItem *const it = &rl_band_items[i];
 		const RenderCmd *const c = it->c;
 		SDL_Surface *const band = it->to_b ? &band_b : &band_a;
 		const int full_h = it->to_b ? job->b->h : job->a->h;
+		fresh = fresh && c->kind == RC_BG_ROW && !it->to_b && c->id == RL_ID_BG_BASE + 1;
 		switch (c->kind)
 		{
 		case RC_BG_ROW:
 		case RC_BG_ROW_BLEND:
-			if (job->scale == 1)
+			if (job->scale == 1 && fresh)
+			{
+				blit_background_row_fresh(band, it->x, it->y - row_begin, c->map, c->bg_mirror_w,
+				                          c->bg_col0);
+			}
+			else if (job->scale == 1)
 			{
 				rl_draw_cmd(band, c, it->x, it->y - row_begin);
 			}
 			else
 			{
 				const BgRowDraw row = { it->x, it->y, c->map, c->kind == RC_BG_ROW_BLEND,
-				                        c->bg_mirror_w, c->bg_col0 };
+				                        c->bg_mirror_w, c->bg_col0, fresh };
 				blit_background_row_scaled_batch(band, &row, 1, row_begin, job->scale);
 			}
 			break;

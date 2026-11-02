@@ -74,6 +74,8 @@ void darken_background_apply_scaled(SDL_Surface *surface, JE_word neat, int scal
 
 // Edge mirroring reflects columns outside the map row; mirror_w 0 keeps stock reads.
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0);
+void blit_background_row_fresh(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w,
+                               int col0);
 void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0);
 // Supersampled variant (render-list replay only): x,y are HI-buffer coordinates;
 // each tile pixel is drawn as a scale x scale block, fully clipped, never recorded.
@@ -85,6 +87,7 @@ typedef struct
 	Uint8 **map;
 	bool blend;
 	int mirror_w, col0;
+	bool fresh;
 } BgRowDraw;
 
 void blit_background_row_scaled_batch(SDL_Surface *surface, const BgRowDraw *rows, size_t count,

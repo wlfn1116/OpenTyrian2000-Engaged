@@ -53,6 +53,14 @@ enum
  * fractional HP multiplier can be spent exactly. */
 #define ENEMY_DAMAGE_ACCUM_SCALE 100
 
+typedef struct
+{
+	JE_boolean  joined;
+	JE_byte     link;
+	JE_shortint vx, vy;
+	JE_integer  dx, dy;
+} EnemyBossFrame;
+
 struct JE_SingleEnemyType
 {
 	JE_byte     fillbyte;
@@ -91,6 +99,7 @@ struct JE_SingleEnemyType
 	JE_byte     eliteState; /* endless: 0=undecided, 1=normal, 2=elite, 3=champion (endless_combat.c) */
 	JE_boolean  groupHomed;
 	JE_byte     homeTarget; /* endless co-op: which ship this enemy's tracking chases, 0 or 1 */
+	EnemyBossFrame bossFrame;
 	JE_byte     filter;
 	JE_integer  evalue;
 	JE_integer  fixedmovey;

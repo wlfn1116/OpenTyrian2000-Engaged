@@ -109,6 +109,14 @@
 # link (boss_body_link, 1 byte) joined the registry. Verified by building with only those two
 # registrations removed, every other edit in the change kept: all three hashes came back at the
 # previous line's values.
-1 180 d11d8034
-2 180 1905d96d
-3 180 1d1f4d22
+# Regenerated 2026-11-02, for two snapshot-shape changes with no simulation change behind them:
+# JE_SingleEnemyType gained bossFrame (8 bytes, the shared offset Endless homing moves a boss's
+# parts by), so the enemy[] item grew 800 bytes and every field after it shifts, and the 1x
+# event-step grid (t2.evGridOrigin, t2.evGridStep, 8 bytes) joined the registry. Verified by
+# building the parent commit with only the field declared, and this change with only those two
+# registrations removed: both builds give the same three hashes and the same layout (a035c389), so
+# neither the boss frames nor the boosted-scroll landing moves the demos. The hashes below come
+# back identically from a working directory with no opentyrian.cfg in it.
+1 180 a5d00d41
+2 180 c66c6f14
+3 180 8059f456

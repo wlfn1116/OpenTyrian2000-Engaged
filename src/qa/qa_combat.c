@@ -17,6 +17,7 @@
 #include "hud.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "level_load.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "net_style.h"
@@ -2762,6 +2763,165 @@ void qa_test_homing_chaser_eligibility(void)
 	endlessMode = savedMode;
 	endlessCampaignMods = savedCampaign;
 	endlessResetElites();
+}
+
+static void qa_boss_part(unsigned int slot, JE_byte link, int x, int y, int exc, int eyc)
+{
+	memset(&enemy[slot], 0, sizeof(enemy[slot]));
+	enemyAvail[slot] = 0;
+	enemy[slot].linknum = link;
+	enemy[slot].ex = (JE_integer)x;
+	enemy[slot].ey = (JE_integer)y;
+	enemy[slot].exc = (JE_shortint)exc;
+	enemy[slot].eyc = (JE_shortint)eyc;
+	enemy[slot].armorleft = 50;
+	enemy[slot].xaccel = 96;
+	enemy[slot].yaccel = 96;
+}
+
+static void qa_boss_frame_pass(void)
+{
+	endlessScanSceneryLinks();
+	for (unsigned int i = 0; i < COUNTOF(enemy); ++i)
+		enemy[i].groupHomed = false;
+	endlessBossHomingFrames();
+}
+
+static bool qa_boss_frame_rigid(void)
+{
+	return enemy[1].ex - enemy[0].ex == 24 && enemy[1].ey == enemy[0].ey &&
+	       enemy[2].ex == enemy[0].ex && enemy[2].ey - enemy[0].ey == 28 &&
+	       enemy[1].bossFrame.dy == enemy[0].bossFrame.dy &&
+	       enemy[2].bossFrame.dx == enemy[0].bossFrame.dx;
+}
+
+void qa_test_boss_homing_frames(void)
+{
+	struct JE_SingleEnemyType *const savedEnemy = malloc(sizeof(enemy));
+	struct JE_EventRecType *const savedEvents = malloc(sizeof(eventRec));
+	void *const savedRng = malloc(mt_state_size());
+	if (savedEnemy == NULL || savedEvents == NULL || savedRng == NULL)
+	{
+		free(savedEnemy);
+		free(savedEvents);
+		free(savedRng);
+		qa_check(false, "the boss homing test can save the enemy pool");
+		return;
+	}
+	memcpy(savedEnemy, enemy, sizeof(enemy));
+	memcpy(savedEvents, eventRec, sizeof(eventRec));
+	mt_state_save(savedRng);
+	JE_byte savedAvail[COUNTOF(enemyAvail)];
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	const JE_word savedMax = maxEvent;
+	const boss_bar_t savedBars[2] = { boss_bar[0], boss_bar[1] };
+	const JE_byte savedBody = boss_body_link;
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const Uint64 savedMods = endlessActiveMods;
+	const JE_integer savedX = player[0].x, savedY = player[0].y;
+
+	maxEvent = 0;
+	level_scan_boss_leadins();
+	endlessMode = true;
+	endlessCampaignMods = false;
+	endlessActiveMods = ENDLESS_MOD_RAMPAGE;
+	memset(enemyAvail, 1, sizeof(savedAvail));
+	boss_bar[0].link_num = 40;
+	boss_bar[1].link_num = 0;
+	boss_body_link = 0;
+	qa_boss_part(0, 40, 100, 100, 0, 0);
+	qa_boss_part(1, 40, 124, 100, 2, 0);
+	qa_boss_part(2, 40, 100, 128, 0, -1);
+	qa_boss_part(3, 0, 200, 50, 0, 0);
+	player[0].x = 150;
+	player[0].y = 160;
+	mt_srand(0x5eed1234u);
+
+	bool rigid = true, scripted = true, floored = true, own = true;
+	for (int t = 0; t < 160; ++t)
+	{
+		qa_boss_frame_pass();
+		rigid = rigid && qa_boss_frame_rigid();
+		scripted = scripted && enemy[0].exc == 0 && enemy[1].exc == 2 && enemy[2].eyc == -1;
+		floored = floored && enemy[2].ey <= 170;
+		own = own && enemy[0].groupHomed && enemy[2].groupHomed && !enemy[3].groupHomed &&
+		      enemy[3].ex == 200 && enemy[3].ey == 50;
+	}
+	qa_check(rigid && scripted,
+	         "a homing boss moves as one frame: its parts keep their spacing and scripted speeds");
+	qa_check(floored && enemy[2].ey == 170,
+	         "...and homing pulls it down only until its lowest part sits on the floor line");
+	qa_check(own, "...while ordinary enemies keep their own homing");
+
+	const int held = enemy[0].bossFrame.dy;
+	for (unsigned int i = 0; i < 3; ++i)
+	{
+		enemy[i].ey += 30;
+		enemy[i].yaccel = 0;
+	}
+	qa_boss_frame_pass();
+	qa_check(held > 8 && enemy[0].bossFrame.dy == held - 8 && qa_boss_frame_rigid(),
+	         "a boss its script carries below the floor sheds the homing offset a few pixels a "
+	         "tick, so it still leaves where it was written to");
+	for (unsigned int i = 0; i < 3; ++i)
+		enemy[i].yaccel = 96;
+
+	qa_boss_part(4, 40, 100, 60, 0, 0);
+	qa_boss_part(5, 40, 160, 80, 0, 0);
+	enemy[5].bossFrame = enemy[0].bossFrame;
+	const int before = enemy[0].bossFrame.dy;
+	qa_boss_frame_pass();
+	const int after = enemy[0].bossFrame.dy;
+	qa_check(enemy[4].ey == 60 + after && enemy[4].bossFrame.dy == after &&
+	         enemy[5].ey == 80 + (after - before),
+	         "a piece spawned at its scripted spot joins the boss where the boss is, while one "
+	         "launched from the boss keeps its place");
+
+	boss_bar[0].link_num = 0;
+	player[0].y = 7;
+	const JE_integer y0 = enemy[0].ey;
+	const int spacing = enemy[4].ey - enemy[0].ey;
+	for (int t = 0; t < 40; ++t)
+		qa_boss_frame_pass();
+	qa_check(enemy[0].ey < y0 && qa_boss_frame_rigid() && enemy[4].ey - enemy[0].ey == spacing,
+	         "a boss whose health bar the script hides keeps flying as one");
+
+	endlessActiveMods = 0;
+	const JE_integer x0 = enemy[0].ex, y1 = enemy[0].ey;
+	qa_boss_frame_pass();
+	qa_check(enemy[0].ex == x0 && enemy[0].ey == y1 && !enemy[0].groupHomed,
+	         "a sector with no homing tier leaves bosses to their script");
+
+	endlessActiveMods = ENDLESS_MOD_RAMPAGE;
+	boss_bar[0].link_num = 40;
+	for (unsigned int i = 0; i < 6; ++i)
+	{
+		if (i == 3)
+			continue;
+		enemy[i].armorleft = 255;
+		enemyAvail[i] = 2;
+	}
+	qa_boss_frame_pass();
+	qa_check(enemy[0].bossFrame.vx == 0 && enemy[0].bossFrame.vy == 0 && enemy[0].groupHomed,
+	         "a boss nothing can hurt yet stops homing but still never takes per-part homing");
+
+	memcpy(enemy, savedEnemy, sizeof(enemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	memcpy(eventRec, savedEvents, sizeof(eventRec));
+	maxEvent = savedMax;
+	level_scan_boss_leadins();
+	mt_state_restore(savedRng);
+	player[0].x = savedX;
+	player[0].y = savedY;
+	endlessActiveMods = savedMods;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedEndless;
+	boss_body_link = savedBody;
+	boss_bar[0] = savedBars[0];
+	boss_bar[1] = savedBars[1];
+	free(savedEnemy);
+	free(savedEvents);
+	free(savedRng);
 }
 
 /* The tier tint an elite wears, and its route from a kill site into every explosion the death

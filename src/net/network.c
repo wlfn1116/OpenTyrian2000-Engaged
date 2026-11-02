@@ -129,7 +129,7 @@ bool network_interface_carries_lan(unsigned int flags)
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       124          /* Savara IV turret tops; map-top pin keeps its column. */
+#define NET_VERSION       125          /* Bosses home as one; boosted scroll lands on map stops. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT offsets after its four-byte packet header.

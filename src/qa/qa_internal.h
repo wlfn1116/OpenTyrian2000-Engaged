@@ -68,6 +68,7 @@ void qa_test_countermeasure_burst(void);
 void qa_test_guided_screen_aim(void);
 void qa_test_elite_tier_eligibility(void);
 void qa_test_homing_chaser_eligibility(void);
+void qa_test_boss_homing_frames(void);
 void qa_test_elite_explosion_tint(void);
 void qa_test_elite_shot_tint(void);
 void qa_test_elite_message_tint(void);
@@ -154,6 +155,7 @@ void qa_test_scaled_sprite_blocks(void);
 void qa_test_scaled_table_sprites(void);
 void qa_test_swar_pixel_loops(void);
 void qa_test_background_bands(void);
+void qa_test_fresh_background_rows(void);
 void qa_test_filter_subrows(void);
 void qa_test_flat_bands(void);
 

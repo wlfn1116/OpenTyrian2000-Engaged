@@ -196,7 +196,7 @@ static int bg_edge_px(int mirror_w, int x, int surface_w, int scale)
 	return room < BG_EDGE_TILES * BG_TILE_W ? room : BG_EDGE_TILES * BG_TILE_W;
 }
 
-static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool blend)
+static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool blend, bool fresh)
 {
 	int i = 0;
 #if VEC8_BYTES
@@ -204,6 +204,11 @@ static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool 
 	{
 		const Vec8 s = flip ? vec8_reverse(vec8_read(data + BG_TILE_W - VEC8_BYTES - i))
 		                    : vec8_read(data + i);
+		if (fresh)
+		{
+			vec8_write(dst + i, s);
+			continue;
+		}
 		const Vec8 d = vec8_read(dst + i);
 		const Vec8 v = blend ? vec8_or(vec8_and(s, vec8_splat(0xF0)), vec8_avg_low(s, d)) : s;
 		vec8_write(dst + i, vec8_select(d, v, vec8_nonzero(s)));
@@ -214,6 +219,11 @@ static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool 
 	{
 		const Vec8x8 s = flip ? vec8x8_reverse(vec8x8_read(data + BG_TILE_W - VEC8X8_BYTES - i))
 		                      : vec8x8_read(data + i);
+		if (fresh)
+		{
+			vec8x8_write(dst + i, s);
+			continue;
+		}
 		const Vec8x8 d = vec8x8_read(dst + i);
 		const Vec8x8 v = blend ? vec8x8_or(vec8x8_and(s, vec8x8_splat(0xF0)), vec8x8_avg_low(s, d))
 		                       : s;
@@ -224,6 +234,11 @@ static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool 
 	{
 		const Swar8 s = flip ? swar8_reverse(swar8_read(data + BG_TILE_W - SWAR8_BYTES - i))
 		                     : swar8_read(data + i);
+		if (fresh)
+		{
+			swar8_write(dst + i, s);
+			continue;
+		}
 		const Swar8 d = swar8_read(dst + i);
 		const Swar8 v = blend ? ((s & SWAR8(0xF0)) | swar8_avg_low(s, d)) : s;
 		swar8_write(dst + i, swar8_select(d, v, swar8_nonzero(s)));
@@ -232,7 +247,7 @@ static inline void blit_tile_row(Uint8 *dst, const Uint8 *data, bool flip, bool 
 }
 
 static inline void blit_background_rows(SDL_Surface *surface, int x, int y, Uint8 **map,
-                                        int mirror_w, int col0, bool blend)
+                                        int mirror_w, int col0, bool blend, bool fresh)
 {
 	Uint8 *pixels = (Uint8 *)surface->pixels + (y * surface->pitch) + x,
 	      *pixels_ll = (Uint8 *)surface->pixels,  // lower limit
@@ -241,6 +256,8 @@ static inline void blit_background_rows(SDL_Surface *surface, int x, int y, Uint
 	const int edge_px = bg_edge_px(mirror_w, x, surface->w, 1);
 	const int tile_count = BG_TILE_COUNT + (edge_px > 0 ? 1 : 0);
 	const int row_width = BG_TILE_COUNT * BG_TILE_W + edge_px;
+	const int fresh_first = x < 0 ? (BG_TILE_W - 1 - x) / BG_TILE_W : 0;
+	const int fresh_end = x < surface->w ? (surface->w - x) / BG_TILE_W : 0;
 	for (int ty = 0; ty < 28; ty++)
 	{
 		// not drawing on screen yet; skip y
@@ -271,7 +288,8 @@ static inline void blit_background_rows(SDL_Surface *surface, int x, int y, Uint
 
 			if (inside && tile_w == BG_TILE_W)
 			{
-				blit_tile_row(pixels, data, flip, blend);
+				blit_tile_row(pixels, data, flip, blend,
+				              fresh && tile >= fresh_first && tile < fresh_end);
 				pixels += BG_TILE_W;
 				continue;
 			}
@@ -300,7 +318,8 @@ static inline void blit_background_rows(SDL_Surface *surface, int x, int y, Uint
 	}
 }
 
-void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0)
+static inline void background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w,
+                                  int col0, bool blend, bool fresh)
 {
 	assert(surface->format->BitsPerPixel == 8);
 
@@ -309,23 +328,25 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mi
 		return;
 
 	if (render_list_recording)
-		rl_rec_bg_row(x, y, map, false, mirror_w, col0);
+		rl_rec_bg_row(x, y, map, blend, mirror_w, col0);
 
-	blit_background_rows(surface, x, y, map, mirror_w, col0, false);
+	blit_background_rows(surface, x, y, map, mirror_w, col0, blend, fresh);
+}
+
+void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0)
+{
+	background_row(surface, x, y, map, mirror_w, col0, false, false);
+}
+
+void blit_background_row_fresh(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w,
+                               int col0)
+{
+	background_row(surface, x, y, map, mirror_w, col0, false, true);
 }
 
 void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0)
 {
-	assert(surface->format->BitsPerPixel == 8);
-
-	// Silent rollback re-simulation: state only, no pixels (see sprite.c).
-	if (rollback_resim_silent)
-		return;
-
-	if (render_list_recording)
-		rl_rec_bg_row(x, y, map, true, mirror_w, col0);
-
-	blit_background_rows(surface, x, y, map, mirror_w, col0, true);
+	background_row(surface, x, y, map, mirror_w, col0, true, false);
 }
 
 static void blit_background_row_scaled_px(SDL_Surface *surface, int x, int y, Uint8 **map,
@@ -436,7 +457,7 @@ static inline void blit_expanded_row(Uint8 *dst, const Uint8 *src, int n, bool b
 // Supersampled tile row (render-list replay only; see background.h). One loop serves
 // both the copy and blend ops; the pixel math matches the 1x blitters above.
 static void background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale,
-                                  bool blend, int mirror_w, int col0, Uint8 *expanded)
+                                  bool blend, int mirror_w, int col0, bool fresh, Uint8 *expanded)
 {
 	assert(surface->format->BitsPerPixel == 8);
 
@@ -508,10 +529,17 @@ static void background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **ma
 			if (a >= b)
 				continue;
 
+			const Uint8 *first = NULL;
 			for (int yy = by0; yy < by1; ++yy)
 			{
 				Uint8 *const dst = (Uint8 *)surface->pixels + yy * surface->pitch + (x + a);
-				blit_expanded_row(dst, expanded + a, b - a, blend);
+				if (!fresh)
+				{
+					blit_expanded_row(dst, expanded + a, b - a, blend);
+					continue;
+				}
+				memcpy(dst, first != NULL ? first : expanded + a, (size_t)(b - a));
+				first = dst;
 			}
 		}
 	}
@@ -521,7 +549,7 @@ void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map,
                                 bool blend, int mirror_w, int col0)
 {
 	static Uint8 expanded[BG_SCALED_ROW_BYTES];
-	background_row_scaled(surface, x, y, map, scale, blend, mirror_w, col0, expanded);
+	background_row_scaled(surface, x, y, map, scale, blend, mirror_w, col0, false, expanded);
 }
 
 void blit_background_row_scaled_batch(SDL_Surface *surface, const BgRowDraw *rows, size_t count,
@@ -530,7 +558,8 @@ void blit_background_row_scaled_batch(SDL_Surface *surface, const BgRowDraw *row
 	Uint8 expanded[BG_SCALED_ROW_BYTES];
 	for (size_t i = 0; i < count; ++i)
 		background_row_scaled(surface, rows[i].x, rows[i].y - y_offset, rows[i].map, scale,
-		                      rows[i].blend, rows[i].mirror_w, rows[i].col0, expanded);
+		                      rows[i].blend, rows[i].mirror_w, rows[i].col0,
+		                      rows[i].fresh && !rows[i].blend, expanded);
 }
 
 static Uint8 **bg_margin_row(Uint8 **next, int m, int width, Uint8 **end)

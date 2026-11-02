@@ -73,6 +73,7 @@ void JE_eventJump(JE_word jump)
 		curLoc = (JE_word)(jump + excess);
 		target = jump;
 	}
+	event_grid_rebase(target, backMove);
 	// Rescan against the author's target, not the re-based clock: records inside the excess
 	// window must still fire (this pass), merely late, like any other boost-overrun record.
 	tempW = 0;
@@ -197,12 +198,14 @@ static bool JE_searchFor/*enemy*/(JE_byte PLType, JE_byte* out_index)
 	}
 }
 
-static void event_hold_map_stop(void)
+static void event_scroll_speed_applied(void)
 {
 	const JE_word stop = eventRec[eventLoc - 1].eventtime;
-	if (backMove == 0 && !forceEvents && endlessScrollModActive() && curLoc > stop &&
+	const int landing = event_grid_point(stop);
+	event_grid_rebase(landing, backMove);
+	if (backMove == 0 && !forceEvents && endlessScrollModActive() && curLoc > landing &&
 	    event_time_crossed_by_scroll(stop))
-		curLoc = stop;
+		curLoc = (JE_word)landing;
 }
 
 static bool level_boss_bar_follows_head(const struct JE_EventRecType *bar)
@@ -263,7 +266,7 @@ void JE_eventSystem(void)
 
 		if (backMove > 0)
 			stopBackgroundNum = 0;
-		event_hold_map_stop();
+		event_scroll_speed_applied();
 		break;
 
 	case 3:
@@ -274,6 +277,7 @@ void JE_eventSystem(void)
 		map2YDelay = 2;
 		map2YDelayMax = 2;
 		backMove3 = 1;
+		event_grid_rebase(event_grid_point(eventRec[eventLoc-1].eventtime), 1);
 		break;
 
 	case 4: // Map stop
@@ -642,7 +646,7 @@ void JE_eventSystem(void)
 		backMove2 = eventRec[eventLoc-1].eventdat2;
 		explodeMove = backMove2;
 		backMove3 = eventRec[eventLoc-1].eventdat3;
-		event_hold_map_stop();
+		event_scroll_speed_applied();
 		break;
 
 	case 31: /* Enemy Fire Override */
@@ -735,6 +739,7 @@ void JE_eventSystem(void)
 
 	case 38:
 		curLoc = eventRec[eventLoc-1].eventdat;
+		event_grid_rebase(curLoc, backMove);
 		int new_event_loc = 1;
 		for (tempW = 0; tempW < maxEvent; tempW++)
 		{
@@ -1085,6 +1090,7 @@ void JE_eventSystem(void)
 			if (eventRec[eventLoc-1].eventdat4 > 0)
 			{ /*Skip*/
 				curLoc = eventRec[eventLoc-1 + eventRec[eventLoc-1].eventdat4].eventtime - 1;
+				event_grid_rebase(curLoc, backMove);
 				eventLoc += eventRec[eventLoc-1].eventdat4 - 1;
 			}
 		}

@@ -5,6 +5,7 @@
 
 #include "background.h"
 #include "config.h"
+#include "game_loop.h"
 #include "game_state.h"
 #include "palette.h"
 #include "render_list.h"
@@ -68,6 +69,18 @@ void qa_test_present_paths(void)
 	snprintf(label, sizeof(label), "threaded hi-res palette rows match one thread%s%s",
 	         detail[0] ? ": " : "", detail);
 	qa_check(hiRows, label);
+
+	detail[0] = '\0';
+	const bool splitRows = video_test_split_rows(detail, sizeof(detail));
+	snprintf(label, sizeof(label),
+	         "a frame presented straight from its playfield buffer converts as the composed "
+	         "frame%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(splitRows, label);
+
+	qa_check(hi_compose_skip_self_test(),
+	         "a supersampled frame that skips its playfield copy rebuilds the full frame on "
+	         "demand, and flips and spotlights always copy");
 
 	detail[0] = '\0';
 	const bool fitRows = video_scale_test_fit_rows(detail, sizeof(detail));
@@ -1300,6 +1313,7 @@ void qa_test_background_bands(void)
 				rows[r].blend = (qa_swar_next() & 1) != 0;
 				rows[r].mirror_w = mirror_w;
 				rows[r].col0 = col0;
+				rows[r].fresh = false;
 			}
 
 			for (size_t r = 0; r < count; ++r)
@@ -1313,6 +1327,92 @@ void qa_test_background_bands(void)
 		SDL_FreeSurface(b);
 	}
 	qa_check(made && same, "background rows drawn in thread bands match one full-surface pass");
+}
+
+static void qa_bg_cleared_band(SDL_Surface *dst, const BgRowDraw *rows, size_t count, int scale,
+                               int row_begin, int row_end)
+{
+	SDL_Surface band = *dst;
+	band.pixels = (Uint8 *)dst->pixels + (size_t)row_begin * dst->pitch;
+	band.h = row_end - row_begin;
+	band.clip_rect = (SDL_Rect){ 0, 0, band.w, band.h };
+	JE_clr256(&band);
+	if (scale > 1)
+	{
+		blit_background_row_scaled_batch(&band, rows, count, row_begin, scale);
+		return;
+	}
+	for (size_t r = 0; r < count; ++r)
+	{
+		if (rows[r].fresh)
+			blit_background_row_fresh(&band, rows[r].x, rows[r].y - row_begin, rows[r].map,
+			                          rows[r].mirror_w, rows[r].col0);
+		else
+			blit_background_row(&band, rows[r].x, rows[r].y - row_begin, rows[r].map,
+			                    rows[r].mirror_w, rows[r].col0);
+	}
+}
+
+void qa_test_fresh_background_rows(void)
+{
+	const bool saved_resim = rollback_resim_silent;
+	const bool saved_recording = render_list_recording;
+	rollback_resim_silent = false;
+	render_list_recording = false;
+
+	for (size_t t = 0; t < COUNTOF(qa_swar_tiles); ++t)
+		for (size_t i = 0; i < sizeof(qa_swar_tiles[t]); ++i)
+			qa_swar_tiles[t][i] = (qa_swar_next() % 6 == 0) ? 0 : (Uint8)(qa_swar_next() >> 24);
+
+	BgRowDraw masked[10], fresh[10];
+	int cuts[6];
+	bool same = true, made = true;
+	for (int trial = 0; trial < 200 && same && made; ++trial)
+	{
+		const int scale = 1 + trial % 4;
+		const int w = vga_width * scale, h = vga_height * scale;
+		SDL_Surface *const a = qa_swar_surface(w, h);
+		SDL_Surface *const b = qa_swar_surface(w, h);
+		made = a != NULL && b != NULL;
+		if (made)
+		{
+			qa_swar_fill(a);
+			qa_swar_copy(b, a);
+			qa_swar_fill_cells(qa_swar_range(0, 60));
+			const int mirror_w = (qa_swar_next() & 1) ? 14 : 0;
+			const int col0 = mirror_w ? qa_swar_range(-3, 3) : 0;
+			const int x = qa_swar_range(-40 * scale, 40 * scale);
+			const int phase = qa_swar_range(0, 28 * scale - 1);
+			for (size_t r = 0; r < COUNTOF(masked); ++r)
+			{
+				masked[r] = (BgRowDraw){ x, ((int)r - 1) * 28 * scale + phase,
+				                         qa_swar_map(mirror_w, col0), false, mirror_w, col0,
+				                         false };
+				fresh[r] = masked[r];
+				fresh[r].fresh = true;
+			}
+
+			const int bands = qa_swar_range(1, (int)COUNTOF(cuts));
+			cuts[0] = 0;
+			for (int k = 1; k < bands; ++k)
+				cuts[k] = qa_swar_range(cuts[k - 1] + 1, h - (bands - k));
+			for (int k = 0; k < bands; ++k)
+			{
+				const int end = k + 1 < bands ? cuts[k + 1] : h;
+				qa_bg_cleared_band(a, masked, COUNTOF(masked), scale, cuts[k], end);
+				qa_bg_cleared_band(b, fresh, COUNTOF(fresh), scale, cuts[k], end);
+			}
+			same = qa_swar_same(a, b);
+		}
+		SDL_FreeSurface(a);
+		SDL_FreeSurface(b);
+	}
+	qa_check(made && same,
+	         "layer-1 rows copied into freshly cleared bands match the masked blit in every band "
+	         "split, wrapped tiles included, 1x to 4x");
+
+	render_list_recording = saved_recording;
+	rollback_resim_silent = saved_resim;
 }
 
 typedef struct

@@ -171,6 +171,8 @@ bool video_take_new_frame(void);
 Uint32 video_idle_refresh(Uint32 nap_ms, Uint32 frame_due_ms);
 // Present a supersampled 8-bit frame in the classic on-screen rectangle.
 void present_hi(SDL_Surface *hi);
+void present_hi_split(SDL_Surface *hud, const SDL_Surface *playfield, int playfield_x,
+                      int playfield_w, int playfield_h);
 
 typedef void (*VideoRowsFn)(void *job, int row_begin, int row_end);
 enum
@@ -211,6 +213,7 @@ void video_rows_stats(int site, VideoRowsStats *stats);
 void video_palette_rows(const Uint8 *src, int src_pitch, Uint8 *dst, int dst_pitch, int width,
                         int rows, SDL_Texture *unlock);
 bool video_test_parallel_rows(char *detail, size_t detailSize);
+bool video_test_split_rows(char *detail, size_t detailSize);
 bool video_test_rows_stats(char *detail, size_t detailSize);
 bool video_test_rows_rounds(char *detail, size_t detailSize);
 bool video_test_rows_pick(char *detail, size_t detailSize);

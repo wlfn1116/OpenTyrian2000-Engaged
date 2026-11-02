@@ -202,6 +202,7 @@ static SDL_Surface *pf_hi = NULL;   // NxN playfield replay target (normal level
 static SDL_Surface *vga_hi = NULL;  // NxN final frame (playfield composite + HUD)
 static SDL_Surface *vga_hi_ref = NULL;
 static int vga_hi_ref_scale = 0;
+static bool vga_hi_playfield_stale = false;
 
 void game_loop_deinit(void)
 {
@@ -237,6 +238,8 @@ static void note_hi_present(int scale)
 	vga_hi_ref_scale = scale;
 }
 
+static void restore_playfield_hi(int scale);
+
 bool present_overlay_on_last_hi_frame(void)
 {
 	const int scale = vga_hi_ref_scale;
@@ -245,6 +248,7 @@ bool present_overlay_on_last_hi_frame(void)
 	    vga_hi_ref->pitch != VGAScreenSeg->pitch)
 		return false;
 
+	restore_playfield_hi(scale);
 	memcpy(pf_hi->pixels, vga_hi->pixels, (size_t)vga_hi->h * vga_hi->pitch);
 	for (int y = 0; y < vga_height; ++y)
 	{
@@ -340,7 +344,13 @@ typedef struct
 	SDL_Surface *out;
 	int scale;
 	int lightx, lighty;
+	bool plain, skip_playfield;
 } HiCompose;
+
+static bool playfield_presents_plain(void)
+{
+	return starShowVGASpecialCode != 1 && !(starShowVGASpecialCode == 2 && processorType >= 2);
+}
 
 static void composite_playfield_hi(const HiCompose *job, int first, int last)
 {
@@ -353,7 +363,9 @@ static void composite_playfield_hi(const HiCompose *job, int first, int last)
 
 	for (int y = first; y < last; ++y, s += job->out->pitch)
 	{
-		if (starShowVGASpecialCode == 1)
+		if (job->plain)
+			memmove(s, src + (size_t)src_pitch * y, width);
+		else if (starShowVGASpecialCode == 1)
 			memmove(s, src + (size_t)src_pitch * (rows - 1 - y), width);
 		else if (starShowVGASpecialCode == 2 && processorType >= 2)
 			spotlight_filter_row(s, src + (size_t)src_pitch * y, width, rows - y, job->lightx,
@@ -361,6 +373,15 @@ static void composite_playfield_hi(const HiCompose *job, int first, int last)
 		else
 			memmove(s, src + (size_t)src_pitch * y, width);
 	}
+}
+
+static void restore_playfield_hi(int scale)
+{
+	if (!vga_hi_playfield_stale)
+		return;
+	const HiCompose job = { pf_hi, VGAScreenSeg, vga_hi, scale, 0, 0, true, false };
+	composite_playfield_hi(&job, 0, 184 * scale);
+	vga_hi_playfield_stale = false;
 }
 
 static void expand_row_to_hi(Uint8 *d, const Uint8 *sp, int count, int scale)
@@ -431,14 +452,15 @@ static void expand_hud_to_hi(const HiCompose *job, int first, int last)
 static void compose_hi_rows(void *p, int row_begin, int row_end)
 {
 	const HiCompose *const job = p;
-	composite_playfield_hi(job, row_begin * job->scale, MIN(row_end, 184) * job->scale);
+	if (!job->skip_playfield)
+		composite_playfield_hi(job, row_begin * job->scale, MIN(row_end, 184) * job->scale);
 	expand_hud_to_hi(job, row_begin, row_end);
 }
 
 static void compose_hi_frame(SDL_Surface *playfield, SDL_Surface *hud, SDL_Surface *out, int scale,
-                             bool interpolate)
+                             bool interpolate, bool skip_playfield)
 {
-	HiCompose job = { playfield, hud, out, scale, 0, 0 };
+	HiCompose job = { playfield, hud, out, scale, 0, 0, false, skip_playfield };
 	if (starShowVGASpecialCode == 2 && processorType >= 2)
 	{
 		// Scaled before rounding, so under supersampling the cone glides on the sub-pixel grid
@@ -449,7 +471,74 @@ static void compose_hi_frame(SDL_Surface *playfield, SDL_Surface *hud, SDL_Surfa
 		job.lighty = round_signed((172.0f - lity) * (float)scale);
 		job.lightx = round_signed((edge - litx) * (float)scale);
 	}
-	video_rows(VIDEO_ROWS_COMPOSE, compose_hi_rows, &job, vga_height, out->w * out->h, NULL);
+	const int pixels = out->w * out->h -
+	                   (skip_playfield ? PLAYFIELD_WIDTH * scale * 184 * scale : 0);
+	video_rows(VIDEO_ROWS_COMPOSE, compose_hi_rows, &job, vga_height, pixels, NULL);
+}
+
+bool hi_compose_skip_self_test(void)
+{
+	SDL_Surface *const saved_pf = pf_hi, *const saved_vga = vga_hi;
+	const bool saved_stale = vga_hi_playfield_stale;
+	const JE_byte saved_code = starShowVGASpecialCode, saved_processor = processorType;
+	const size_t hud_bytes = (size_t)VGAScreenSeg->h * VGAScreenSeg->pitch;
+	Uint8 *const hud = malloc(hud_bytes);
+	pf_hi = NULL;
+	vga_hi = NULL;
+	starShowVGASpecialCode = 0;
+
+	Uint32 seed = 0x5eedc0deu;
+	bool same = hud != NULL;
+	if (same)
+		memcpy(hud, VGAScreenSeg->pixels, hud_bytes);
+	for (int scale = 2; scale <= 4 && same; ++scale)
+	{
+		same = ensure_hi_buffers(scale);
+		const size_t bytes = same ? (size_t)vga_hi->h * vga_hi->pitch : 0;
+		Uint8 *const ref = same ? malloc(bytes) : NULL;
+		same = ref != NULL;
+		if (same)
+		{
+			Uint8 *const fill[2] = { pf_hi->pixels, VGAScreenSeg->pixels };
+			const size_t sizes[2] = { (size_t)pf_hi->h * pf_hi->pitch, hud_bytes };
+			for (int k = 0; k < 2; ++k)
+			{
+				for (size_t i = 0; i < sizes[k]; ++i)
+				{
+					seed = seed * 1664525u + 1013904223u;
+					fill[k][i] = (Uint8)(seed >> 24);
+				}
+			}
+			compose_hi_frame(pf_hi, VGAScreenSeg, vga_hi, scale, false, false);
+			memcpy(ref, vga_hi->pixels, bytes);
+			memset(vga_hi->pixels, 0xa5, bytes);
+			compose_hi_frame(pf_hi, VGAScreenSeg, vga_hi, scale, false, true);
+			vga_hi_playfield_stale = true;
+			restore_playfield_hi(scale);
+			same = !vga_hi_playfield_stale && memcmp(ref, vga_hi->pixels, bytes) == 0;
+		}
+		free(ref);
+	}
+
+	starShowVGASpecialCode = 1;
+	const bool flip_copies = !playfield_presents_plain();
+	starShowVGASpecialCode = 2;
+	processorType = 2;
+	const bool spotlight_copies = !playfield_presents_plain();
+	processorType = 1;
+	const bool low_detail_skips = playfield_presents_plain();
+
+	if (hud != NULL)
+		memcpy(VGAScreenSeg->pixels, hud, hud_bytes);
+	free(hud);
+	SDL_FreeSurface(pf_hi);
+	SDL_FreeSurface(vga_hi);
+	pf_hi = saved_pf;
+	vga_hi = saved_vga;
+	vga_hi_playfield_stale = saved_stale;
+	starShowVGASpecialCode = saved_code;
+	processorType = saved_processor;
+	return same && flip_copies && spotlight_copies && low_detail_skips;
 }
 
 typedef struct
@@ -937,7 +1026,9 @@ static void JE_starShowVGA(void)
 					{
 						// Expand the static HUD, then redraw its three moving gauges at
 						// supersampled resolution for sub-pixel motion.
-						compose_hi_frame(interp_buf, VGAScreenSeg, vga_hi, rss, true);
+						const bool direct = interp_buf == pf_hi && playfield_presents_plain() &&
+						                    !debugPerfOverlay;
+						compose_hi_frame(interp_buf, VGAScreenSeg, vga_hi, rss, true, direct);
 						if (power_gauge_active)
 							draw_power_gauge(vga_hi, rss,
 							                 (float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
@@ -945,8 +1036,13 @@ static void JE_starShowVGA(void)
 						gauge_bars_present(vga_hi, rss, alpha);
 						JE_drawPerfOverlay(vga_hi, rss);
 						note_hi_present(rss);
+						vga_hi_playfield_stale = direct;
 						const Uint64 present_start = SDL_GetPerformanceCounter();
-						present_hi(vga_hi);
+						if (direct)
+							present_hi_split(vga_hi, pf_hi, PLAYFIELD_LEFT * rss,
+							                 PLAYFIELD_WIDTH * rss, 184 * rss);
+						else
+							present_hi(vga_hi);
 						frame_times_present(now, present_start);
 					}
 					else
@@ -1077,6 +1173,74 @@ static int eventScrollLayerDelta[4] = { 0, 0, 0, 0 };
 static int eventScrollBaseStep[4] = { 0, 0, 0, 0 };
 static int eventScrollDelayMax[4] = { 1, 1, 1, 1 };
 static int eventScrollBoost = 0;
+static int eventGridOrigin = 0;
+static int eventGridStep = 1;
+
+int event_grid_point(int eventTime)
+{
+	if (eventTime <= eventGridOrigin)
+		return eventGridOrigin;
+	if (eventGridStep <= 1)
+		return eventTime;
+	return eventGridOrigin +
+	       (eventTime - eventGridOrigin + eventGridStep - 1) / eventGridStep * eventGridStep;
+}
+
+void event_grid_rebase(int origin, int step)
+{
+	eventGridOrigin = origin;
+	eventGridStep = step;
+}
+
+void event_grid_set_step(int step)
+{
+	eventGridStep = step;
+}
+
+static bool event_sets_scroll(const struct JE_EventRecType *e)
+{
+	return e->eventtype == 2 || e->eventtype == 3 || e->eventtype == 30;
+}
+
+static bool event_redirects_clock(const struct JE_EventRecType *e)
+{
+	switch (e->eventtype)
+	{
+	case 38: case 54: case 70: case 71: case 75:
+	case 61: case 63: case 66: case 80:
+		return true;
+	default:
+		return false;
+	}
+}
+
+int event_scroll_landing(int extra)
+{
+	if (extra <= 0 || forceEvents || endlessScrollBoostPercent() == 0)
+		return extra;
+
+	const int at = (int)curLoc;
+	const int nextBase = (map1YDelayMax == 1) ? (int)backMove : 0;
+	const int reach = (nextBase > 0) ? at + extra + nextBase - 1 : at + extra;
+	for (JE_word e = eventLoc; e <= maxEvent; ++e)
+	{
+		const struct JE_EventRecType *const r = &eventRec[e - 1];
+		if ((int)r->eventtime > reach)
+			break;
+		if (event_sets_scroll(r))
+		{
+			const int t = event_grid_point((int)r->eventtime);
+			if (t <= at + extra)
+				return MAX(t - at, 0);
+			if (r->eventtype != 3 && r->eventdat == 0 && t <= reach)
+				return MAX(t - nextBase - at, 0);
+			break;
+		}
+		if (event_redirects_clock(r))
+			break;
+	}
+	return extra;
+}
 // Sky-glue spawns use a separate layer clock; capture its carry phase for cross-layer anchoring.
 static bool eventScrollSkyValid = false;
 static int eventScrollSkyRatio100 = 0;
@@ -1611,6 +1775,145 @@ bool endlessHomingChaser(unsigned int i)
 	return enemy[i].linknum == 0 || !endlessLinkHoldsScenery[enemy[i].linknum];
 }
 
+static int homing_step(int accel, int vel, bool forward)
+{
+	if (accel == 0 || accel - 89u <= mt_rand() % 11)
+		return 0;
+	if (forward)
+		return vel < accel - 89 ? 1 : 0;
+	return (vel >= 0 || -vel < accel - 89) ? -1 : 0;
+}
+
+#define BOSS_FRAME_FLOOR    170
+#define BOSS_FRAME_CEILING  (-90)
+#define BOSS_FRAME_LEFT     (-60)
+#define BOSS_FRAME_GIVEBACK 8
+
+static int boss_frame_object(unsigned int i)
+{
+	if (enemyAvail[i] == 1 || enemy[i].scoreitem)
+		return -1;
+	if (enemy_has_boss_hp(enemy[i].linknum))
+		return 0;
+	const int window = level_boss_leadin_window(enemy[i].linknum);
+	if (window >= 0)
+		return 1 + window;
+	return enemy[i].bossFrame.joined ? 256 + enemy[i].bossFrame.link : -1;
+}
+
+static int boss_frame_shift(int offset, JE_shortint *vel, int least, int most, int lo, int hi)
+{
+	int shift = *vel;
+	if (shift > 0 && most + shift > hi)
+	{
+		shift = MAX(hi - most, 0);
+		*vel = 0;
+	}
+	else if (shift < 0 && least + shift < lo)
+	{
+		shift = MIN(lo - least, 0);
+		*vel = 0;
+	}
+
+	const int over = most + shift - hi;
+	if (over > 0 && offset + shift > 0)
+		shift -= MIN(MIN(over, offset + shift), BOSS_FRAME_GIVEBACK);
+
+	const int under = lo - (least + shift);
+	if (under > 0 && offset + shift < 0)
+		shift += MIN(MIN(under, -(offset + shift)), BOSS_FRAME_GIVEBACK);
+
+	return shift;
+}
+
+void endlessBossHomingFrames(void)
+{
+	if (!endlessHomingTierActive())
+		return;
+
+	int object[COUNTOF(enemy)];
+	for (unsigned int i = 0; i < COUNTOF(enemy); ++i)
+	{
+		object[i] = boss_frame_object(i);
+		if (object[i] >= 0)
+			enemy[i].groupHomed = true;
+	}
+
+	for (unsigned int i = 0; i < COUNTOF(enemy); ++i)
+	{
+		const int o = object[i];
+		if (o < 0)
+			continue;
+
+		unsigned int lead = i;
+		bool chases = false;
+		int accelX = 0, accelY = 0;
+		for (unsigned int j = i; j < COUNTOF(enemy); ++j)
+		{
+			if (object[j] != o)
+				continue;
+			if (enemy[j].bossFrame.joined && !enemy[lead].bossFrame.joined)
+				lead = j;
+			if (endlessHomingChaser(j))
+			{
+				chases = true;
+				accelX = MAX(accelX, (int)enemy[j].xaccel);
+				accelY = MAX(accelY, (int)enemy[j].yaccel);
+			}
+		}
+
+		EnemyBossFrame frame = enemy[lead].bossFrame;
+		if (!frame.joined)
+			frame = (EnemyBossFrame){ .joined = true, .link = enemy[lead].linknum };
+
+		int count = 0, sumX = 0, sumY = 0, minX = 0, maxX = 0, minY = 0, maxY = 0;
+		for (unsigned int j = i; j < COUNTOF(enemy); ++j)
+		{
+			if (object[j] != o)
+				continue;
+			struct JE_SingleEnemyType *const e = &enemy[j];
+			e->ex += frame.dx - e->bossFrame.dx;
+			e->ey += frame.dy - e->bossFrame.dy;
+			if (count == 0 || e->ex < minX)
+				minX = e->ex;
+			if (count == 0 || e->ex > maxX)
+				maxX = e->ex;
+			if (count == 0 || e->ey < minY)
+				minY = e->ey;
+			if (count == 0 || e->ey > maxY)
+				maxY = e->ey;
+			++count;
+			sumX += e->ex;
+			sumY += e->ey;
+		}
+
+		if (!chases)
+		{
+			frame.vx = 0;
+			frame.vy = 0;
+		}
+		const Player *const prey = &player[endlessHomingTargetPlayer(enemy[lead].homeTarget)];
+		frame.vx += homing_step(accelX, frame.vx, prey->x - 25 > sumX / count);
+		frame.vy += homing_step(accelY, frame.vy, prey->y > sumY / count);
+
+		const int shiftX = boss_frame_shift(frame.dx, &frame.vx, minX, maxX, BOSS_FRAME_LEFT,
+		                                    vga_width);
+		const int shiftY = boss_frame_shift(frame.dy, &frame.vy, minY, maxY, BOSS_FRAME_CEILING,
+		                                    BOSS_FRAME_FLOOR);
+		frame.dx += shiftX;
+		frame.dy += shiftY;
+		for (unsigned int j = i; j < COUNTOF(enemy); ++j)
+		{
+			if (object[j] != o)
+				continue;
+			object[j] = -1;
+			enemy[j].ex += shiftX;
+			enemy[j].ey += shiftY;
+			enemy[j].bossFrame = frame;
+		}
+	}
+}
+
 static void endlessGroupHoming(void)
 {
 	if (!endlessFxActive())
@@ -1620,6 +1923,8 @@ static void endlessGroupHoming(void)
 
 	for (int i = 0; i < 100; i++)
 		enemy[i].groupHomed = false;
+
+	endlessBossHomingFrames();
 
 	for (int i = 0; i < 100; i++)
 	{
@@ -1634,7 +1939,7 @@ static void endlessGroupHoming(void)
 
 		for (int j = i; j < 100; j++)
 		{
-			if (enemyAvail[j] == 1 || enemy[j].scoreitem ||
+			if (enemyAvail[j] == 1 || enemy[j].bossFrame.joined || enemy[j].scoreitem ||
 			    enemy[j].linknum != enemy[i].linknum ||
 			    enemy[j].exc    != enemy[i].exc    || enemy[j].eyc    != enemy[i].eyc ||
 			    enemy[j].excc   != enemy[i].excc   || enemy[j].eycc   != enemy[i].eycc ||
@@ -1655,40 +1960,14 @@ static void endlessGroupHoming(void)
 		// The whole group chases the leader's ship, so a formation stays a formation.
 		const Player *const prey = &player[endlessHomingTargetPlayer(enemy[i].homeTarget)];
 
-		if (enemy[i].xaccel && enemy[i].xaccel - 89u > mt_rand() % 11)
-		{
-			if (prey->x - 25 > cx)
-			{
-				if (enemy[i].exc < enemy[i].xaccel - 89)
-					for (int m = 0; m < count; m++)
-						enemy[members[m]].exc++;
-			}
-			else
-			{
-				if (enemy[i].exc >= 0 || -enemy[i].exc < enemy[i].xaccel - 89)
-					for (int m = 0; m < count; m++)
-						enemy[members[m]].exc--;
-			}
-		}
-
-		if (enemy[i].yaccel && enemy[i].yaccel - 89u > mt_rand() % 11)
-		{
-			if (prey->y > cy)
-			{
-				if (enemy[i].eyc < enemy[i].yaccel - 89)
-					for (int m = 0; m < count; m++)
-						enemy[members[m]].eyc++;
-			}
-			else
-			{
-				if (enemy[i].eyc >= 0 || -enemy[i].eyc < enemy[i].yaccel - 89)
-					for (int m = 0; m < count; m++)
-						enemy[members[m]].eyc--;
-			}
-		}
-
+		const int stepX = homing_step(enemy[i].xaccel, enemy[i].exc, prey->x - 25 > cx);
+		const int stepY = homing_step(enemy[i].yaccel, enemy[i].eyc, prey->y > cy);
 		for (int m = 0; m < count; m++)
+		{
+			enemy[members[m]].exc += stepX;
+			enemy[members[m]].eyc += stepY;
 			enemy[members[m]].groupHomed = true;
+		}
 	}
 }
 
@@ -1971,32 +2250,10 @@ static void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than
 			// The ship this one tracks: its own coin toss in co-op Endless, ship one everywhere else.
 			const Player *const prey = &player[endlessHomingTargetPlayer(enemy[i].homeTarget)];
 
-			if (!enemy[i].groupHomed && enemy[i].xaccel && enemy[i].xaccel - 89u > mt_rand() % 11)
+			if (!enemy[i].groupHomed)
 			{
-				if (prey->x > enemy[i].ex)
-				{
-					if (enemy[i].exc < enemy[i].xaccel - 89)
-						enemy[i].exc++;
-				}
-				else
-				{
-					if (enemy[i].exc >= 0 || -enemy[i].exc < enemy[i].xaccel - 89)
-						enemy[i].exc--;
-				}
-			}
-
-			if (!enemy[i].groupHomed && enemy[i].yaccel && enemy[i].yaccel - 89u > mt_rand() % 11)
-			{
-				if (prey->y > enemy[i].ey)
-				{
-					if (enemy[i].eyc < enemy[i].yaccel - 89)
-						enemy[i].eyc++;
-				}
-				else
-				{
-					if (enemy[i].eyc >= 0 || -enemy[i].eyc < enemy[i].yaccel - 89)
-						enemy[i].eyc--;
-				}
+				enemy[i].exc += homing_step(enemy[i].xaccel, enemy[i].exc, prey->x > enemy[i].ex);
+				enemy[i].eyc += homing_step(enemy[i].yaccel, enemy[i].eyc, prey->y > enemy[i].ey);
 			}
 
 			// Keep 2x2 sprites active until fully outside the visible window. The
@@ -2507,6 +2764,7 @@ enemy_still_exists:
 						    enemy[i].linknum < 100)
 						{
 							e->linknum = enemy[i].linknum;
+							e->bossFrame = enemy[i].bossFrame;
 						}
 					}
 				}
@@ -2865,7 +3123,7 @@ start_level_first:
 	}
 	else
 	{
-		if (isNetworkGame)
+		if (isNetworkGame || play_demo || record_demo)
 			mt_srand(32402394u + mainLevel);
 		endlessCampaignLevelStart();  // debug campaign mods: the effect layer's per-level reset (no-op when off)
 	}
@@ -3009,6 +3267,7 @@ start_level_first:
 	curLoc = 0;
 	eventScrollCatchupValid = false;
 	eventScrollSkyValid = false;
+	event_grid_rebase(0, 1);
 	backMove = 1;
 	backMove2 = 2;
 	backMove3 = 3;
@@ -3627,6 +3886,33 @@ level_loop:
 		endlessScrollExtraPx2 = endlessScrollExtraPx(1, fire2, map2YDelayMax, base2,
 		                                             &bgSmoothRatePend[2], &bgSmoothFracPend[2]);
 
+		endlessScrollExtraPx3 = endlessScrollExtraPx(2, (int)backMove3, 1, (int)backMove3,
+		                                             &bgSmoothRatePend[3], &bgSmoothFracPend[3]);
+		eventScrollBaseStep[3] = (int)backMove3;
+		eventScrollDelayMax[3] = 1;
+
+		const int kept1 = event_scroll_landing(endlessScrollExtraPx1);
+		const bool landed = kept1 != endlessScrollExtraPx1;
+		if (landed)
+		{
+			endlessScrollExtraPx2 = endlessScrollExtraPx2 * kept1 / endlessScrollExtraPx1;
+			endlessScrollExtraPx3 = endlessScrollExtraPx3 * kept1 / endlessScrollExtraPx1;
+			endlessScrollExtraPx1 = kept1;
+		}
+		if (map1YDelayMax == 1 && fire1 > 0 && backMove3 % fire1 == 0 &&
+		    endlessScrollBoostPercent() != 0)
+			endlessScrollExtraPx3 = endlessScrollLinkLayer3(endlessScrollExtraPx1,
+			                                                (int)backMove3 / fire1,
+			                                                &bgSmoothFracPend[3]);
+		if (landed)
+		{
+			bgSmoothRatePend[1] = (float)(base1ScrollPx + endlessScrollExtraPx1);
+			bgSmoothRatePend[2] = (float)(base2 + endlessScrollExtraPx2);
+			bgSmoothRatePend[3] = (float)((int)backMove3 + endlessScrollExtraPx3);
+			for (int L = 1; L <= 3; ++L)
+				bgSmoothFracPend[L] = 0.0f;
+		}
+
 		// Capture the post-update sky-glue anchor in exact hundredths.
 		eventScrollSkyValid = fire1 > 0 && fire2 > 0;
 		if (eventScrollSkyValid)
@@ -3636,11 +3922,6 @@ level_loop:
 			const int c2 = (int)lroundf(bgSmoothFracPend[2] * 100.0f);
 			eventScrollSkyPhase100 = eventScrollSkyRatio100 * c1 / 100 - c2;
 		}
-
-		endlessScrollExtraPx3 = endlessScrollExtraPx(2, (int)backMove3, 1, (int)backMove3,
-		                                             &bgSmoothRatePend[3], &bgSmoothFracPend[3]);
-		eventScrollBaseStep[3] = (int)backMove3;
-		eventScrollDelayMax[3] = 1;
 	}
 	bgSmoothActivePend = true;
 
@@ -3658,7 +3939,7 @@ level_loop:
 	eventScrollLayerDelta[1] = eventScrollTo - eventScrollFrom;
 	eventScrollLayerDelta[3] = (int)backMove3 + endlessScrollExtraPx3;
 	eventScrollBoost = endlessScrollBoostPercent();
-	eventScrollCatchupValid = eventScrollBoost > 0 && eventScrollTo > eventScrollFrom;
+	eventScrollCatchupValid = endlessScrollModActive() && eventScrollTo > eventScrollFrom;
 	backPos += endlessScrollExtraPx1;
 	while (backPos > 27)
 	{
@@ -4995,6 +5276,7 @@ draw_player_shot_loop_end:
 		backMove2 = 2;
 		backMove3 = 3;
 		explodeMove = 2;
+		event_grid_set_step(1);
 		stopBackgroundNum = 0;
 		stopBackgrounds = false;
 		if (waitToEndLevel)
@@ -5031,6 +5313,7 @@ draw_player_shot_loop_end:
 			backMove2 = 2;
 			backMove3 = 3;
 			explodeMove = 2;
+			event_grid_set_step(1);
 		}
 	}
 
@@ -5790,6 +6073,7 @@ static uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 
 	enemy_note_full_armor(enemy);   // any other spawn takes its scaled armor as full
 	enemy->eliteState = 0;  // endless: elite undecided until first processed (see JE_drawEnemy)
 	enemy->groupHomed = false;
+	enemy->bossFrame = (EnemyBossFrame){ 0 };
 	enemy->attractedBy = 0;
 	// Only an enemy that can actually track draws for a side, so the roll costs the shared RNG
 	// stream nothing on the score pickups and straight-line traffic that make up most of a zone.
@@ -5834,12 +6118,11 @@ int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_SingleEnemyT
 	if (!eventScrollCatchupValid || !event_time_crossed_by_scroll(eventTime))
 		return 0;  // exact-time event, level/event jump, or a non-scroll forceEvents interval
 
-	const int late = eventScrollTo - eventTime;
-
 	if (layer == 2)
 	{
 		// Anchor sky spawns to one ideal layer/event phase to avoid one-pixel seams.
-		if (!eventScrollSkyValid || late < 0)
+		const int late = eventScrollTo - eventTime;
+		if (!eventScrollSkyValid || eventScrollBoost == 0)
 			return 0;
 		int catchup = event_scroll_round_div(eventScrollSkyRatio100 * late +
 		                                     eventScrollSkyPhase100, 100);
@@ -5850,7 +6133,8 @@ int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_SingleEnemyT
 		return catchup;
 	}
 
-	if (late <= 0)
+	const int late = eventScrollTo - event_grid_point(eventTime);
+	if (late == 0)
 		return 0;
 
 	const int fixedMoveRaw = e->fixedmovey;
@@ -5988,6 +6272,8 @@ void game_loop_register_rollback(void)
 	rollback_register("t2.evScrollBase",     eventScrollBaseStep, sizeof(eventScrollBaseStep));
 	rollback_register("t2.evScrollDelayMax", eventScrollDelayMax, sizeof(eventScrollDelayMax));
 	rollback_register("t2.evScrollBoost",    &eventScrollBoost, sizeof(eventScrollBoost));
+	rollback_register("t2.evGridOrigin",     &eventGridOrigin, sizeof(eventGridOrigin));
+	rollback_register("t2.evGridStep",       &eventGridStep, sizeof(eventGridStep));
 	rollback_register("t2.evSkyValid",       &eventScrollSkyValid, sizeof(eventScrollSkyValid));
 	rollback_register("t2.evSkyRatio",       &eventScrollSkyRatio100, sizeof(eventScrollSkyRatio100));
 	rollback_register("t2.evSkyPhase",       &eventScrollSkyPhase100, sizeof(eventScrollSkyPhase100));

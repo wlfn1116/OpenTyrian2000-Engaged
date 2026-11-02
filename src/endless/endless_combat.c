@@ -1753,6 +1753,15 @@ int endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTi
 	return px;
 }
 
+int endlessScrollLinkLayer3(int extra1, int ratio, float *fracOut)
+{
+	scrollExtraCarry[2] = scrollExtraCarry[0] * ratio;
+	scrollExtraTrem[2] = 0;
+	if (fracOut != NULL)
+		*fracOut = (float)scrollExtraCarry[2] / 100.0f;
+	return extra1 * ratio;
+}
+
 // Player tint for active kill-fire effects.
 int endlessShipTintFilter(void)
 {

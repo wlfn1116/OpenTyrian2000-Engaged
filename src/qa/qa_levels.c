@@ -269,6 +269,7 @@ void qa_test_boosted_boss_pacing(void)
 	for (int boosted = 0; boosted <= 1; ++boosted)
 	{
 		endlessActiveMods = boosted ? ENDLESS_MOD_WARP : 0;
+		event_grid_rebase(0, 1);
 		event_scroll_span_set(97, 103);
 		eventLoc = 1;
 		curLoc = 103;
@@ -280,6 +281,7 @@ void qa_test_boosted_boss_pacing(void)
 	         "under a scroll boost a map stop holds the event clock where it stops, as at 1x");
 
 	eventRec[1].eventtime = 150;
+	event_grid_rebase(0, 1);
 	event_scroll_span_set(99, 100);
 	eventLoc = 1;
 	curLoc = 150;
@@ -325,6 +327,180 @@ void qa_test_boosted_boss_pacing(void)
 	qa_check(reclaimed == 25 && campaign == 0 && crowded == 0,
 	         "a scripted spawn into a full bank takes the cheapest, lowest coin's slot in "
 	         "Endless, never a gem, cube or power-up; the campaign keeps the vanilla drop");
+
+	memcpy(eventRec, saved, sizeof(eventRec));
+	free(saved);
+	maxEvent = savedMax;
+	level_scan_boss_leadins();
+	eventLoc = savedLoc;
+	curLoc = savedCur;
+	backMove = savedBack;
+	backMove2 = savedBack2;
+	backMove3 = savedBack3;
+	explodeMove = savedExplode;
+	map1YDelay = savedDelays[0];
+	map1YDelayMax = savedDelays[1];
+	map2YDelay = savedDelays[2];
+	map2YDelayMax = savedDelays[3];
+	stopBackgroundNum = savedStopNum;
+	forceEvents = savedForce;
+	endlessActiveMods = savedMods;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedEndless;
+	enemy[0] = savedEnemy;
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	boss_bar[0] = savedBars[0];
+	boss_bar[1] = savedBars[1];
+	event_grid_rebase(0, 1);
+}
+
+static int qa_landing(JE_word at, int extra, JE_word back)
+{
+	curLoc = at;
+	backMove = back;
+	eventLoc = 1;
+	return event_scroll_landing(extra);
+}
+
+static bool qa_leadin_holds(JE_word loc, JE_byte link);
+
+void qa_test_boosted_scroll_landing(void)
+{
+	struct JE_EventRecType *const saved = malloc(sizeof(eventRec));
+	if (saved == NULL)
+	{
+		qa_check(false, "the scroll-landing test can save the loaded event script");
+		return;
+	}
+	memcpy(saved, eventRec, sizeof(eventRec));
+	const JE_word savedMax = maxEvent, savedLoc = eventLoc, savedCur = curLoc;
+	const JE_word savedBack = backMove, savedBack2 = backMove2, savedBack3 = backMove3;
+	const JE_word savedExplode = explodeMove;
+	const JE_byte savedDelays[4] = { map1YDelay, map1YDelayMax, map2YDelay, map2YDelayMax };
+	const JE_byte savedStopNum = stopBackgroundNum;
+	const JE_boolean savedForce = forceEvents;
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const Uint64 savedMods = endlessActiveMods;
+	const struct JE_SingleEnemyType savedEnemy = enemy[0];
+	JE_byte savedAvail[COUNTOF(enemyAvail)];
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	const boss_bar_t savedBars[2] = { boss_bar[0], boss_bar[1] };
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	forceEvents = false;
+	boss_bar[0].link_num = 0;
+	boss_bar[1].link_num = 0;
+	memset(enemyAvail, 1, sizeof(savedAvail));
+	map1YDelayMax = 1;
+	endlessActiveMods = ENDLESS_MOD_WARP;
+	event_grid_rebase(0, 1);
+
+	memset(eventRec, 0, 6 * sizeof(eventRec[0]));
+	eventRec[0].eventtime = 100;
+	eventRec[0].eventtype = 2;
+	eventRec[1].eventtime = 65500;
+	maxEvent = 1;
+	level_scan_boss_leadins();
+
+	qa_check(qa_landing(98, 4, 1) == 2 && qa_landing(100, 3, 1) == 0 && qa_landing(90, 4, 1) == 4,
+	         "a boosted tick lands the clock on a map stop it would cross, and adds nothing once "
+	         "the base step has reached it");
+	qa_check(qa_landing(97, 2, 2) == 1 && qa_landing(96, 2, 2) == 2,
+	         "...and stops a base step short when the next base step would carry it past");
+
+	eventRec[0].eventdat = 1;
+	qa_check(qa_landing(98, 4, 1) == 2 && qa_landing(97, 2, 2) == 2,
+	         "a speed change is landed on the same way, without the base-step lead");
+
+	eventRec[0].eventdat = 0;
+	eventRec[2] = eventRec[1];
+	eventRec[1] = eventRec[0];
+	eventRec[0].eventtime = 99;
+	eventRec[0].eventtype = 54;
+	eventRec[0].eventdat = 500;
+	maxEvent = 2;
+	qa_check(qa_landing(98, 4, 1) == 4, "a jump ahead of the stop leaves the boost alone");
+	eventRec[0] = eventRec[1];
+	eventRec[1] = eventRec[2];
+	maxEvent = 1;
+
+	forceEvents = true;
+	const int forced = qa_landing(98, 4, 1);
+	forceEvents = false;
+	endlessActiveMods = 0;
+	const int unboosted = qa_landing(98, 4, 1);
+	endlessActiveMods = ENDLESS_MOD_WARP;
+	qa_check(forced == 4 && unboosted == 4,
+	         "forced events and an unboosted scroll keep their extra pixels untouched");
+
+	event_grid_rebase(1975, 2);
+	qa_check(event_grid_point(2176) == 2177 && event_grid_point(2177) == 2177 &&
+	         event_grid_point(1970) == 1975 && event_grid_point(1976) == 1977,
+	         "on a two-pixel 1x step an event fires at the first clock the 1x step reaches");
+	eventRec[0].eventtime = 2176;
+	qa_check(qa_landing(2174, 3, 2) == 3,
+	         "...so a boosted tick lands on the stop where the 1x clock would stop");
+
+	event_scroll_span_set(2170, 2180);
+	curLoc = 2180;
+	eventLoc = 1;
+	backMove = 2;
+	while (eventRec[eventLoc - 1].eventtime <= curLoc && eventLoc <= maxEvent)
+		JE_eventSystem();
+	qa_check(curLoc == 2177 && backMove == 0,
+	         "...and a boosted overshoot is held there, not pulled back to the authored tick");
+	event_scroll_span_set(0, 0);
+	event_grid_rebase(0, 1);
+
+	float frac1 = 0.0f, frac3 = 0.0f;
+	endlessActiveMods = ENDLESS_MOD_SLIPSTREAM;
+	endlessScrollExtraPx(0, 0, 1, 0, NULL, NULL);
+	endlessScrollExtraPx(2, 0, 1, 0, NULL, NULL);
+	int sum1 = 0;
+	bool lockstep = true;
+	for (int t = 0; t < 40; ++t)
+	{
+		const int extra1 = endlessScrollExtraPx(0, 1, 1, 1, NULL, &frac1);
+		endlessScrollExtraPx(2, 3, 1, 3, NULL, NULL);
+		const int extra3 = endlessScrollLinkLayer3(extra1, 3, &frac3);
+		const float drift = frac3 - 3.0f * frac1;
+		sum1 += extra1;
+		lockstep = lockstep && extra3 == 3 * extra1 && drift < 0.001f && drift > -0.001f;
+	}
+	endlessScrollExtraPx(0, 0, 1, 0, NULL, NULL);
+	endlessScrollExtraPx(2, 0, 1, 0, NULL, NULL);
+	qa_check(lockstep && sum1 > 0,
+	         "layer 3 at three times layer 1's speed takes three boost pixels for each of layer "
+	         "1's, so the two layers keep their 1x phase");
+
+	memset(eventRec, 0, 6 * sizeof(eventRec[0]));
+	eventRec[0].eventtime = 50;
+	eventRec[0].eventtype = 7;
+	eventRec[0].eventdat4 = 17;
+	eventRec[1].eventtime = 55;
+	eventRec[1].eventtype = 7;
+	eventRec[1].eventdat4 = 19;
+	eventRec[2].eventtime = 60;
+	eventRec[2].eventtype = 39;
+	eventRec[2].eventdat = 17;
+	eventRec[2].eventdat2 = 19;
+	eventRec[3].eventtime = 70;
+	eventRec[3].eventtype = 39;
+	eventRec[3].eventdat = 19;
+	eventRec[3].eventdat2 = 254;
+	eventRec[4].eventtime = 100;
+	eventRec[4].eventtype = 79;
+	eventRec[4].eventdat = 254;
+	eventRec[5].eventtime = 65500;
+	maxEvent = 5;
+	level_scan_boss_leadins();
+	curLoc = 80;
+	qa_check(level_boss_leadin_window(17) >= 0 && level_boss_leadin_window(19) >= 0 &&
+	         level_boss_leadin_window(254) >= 0 && level_boss_leadin_window(18) < 0,
+	         "a boss assembled through a chain of relinks frames every piece that ends up in it");
+	qa_check(qa_leadin_holds(80, 19) && !qa_leadin_holds(80, 17),
+	         "...while the boosted-scroll hold keeps its one-step link set");
 
 	memcpy(eventRec, saved, sizeof(eventRec));
 	free(saved);
