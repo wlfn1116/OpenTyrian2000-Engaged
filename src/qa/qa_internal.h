@@ -126,6 +126,8 @@ void qa_test_flying_punch_bolt(void);
 void qa_test_dragonwing_row(void);
 void qa_test_wide_hull_columns(void);
 void qa_test_xmas_sprites(void);
+void qa_test_ingame_black_ink(void);
+void qa_test_sprite_holes(void);
 void qa_test_dual_mode_tag(void);
 void qa_test_weapon_bay_tags(void);
 void qa_test_ship_editor_file(void);

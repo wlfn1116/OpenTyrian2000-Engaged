@@ -1409,9 +1409,16 @@ new_game:
 		fread_bool_die(&shapeBlank, shpFile);
 
 		if (shapeBlank)
+		{
 			memset(shape, 0, sizeof(shape));
+		}
 		else
+		{
 			fread_u8_die(shape, sizeof(shape), shpFile);
+			for (size_t px = 0; px < sizeof(shape); ++px)
+				if (shape[px] == PALETTE_INGAME_BLACK)
+					shape[px] = PALETTE_INGAME_NEAR_BLACK;
+		}
 
 		/* Match 1 */
 		for (int x = 0; x <= 71; ++x)

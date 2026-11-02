@@ -7,8 +7,10 @@
 #include "custom_weapon.h"
 #include "debug_flags.h"
 #include "draw.h"
+#include "endless.h"
 #include "episodes.h"
 #include "extra_ships.h"
+#include "file.h"
 #include "font.h"
 #include "game_loop.h"
 #include "game_menu.h"
@@ -16,8 +18,10 @@
 #include "health_bars.h"
 #include "hud.h"
 #include "item_prices.h"
+#include "lvlmast.h"
 #include "net_style.h"
 #include "network.h"
+#include "palette.h"
 #include "player.h"
 #include "player_ship.h"
 #include "rollback.h"
@@ -33,6 +37,7 @@
 
 #include "SDL.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -386,6 +391,15 @@ void qa_test_dragonwing_row(void)
 	endlessMode = savedEndless;
 }
 
+static int qa_cell_ink(Sprite2_array sheet, unsigned int cell)
+{
+	int ink = 0;
+	for (int y = 0; y < SPRITE2_CELL_H; ++y)
+		for (int x = 0; x < SPRITE2_CELL_W; ++x)
+			ink += sprite2x2_pixel(sheet, cell, x, y) != 0;
+	return ink;
+}
+
 /* Painted x-extent of one 2x2 hull piece (cells at +0 and +12 within it) shifted by xOff, folded
  * into an accumulating min/max that `painted` marks as already holding a value. */
 static bool qa_fold_2x2_ink(Sprite2_array sheet, unsigned int index, int xOff, bool painted,
@@ -708,13 +722,14 @@ void qa_test_ship_editor_file(void)
 		qa_check(same, "a decoded 2x2 hull matches sprite2x2_pixel at every pixel");
 	}
 	{
+		static const struct { unsigned int pose; int ink; } pose[4] = {
+			{ 5, 51 - 1 }, { 18, 52 - 1 }, { 22, 73 - 2 }, { 24, 91 - 7 },
+		};
 		const unsigned int gr = ships[10].shipgraphic;
-		qa_check(gr == 271 &&
-		         !sprite2_has_color(spriteSheet9, gr + 5, 0xfe) &&
-		         !sprite2_has_color(spriteSheet9, gr + 18, 0xfe) &&
-		         !sprite2_has_color(spriteSheet9, gr + 22, 0xfe) &&
-		         !sprite2_has_color(spriteSheet9, gr + 24, 0xfe),
-		         "the stock U-Ship poses contain no stray white pixels");
+		bool clean = gr == 271;
+		for (uint i = 0; i < COUNTOF(pose); ++i)
+			clean = clean && qa_cell_ink(spriteSheet9, gr + pose[i].pose) == pose[i].ink;
+		qa_check(clean, "the stock U-Ship poses contain no stray white pixels");
 	}
 
 	{
@@ -1294,15 +1309,6 @@ static bool qa_cells_equal(Sprite2_array a, Sprite2_array b, unsigned int cell)
 	return true;
 }
 
-static int qa_cell_ink(Sprite2_array sheet, unsigned int cell)
-{
-	int ink = 0;
-	for (int y = 0; y < SPRITE2_CELL_H; ++y)
-		for (int x = 0; x < SPRITE2_CELL_W; ++x)
-			ink += sprite2x2_pixel(sheet, cell, x, y) != 0;
-	return ink;
-}
-
 void qa_test_xmas_sprites(void)
 {
 	if (spriteSheet9.data == NULL || xmas || !xmas_data_present())
@@ -1330,6 +1336,16 @@ void qa_test_xmas_sprites(void)
 	         "the two Christmas shots painted on a filled box lose the box and keep their art");
 	qa_check(qa_sheets_equal(spriteSheet12, moreShots),
 	         "Christmas still takes its second shot bank from the stock file");
+	qa_check(qa_cell_ink(spriteSheet10, 43) == 73 + 8 && qa_cell_ink(spriteSheet10, 66) == 47 + 1 &&
+	         qa_cell_ink(spriteSheet10, 64) == 39 &&
+	         sprite2x2_pixel(spriteSheet10, 45, 3, 15) == 0x83,
+	         "Christmas fills the Beno barrel and Quicksilver gaps and leaves its whole Indigo "
+	         "art alone");
+	qa_check(sprite2_dominant_bank(spriteSheet8, 72) == PALETTE_INGAME_BLACK >> 4 &&
+	         sprite2_dominant_bank(spriteSheet8, 91) == PALETTE_INGAME_BLACK >> 4 &&
+	         !sprite2_has_color(spriteSheet8, 72, PALETTE_INGAME_BLACK) &&
+	         sprite2_has_color(spriteSheet8, 72, PALETTE_INGAME_BLACK_BASE),
+	         "the Christmas shots that wear a black outline keep their blast colour");
 
 	free_main_shape_tables();
 	JE_loadMainShapeTables("tyrian.shp");
@@ -1340,4 +1356,136 @@ void qa_test_xmas_sprites(void)
 	free(ships.data);
 	free(shots.data);
 	free(moreShots.data);
+}
+
+static bool qa_cell_black_rebased(Sprite2_array raw, Sprite2_array loaded, unsigned int cell,
+                                  int *black)
+{
+	Uint8 was[2 * SPRITE2_CELL_H][2 * SPRITE2_CELL_W], now[2 * SPRITE2_CELL_H][2 * SPRITE2_CELL_W];
+	sprite2x2_decode(raw, cell, was);
+	sprite2x2_decode(loaded, cell, now);
+	for (int y = 0; y < SPRITE2_CELL_H; ++y)
+		for (int x = 0; x < SPRITE2_CELL_W; ++x)
+		{
+			const bool isBlack = was[y][x] == PALETTE_INGAME_BLACK;
+			*black += isBlack;
+			if (now[y][x] != (isBlack ? PALETTE_INGAME_NEAR_BLACK : was[y][x]))
+				return false;
+		}
+	return true;
+}
+
+static int qa_recolored_black(Sprite2_array raw, Sprite2_array loaded, unsigned int cell,
+                              bool bright, Uint8 filter, Uint8 darkest)
+{
+	enum { X = 40, Y = 40 };
+	Uint8 *const spot = (Uint8 *)VGAScreen->pixels + Y * VGAScreen->pitch + X;
+	Uint8 saved[SPRITE2_CELL_H][SPRITE2_CELL_W];
+	for (int y = 0; y < SPRITE2_CELL_H; ++y)
+		memcpy(saved[y], spot + y * VGAScreen->pitch, SPRITE2_CELL_W);
+
+	if (bright)
+		blit_sprite2_filter_bright(VGAScreen, X, Y, loaded, cell, filter);
+	else
+		blit_sprite2_filter(VGAScreen, X, Y, loaded, cell, filter);
+
+	Uint8 was[2 * SPRITE2_CELL_H][2 * SPRITE2_CELL_W];
+	sprite2x2_decode(raw, cell, was);
+	int dark = 0;
+	for (int y = 0; y < SPRITE2_CELL_H; ++y)
+		for (int x = 0; x < SPRITE2_CELL_W; ++x)
+		{
+			const Uint8 drawn = spot[y * VGAScreen->pitch + x];
+			dark += was[y][x] == PALETTE_INGAME_BLACK && (drawn & 0xf0) == (filter & 0xf0) &&
+			        drawn <= darkest;
+		}
+
+	for (int y = 0; y < SPRITE2_CELL_H; ++y)
+		memcpy(spot + y * VGAScreen->pitch, saved[y], SPRITE2_CELL_W);
+	return dark;
+}
+
+void qa_test_ingame_black_ink(void)
+{
+	if (spriteSheet9.data == NULL)
+		return;
+
+	Sprite2_array *const ingame[] = {
+		&spriteSheet8, &spriteSheet9, &spriteSheet10,
+		&spriteSheet11, &spriteSheet12, &spriteSheetT2000,
+	};
+	bool noBlack = true;
+	for (size_t s = 0; s < COUNTOF(ingame); ++s)
+		for (int cell = 1; cell <= sprite2_count(ingame[s]) && noBlack; ++cell)
+			noBlack = !sprite2_has_color(*ingame[s], (unsigned int)cell, PALETTE_INGAME_BLACK);
+	qa_check(noBlack && sprite2_has_color(spriteSheet11, 13, PALETTE_INGAME_NEAR_BLACK) &&
+	         sprite2_has_color(spriteSheet12, 143, PALETTE_INGAME_BLACK_BASE) &&
+	         !sprite2_has_color(spriteSheet12, 143, PALETTE_INGAME_NEAR_BLACK),
+	         "ship and pickup art loads black as near-black; shots keep it in bank 15");
+
+	const unsigned int slot = 0;
+	const Uint8 savedId = enemySpriteSheetIds[slot];
+	bool exact = true;
+	int black = 0;
+	for (unsigned int id = 1; id <= COUNTOF(shapeFile) && exact; ++id)
+	{
+		char name[16];
+		snprintf(name, sizeof(name), "newsh%c.shp", tolower((unsigned char)shapeFile[id - 1]));
+		if (!dir_file_exists(data_dir(), name))
+			continue;
+
+		Sprite2_array raw = { 0, NULL };
+		JE_loadCompShapes(&raw, shapeFile[id - 1]);
+		enemy_sprite_sheet_load(slot, (Uint8)id);
+		exact = enemySpriteSheets[slot].size == raw.size;
+		for (int cell = 1; cell <= sprite2_count(&raw) && exact; ++cell)
+			exact = qa_cell_black_rebased(raw, enemySpriteSheets[slot], (unsigned int)cell, &black);
+		free_sprite2s(&raw);
+	}
+	qa_check(exact && black > 0,
+	         "every enemy sheet matches its file except black, which loads near-black");
+
+	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8)
+	{
+		const bool savedSilent = rollback_resim_silent;
+		rollback_resim_silent = false;
+		Sprite2_array raw = { 0, NULL };
+		JE_loadCompShapes(&raw, shapeFile[34 - 1]);
+		enemy_sprite_sheet_load(slot, 34);
+		const int tinted = qa_recolored_black(raw, enemySpriteSheets[slot], 97, false,
+		                                      ENDLESS_ELITE_FILTER, ENDLESS_ELITE_FILTER | 1);
+		const int flashed = qa_recolored_black(raw, enemySpriteSheets[slot], 97, true,
+		                                       ENEMY_FLASH_BANK | 3, ENEMY_FLASH_BANK | 4);
+		free_sprite2s(&raw);
+		rollback_resim_silent = savedSilent;
+		qa_check(tinted == 18 && flashed == 18,
+		         "DREAD-NOT's black pod rim stays dark under a tier tint and a hit flash");
+	}
+	enemy_sprite_sheet_load(slot, savedId);
+}
+
+void qa_test_sprite_holes(void)
+{
+	if (spriteSheet10.data == NULL || spriteSheet11.data == NULL)
+		return;
+
+	bool filled = true;
+	for (int y = 6; y < 12; ++y)
+		filled = filled && sprite2x2_pixel(spriteSheet10, 43, 8, y) == 0x50 &&
+		         sprite2x2_pixel(spriteSheet10, 43, 16, y) == 0x50;
+	qa_check(filled && sprite2x2_pixel(spriteSheet10, 43, 10, 13) == 0x50 &&
+	         sprite2x2_pixel(spriteSheet10, 43, 14, 13) == 0x50 &&
+	         qa_cell_ink(spriteSheet10, 43) == 73 + 8 && qa_cell_ink(spriteSheet10, 44) == 87 + 8,
+	         "the Beno barrel sits in a dark rim instead of see-through slits");
+	qa_check(sprite2x2_pixel(spriteSheet10, 45, 3, 15) == 0x90 &&
+	         sprite2x2_pixel(spriteSheet10, 45, 22, 15) == 0x90 &&
+	         qa_cell_ink(spriteSheet10, 64) == 43 + 1 && qa_cell_ink(spriteSheet10, 65) == 51 + 1,
+	         "the Protron Cannon Indigo's wing legs have no see-through pixel");
+	qa_check(sprite2x2_pixel(spriteSheet10, 47, 7, 15) == 0x30 &&
+	         sprite2x2_pixel(spriteSheet10, 47, 17, 15) == 0x30 &&
+	         qa_cell_ink(spriteSheet10, 66) == 39 + 1 && qa_cell_ink(spriteSheet10, 67) == 44 + 1,
+	         "the Quicksilver companion's hull has no see-through pixel");
+	qa_check(sprite2x2_pixel(spriteSheet11, 13, 0, 7) == PALETTE_INGAME_NEAR_BLACK &&
+	         qa_cell_ink(spriteSheet11, 13) == SPRITE2_CELL_PIXELS,
+	         "the boxed gem pickup's black box has no see-through pixel at its left edge");
 }

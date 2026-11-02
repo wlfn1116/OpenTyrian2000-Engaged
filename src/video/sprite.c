@@ -22,6 +22,7 @@
 #include "file.h"
 #include "lvlmast.h"
 #include "opentyr.h"
+#include "palette.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "video.h"
@@ -747,6 +748,26 @@ bool sprite2_has_color(Sprite2_array sprite2s, unsigned int index, Uint8 color)
 	return false;
 }
 
+static void sprite2_replace_color(Sprite2_array *sprite2s, Uint8 from, Uint8 to)
+{
+	const int count = sprite2_count(sprite2s);
+	for (int index = 1; index <= count; ++index)
+	{
+		if (!sprite2_index_valid(*sprite2s, (unsigned int)index))
+			continue;
+
+		const Uint8 *const end = sprite2s->data + sprite2s->size;
+		Uint8 *data = sprite2s->data + SDL_SwapLE16(((Uint16 *)sprite2s->data)[index - 1]);
+		while (data < end && *data != 0x0f)
+		{
+			unsigned int run = *data >> 4;
+			for (++data; run > 0 && data < end; --run, ++data)
+				if (*data == from)
+					*data = to;
+		}
+	}
+}
+
 Uint8 sprite2x2_pixel(Sprite2_array sprite2s, unsigned int index, int x, int y)
 {
 	if (x < 0 || x >= 2 * SPRITE2_CELL_W || y < 0 || y >= 2 * SPRITE2_CELL_H)
@@ -912,40 +933,87 @@ static void repair_t2000_gencore_ii_hard_left(Sprite2_array *sheet)
 	(void)sprite2_replace_cells(sheet, destination, &mirrored[0][0], COUNTOF(destination));
 }
 
+typedef struct
+{
+	unsigned int pose;
+	int x, y;
+	Uint8 color;
+}
+Sprite2Hole;
+
+enum { SPRITE2_HOLE_IN_ROW = 1, SPRITE2_HOLE_IN_COLUMN = 2 };
+
+static bool sprite2x2_walled(Sprite2_array sheet, const Sprite2Hole *hole, int dx, int dy)
+{
+	return sprite2x2_pixel(sheet, hole->pose, hole->x - dx, hole->y - dy) != 0 &&
+	       sprite2x2_pixel(sheet, hole->pose, hole->x + dx, hole->y + dy) != 0;
+}
+
+static void sprite2x2_fill_holes(Sprite2_array *sheet, const Sprite2Hole *hole, size_t n,
+                                 unsigned int walls)
+{
+	for (size_t i = 0; i < n; ++i)
+		if (sprite2x2_pixel(*sheet, hole[i].pose, hole[i].x, hole[i].y) != 0 ||
+		    ((walls & SPRITE2_HOLE_IN_ROW) && !sprite2x2_walled(*sheet, &hole[i], 1, 0)) ||
+		    ((walls & SPRITE2_HOLE_IN_COLUMN) && !sprite2x2_walled(*sheet, &hole[i], 0, 1)))
+			return;
+
+	unsigned int *const destination = malloc_die(n * sizeof(*destination));
+	Uint8 *const filled = malloc_die(n * SPRITE2_CELL_PIXELS);
+	size_t cells = 0;
+	bool decoded = true;
+	for (size_t i = 0; i < n && decoded; ++i)
+	{
+		const int x = hole[i].x, y = hole[i].y;
+		const unsigned int cell = hole[i].pose + x / SPRITE2_CELL_W + (y / SPRITE2_CELL_H) * 19;
+		size_t c = 0;
+		while (c < cells && destination[c] != cell)
+			++c;
+		Uint8 *const pixels = filled + c * SPRITE2_CELL_PIXELS;
+		if (c == cells)
+		{
+			destination[cells++] = cell;
+			decoded = sprite2_decode_cell(*sheet, cell, pixels);
+		}
+		pixels[(y % SPRITE2_CELL_H) * SPRITE2_CELL_W + x % SPRITE2_CELL_W] = hole[i].color;
+	}
+
+	if (decoded)
+		(void)sprite2_replace_cells(sheet, destination, filled, cells);
+	free(filled);
+	free(destination);
+}
+
 static void repair_t2000_gencore_ii_holes(Sprite2_array *sheet)
 {
-	static const struct { unsigned int pose; int x, y; } hole[9] = {
-		{ 79, 11, 1 }, { 79, 12, 2 }, { 79, 20, 10 }, { 79, 19, 11 },
-		{ 81, 13, 2 },
-		{ 83, 12, 1 }, { 83, 11, 2 }, { 83, 3, 10 }, { 83, 4, 11 },
+	static const Sprite2Hole hole[9] = {
+		{ 79, 11, 1, 0x0f }, { 79, 12, 2, 0x0f }, { 79, 20, 10, 0x0f }, { 79, 19, 11, 0x0f },
+		{ 81, 13, 2, 0x0f },
+		{ 83, 12, 1, 0x0f }, { 83, 11, 2, 0x0f }, { 83, 3, 10, 0x0f }, { 83, 4, 11, 0x0f },
 	};
-	static const unsigned int destination[5] = { 79, 80, 82, 83, 84 };
-	Uint8 filled[5][SPRITE2_CELL_PIXELS];
+	sprite2x2_fill_holes(sheet, hole, COUNTOF(hole), SPRITE2_HOLE_IN_ROW | SPRITE2_HOLE_IN_COLUMN);
+}
 
-	for (uint i = 0; i < COUNTOF(hole); ++i)
-	{
-		const unsigned int pose = hole[i].pose;
-		const int x = hole[i].x, y = hole[i].y;
-		if (sprite2x2_pixel(*sheet, pose, x, y) != 0 ||
-		    sprite2x2_pixel(*sheet, pose, x - 1, y) == 0 ||
-		    sprite2x2_pixel(*sheet, pose, x + 1, y) == 0 ||
-		    sprite2x2_pixel(*sheet, pose, x, y - 1) == 0 ||
-		    sprite2x2_pixel(*sheet, pose, x, y + 1) == 0)
-			return;
-	}
+static void repair_sidekick_holes(Sprite2_array *sheet)
+{
+	static const Sprite2Hole benoBarrel[16] = {
+		{ 43, 8, 6, 0x50 }, { 43, 8, 7, 0x50 }, { 43, 8, 8, 0x50 }, { 43, 8, 9, 0x50 },
+		{ 43, 8, 10, 0x50 }, { 43, 8, 11, 0x50 }, { 43, 9, 12, 0x50 }, { 43, 10, 13, 0x50 },
+		{ 43, 16, 6, 0x50 }, { 43, 16, 7, 0x50 }, { 43, 16, 8, 0x50 }, { 43, 16, 9, 0x50 },
+		{ 43, 16, 10, 0x50 }, { 43, 16, 11, 0x50 }, { 43, 15, 12, 0x50 }, { 43, 14, 13, 0x50 },
+	};
+	static const Sprite2Hole indigoWings[2] = { { 45, 3, 15, 0x90 }, { 45, 22, 15, 0x90 } };
+	static const Sprite2Hole quicksilverHull[2] = { { 47, 7, 15, 0x30 }, { 47, 17, 15, 0x30 } };
 
-	for (uint cell = 0; cell < COUNTOF(destination); ++cell)
-	{
-		if (!sprite2_decode_cell(*sheet, destination[cell], filled[cell]))
-			return;
-		for (uint i = 0; i < COUNTOF(hole); ++i)
-		{
-			const int x = hole[i].x, y = hole[i].y;
-			if (hole[i].pose + x / SPRITE2_CELL_W + (y / SPRITE2_CELL_H) * 19 == destination[cell])
-				filled[cell][(y % SPRITE2_CELL_H) * SPRITE2_CELL_W + x % SPRITE2_CELL_W] = 0x0f;
-		}
-	}
-	(void)sprite2_replace_cells(sheet, destination, &filled[0][0], COUNTOF(destination));
+	sprite2x2_fill_holes(sheet, benoBarrel, COUNTOF(benoBarrel), SPRITE2_HOLE_IN_ROW);
+	sprite2x2_fill_holes(sheet, indigoWings, COUNTOF(indigoWings), SPRITE2_HOLE_IN_ROW);
+	sprite2x2_fill_holes(sheet, quicksilverHull, COUNTOF(quicksilverHull), SPRITE2_HOLE_IN_ROW);
+}
+
+static void repair_gem_box_hole(Sprite2_array *sheet)
+{
+	static const Sprite2Hole hole[1] = { { 13, 0, 7, PALETTE_INGAME_BLACK } };
+	sprite2x2_fill_holes(sheet, hole, COUNTOF(hole), SPRITE2_HOLE_IN_COLUMN);
 }
 
 typedef struct
@@ -2381,9 +2449,11 @@ void JE_loadMainShapeTables(const char *shpfile)
 
 	// power-up sprites
 	shp_load_sprite2s(f, shpPos, i++, &spriteSheet10);
+	repair_sidekick_holes(&spriteSheet10);
 
 	// coins, datacubes, etc sprites
 	shp_load_sprite2s(f, shpPos, i++, &spriteSheet11);
+	repair_gem_box_hole(&spriteSheet11);
 
 	// more player shot sprites
 	shp_load_sprite2s(f, shpPos, i++, &spriteSheet12);
@@ -2409,6 +2479,14 @@ void JE_loadMainShapeTables(const char *shpfile)
 		repair_xmas_keyed_shots(&spriteSheet8);
 		repair_xmas_blank_cells(&spriteSheet9, 8);
 	}
+
+	Sprite2_array *const artSheets[] = {
+		&spriteSheet9, &spriteSheet10, &spriteSheet11, &spriteSheetT2000,
+	};
+	for (size_t sheet = 0; sheet < COUNTOF(artSheets); ++sheet)
+		sprite2_replace_color(artSheets[sheet], PALETTE_INGAME_BLACK, PALETTE_INGAME_NEAR_BLACK);
+	sprite2_replace_color(&spriteSheet8, PALETTE_INGAME_BLACK, PALETTE_INGAME_BLACK_BASE);
+	sprite2_replace_color(&spriteSheet12, PALETTE_INGAME_BLACK, PALETTE_INGAME_BLACK_BASE);
 }
 
 void free_main_shape_tables(void)
@@ -2439,9 +2517,15 @@ void free_enemy_sprite_sheets(void)
 void enemy_sprite_sheet_load(uint slot, Uint8 id)
 {
 	if (id > 0 && id <= COUNTOF(shapeFile))
+	{
 		JE_loadCompShapes(&enemySpriteSheets[slot], shapeFile[id - 1]);
+		sprite2_replace_color(&enemySpriteSheets[slot], PALETTE_INGAME_BLACK,
+		                      PALETTE_INGAME_NEAR_BLACK);
+	}
 	else
+	{
 		free_sprite2s(&enemySpriteSheets[slot]);
+	}
 
 	enemySpriteSheetIds[slot] = id;
 	enemySpriteSheetLoaded[slot] = id;

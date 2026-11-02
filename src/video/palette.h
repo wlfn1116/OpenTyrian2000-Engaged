@@ -24,6 +24,10 @@
 
 typedef SDL_Color Palette[256];
 
+#define PALETTE_INGAME_BLACK      0xfe
+#define PALETTE_INGAME_BLACK_BASE (PALETTE_INGAME_BLACK & 0xf0)
+#define PALETTE_INGAME_NEAR_BLACK 0x01
+
 extern Palette palettes[];
 extern int palette_count;
 

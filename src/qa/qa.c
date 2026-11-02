@@ -458,6 +458,8 @@ int qa_run_unit_suite(void)
 	qa_test_dragonwing_row();
 	qa_test_wide_hull_columns();
 	qa_test_xmas_sprites();
+	qa_test_ingame_black_ink();
+	qa_test_sprite_holes();
 	qa_test_dual_mode_tag();
 	qa_test_weapon_bay_tags();
 	qa_test_ship_editor_file();
