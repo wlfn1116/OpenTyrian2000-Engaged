@@ -13,6 +13,8 @@
 #include "level_events.h"
 #include "level_load.h"
 #include "lvllib.h"
+#include "mtrand.h"
+#include "player.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1026,6 +1028,207 @@ void qa_test_super_enemy_loops(void)
 	levelTimer = savedTimer;
 	levelTimerCountdown = savedCountdown;
 	returnActive = savedReturn;
+}
+
+static int qa_piece_spawn(JE_word event)
+{
+	eventLoc = event + 1;
+	b = 0;
+	JE_eventSystem();
+	const int slot = b;
+	if (slot > 0)
+		enemyAvail[slot - 1] = 1;
+	return slot;
+}
+
+static void qa_piece_live(unsigned int slot, JE_word type, int x)
+{
+	memset(&enemy[slot], 0, sizeof(enemy[slot]));
+	enemyAvail[slot] = 0;
+	enemy[slot].linknum = 11;
+	enemy[slot].enemytype = type;
+	enemy[slot].armorleft = 40;
+	enemy[slot].xaccel = 96;
+	enemy[slot].yaccel = 96;
+	enemy[slot].ex = (JE_integer)x;
+	enemy[slot].ey = 40;
+}
+
+void qa_test_stacked_pieces(void)
+{
+	struct JE_EventRecType *const savedEvents = malloc(sizeof(eventRec));
+	struct JE_SingleEnemyType *const savedEnemy = malloc(sizeof(enemy));
+	void *const savedRng = malloc(mt_state_size());
+	if (savedEvents == NULL || savedEnemy == NULL || savedRng == NULL)
+	{
+		free(savedEvents);
+		free(savedEnemy);
+		free(savedRng);
+		qa_check(false, "the stacked-piece test can save the event script and enemy pool");
+		return;
+	}
+	memcpy(savedEvents, eventRec, sizeof(eventRec));
+	memcpy(savedEnemy, enemy, sizeof(enemy));
+	mt_state_save(savedRng);
+	JE_byte savedAvail[COUNTOF(enemyAvail)];
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	enum { TOP = 426, BOTTOM = 428, SIDE = 429 };
+	unsigned char savedDat[4][sizeof(enemyDat[0])];
+	memcpy(savedDat[0], &enemyDat[TOP], sizeof(enemyDat[0]));
+	memcpy(savedDat[1], &enemyDat[BOTTOM], sizeof(enemyDat[0]));
+	memcpy(savedDat[2], &enemyDat[0], sizeof(enemyDat[0]));
+	memcpy(savedDat[3], &enemyDat[SIDE], sizeof(enemyDat[0]));
+	const JE_word savedMax = maxEvent, savedLoc = eventLoc, savedCur = curLoc;
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const Uint64 savedMods = endlessActiveMods;
+	const boss_bar_t savedBars[2] = { boss_bar[0], boss_bar[1] };
+	const JE_byte savedBody = boss_body_link;
+	const JE_integer savedX = player[0].x, savedY = player[0].y;
+
+	enemyDat[TOP].esize = 1;
+	enemyDat[TOP].egraphic[0] = 153;
+	enemyDat[BOTTOM].esize = 1;
+	enemyDat[BOTTOM].egraphic[0] = 191;
+	enemyDat[0].esize = 1;
+	enemyDat[SIDE].esize = 1;
+	enemyDat[SIDE].egraphic[0] = 193;
+	endlessMode = true;
+	endlessCampaignMods = false;
+	endlessActiveMods = 0;
+	boss_bar[0].link_num = 0;
+	boss_bar[1].link_num = 0;
+	boss_body_link = 0;
+	memset(enemyAvail, 1, sizeof(savedAvail));
+	memset(eventRec, 0, 3 * sizeof(eventRec[0]));
+	eventRec[0] = (struct JE_EventRecType){ .eventtime = 100, .eventtype = 10, .eventdat = BOTTOM,
+	                                        .eventdat2 = 150, .eventdat4 = 11 };
+	eventRec[1] = (struct JE_EventRecType){ .eventtime = 128, .eventtype = 10, .eventdat = TOP,
+	                                        .eventdat2 = 150, .eventdat4 = 11 };
+	eventRec[2].eventtime = 65500;
+	maxEvent = 2;
+	level_scan_boss_leadins();
+
+	bool rule = level_piece_orphaned(1) && !level_piece_orphaned(0);
+	qa_piece_live(75, BOTTOM, 150);
+	rule = rule && !level_piece_orphaned(1);
+	enemyAvail[75] = 1;
+	eventRec[1].eventdat = BOTTOM;
+	rule = rule && !level_piece_orphaned(1);
+	eventRec[1].eventdat = TOP;
+	eventRec[1].eventdat2 = 174;
+	rule = rule && !level_piece_orphaned(1);
+	eventRec[1].eventdat2 = 150;
+	eventRec[1].eventtime = 161;
+	rule = rule && !level_piece_orphaned(1);
+	eventRec[1].eventtime = 128;
+	boss_bar[0].link_num = 11;
+	rule = rule && !level_piece_orphaned(1);
+	boss_bar[0].link_num = 0;
+	eventRec[3] = eventRec[2];
+	eventRec[2] = eventRec[1];
+	eventRec[1] = (struct JE_EventRecType){ .eventtime = 110, .eventtype = 10, .eventdat = SIDE,
+	                                        .eventdat2 = 150, .eventdat4 = 11 };
+	maxEvent = 3;
+	rule = rule && !level_piece_orphaned(2);
+	eventRec[1] = eventRec[2];
+	eventRec[2] = eventRec[3];
+	maxEvent = 2;
+	qa_check(rule,
+	         "a body's later piece counts as orphaned only when the tile it stacks on is gone: a "
+	         "repeat of the same tile, another column, a long gap, a boss link or a different "
+	         "piece spawned between them never do");
+
+	eventRec[0].eventtype = eventRec[1].eventtype = 49;
+	eventRec[0].eventdat = 191;
+	eventRec[1].eventdat = 153;
+	bool custom = level_piece_orphaned(1);
+	qa_piece_live(75, 0, 150);
+	enemy[75].egr[0] = 191;
+	custom = custom && !level_piece_orphaned(1);
+	enemy[75].egr[0] = 153;
+	custom = custom && level_piece_orphaned(1);
+	enemyAvail[75] = 1;
+	eventRec[0].eventtype = eventRec[1].eventtype = 10;
+	eventRec[0].eventdat = BOTTOM;
+	eventRec[1].eventdat = TOP;
+	qa_check(custom,
+	         "a body built from custom-graphic spawns stacks by its graphics and finds its lower "
+	         "piece by graphic as well");
+
+	const int skipped = qa_piece_spawn(1);
+	endlessMode = false;
+	const int vanilla = qa_piece_spawn(1);
+	endlessMode = true;
+	qa_piece_live(75, BOTTOM, 150);
+	const int completed = qa_piece_spawn(1);
+	qa_check(skipped == 0 && vanilla > 0 && completed > 0,
+	         "in Endless the top of a body whose bottom was shot down before it arrived never "
+	         "spawns, while the campaign keeps the vanilla spawn and a living bottom gets its top");
+
+	bool links[256] = { false };
+	eventLoc = 2;
+	curLoc = 110;
+	level_mark_assembling_links(links);
+	const bool waiting = links[11];
+	memset(links, 0, sizeof(links));
+	eventLoc = 3;
+	level_mark_assembling_links(links);
+	const bool whole = !links[11];
+	memset(links, 0, sizeof(links));
+	eventLoc = 2;
+	enemyAvail[75] = 1;
+	level_mark_assembling_links(links);
+	qa_check(waiting && whole && !links[11],
+	         "a body is assembling from its first piece until its last arrives, and not once its "
+	         "pieces are gone");
+
+	qa_piece_live(75, BOTTOM, 150);
+	qa_piece_live(76, SIDE, 174);
+	player[0].x = 60;
+	player[0].y = 160;
+	mt_srand(0x5eed5715u);
+	bool held = true;
+	for (int t = 0; t < 20; ++t)
+	{
+		endlessGroupHoming();
+		held = held && enemy[75].exc == 0 && enemy[75].eyc == 0 && enemy[76].exc == 0 &&
+		       enemy[76].eyc == 0 && enemy[75].groupHomed && enemy[76].groupHomed;
+	}
+	eventLoc = 3;
+	bool together = true, moved = false;
+	for (int t = 0; t < 20; ++t)
+	{
+		endlessGroupHoming();
+		together = together && enemy[75].exc == enemy[76].exc && enemy[75].eyc == enemy[76].eyc;
+		moved = moved || enemy[75].exc != 0 || enemy[75].eyc != 0;
+	}
+	qa_check(held && together && moved,
+	         "the pieces of a body still assembling hold their scripted course under homing, then "
+	         "home as one once it is whole");
+
+	memcpy(eventRec, savedEvents, sizeof(eventRec));
+	memcpy(enemy, savedEnemy, sizeof(enemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	memcpy(&enemyDat[TOP], savedDat[0], sizeof(enemyDat[0]));
+	memcpy(&enemyDat[BOTTOM], savedDat[1], sizeof(enemyDat[0]));
+	memcpy(&enemyDat[0], savedDat[2], sizeof(enemyDat[0]));
+	memcpy(&enemyDat[SIDE], savedDat[3], sizeof(enemyDat[0]));
+	mt_state_restore(savedRng);
+	maxEvent = savedMax;
+	level_scan_boss_leadins();
+	eventLoc = savedLoc;
+	curLoc = savedCur;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	endlessActiveMods = savedMods;
+	boss_bar[0] = savedBars[0];
+	boss_bar[1] = savedBars[1];
+	boss_body_link = savedBody;
+	player[0].x = savedX;
+	player[0].y = savedY;
+	free(savedEvents);
+	free(savedEnemy);
+	free(savedRng);
 }
 
 void qa_test_map_top_pin(void)

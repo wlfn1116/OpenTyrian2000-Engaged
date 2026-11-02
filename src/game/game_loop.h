@@ -59,6 +59,9 @@ void endlessScanSceneryLinks(void);
 /* True if Endless homing may steer this body. Call endlessScanSceneryLinks first. */
 bool endlessHomingChaser(unsigned int slot);
 void endlessBossHomingFrames(void);
+void endlessGroupHoming(void);
+bool enemy_despawns_sideways(unsigned int i);
+bool enemy_despawns_vertically(unsigned int i);
 int event_scroll_landing(int extra);
 int event_grid_point(int eventTime);
 void event_grid_rebase(int origin, int step);

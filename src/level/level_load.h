@@ -34,6 +34,8 @@ bool event_spawns_linked_enemy(JE_byte type);
 void level_scan_boss_leadins(void);
 int level_boss_leadin_window(JE_byte link);
 bool level_boss_leadin_active(void);
+bool level_piece_orphaned(JE_word event);
+void level_mark_assembling_links(bool links[256]);
 
 extern JE_boolean levelWarningDisplay;
 extern JE_byte levelWarningLines;

@@ -28,6 +28,10 @@ void enemy_logical_death(unsigned int i, int killer);
  * centered on the visible hull for a linked or 2x2 body. In `i`'s bank ex space. */
 void enemy_loot_anchor(unsigned int i, JE_integer *x, JE_integer *y);
 
+// The playfield box an enemy's sprite covers: an ordinary enemy is one 12x14 cell at
+// (ex + mapoffset, ey), a 2x2 enemy four of them around that point. Same geometry the draw uses.
+void enemy_sprite_box(unsigned int i, int *left, int *top, int *right, int *bottom);
+
 /* Kill a linked hull through the normal payout, transform, explosion, and jump paths. */
 void enemy_kill_group(unsigned int slot, int payee, int killer);
 

@@ -52,9 +52,7 @@
 #define ENDLESS_MARTYR_SHOT_DURATION 120   // ticks before a burst bullet self-expires (also culled off-screen)
 #define ENDLESS_TWO_PI               6.28318531f
 
-// The playfield box an enemy's sprite covers: an ordinary enemy is one 12x14 cell at
-// (ex + mapoffset, ey), a 2x2 enemy four of them around that point. Same geometry the draw uses.
-static void enemy_sprite_box(unsigned int i, int *left, int *top, int *right, int *bottom)
+void enemy_sprite_box(unsigned int i, int *left, int *top, int *right, int *bottom)
 {
 	const bool big = (enemy[i].size == 1);
 	*left   = enemy[i].ex + enemy[i].mapoffset + (big ? -6 : 0);

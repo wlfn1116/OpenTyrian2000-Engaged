@@ -31,6 +31,7 @@
 #include "game_loop.h"
 #include "game_menu.h"
 #include "game_state.h"
+#include "health_bars.h"
 #include "helptext.h"
 #include "high_scores.h"
 #include "item_prices.h"
@@ -513,6 +514,84 @@ void level_scan_boss_leadins(void)
 		}
 		w->from = (JE_word)start;
 		++levelBossLeadIns;
+	}
+}
+
+#define LEVEL_PIECE_GAP 60
+
+static bool event_custom_piece(const struct JE_EventRecType *e)
+{
+	return e->eventtype >= 49 && e->eventtype <= 52;
+}
+
+static bool event_piece_tile(const struct JE_EventRecType *e, int *tile, int *size)
+{
+	const int type = event_custom_piece(e) ? 0 : e->eventdat;
+	if (type < 0 || type > ENEMY_NUM)
+		return false;
+	*tile = event_custom_piece(e) ? e->eventdat : enemyDat[type].egraphic[0];
+	*size = enemyDat[type].esize;
+	return *tile != 0 && *tile != 999;
+}
+
+static bool event_pieces_stack(const struct JE_EventRecType *a, const struct JE_EventRecType *b)
+{
+	int tileA, sizeA, tileB, sizeB;
+	return event_piece_tile(a, &tileA, &sizeA) && event_piece_tile(b, &tileB, &sizeB) &&
+	       sizeA == sizeB && abs(tileA - tileB) == (sizeA == 1 ? 2 : 1) * 19;
+}
+
+static int event_piece_parent(int k)
+{
+	const struct JE_EventRecType *const e = &eventRec[k];
+	if (e->eventtype == 12 || !event_spawns_linked_enemy(e->eventtype) || e->eventdat4 == 0 ||
+	    e->eventdat4 == 254 || e->eventdat2 == -200 || e->eventdat2 == -99)
+		return -1;
+	int newest = -1;
+	for (int p = k - 1; p >= 0 && e->eventtime - eventRec[p].eventtime <= LEVEL_PIECE_GAP; --p)
+	{
+		const struct JE_EventRecType *const q = &eventRec[p];
+		if (q->eventtime >= e->eventtime || q->eventtype != e->eventtype ||
+		    q->eventdat4 != e->eventdat4 || q->eventdat2 != e->eventdat2)
+			continue;
+		if (newest >= 0 && q->eventtime != newest)
+			break;
+		newest = q->eventtime;
+		if (event_pieces_stack(q, e))
+			return p;
+	}
+	return -1;
+}
+
+static bool piece_alive(const struct JE_EventRecType *spawn)
+{
+	const bool custom = event_custom_piece(spawn);
+	for (unsigned int i = 0; i < COUNTOF(enemy); ++i)
+		if (enemyAvail[i] != 1 && enemy[i].linknum == spawn->eventdat4 &&
+		    (custom ? enemy[i].enemytype == 0 && enemy[i].egr[0] == spawn->eventdat
+		            : enemy[i].enemytype == spawn->eventdat))
+			return true;
+	return false;
+}
+
+bool level_piece_orphaned(JE_word event)
+{
+	const int parent = event_piece_parent(event);
+	if (parent < 0)
+		return false;
+	const JE_byte link = eventRec[event].eventdat4;
+	return !enemy_has_boss_hp(link) && level_boss_leadin_window(link) < 0 &&
+	       !piece_alive(&eventRec[parent]);
+}
+
+void level_mark_assembling_links(bool links[256])
+{
+	const int horizon = curLoc + LEVEL_PIECE_GAP;
+	for (int k = eventLoc - 1; k < maxEvent && eventRec[k].eventtime <= horizon; ++k)
+	{
+		const int parent = event_piece_parent(k);
+		if (parent >= 0 && parent < eventLoc - 1 && piece_alive(&eventRec[parent]))
+			links[eventRec[k].eventdat4] = true;
 	}
 }
 

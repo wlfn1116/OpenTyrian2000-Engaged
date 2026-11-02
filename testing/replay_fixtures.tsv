@@ -117,6 +117,13 @@
 # registrations removed: both builds give the same three hashes and the same layout (a035c389), so
 # neither the boss frames nor the boosted-scroll landing moves the demos. The hashes below come
 # back identically from a working directory with no opentyrian.cfg in it.
-1 180 a5d00d41
-2 180 c66c6f14
-3 180 8059f456
+# Regenerated 2026-11-02, for a snapshot-shape change with no simulation change behind it:
+# EnemyBossFrame gained rising (one byte, set while a homing boss climbs back after a dive), so
+# bossFrame grew from 8 to 10 bytes and every enemy field after it shifts. Verified by building
+# the parent commit with only that field declared: it gives the same three hashes and the same
+# layout (9dd1fb9c) as this change, so neither the boss view and climb rules, the despawn rule for
+# homing boss parts, the staggered-body rules nor the co-op aim fix moves the demos. The hashes
+# below come back identically from a working directory with no opentyrian.cfg in it.
+1 180 63597951
+2 180 63efeb54
+3 180 78689086

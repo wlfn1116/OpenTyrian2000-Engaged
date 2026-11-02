@@ -2795,6 +2795,36 @@ static bool qa_boss_frame_rigid(void)
 	       enemy[2].bossFrame.dx == enemy[0].bossFrame.dx;
 }
 
+static void qa_boss_frame_place(int x, int y, EnemyBossFrame frame, int mapoffset, int accel)
+{
+	qa_boss_part(0, 40, x + frame.dx, y + frame.dy, 0, 0);
+	qa_boss_part(1, 40, x + frame.dx + 24, y + frame.dy, 2, 0);
+	qa_boss_part(2, 40, x + frame.dx, y + frame.dy + 28, 0, -1);
+	for (unsigned int i = 0; i < 3; ++i)
+	{
+		enemy[i].bossFrame = frame;
+		enemy[i].mapoffset = (JE_integer)mapoffset;
+		enemy[i].xaccel = (JE_byte)accel;
+		enemy[i].yaccel = (JE_byte)accel;
+	}
+}
+
+static bool qa_boss_part_in_view(unsigned int slot)
+{
+	int left, top, right, bottom;
+	enemy_sprite_box(slot, &left, &top, &right, &bottom);
+	return left >= PLAYFIELD_LEFT && right <= PLAYFIELD_RIGHT + 1 && top >= 0 &&
+	       bottom <= PLAYFIELD_HEIGHT;
+}
+
+static bool qa_boss_frame_kept(void)
+{
+	for (unsigned int i = 0; i < 3; ++i)
+		if (enemy_despawns_sideways(i) || enemy_despawns_vertically(i))
+			return false;
+	return true;
+}
+
 void qa_test_boss_homing_frames(void)
 {
 	struct JE_SingleEnemyType *const savedEnemy = malloc(sizeof(enemy));
@@ -2829,43 +2859,136 @@ void qa_test_boss_homing_frames(void)
 	boss_bar[0].link_num = 40;
 	boss_bar[1].link_num = 0;
 	boss_body_link = 0;
-	qa_boss_part(0, 40, 100, 100, 0, 0);
-	qa_boss_part(1, 40, 124, 100, 2, 0);
-	qa_boss_part(2, 40, 100, 128, 0, -1);
+	qa_boss_frame_place(100, 100, (EnemyBossFrame){ 0 }, 0, 96);
 	qa_boss_part(3, 0, 200, 50, 0, 0);
 	player[0].x = 150;
 	player[0].y = 160;
 	mt_srand(0x5eed1234u);
 
-	bool rigid = true, scripted = true, floored = true, own = true;
-	for (int t = 0; t < 160; ++t)
+	bool rigid = true, scripted = true, topInView = true, kept = true, own = true, climbing = true;
+	bool reachedShip = true;
+	int landings = 0, returns = 0;
+	for (int t = 0; t < 400; ++t)
 	{
+		const bool wasRising = enemy[0].bossFrame.rising;
+		const JE_integer wasY = enemy[0].ey;
 		qa_boss_frame_pass();
 		rigid = rigid && qa_boss_frame_rigid();
 		scripted = scripted && enemy[0].exc == 0 && enemy[1].exc == 2 && enemy[2].eyc == -1;
-		floored = floored && enemy[2].ey <= 170;
+		topInView = topInView && qa_boss_part_in_view(0);
+		kept = kept && qa_boss_frame_kept();
 		own = own && enemy[0].groupHomed && enemy[2].groupHomed && !enemy[3].groupHomed &&
 		      enemy[3].ex == 200 && enemy[3].ey == 50;
+		const bool rising = enemy[0].bossFrame.rising;
+		if (rising && !wasRising)
+		{
+			++landings;
+			reachedShip = reachedShip && (enemy[0].ey * 2 + enemy[2].ey) / 3 >= player[0].y;
+		}
+		if (wasRising && !rising && enemy[0].bossFrame.dy <= 0)
+			++returns;
+		if (wasRising && rising)
+			climbing = climbing && enemy[0].ey <= wasY;
 	}
 	qa_check(rigid && scripted,
 	         "a homing boss moves as one frame: its parts keep their spacing and scripted speeds");
-	qa_check(floored && enemy[2].ey == 170,
-	         "...and homing pulls it down only until its lowest part sits on the floor line");
+	qa_check(topInView && kept && landings > 0 && reachedShip,
+	         "...its dive reaches the ship's level with its top row in view and no part "
+	         "despawning");
+	qa_check(climbing && returns > 0 && landings > 1,
+	         "...then it climbs back to its scripted height, though the ship is still below it, "
+	         "before diving again");
 	qa_check(own, "...while ordinary enemies keep their own homing");
 
-	const int held = enemy[0].bossFrame.dy;
-	for (unsigned int i = 0; i < 3; ++i)
-	{
-		enemy[i].ey += 30;
-		enemy[i].yaccel = 0;
-	}
+	qa_boss_frame_place(100, 100,
+	                    (EnemyBossFrame){ .joined = true, .link = 40, .vy = 7, .dy = 64 }, 0, 0);
 	qa_boss_frame_pass();
-	qa_check(held > 8 && enemy[0].bossFrame.dy == held - 8 && qa_boss_frame_rigid(),
-	         "a boss its script carries below the floor sheds the homing offset a few pixels a "
-	         "tick, so it still leaves where it was written to");
-	for (unsigned int i = 0; i < 3; ++i)
-		enemy[i].yaccel = 96;
+	qa_check(enemy[0].ey == PLAYFIELD_HEIGHT - 14 && enemy[2].ey > 190 && qa_boss_frame_kept() &&
+	         enemy[0].bossFrame.rising,
+	         "a boss diving fast sinks below the bottom edge only until its top row is the last "
+	         "part in view, its lower parts past the despawn line yet kept, and turns there");
+	qa_boss_frame_place(100, 60,
+	                    (EnemyBossFrame){ .joined = true, .rising = true, .link = 40, .dy = 40 },
+	                    0, 90);
+	for (int t = 0; t < 5; ++t)
+		qa_boss_frame_pass();
+	qa_check(enemy[0].bossFrame.vy == -2 && enemy[0].bossFrame.dy == 31 &&
+	         enemy[0].bossFrame.rising && qa_boss_frame_rigid(),
+	         "a slow homer climbs back two pixels a tick, outpacing the one-pixel scroll that "
+	         "carries its scripted spot down");
 
+	qa_boss_frame_place(100, 214,
+	                    (EnemyBossFrame){ .joined = true, .link = 40, .vy = 7, .dy = -50 }, 0, 0);
+	qa_boss_frame_pass();
+	qa_check(enemy[0].ey == PLAYFIELD_HEIGHT - 14 && !enemy[0].bossFrame.rising,
+	         "...and one homing down from above its scripted height stops at that same edge");
+
+	qa_boss_part(0, 40, 150, PLAYFIELD_HEIGHT - 14, 0, 0);
+	qa_boss_part(1, 40, 150, PLAYFIELD_HEIGHT + 14, 0, 0);
+	qa_boss_part(2, 40, 174, PLAYFIELD_HEIGHT + 14, 0, 0);
+	for (unsigned int i = 0; i < 3; ++i)
+		enemy[i].yaccel = 0;
+	player[0].x = SHIP_LEFT_MARGIN;
+	bool topRowSeen = true;
+	for (int t = 0; t < 200; ++t)
+	{
+		qa_boss_frame_pass();
+		topRowSeen = topRowSeen && qa_boss_part_in_view(0);
+	}
+	qa_check(topRowSeen && enemy[0].ex + 12 < PLAYFIELD_LEFT + 30,
+	         "a boss hanging below the bottom edge keeps a part of its visible row in view as it "
+	         "slides sideways, whatever its hidden rows reach");
+	player[0].x = 150;
+
+	qa_boss_frame_place(100, 130, (EnemyBossFrame){ .joined = true, .link = 40, .dy = 40 }, 0, 0);
+	for (unsigned int i = 0; i < 3; ++i)
+		enemy[i].ey += 10;
+	qa_boss_frame_pass();
+	const bool creeps = enemy[0].bossFrame.dy == 32 && qa_boss_frame_rigid();
+	for (int t = 0; t < 6; ++t)
+	{
+		for (unsigned int i = 0; i < 3; ++i)
+			enemy[i].ey += 30;
+		qa_boss_frame_pass();
+	}
+	qa_check(creeps && enemy[0].bossFrame.dy == 0 && enemy_despawns_vertically(2) &&
+	         qa_boss_frame_rigid(),
+	         "a boss its script carries out of view hands its homing offset back 8 px a tick while "
+	         "part of it shows, and once that is spent it leaves where it was written to");
+
+	qa_boss_part(4, 40, 100, 230, 0, 0);
+	enemy[4].bossFrame = (EnemyBossFrame){ .joined = true, .link = 40, .dx = -100, .dy = 60 };
+	bool despawnRule = !enemy_despawns_vertically(4);
+	enemy[4].ey = 260;
+	despawnRule = despawnRule && enemy_despawns_vertically(4);
+	enemy[4].ex = -90;
+	despawnRule = despawnRule && !enemy_despawns_sideways(4);
+	enemy[4].ex = 10;
+	enemy[4].ey = -120;
+	enemy[4].bossFrame.dy = -60;
+	despawnRule = despawnRule && !enemy_despawns_vertically(4);
+	enemy[4].ey = 150;
+	despawnRule = despawnRule && !enemy_despawns_vertically(4);
+	enemy[4].ey = -120;
+	enemy[4].bossFrame = (EnemyBossFrame){ 0 };
+	despawnRule = despawnRule && enemy_despawns_vertically(4) && !enemy_despawns_sideways(4);
+	enemy[4].ey = 190;
+	enemy[4].ex = -81;
+	despawnRule = despawnRule && !enemy_despawns_vertically(4) && enemy_despawns_sideways(4);
+	qa_check(despawnRule,
+	         "a boss part homing carried past a despawn line stays until its scripted spot is past "
+	         "it too, and everything else despawns where it always did");
+
+	qa_boss_frame_place(100, 82, (EnemyBossFrame){ .joined = true, .link = 40, .dy = 60 }, 0, 0);
+	qa_boss_part(4, 40, 130, 140, 0, 0);
+	enemy[4].xaccel = 0;
+	enemy[4].yaccel = 0;
+	qa_boss_frame_pass();
+	qa_check(enemy[4].ey == 200 && enemy[4].bossFrame.dy == 60 && !enemy_despawns_vertically(4) &&
+	         enemy[2].ey == 170 && qa_boss_frame_rigid(),
+	         "a piece that joins below the bottom edge takes its place in the boss and stays");
+
+	qa_boss_frame_place(100, 80, (EnemyBossFrame){ .joined = true, .link = 40, .dy = 20 }, 0, 96);
 	qa_boss_part(4, 40, 100, 60, 0, 0);
 	qa_boss_part(5, 40, 160, 80, 0, 0);
 	enemy[5].bossFrame = enemy[0].bossFrame;
@@ -2885,6 +3008,51 @@ void qa_test_boss_homing_frames(void)
 		qa_boss_frame_pass();
 	qa_check(enemy[0].ey < y0 && qa_boss_frame_rigid() && enemy[4].ey - enemy[0].ey == spacing,
 	         "a boss whose health bar the script hides keeps flying as one");
+
+	boss_bar[0].link_num = 40;
+	enemyAvail[4] = 1;
+	enemyAvail[5] = 1;
+	const struct { int x, y; } chase[] = {
+		{ SHIP_LEFT_MARGIN, 90 },
+		{ PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN, 90 },
+		{ 150, SHIP_TOP_MARGIN },
+		{ 150, SHIP_BOTTOM_MARGIN },
+	};
+	bool inView = true, stays = true, hung[COUNTOF(chase)] = { false };
+	for (unsigned int c = 0; c < COUNTOF(chase); ++c)
+	{
+		qa_boss_frame_place(150, 80, (EnemyBossFrame){ 0 }, 0, 96);
+		player[0].x = chase[c].x;
+		player[0].y = chase[c].y;
+		for (int t = 0; t < 300; ++t)
+		{
+			qa_boss_frame_pass();
+			const bool a = qa_boss_part_in_view(0), b = qa_boss_part_in_view(1),
+			           d = qa_boss_part_in_view(2);
+			inView = inView && (a || b || d);
+			hung[c] = hung[c] || !(a && b && d);
+			stays = stays && qa_boss_frame_kept() && qa_boss_frame_rigid();
+		}
+	}
+	qa_check(inView && stays && hung[0] && hung[1] && hung[2] && hung[3],
+	         "a homing boss may hang off any edge, the bottom included, but one whole part always "
+	         "stays in view and none of it despawns");
+
+	qa_boss_frame_place(150, 80, (EnemyBossFrame){ .joined = true, .link = 40, .dx = -50 },
+	                    -110, 0);
+	qa_boss_frame_pass();
+	const bool handedBack = enemy[0].bossFrame.dx == -42 && enemy[0].ex == 108;
+	qa_boss_frame_place(150, 80, (EnemyBossFrame){ .joined = true, .link = 40 }, -200, 0);
+	qa_boss_frame_pass();
+	qa_check(handedBack && enemy[0].bossFrame.dx == 0 && enemy[0].ex == 150,
+	         "a boss the view slides off, by parallax or by losing the part that held it in view, "
+	         "hands its homing offset back 8 px a tick, while one its script takes out stays out");
+
+	qa_boss_frame_place(100, 100, (EnemyBossFrame){ .joined = true, .link = 40, .dy = -150 }, 0, 0);
+	qa_boss_frame_pass();
+	qa_check(enemy[0].bossFrame.dy == -128 && qa_boss_part_in_view(2) && qa_boss_frame_rigid(),
+	         "...and one with no part left in view takes its offset back at once, as far as the "
+	         "edge, since nobody can see it jump");
 
 	endlessActiveMods = 0;
 	const JE_integer x0 = enemy[0].ex, y1 = enemy[0].ey;

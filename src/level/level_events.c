@@ -242,6 +242,12 @@ void level_armor_event(JE_byte link, JE_byte armor)
 
 void JE_eventSystem(void)
 {
+	if (endlessFxActive() && level_piece_orphaned(eventLoc - 1))
+	{
+		eventLoc++;
+		return;
+	}
+
 	switch (eventRec[eventLoc-1].eventtype)
 	{
 	case 1:

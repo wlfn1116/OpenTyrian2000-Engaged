@@ -70,6 +70,7 @@
 #include "vt_ship.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1784,10 +1785,18 @@ static int homing_step(int accel, int vel, bool forward)
 	return (vel >= 0 || -vel < accel - 89) ? -1 : 0;
 }
 
-#define BOSS_FRAME_FLOOR    170
-#define BOSS_FRAME_CEILING  (-90)
-#define BOSS_FRAME_LEFT     (-60)
+static int homing_target_x(uint p)
+{
+	return player[p].x - 25;
+}
+
 #define BOSS_FRAME_GIVEBACK 8
+#define BOSS_FRAME_RISE     2
+
+typedef struct
+{
+	int lo, hi;
+} BossFrameRoom;
 
 static int boss_frame_object(unsigned int i)
 {
@@ -1801,29 +1810,79 @@ static int boss_frame_object(unsigned int i)
 	return enemy[i].bossFrame.joined ? 256 + enemy[i].bossFrame.link : -1;
 }
 
-static int boss_frame_shift(int offset, JE_shortint *vel, int least, int most, int lo, int hi)
+static int boss_frame_shift(int offset, JE_shortint *vel, BossFrameRoom room, int giveback)
 {
 	int shift = *vel;
-	if (shift > 0 && most + shift > hi)
+	if (shift > 0 && shift > room.hi)
 	{
-		shift = MAX(hi - most, 0);
+		shift = MAX(room.hi, 0);
 		*vel = 0;
 	}
-	else if (shift < 0 && least + shift < lo)
+	else if (shift < 0 && shift < room.lo)
 	{
-		shift = MIN(lo - least, 0);
+		shift = MIN(room.lo, 0);
 		*vel = 0;
 	}
 
-	const int over = most + shift - hi;
-	if (over > 0 && offset + shift > 0)
-		shift -= MIN(MIN(over, offset + shift), BOSS_FRAME_GIVEBACK);
-
-	const int under = lo - (least + shift);
-	if (under > 0 && offset + shift < 0)
-		shift += MIN(MIN(under, -(offset + shift)), BOSS_FRAME_GIVEBACK);
-
+	const int out = offset + shift;
+	if (out > 0 && shift > room.hi)
+		shift -= MIN(MIN(shift - room.hi, out), giveback);
+	else if (out < 0 && shift < room.lo)
+		shift += MIN(MIN(room.lo - shift, -out), giveback);
 	return shift;
+}
+
+static bool boss_frame_seen(const int object[], unsigned int first)
+{
+	for (unsigned int j = first; j < COUNTOF(enemy); ++j)
+	{
+		if (object[j] != object[first])
+			continue;
+		int left, top, right, bottom;
+		enemy_sprite_box(j, &left, &top, &right, &bottom);
+		if (right > PLAYFIELD_LEFT && left <= PLAYFIELD_RIGHT &&
+		    bottom > 0 && top < PLAYFIELD_HEIGHT)
+			return true;
+	}
+	return false;
+}
+
+bool enemy_despawns_sideways(unsigned int i)
+{
+	const int x = enemy[i].ex, script = x - enemy[i].bossFrame.dx;
+	return MAX(x, script) < -80 || MIN(x, script) > vga_width + 20;
+}
+
+bool enemy_despawns_vertically(unsigned int i)
+{
+	const int y = enemy[i].ey, script = y - enemy[i].bossFrame.dy;
+	return MAX(y, script) < -112 || MIN(y, script) > 190;
+}
+
+static BossFrameRoom boss_frame_view_room(const int object[], unsigned int first, bool vertical,
+                                          int shiftX)
+{
+	int lead = INT_MIN, trail = INT_MAX;
+	for (int pass = 0; pass < 2 && lead == INT_MIN; ++pass)
+	{
+		for (unsigned int j = first; j < COUNTOF(enemy); ++j)
+		{
+			if (object[j] != object[first])
+				continue;
+			int left, top, right, bottom;
+			enemy_sprite_box(j, &left, &top, &right, &bottom);
+			left += shiftX;
+			right += shiftX;
+			const bool across = vertical ? left >= PLAYFIELD_LEFT && right <= PLAYFIELD_RIGHT + 1
+			                             : top >= 0 && bottom <= PLAYFIELD_HEIGHT;
+			if (pass == 0 && !across)
+				continue;
+			lead = MAX(lead, vertical ? top : left);
+			trail = MIN(trail, vertical ? bottom : right);
+		}
+	}
+	return vertical ? (BossFrameRoom){ -lead, PLAYFIELD_HEIGHT - trail }
+	                : (BossFrameRoom){ PLAYFIELD_LEFT - lead, PLAYFIELD_RIGHT + 1 - trail };
 }
 
 void endlessBossHomingFrames(void)
@@ -1866,7 +1925,7 @@ void endlessBossHomingFrames(void)
 		if (!frame.joined)
 			frame = (EnemyBossFrame){ .joined = true, .link = enemy[lead].linknum };
 
-		int count = 0, sumX = 0, sumY = 0, minX = 0, maxX = 0, minY = 0, maxY = 0;
+		int count = 0, sumX = 0, sumY = 0;
 		for (unsigned int j = i; j < COUNTOF(enemy); ++j)
 		{
 			if (object[j] != o)
@@ -1874,14 +1933,6 @@ void endlessBossHomingFrames(void)
 			struct JE_SingleEnemyType *const e = &enemy[j];
 			e->ex += frame.dx - e->bossFrame.dx;
 			e->ey += frame.dy - e->bossFrame.dy;
-			if (count == 0 || e->ex < minX)
-				minX = e->ex;
-			if (count == 0 || e->ex > maxX)
-				maxX = e->ex;
-			if (count == 0 || e->ey < minY)
-				minY = e->ey;
-			if (count == 0 || e->ey > maxY)
-				maxY = e->ey;
 			++count;
 			sumX += e->ex;
 			sumY += e->ey;
@@ -1892,16 +1943,26 @@ void endlessBossHomingFrames(void)
 			frame.vx = 0;
 			frame.vy = 0;
 		}
-		const Player *const prey = &player[endlessHomingTargetPlayer(enemy[lead].homeTarget)];
-		frame.vx += homing_step(accelX, frame.vx, prey->x - 25 > sumX / count);
-		frame.vy += homing_step(accelY, frame.vy, prey->y > sumY / count);
+		const uint prey = endlessHomingTargetPlayer(enemy[lead].homeTarget);
+		const JE_shortint wasVy = frame.vy;
+		frame.vx += homing_step(accelX, frame.vx, homing_target_x(prey) > sumX / count);
+		if (frame.rising)
+			frame.vy = MAX(frame.vy - 1, -MAX(accelY - 89, BOSS_FRAME_RISE));
+		else
+			frame.vy += homing_step(accelY, frame.vy, player[prey].y > sumY / count);
 
-		const int shiftX = boss_frame_shift(frame.dx, &frame.vx, minX, maxX, BOSS_FRAME_LEFT,
-		                                    vga_width);
-		const int shiftY = boss_frame_shift(frame.dy, &frame.vy, minY, maxY, BOSS_FRAME_CEILING,
-		                                    BOSS_FRAME_FLOOR);
+		const int giveback = boss_frame_seen(object, i) ? BOSS_FRAME_GIVEBACK : INT_MAX;
+		const BossFrameRoom roomX = boss_frame_view_room(object, i, false, 0);
+		const int shiftX = boss_frame_shift(frame.dx, &frame.vx, roomX, giveback);
+		const BossFrameRoom roomY = boss_frame_view_room(object, i, true, shiftX);
+		const JE_shortint pushY = frame.vy;
+		const int shiftY = boss_frame_shift(frame.dy, &frame.vy, roomY, giveback);
 		frame.dx += shiftX;
 		frame.dy += shiftY;
+		if (frame.rising)
+			frame.rising = frame.dy > 0 && !(pushY < 0 && frame.vy == 0);
+		else
+			frame.rising = frame.dy > 0 && wasVy > 0 && frame.vy <= 0;
 		for (unsigned int j = i; j < COUNTOF(enemy); ++j)
 		{
 			if (object[j] != o)
@@ -1914,15 +1975,17 @@ void endlessBossHomingFrames(void)
 	}
 }
 
-static void endlessGroupHoming(void)
+void endlessGroupHoming(void)
 {
 	if (!endlessFxActive())
 		return;
 
 	endlessScanSceneryLinks();
 
+	bool assembling[256] = { false };
+	level_mark_assembling_links(assembling);
 	for (int i = 0; i < 100; i++)
-		enemy[i].groupHomed = false;
+		enemy[i].groupHomed = enemyAvail[i] != 1 && assembling[enemy[i].linknum];
 
 	endlessBossHomingFrames();
 
@@ -1958,10 +2021,10 @@ static void endlessGroupHoming(void)
 		const int cy = sumY / count;
 
 		// The whole group chases the leader's ship, so a formation stays a formation.
-		const Player *const prey = &player[endlessHomingTargetPlayer(enemy[i].homeTarget)];
+		const uint prey = endlessHomingTargetPlayer(enemy[i].homeTarget);
 
-		const int stepX = homing_step(enemy[i].xaccel, enemy[i].exc, prey->x - 25 > cx);
-		const int stepY = homing_step(enemy[i].yaccel, enemy[i].eyc, prey->y > cy);
+		const int stepX = homing_step(enemy[i].xaccel, enemy[i].exc, homing_target_x(prey) > cx);
+		const int stepY = homing_step(enemy[i].yaccel, enemy[i].eyc, player[prey].y > cy);
 		for (int m = 0; m < count; m++)
 		{
 			enemy[members[m]].exc += stepX;
@@ -2209,6 +2272,10 @@ static void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than
 	// Batch 25 is the sky bank and takes layer-2 movement from eyc.
 	const bool skyBank = (enemyOffset == 25);
 
+	int preyX[COUNTOF(player)];
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		preyX[p] = homing_target_x(p);
+
 	player[0].x -= 25;
 
 	for (int i = enemyOffset - 25; i < enemyOffset; i++)
@@ -2248,12 +2315,14 @@ static void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than
 			}
 
 			// The ship this one tracks: its own coin toss in co-op Endless, ship one everywhere else.
-			const Player *const prey = &player[endlessHomingTargetPlayer(enemy[i].homeTarget)];
+			const uint prey = endlessHomingTargetPlayer(enemy[i].homeTarget);
 
 			if (!enemy[i].groupHomed)
 			{
-				enemy[i].exc += homing_step(enemy[i].xaccel, enemy[i].exc, prey->x > enemy[i].ex);
-				enemy[i].eyc += homing_step(enemy[i].yaccel, enemy[i].eyc, prey->y > enemy[i].ey);
+				enemy[i].exc += homing_step(enemy[i].xaccel, enemy[i].exc,
+				                            preyX[prey] > enemy[i].ex);
+				enemy[i].eyc += homing_step(enemy[i].yaccel, enemy[i].eyc,
+				                            player[prey].y > enemy[i].ey);
 			}
 
 			// Keep 2x2 sprites active until fully outside the visible window. The
@@ -2384,13 +2453,13 @@ static void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than
 			enemy[i].ey += enemy_fixed_move_y(i);
 
 			enemy[i].ex += enemy[i].exc;
-			if (enemy[i].ex < -80 || enemy[i].ex > vga_width + 20)
+			if (enemy_despawns_sideways(i))
 				goto enemy_gone;
 
 			enemy_approach_debt_accrue(i);
 
 			enemy[i].ey += enemy[i].eyc;
-			if (enemy[i].ey < -112 || enemy[i].ey > 190)
+			if (enemy_despawns_vertically(i))
 				goto enemy_gone;
 
 			goto enemy_still_exists;

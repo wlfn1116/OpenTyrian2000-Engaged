@@ -558,6 +558,7 @@ int qa_run_unit_suite(void)
 	qa_test_level_event_scripts();
 	qa_test_boosted_boss_pacing();
 	qa_test_boosted_scroll_landing();
+	qa_test_stacked_pieces();
 	qa_test_super_enemy_loops();
 	qa_test_map_top_pin();
 	qa_test_item_data_settings();

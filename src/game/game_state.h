@@ -56,6 +56,7 @@ enum
 typedef struct
 {
 	JE_boolean  joined;
+	JE_boolean  rising;
 	JE_byte     link;
 	JE_shortint vx, vy;
 	JE_integer  dx, dy;

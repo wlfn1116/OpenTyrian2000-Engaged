@@ -30,6 +30,7 @@
 #define LEGACY_WIDTH 320
 #define HUD_WIDTH 57
 #define PLAYFIELD_WIDTH (vga_width - HUD_WIDTH)
+#define PLAYFIELD_HEIGHT 184
 #define PLAYFIELD_X_SHIFT (-12)
 #define HUD_X(x) ((x) + (vga_width - LEGACY_WIDTH))
 
