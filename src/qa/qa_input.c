@@ -240,6 +240,47 @@ void qa_test_controller_hotplug(void)
 		memcpy(joystick[slot].assignment[9], savedPause, sizeof(savedPause));
 		qa_check(releasedQuits, "outside the jukebox the same button pauses again");
 
+		SDL_Joystick *const stalled = joystick[slot].handle;
+		static const SDL_GameControllerButton leaves[] = {
+			SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_START, SDL_CONTROLLER_BUTTON_BACK,
+		};
+		bool everyLeaves = true;
+		bool inputKept = true;
+		for (size_t i = 0; i < COUNTOF(leaves); ++i)
+		{
+			SDL_JoystickSetVirtualButton(stalled, leaves[i], SDL_PRESSED);
+			everyLeaves &= joystick_cancel_down();
+			inputKept &= !joystick[slot].cancel && !joystick[slot].action[1] &&
+			             !joystick[slot].action[4] && !joystick[slot].action[5];
+			SDL_JoystickSetVirtualButton(stalled, leaves[i], SDL_RELEASED);
+			everyLeaves &= !joystick_cancel_down();
+		}
+		SDL_JoystickSetVirtualButton(stalled, confirm, SDL_PRESSED);
+		const bool fireStays = !joystick_cancel_down();
+		SDL_JoystickSetVirtualButton(stalled, confirm, SDL_RELEASED);
+		qa_check(everyLeaves && fireStays && !joystick_cancel_down(),
+		         "a stall reads change fire, menu and pause as leave without a controller poll");
+		qa_check(inputKept,
+		         "reading leave in a stall leaves the game's own controller state alone");
+
+		Joystick_assignment savedChange[2];
+		memcpy(savedChange, joystick[slot].assignment[5], sizeof(savedChange));
+		joystick[slot].assignment[5][0] = (Joystick_assignment){ .type = BUTTON, .num = north };
+		joystick[slot].assignment[5][1].type = NONE;
+		prompt_use_pad(slot);
+		char named[64];
+		prompt_text(named, sizeof(named), &netReadyLeave);
+		SDL_JoystickSetVirtualButton(stalled, north, SDL_PRESSED);
+		const bool reboundLeaves = joystick_cancel_down();
+		SDL_JoystickSetVirtualButton(stalled, north, SDL_RELEASED);
+		SDL_JoystickSetVirtualButton(stalled, cancel, SDL_PRESSED);
+		const bool unboundStays = !joystick_cancel_down();
+		SDL_JoystickSetVirtualButton(stalled, cancel, SDL_RELEASED);
+		joystick_cancel_down();
+		memcpy(joystick[slot].assignment[5], savedChange, sizeof(savedChange));
+		qa_check(strcmp(named, "Y leaves the session.") == 0 && reboundLeaves && unboundStays,
+		         "the stall's leave hint names the rebound back button, and that button leaves");
+
 		Joystick_assignment savedRows[3][2];
 		memcpy(savedRows, &joystick[slot].assignment[4], sizeof(savedRows));
 		const PadLabels savedLabels = joystick[slot].labels;

@@ -387,6 +387,49 @@ void qa_test_peer_idle_rule(void)
 	         "a peer that advanced during the wait and then went quiet is idle from that advance");
 }
 
+void qa_test_stall_leave_offer(void)
+{
+	const Uint32 offer = NET_LEAVE_OFFER;
+	bool armed = true;
+
+	qa_check(!network_leave_wanted(offer, true, &armed) && !armed,
+	         "a stalled wait ignores Back until the leave offer is up");
+	qa_check(!network_leave_wanted(offer + 1, true, &armed) && !armed,
+	         "Back held from before the offer does not leave");
+	qa_check(!network_leave_wanted(offer + 2, false, &armed) && armed,
+	         "releasing it arms the offer");
+	qa_check(network_leave_wanted(offer + 3, true, &armed),
+	         "the next Back press leaves the session");
+
+	armed = false;
+	qa_check(!network_leave_wanted(offer + 1, false, &armed)
+	         && network_leave_wanted(offer + 2, true, &armed),
+	         "a first Back press after the offer appears leaves the session");
+}
+
+void qa_test_rollback_sound_voicing(void)
+{
+	const Uint16 epoch = 0xBEE5;
+
+	qa_check(nrb_sound_due(epoch, 100, false, 4, 6) && nrb_sound_due(epoch, 140, false, 7, 27),
+	         "a frame's first pass plays its sounds");
+	qa_check(!nrb_sound_due(epoch, 100, true, 4, 6),
+	         "a correction does not replay a sound its frame already played");
+	qa_check(!nrb_sound_due(epoch, 103, true, 4, 6) && !nrb_sound_due(epoch, 137, true, 7, 27),
+	         "...nor one the prediction played up to three frames away");
+	qa_check(nrb_sound_due(epoch, 104, true, 4, 6),
+	         "a sound only the corrected timeline has is played late");
+	qa_check(!nrb_sound_due(epoch, 104, true, 4, 6),
+	         "...and only once, however often the frame is corrected again");
+	qa_check(nrb_sound_due(epoch, 100, true, 5, 6) && nrb_sound_due(epoch, 100, true, 4, 9),
+	         "another slot or another sample on the same frame is a sound of its own");
+	qa_check(nrb_sound_due((Uint16)(epoch + 1), 140, true, 7, 27),
+	         "a new epoch does not inherit the old timeline's sounds");
+	qa_check(!nrb_sound_due(epoch, 0, true, 4, 6) && !nrb_sound_due(epoch, 120, true, 8, 6)
+	         && nrb_sound_due(epoch, 120, false, 8, 6),
+	         "outside the frame and slot range a correction stays silent, as before");
+}
+
 /* Both peers must agree on the one seat that opened a menu, or that none did. */
 void qa_test_menu_claim(void)
 {

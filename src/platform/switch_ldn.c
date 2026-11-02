@@ -21,6 +21,9 @@ static bool ldn_up = false;
 static LdnNetworkInfo ldn_games[SWITCH_LDN_MAX_GAMES];
 static int ldn_game_count = 0;
 
+static LdnState ldn_session = LdnState_None;
+static bool ldn_peer_joined = false;
+
 static void ldn_intent(LdnIntentId *intent)
 {
 	memset(intent, 0, sizeof(*intent));
@@ -68,7 +71,10 @@ bool switch_ldn_host(const char *nickname, const uint8_t *advert, size_t advert_
 	if (R_SUCCEEDED(ldnOpenAccessPoint()) &&
 	    R_SUCCEEDED(ldnCreateNetwork(&sec, &user, &net)) &&
 	    R_SUCCEEDED(ldnSetAdvertiseData(advert, advert_len)))
+	{
+		ldn_session = LdnState_AccessPointCreated;
 		return true;
+	}
 
 	switch_ldn_leave();
 	return false;
@@ -131,12 +137,39 @@ bool switch_ldn_join(int index, const char *nickname, uint32_t *host)
 	else
 		*host = ldn_games[index].nodes[0].ip_addr.addr;
 
-	return *host != 0;
+	if (*host == 0)
+		return false;
+
+	ldn_session = LdnState_StationConnected;
+	return true;
+}
+
+bool switch_ldn_link_lost(void)
+{
+	if (!ldn_up || ldn_session == LdnState_None)
+		return false;
+
+	LdnState state;
+	if (R_FAILED(ldnGetState(&state)))
+		return false;
+	if (state != ldn_session)
+		return true;
+	if (state != LdnState_AccessPointCreated)
+		return false;
+
+	LdnNetworkInfo info;
+	if (R_FAILED(ldnGetNetworkInfo(&info)))
+		return false;
+	if (info.node_count >= 2)
+		ldn_peer_joined = true;
+	return ldn_peer_joined && info.node_count < 2;
 }
 
 void switch_ldn_leave(void)
 {
 	ldn_game_count = 0;
+	ldn_session = LdnState_None;
+	ldn_peer_joined = false;
 	if (!ldn_up)
 		return;
 

@@ -2805,9 +2805,7 @@ static bool shopCampaignRendezvous(void)
 			{
 				fprintf(stderr, "net gameplay: joiner leaves from the outpost\n");
 				fflush(stderr);
-				network_prepare(PACKET_QUIT);
-				network_send(4);
-				network_tyrian_halt(0, true);   // does not return
+				network_quit_session(0);
 			}
 			return true;
 		}
@@ -7171,10 +7169,7 @@ JE_boolean JE_quitRequest(void)
 
 	if (isNetworkGame && quit_selected)
 	{
-		network_prepare(PACKET_QUIT);
-		network_send(4);  // PACKET QUIT
-
-		network_tyrian_halt(0, true);
+		network_quit_session(0);
 	}
 
 	return quit_selected;

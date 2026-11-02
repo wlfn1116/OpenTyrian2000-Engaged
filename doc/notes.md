@@ -944,6 +944,36 @@ application acknowledgement.
 The peer timeout is 16 seconds. Long online screens must call `network_check()`
 or `NETWORK_KEEP_ALIVE()`.
 
+### Stalls and quitting
+
+A wait that stops play for the peer calls `network_stall_overlay` on every pass.
+The notice appears after 0.7 seconds. After `NET_LEAVE_OFFER` (3 seconds) a hint
+offers to leave. The overlay then calls `network_quit_session(2)` on a press of
+Esc or of a controller's change-fire, menu, or pause binding that begins after
+the offer. `{back}` names one of these, and they are the buttons that leave the
+ready screen. Leaving counts as a lost connection, so the disconnect save is
+still offered.
+
+On touch builds the offer requests `TOUCH_LAYOUT_STALL`: one X that sends no
+key. The overlay polls its tap, so no queued Esc can reach the disconnect save
+prompt and decline it. `{back}` reads "X" on touch.
+
+Stalls run no controller poll. Desktop builds refresh SDL's controller state
+once a second for hotplug; Switch and Vita never do. `joystick_cancel_down`
+therefore calls `SDL_JoystickUpdate` itself and reads the bindings without
+writing the game's controller state, so a press during a stall keeps its edge
+for the next frame.
+
+A local quit goes through `network_quit_session`, which sends QUIT and halts.
+`network_tyrian_halt` waits at most `NET_QUIT_FLUSH` (1.5 seconds) for the
+acknowledgement, because a peer that has gone silent never sends one.
+
+Stalls and many halts run mid-tick, while `VGAScreen` is still `game_screen`:
+the raw playfield, with its entry margin and no HUD. `network_tyrian_halt`
+therefore switches to `VGAScreenSeg` before its first present, so the frame on
+screen stays put through the music fade and fades to black. It also hides the
+touch controls for that fade.
+
 ### Session and outpost
 
 Each player owns their shop state. `PACKET_SHOP_SYNC` mirrors cash, loadout,
@@ -1020,6 +1050,13 @@ Deterministic simulation rules:
 
 Presentation state stays outside snapshots. Silent replay repaints dirty HUD
 state and suppresses live-only sound and flashes.
+
+The sound queue is the exception online. `nrb_voice_sound` plays a sound queued
+during a correction unless the same queue slot played the same sample within
+three frames either side in the current epoch. A sound that exists only in the
+corrected timeline still plays, and one predicted a frame off is not doubled.
+The record of voiced sounds is presentation state: it is not registered, hashed,
+or sent.
 
 Main-game recovery compares registry size and
 `rollback_layout_fingerprint()` before adopting host state. The joiner
@@ -1141,6 +1178,12 @@ runs over it. The network advertises a discovery reply body
 session on every exit path, including a failed `network_init`. LDN takes its
 network id from the launching title's NACP, so both consoles must launch the
 homebrew the same way. The network seats two nodes.
+
+While connected, `network_check` polls `console_wireless_lost` every 250 ms and
+halts with a lost connection as soon as it reports one. Either side counts a
+change of LDN state as lost; the host also counts its node count falling below
+two after the joiner appeared. A peer that stays on the network but stops
+answering still meets the leave offer and the 16-second timeout.
 
 ## Ships, weapons, and item data
 

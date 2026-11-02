@@ -532,6 +532,8 @@ int qa_run_unit_suite(void)
 	qa_test_coop_combo_and_pickups();
 	qa_test_peer_left_level();
 	qa_test_peer_idle_rule();
+	qa_test_stall_leave_offer();
+	qa_test_rollback_sound_voicing();
 	qa_test_menu_claim();
 	qa_test_online_suite();
 	qa_test_endless_shop_stock();

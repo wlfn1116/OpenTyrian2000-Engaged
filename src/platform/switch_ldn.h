@@ -29,6 +29,8 @@ bool switch_ldn_game(int index, const uint8_t **advert, size_t *advert_len);
 // first octet in the top byte.
 bool switch_ldn_join(int index, const char *nickname, uint32_t *host);
 
+bool switch_ldn_link_lost(void);
+
 // Leave or close whatever network is up and release the service. Safe to call at any time.
 void switch_ldn_leave(void);
 

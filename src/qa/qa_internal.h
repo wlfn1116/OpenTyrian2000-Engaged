@@ -112,6 +112,8 @@ void qa_test_endless_coop(void);
 void qa_test_coop_combo_and_pickups(void);
 void qa_test_peer_left_level(void);
 void qa_test_peer_idle_rule(void);
+void qa_test_stall_leave_offer(void);
+void qa_test_rollback_sound_voicing(void);
 void qa_test_menu_claim(void);
 void qa_test_resync_serialization(void);
 void qa_test_input_record_pull(void);

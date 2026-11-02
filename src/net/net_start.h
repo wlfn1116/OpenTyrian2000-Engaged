@@ -65,5 +65,6 @@ static inline int sa_pick_name_y(int i) { return SA_PICK_TOP_Y + (i % SA_PICK_RO
 // One-line "the other machine is not with us yet" panel over a frozen gameplay frame. Draws into
 // whatever VGAScreen points at, so callers must have pointed it at VGAScreenSeg first.
 void JE_drawNetworkNotice(const char *text);
+void JE_drawNetworkHint(const char *hint);
 
 #endif /* NET_START_H */

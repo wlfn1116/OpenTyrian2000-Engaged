@@ -296,6 +296,10 @@ int network_connect(void);
 OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync);
 #define NET_HALT_CUSTOM_SYNC 8
 const char *network_halt_message(unsigned int err);
+OT_NORETURN void network_quit_session(unsigned int err);
+#define NET_LEAVE_OFFER 3000
+bool network_leave_wanted(Uint32 waited, bool down, bool *armed);
+void network_stall_overlay(Uint32 wait_start, const char *text);
 
 int network_init(void);
 

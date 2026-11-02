@@ -24,6 +24,7 @@
   #define console_wireless_scan    switch_ldn_scan
   #define console_wireless_game    switch_ldn_game
   #define console_wireless_join    switch_ldn_join
+  #define console_wireless_lost    switch_ldn_link_lost
   #define console_wireless_leave   switch_ldn_leave
 
 #elif defined(__vita__)

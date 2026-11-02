@@ -4727,8 +4727,7 @@ draw_player_shot_loop_end:
 				else   /*Lightning*/
 					temp3 = fxPlayVol / 2;
 
-				// Silent replay mutates scratch state but does not replay sounds.
-				if (!rollback_resim)
+				if (nrb_active() ? nrb_voice_sound(temp2, temp) : !rollback_resim)
 					multiSamplePlayLimited(soundSamples[temp-1], soundSampleCount[temp-1],
 					                       temp2, temp3);
 

@@ -176,6 +176,11 @@ static const TouchButtonDef LAYOUT_DESTRUCT[] =
 	{ TOUCH_BTN_FIRE,   ICON_FIRE,    1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 };
 
+static const TouchButtonDef LAYOUT_STALL[] =
+{
+	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
+};
+
 /* Screen-specific extras use the top-right slot. */
 static const TouchButtonDef LAYOUT_EXTRA[] =
 {
@@ -391,6 +396,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 		count = (int)COUNTOF(LAYOUT_JUKEBOX_SOUNDS);
 		break;
 	case TOUCH_LAYOUT_DESTRUCT: defs = LAYOUT_DESTRUCT; count = (int)COUNTOF(LAYOUT_DESTRUCT); break;
+	case TOUCH_LAYOUT_STALL:    defs = LAYOUT_STALL;    count = (int)COUNTOF(LAYOUT_STALL);    break;
 	case TOUCH_LAYOUT_GAME:     defs = LAYOUT_GAME;     count = (int)COUNTOF(LAYOUT_GAME);     break;
 	case TOUCH_LAYOUT_MENU:
 	default:                    defs = LAYOUT_MENU;     count = (int)COUNTOF(LAYOUT_MENU);     break;

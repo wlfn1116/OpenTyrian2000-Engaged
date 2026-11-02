@@ -214,6 +214,7 @@ void push_key(SDL_Scancode key);
 void push_joysticks_as_keyboard(void);
 
 bool joystick_menu_button_down(JoystickMenuButton which);
+bool joystick_cancel_down(void);
 void joystick_claim_menu_buttons(unsigned mask);
 bool joystick_binding_claimed(int j, const Joystick_assignment *binding);
 bool joystick_menu_actions_fixed(int j);

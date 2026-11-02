@@ -71,6 +71,9 @@ void nrb_get_local(Uint32 frame, RbInput *out);
 /* Return received or predicted peer input and record the tuple used by the simulation. */
 void nrb_get_remote(Uint32 frame, RbInput *out);
 
+bool nrb_sound_due(Uint16 epoch, Uint32 frame, bool resim, int slot, int sample);
+bool nrb_voice_sound(int slot, int sample);
+
 /* Driver verdict for the end-of-tick network site. */
 typedef enum
 {

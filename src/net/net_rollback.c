@@ -169,6 +169,19 @@ static Uint32 resim_target;
 
 static RbInput remote_seed;             /* prediction anchor before any data  */
 
+#define NRB_VOICE_SLOTS 8
+#define NRB_VOICE_SHIFT 3
+
+typedef struct
+{
+	Uint32 frame;
+	Uint16 epoch;
+	Uint8  sample[NRB_VOICE_SLOTS];
+}
+NrbVoiced;
+
+static NrbVoiced nrb_voiced[NRB_HIST];
+
 /* Per-frame hashes and raw fields used by desync reports. */
 typedef struct
 {
@@ -483,6 +496,43 @@ void nrb_get_remote(Uint32 frame, RbInput *out)
 	remote_used[frame % NRB_HIST].in = *out;
 	remote_used[frame % NRB_HIST].tag = frame;
 	remote_used[frame % NRB_HIST].kind = NRB_USED_FULL;
+}
+
+static bool nrb_voiced_at(Uint16 epoch, Uint32 frame, int slot, int sample)
+{
+	const NrbVoiced *const v = &nrb_voiced[frame % NRB_HIST];
+	return v->frame == frame && v->epoch == epoch && v->sample[slot] == sample;
+}
+
+bool nrb_sound_due(Uint16 epoch, Uint32 frame, bool resim, int slot, int sample)
+{
+	if (frame == 0 || slot < 0 || slot >= NRB_VOICE_SLOTS || sample <= 0 || sample > 255)
+		return !resim;
+
+	if (resim)
+	{
+		const Uint32 lo = frame > NRB_VOICE_SHIFT ? frame - NRB_VOICE_SHIFT : 1;
+		for (Uint32 f = lo; f <= frame + NRB_VOICE_SHIFT; ++f)
+		{
+			if (nrb_voiced_at(epoch, f, slot, sample))
+				return false;
+		}
+	}
+
+	NrbVoiced *const v = &nrb_voiced[frame % NRB_HIST];
+	if (v->frame != frame || v->epoch != epoch)
+	{
+		memset(v->sample, 0, sizeof(v->sample));
+		v->frame = frame;
+		v->epoch = epoch;
+	}
+	v->sample[slot] = (Uint8)sample;
+	return true;
+}
+
+bool nrb_voice_sound(int slot, int sample)
+{
+	return nrb_sound_due(nrb_epoch, nrb_cur, rollback_resim, slot, sample);
 }
 
 /* Compare only fields that can affect remote simulation. */
@@ -1162,29 +1212,10 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 
 	const Uint32 waited = SDL_GetTicks() - wait_start;
 
-	// Show the waiting overlay after roughly 0.7 seconds.
-	if (waited > 700)
-	{
-		static Uint32 overlay_for = 0;
-		static Uint32 last_present = 0;
-
-		SDL_Surface *const save = VGAScreen;
-		VGAScreen = VGAScreenSeg;
-		if (overlay_for != wait_start)
-		{
-			overlay_for = wait_start;
-			// This wait IS the recovery when one is in play; the machine on the
-			// other side of it stops simulating to stream or adopt state.
-			JE_drawNetworkNotice(resync_notice ? "Resyncing players." : "Waiting for other player.");
-			last_present = 0;
-		}
-		if (SDL_GetTicks() - last_present > 100)
-		{
-			last_present = SDL_GetTicks();
-			JE_showVGA();
-		}
-		VGAScreen = save;
-	}
+	// Show the waiting overlay after roughly 0.7 seconds. This wait IS the recovery when one is
+	// in play; the machine on the other side of it stops simulating to stream or adopt state.
+	network_stall_overlay(wait_start,
+	                      resync_notice ? "Resyncing players." : "Waiting for other player.");
 
 	if (!*stall_reported && waited > 3000)
 	{

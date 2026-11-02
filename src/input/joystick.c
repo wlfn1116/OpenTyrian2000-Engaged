@@ -250,6 +250,17 @@ static int check_assigned(int j, const Joystick_assignment assignment[2])
 	return result;
 }
 
+static bool joystick_action_held(int j, uint action)
+{
+	const size_t row = COUNTOF(joystick[j].direction) + action;
+	return check_assigned(j, joystick[j].assignment[row]) > joystick_analog_max / 2;
+}
+
+static bool joystick_cancels(const bool action[])
+{
+	return action[1] || action[4] || action[5];
+}
+
 // updates joystick state
 void poll_joystick(int j)
 {
@@ -306,7 +317,7 @@ void poll_joystick(int j)
 	{
 		bool old = joystick[j].action[d];
 		
-		joystick[j].action[d] = check_assigned(j, joystick[j].assignment[d + COUNTOF(joystick[j].direction)]) > (joystick_analog_max / 2);
+		joystick[j].action[d] = joystick_action_held(j, d);
 		joydown |= joystick[j].action[d];
 		
 		joystick[j].action_pressed[d] = joystick[j].action[d] && (!old || repeat);
@@ -315,7 +326,7 @@ void poll_joystick(int j)
 	
 	// Fire confirms; change-fire, menu, and pause cancel.
 	joystick[j].confirm = joystick[j].action[0];
-	joystick[j].cancel = joystick[j].action[1] || joystick[j].action[4] || joystick[j].action[5];
+	joystick[j].cancel = joystick_cancels(joystick[j].action);
 	
 	// if new input, reset press-repeat delay
 	if (joystick[j].input_pressed)
@@ -399,6 +410,29 @@ bool joystick_menu_button_down(JoystickMenuButton which)
 		const int num = joystick[j].menu_button[which];
 		if (joystick[j].handle != NULL && num >= 0 &&
 		    SDL_JoystickGetButton(joystick[j].handle, num) != 0)
+		{
+			prompt_use_pad(j);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool joystick_cancel_down(void)
+{
+	if (!joysticks_ready)
+		return false;
+
+	SDL_JoystickUpdate();
+	for (int j = 0; j < joysticks; j++)
+	{
+		if (joystick[j].handle == NULL)
+			continue;
+
+		bool held[COUNTOF(joystick[j].action)];
+		for (uint d = 0; d < COUNTOF(held); d++)
+			held[d] = joystick_action_held(j, d);
+		if (joystick_cancels(held))
 		{
 			prompt_use_pad(j);
 			return true;

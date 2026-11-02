@@ -351,6 +351,21 @@ Resume by hosting the matching game type and choosing **Load Game** after the
 peer connects. Loading is available only at session start. Player numbers and
 Linked Arcade sides remain as saved, even if the other machine hosts.
 
+### Lost connections
+
+When the other player stops responding, play stops under **Waiting for other
+player.** After three seconds a second line names the button that leaves the
+session: Esc, the controller's back button, or on a touch screen the X button
+that appears in the top-left corner. A controller's menu and pause buttons leave
+too.
+
+Leaving, a lost connection, or the other player quitting returns you to the
+title screen. If the game holds a `LAST LEVEL` backup, it first offers **Save
+Game**, which stores that outpost in a slot you choose.
+
+On Switch, Local Wireless ends the session as soon as the other console leaves
+or closes its network.
+
 ### Desync reports
 
 Enable network logging under **Setup > Diagnostics**. Attach the matching log

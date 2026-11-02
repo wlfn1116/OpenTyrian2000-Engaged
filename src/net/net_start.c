@@ -336,9 +336,7 @@ static int networkSuperArcadeShipSelect(void)
 				// Leaving before committing ends the session; the partner is sitting on this same
 				// screen and has to be told, or it waits out the dead-link timeout.
 				JE_playSampleNum(S_SPRING);
-				network_prepare(PACKET_QUIT);
-				network_send(4);  // PACKET QUIT
-				network_tyrian_halt(0, true);   // does not return
+				network_quit_session(0);
 			}
 			// Otherwise both have picked and the game is starting, so there is nothing to leave.
 			newkey = false;
@@ -797,10 +795,7 @@ void networkStartScreen(void)
 		}
 		else
 		{
-			network_prepare(PACKET_QUIT);
-			network_send(4);  // PACKET QUIT
-
-			network_tyrian_halt(0, true);
+			network_quit_session(0);
 		}
 	}
 	else
@@ -871,9 +866,7 @@ void networkStartScreen(void)
 					fflush(stderr);
 				}
 				JE_playSampleNum(S_SPRING);
-				network_prepare(PACKET_QUIT);
-				network_send(4);  // PACKET_QUIT
-				network_tyrian_halt(0, true);   // does not return
+				network_quit_session(0);
 			}
 
 			// Validate length before reading the reused packet buffer.
@@ -1139,19 +1132,37 @@ void networkStartScreen(void)
 	}
 }
 
+// Drawn into VGAScreenSeg, so this is display space: the playfield is x in [0,
+// PLAYFIELD_WIDTH) and y in [0, 184), with the HUD to the right of it.
+enum
+{
+	NET_NOTICE_ROWS = 184,
+	NET_NOTICE_H = 26,
+	NET_NOTICE_Y = (NET_NOTICE_ROWS - NET_NOTICE_H) / 2,
+	NET_HINT_H = 14,
+};
+
+static int netNoticePanel(int contentW, int py0, int panelH)
+{
+	const int panelW = MIN(contentW, PLAYFIELD_WIDTH - 16);
+	const int px0 = (PLAYFIELD_WIDTH - panelW) / 2, px1 = px0 + panelW;
+
+	JE_barShade(VGAScreen, px0, py0, px1, py0 + panelH);
+	JE_barShade(VGAScreen, px0 + 2, py0 + 2, px1 - 2, py0 + panelH - 2);
+	return (px0 + px1) / 2;
+}
+
 void JE_drawNetworkNotice(const char *text)
 {
-	// Drawn into VGAScreenSeg, so this is display space: the playfield is x in [0,
-	// PLAYFIELD_WIDTH) and y in [0, 184), with the HUD to the right of it.
-	const int playfieldRows = 184;
-	const int panelW = MIN(JE_textWidth(text, normal_font) + 28, PLAYFIELD_WIDTH - 16);
-	const int panelH = 26;
+	const int textW = JE_textWidth(text, normal_font);
+	const int mid = netNoticePanel(textW + 28, NET_NOTICE_Y, NET_NOTICE_H);
+	JE_dStringOutlined(VGAScreen, mid - textW / 2, NET_NOTICE_Y + 7, text, SMALL_FONT_SHAPES);
+}
 
-	const int px0 = (PLAYFIELD_WIDTH - panelW) / 2, px1 = px0 + panelW;
-	const int py0 = (playfieldRows - panelH) / 2, py1 = py0 + panelH;
-
-	JE_barShade(VGAScreen, px0, py0, px1, py1);
-	JE_barShade(VGAScreen, px0 + 2, py0 + 2, px1 - 2, py1 - 2);
-	JE_dStringOutlined(VGAScreen, (px0 + px1) / 2 - JE_textWidth(text, normal_font) / 2, py0 + 7,
-	                   text, SMALL_FONT_SHAPES);
+void JE_drawNetworkHint(const char *hint)
+{
+	const int hintW = JE_textWidth(hint, TINY_FONT);
+	const int y = NET_NOTICE_Y + NET_NOTICE_H + 2;
+	const int mid = netNoticePanel(hintW + 16, y, NET_HINT_H);
+	JE_outTextOutlined(VGAScreen, mid - hintW / 2, y + 4, hint, 15, 2);
 }

@@ -157,6 +157,9 @@ bool network_interface_carries_lan(unsigned int flags)
 #define NET_DEPART_GRACE  4000         // ticks of end-screen silence that read as the peer having left
 #define NET_PING_MAX      5000         // round trips longer than this are treated as garbage, not latency
 #define NET_DRAIN_MAX     32           // datagrams network_check() reads per call at most
+#define NET_QUIT_FLUSH    1500
+#define NET_STALL_NOTICE  700
+#define NET_WIRELESS_POLL 250
 
 bool isNetworkGame = false;
 
@@ -898,6 +901,19 @@ int network_check(void)
 			}
 		}
 
+#ifdef PLATFORM_LOCAL_WIRELESS
+		static Uint32 wireless_poll_tick = 0;
+		if (!quit && SDL_GetTicks() - wireless_poll_tick > NET_WIRELESS_POLL)
+		{
+			wireless_poll_tick = SDL_GetTicks();
+			if (console_wireless_lost())
+			{
+				fprintf(stderr, "error: the local wireless network closed\n");
+				network_tyrian_halt(2, false);
+			}
+		}
+#endif
+
 		// Keep-alives double as ping probes while gameplay is idle.
 		static Uint32 keep_alive_tick = 0;
 		if (SDL_GetTicks() - keep_alive_tick > NET_KEEP_ALIVE)
@@ -1128,6 +1144,7 @@ bool network_state_update(void)
 
 			// Keep the window responsive while waiting for the peer.
 			service_SDL_events(false);
+			network_stall_overlay(wait_start, "Waiting for other player.");
 
 			const Uint32 waited = SDL_GetTicks() - wait_start;
 
@@ -1658,7 +1675,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		/* Give a queued QUIT time to retransmit. */
 		if (attempt_sync)
 		{
-			const Uint32 flushUntil = SDL_GetTicks() + 1500;
+			const Uint32 flushUntil = SDL_GetTicks() + NET_QUIT_FLUSH;
 			while (!network_is_sync() && SDL_GetTicks() < flushUntil)
 			{
 				SDL_Delay(4);
@@ -1667,6 +1684,9 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		}
 		JE_tyrianExitWithoutSaving(1);
 	}
+
+	VGAScreen = VGAScreenSeg;
+	touch_ui_suppress();
 
 	// The session is over; take the music with it rather than leaving the level's track playing
 	// under a dead-link screen.
@@ -1677,14 +1697,13 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		{
 			music_fade_out_tick(&songFade);
 			service_SDL_events(false);
+			touch_ui_set_layout(TOUCH_LAYOUT_NONE);
 			JE_showVGA();
 			SDL_Delay(4);
 		}
 	}
 
 	fade_black(10);
-
-	VGAScreen = VGAScreenSeg;
 
 	// Center the legacy 320-pixel screen when reached from gameplay.
 	set_menu_centered(true);
@@ -1730,7 +1749,9 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 		if (attempt_sync)
 		{
-			while (!network_is_sync() && network_is_alive())
+			const Uint32 flush_start = SDL_GetTicks();
+			while (!network_is_sync() && network_is_alive()
+			       && SDL_GetTicks() - flush_start < NET_QUIT_FLUSH)
 			{
 				service_SDL_events(false);
 
@@ -1797,6 +1818,83 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	SDLNet_Quit();
 
 	JE_tyrianHalt(5);
+}
+
+OT_NORETURN void network_quit_session(unsigned int err)
+{
+	network_prepare(PACKET_QUIT);
+	network_send(4);  // PACKET_QUIT
+	network_tyrian_halt(err, true);
+}
+
+bool network_leave_wanted(Uint32 waited, bool down, bool *armed)
+{
+	if (waited <= NET_LEAVE_OFFER)
+	{
+		*armed = false;
+		return false;
+	}
+	if (!down)
+	{
+		*armed = true;
+		return false;
+	}
+	return *armed;
+}
+
+void network_stall_overlay(Uint32 wait_start, const char *text)
+{
+	static Uint32 overlay_for = 0;
+	static Uint32 last_present = 0;
+	static bool offer_shown = false;
+	static bool leave_armed = false;
+
+	const Uint32 waited = SDL_GetTicks() - wait_start;
+	if (waited <= NET_STALL_NOTICE)
+		return;
+
+	if (overlay_for != wait_start)
+	{
+		overlay_for = wait_start;
+		offer_shown = false;
+		leave_armed = false;
+		last_present = 0;
+
+		SDL_Surface *const save = VGAScreen;
+		VGAScreen = VGAScreenSeg;
+		JE_drawNetworkNotice(text);
+		VGAScreen = save;
+	}
+
+	const bool offered = waited > NET_LEAVE_OFFER;
+	if (offered)
+		touch_ui_set_layout(TOUCH_LAYOUT_STALL);
+
+	const bool down = offered && (keysactive[SDL_SCANCODE_ESCAPE] || joystick_cancel_down() ||
+	                              touch_ui_take_tap(TOUCH_BTN_ESC));
+	if (network_leave_wanted(waited, down, &leave_armed))
+		network_quit_session(2);
+
+	if (offered && !offer_shown)
+	{
+		offer_shown = true;
+		last_present = 0;
+
+		char hint[64];
+		SDL_Surface *const save = VGAScreen;
+		VGAScreen = VGAScreenSeg;
+		JE_drawNetworkHint(prompt_text(hint, sizeof(hint), &netReadyLeave));
+		VGAScreen = save;
+	}
+
+	if (SDL_GetTicks() - last_present > 100)
+	{
+		last_present = SDL_GetTicks();
+		SDL_Surface *const save = VGAScreen;
+		VGAScreen = VGAScreenSeg;
+		JE_showVGA();
+		VGAScreen = save;
+	}
 }
 
 /* The settings block's tail, added when the flags word at byte 4 filled up. Bytes 0..23 keep the
@@ -3133,9 +3231,7 @@ bool network_ready_screen_frame(NetReadyScreen *s)
 		{
 			// The way out, once nothing is standing behind it. The other player is sitting on
 			// this same screen and has to be told, or they wait out the dead-link timeout.
-			network_prepare(PACKET_QUIT);
-			network_send(4);  // PACKET_QUIT
-			network_tyrian_halt(0, true);   // does not return
+			network_quit_session(0);
 		}
 	}
 	else if (!s->localReady && newkey)

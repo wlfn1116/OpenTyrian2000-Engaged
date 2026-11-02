@@ -48,7 +48,8 @@ typedef enum
 	TOUCH_LAYOUT_SKIP,      // a skippable logo: back, plus optional navigation and confirm
 	TOUCH_LAYOUT_JUKEBOX,
 	TOUCH_LAYOUT_JUKEBOX_SOUNDS,
-	TOUCH_LAYOUT_DESTRUCT
+	TOUCH_LAYOUT_DESTRUCT,
+	TOUCH_LAYOUT_STALL
 } TouchLayout;
 
 // Request a nonautomatic layout. Reassert while active; requests expire quickly.

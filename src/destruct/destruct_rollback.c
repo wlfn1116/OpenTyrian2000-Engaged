@@ -670,28 +670,10 @@ static bool drb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 
 	const Uint32 waited = SDL_GetTicks() - wait_start;
 
-	if (waited > 700)
-	{
-		static Uint32 overlay_for = 0;
-		static Uint32 last_present = 0;
-
-		SDL_Surface *const save = VGAScreen;
-		VGAScreen = VGAScreenSeg;
-		if (overlay_for != wait_start)
-		{
-			overlay_for = wait_start;
-			/* This wait IS the recovery when one is in play; the machine on the other side of it
-			 * is already showing that. */
-			JE_drawNetworkNotice(resync_notice ? "Resyncing players." : "Waiting for other player.");
-			last_present = 0;
-		}
-		if (SDL_GetTicks() - last_present > 100)
-		{
-			last_present = SDL_GetTicks();
-			JE_showVGA();
-		}
-		VGAScreen = save;
-	}
+	/* This wait IS the recovery when one is in play; the machine on the other side of it is
+	 * already showing that. */
+	network_stall_overlay(wait_start,
+	                      resync_notice ? "Resyncing players." : "Waiting for other player.");
 
 	if (!*stall_reported && waited > 3000)
 	{
